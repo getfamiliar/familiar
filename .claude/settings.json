@@ -1,0 +1,15 @@
+{
+    "hooks": {
+        "PostToolUse": [
+            {
+                "matcher": "Edit|Write",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "FILE_PATH=$(echo $TOOL_INPUT | jq -r '.file_path // empty') && case \"$FILE_PATH\" in *.ts|*.tsx|*.js|*.jsx) npx @biomejs/biome format --write \"$FILE_PATH\" 2>&1 ;; esac"
+                    }
+                ]
+            }
+        ]
+    }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "effective-assistant-runner",
+  "version": "0.0.1",
+  "description": "Entrypoint inside the docker container, controlling the claude agent sdk calls inside the container.",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "format": "biome format --write --config-path .. src/",
+    "format:check": "biome format --config-path .. src/",
+    "lint": "biome lint --config-path .. src/",
+    "check": "biome check --config-path .. src/",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "typescript": "^6.0.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.12"
+  }
+}
