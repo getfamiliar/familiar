@@ -4,7 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Effective-assistant is an AI executive assistant built as a containerized agent. It uses Anthropic's `@anthropic-ai/claude-code` CLI and communicates via JSON over stdin/stdout.
+Effective-assistant is an AI executive assistant built as a containerized agent. It uses Anthropic's `@anthropic-ai/claude-code` inside a docker container. A host application (in `host/`) spawns such
+containers and provides them with an initial JSON task description, MCP tools and a shared workspace.
+
+The system supports multiple **contexts** - a context is a narrowed down task environment. For example, "processing the inbox" is another domain than "summarize community chat groups". Each context comes with
+its own set of task descriptions and available MCP tools and runs in a separate container instance. All
+contexts share a common workspace for global statements like the soul, for shared memory and file storage.
 
 ## Architecture
 
@@ -42,6 +47,7 @@ All TypeScript code is auto-formatted by [Biome](https://biomejs.dev/) on every 
 - Keep functions focused and readable; extract helpers when complexity warrants it.
 - Use `readonly` on properties and parameters that should not be reassigned.
 - Handle errors explicitly — never swallow exceptions with empty catch blocks.
+- Folders are named in lower kebab case (eg `mcp-server/`), files are PascalCase (eg `AgentRunner.ts`).
 
 ### Shell Scripts
 
