@@ -1,6 +1,6 @@
-export { ContainerInstance } from "./ContainerInstance.js";
-export type { ContainerStatus } from "./ContainerPool.js";
-export { ContainerPool } from "./ContainerPool.js";
+export { ContainerInstance } from "./ContainerInstance";
+export type { ContainerStatus } from "./ContainerPool";
+export { ContainerPool } from "./ContainerPool";
 export type {
     ContainerConfig,
     ContainerStartPayload,
@@ -8,4 +8,4 @@ export type {
     ContextConfig,
     TaskDefinition,
     TaskResult,
-} from "./Types.js";
+} from "./Types";

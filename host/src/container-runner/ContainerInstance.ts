@@ -8,7 +8,7 @@ import type {
     ContextConfig,
     TaskDefinition,
     TaskResult,
-} from "./Types.js";
+} from "./Types";
 
 /**
  * Represents a single running Docker container bound to a context.

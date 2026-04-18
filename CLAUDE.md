@@ -4,12 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Effective-assistant is an AI executive assistant built as a containerized agent. It uses Anthropic's `@anthropic-ai/claude-code` inside a docker container. A host application (in `host/`) spawns such
-containers and provides them with an initial JSON task description, MCP tools and a shared workspace.
+Effective-assistant is an AI executive assistant built as a containerized agent. It uses Anthropic's `@anthropic-ai/claude-code` inside a docker container. A host application (in `host/`) spawns such containers and provides them with an initial JSON task description, MCP tools and a shared workspace.
 
-The system supports multiple **contexts** - a context is a narrowed down task environment. For example, "processing the inbox" is another domain than "summarize community chat groups". Each context comes with
-its own set of task descriptions and available MCP tools and runs in a separate container instance. All
-contexts share a common workspace for global statements like the soul, for shared memory and file storage.
+The system supports multiple **contexts** - a context is a narrowed down task environment. For example, "processing the inbox" is another domain than "summarize community chat groups". Each context comes with its own set of task descriptions and available MCP tools and runs in a separate container instance. All contexts share a common workspace for global statements like the soul, for shared memory and file storage.
+
+## Contexts and the `data/` folder
+
+The `data/` folder is the persistent storage for all contexts, memory, sessions etc. The agent get the following folders mounted into its `/workspace/` folder from the projects `data/` folder:
+
+- `global/`: shared across all contexts, for global statements and shared memory
+- `context-{id}/` mounted as `context/`: the context-specific statements and memory
+- `context-{id}/.claude` mounted as `.claude/`: the context-specific .claude folder for session storage
 
 ## Architecture
 
@@ -17,22 +22,6 @@ contexts share a common workspace for global statements like the soul, for share
   - Base image: `node:24-slim` with `@anthropic-ai/claude-code` installed globally
   - `src/`: TypeScript application
   - Runs as non-root `node` user
-
-## Build & Run
-
-```bash
-# Build the container
-docker build -t effective-assistant -f container/Dockerfile container/
-
-# Run (JSON input on stdin, JSON output on stdout)
-echo '{}' | docker run -i effective-assistant
-```
-
-Inside the container, the TypeScript agent-runner builds with:
-```bash
-npm install
-npm run build          # tsc
-```
 
 ## Code Style
 

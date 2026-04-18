@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ContainerPool } from "./container-runner/index.js";
+import { ContainerPool } from "./container-runner/index";
 
 /**
  * Test harness: sends a task to a test context via ContainerPool

@@ -1,12 +1,29 @@
-import { randomUUID } from "node:crypto";
-import { ContainerInstance } from "./ContainerInstance.js";
+import { randomBytes } from "node:crypto";
+import { ContainerInstance } from "./ContainerInstance";
 import type {
     ContainerConfig,
     ContainerState,
     ContextConfig,
     TaskDefinition,
     TaskResult,
-} from "./Types.js";
+} from "./Types";
+
+const TASK_ID_LENGTH = 8;
+const TASK_ID_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+/**
+ * Generate a short alphanumeric task ID.
+ *
+ * @returns An 8-character lowercase alphanumeric string.
+ */
+function generateTaskId(): string {
+    const bytes = randomBytes(TASK_ID_LENGTH);
+    let id = "";
+    for (let i = 0; i < TASK_ID_LENGTH; i++) {
+        id += TASK_ID_CHARS[bytes[i] % TASK_ID_CHARS.length];
+    }
+    return id;
+}
 
 /** Status snapshot of a single container in the pool. */
 export interface ContainerStatus {
@@ -41,7 +58,7 @@ export class ContainerPool {
         metadata?: Record<string, unknown>,
     ): Promise<TaskResult> {
         const task: TaskDefinition = {
-            taskId: randomUUID(),
+            taskId: generateTaskId(),
             prompt,
             metadata,
         };
