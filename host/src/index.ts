@@ -8,12 +8,12 @@ import { ContainerPool } from "./container-runner/index";
  * and logs the result.
  */
 async function main(): Promise<void> {
-    const workspace = mkdtempSync(join(tmpdir(), "ea-test-"));
-    console.log(`Workspace: ${workspace}`);
+    const dataPath = mkdtempSync(join(tmpdir(), "ea-test-"));
+    console.log(`Data path: ${dataPath}`);
 
     const pool = new ContainerPool({
         imageName: "effective-agent",
-        workspacePath: workspace,
+        dataPath,
         timeoutMs: 30_000,
     });
 
@@ -28,7 +28,7 @@ async function main(): Promise<void> {
         console.log("Task result:", JSON.stringify(result, null, 4));
     } finally {
         await pool.stopAll();
-        rmSync(workspace, { recursive: true, force: true });
+        rmSync(dataPath, { recursive: true, force: true });
         console.log("Cleaned up.");
     }
 }

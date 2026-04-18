@@ -30,6 +30,13 @@ export class ContainerInstance {
         this.contextId = context.contextId;
     }
 
+    /**
+     * Host path to this context's data directory.
+     */
+    private get contextDir(): string {
+        return join(this.config.dataPath, `context-${this.contextId}`);
+    }
+
     /** Current lifecycle state of the container. */
     get state(): ContainerState {
         return this._state;
@@ -50,7 +57,7 @@ export class ContainerInstance {
     async start(task: TaskDefinition): Promise<TaskResult> {
         this._state = "starting";
 
-        await this.ensureIpcDirectories();
+        await this.ensureDirectories();
 
         const resultPromise = this.waitForResult(task.taskId);
 
@@ -96,7 +103,7 @@ export class ContainerInstance {
 
         this.resetTimeout();
 
-        const inputPath = join(this.config.workspacePath, "ipc", "input", `${task.taskId}.json`);
+        const inputPath = join(this.contextDir, "ipc", "input", `${task.taskId}.json`);
         await writeFile(inputPath, JSON.stringify(task), "utf-8");
 
         return this.waitForResult(task.taskId);
@@ -131,16 +138,27 @@ export class ContainerInstance {
 
     /**
      * Build the `docker run` argument list from the config.
+     * Mounts data directories into the container's /workspace/:
+     * - data/global/           → /workspace/global/
+     * - data/context-{id}/     → /workspace/context/
+     * - data/context-{id}/.claude/ → /workspace/.claude/
      *
      * @returns The argument array for child_process.spawn.
      */
     private buildDockerArgs(): string[] {
+        const globalDir = join(this.config.dataPath, "global");
+        const claudeDir = join(this.contextDir, ".claude");
+
         const args = [
             "run",
             "--rm",
             "-i",
             "-v",
-            `${this.config.workspacePath}:/workspace`,
+            `${globalDir}:/workspace/global`,
+            "-v",
+            `${this.contextDir}:/workspace/context`,
+            "-v",
+            `${claudeDir}:/workspace/.claude`,
             ...(this.config.dockerArgs ?? []),
             this.config.imageName,
         ];
@@ -164,12 +182,14 @@ export class ContainerInstance {
     }
 
     /**
-     * Ensure the IPC directories exist on the host workspace.
+     * Ensure all required host directories exist before starting a container.
+     * Creates the global dir, context dir, .claude dir, and IPC directories.
      */
-    private async ensureIpcDirectories(): Promise<void> {
-        const ipcBase = join(this.config.workspacePath, "ipc");
-        await mkdir(join(ipcBase, "input"), { recursive: true });
-        await mkdir(join(ipcBase, "tasks"), { recursive: true });
+    private async ensureDirectories(): Promise<void> {
+        await mkdir(join(this.config.dataPath, "global"), { recursive: true });
+        await mkdir(join(this.contextDir, ".claude"), { recursive: true });
+        await mkdir(join(this.contextDir, "ipc", "input"), { recursive: true });
+        await mkdir(join(this.contextDir, "ipc", "tasks"), { recursive: true });
     }
 
     /**
@@ -181,7 +201,7 @@ export class ContainerInstance {
      * @returns The parsed TaskResult from the result file.
      */
     private async waitForResult(taskId: string): Promise<TaskResult> {
-        const resultPath = join(this.config.workspacePath, "ipc", "tasks", `${taskId}.result.json`);
+        const resultPath = join(this.contextDir, "ipc", "tasks", `${taskId}.result.json`);
         const pollIntervalMs = 200;
         const maxWaitMs = this.config.timeoutMs;
         const deadline = Date.now() + maxWaitMs;

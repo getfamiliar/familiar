@@ -22,7 +22,7 @@ function main(): void {
         output: `Did task ${task.taskId}`,
     };
 
-    const tasksDir = "/workspace/ipc/tasks";
+    const tasksDir = "/workspace/context/ipc/tasks";
     mkdirSync(tasksDir, { recursive: true });
 
     const resultPath = join(tasksDir, `${task.taskId}.result.json`);

@@ -27,7 +27,7 @@ export interface ContainerStartPayload {
 /** Configuration for spawning containers. */
 export interface ContainerConfig {
     readonly imageName: string;
-    readonly workspacePath: string;
+    readonly dataPath: string;
     readonly timeoutMs: number;
     readonly dockerArgs?: string[];
 }
