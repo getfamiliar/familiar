@@ -4,7 +4,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 IMAGE_NAME="effective-agent"
 TAG="${1:-latest}"
@@ -12,7 +12,7 @@ TAG="${1:-latest}"
 echo "Building Effective Assistant agent container image..."
 echo "Image: ${IMAGE_NAME}:${TAG}"
 
-docker build -t "${IMAGE_NAME}:${TAG}" .
+docker build -t "${IMAGE_NAME}:${TAG}" -f "${SCRIPT_DIR}/Dockerfile" "${PROJECT_ROOT}"
 
 echo ""
 echo "Build complete!"

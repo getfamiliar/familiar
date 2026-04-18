@@ -18,10 +18,13 @@ The `data/` folder is the persistent storage for all contexts, memory, sessions 
 
 ## Architecture
 
+- **shared/**: TypeScript package (`effective-assistant-shared`) with types used by both host and container. Both sides depend on it via `"file:../shared"` in their package.json. Contains `ContainerParameters` (stdin payload), `ContainerOutput` (result payload), and `TaskDefinition`. Must be built (`npm run build`) before host or container can compile. The Docker build handles this automatically.
+- **host/**: Node.js application that spawns and manages agent containers via `ContainerPool`
 - **container/**: Docker container definition for the agent runtime
   - Base image: `node:24-slim` with `@anthropic-ai/claude-code` installed globally
   - `src/`: TypeScript application
   - Runs as non-root `node` user
+  - Docker build context is the project root (not `container/`), so `shared/` is available during image build
 
 ## Code Style
 

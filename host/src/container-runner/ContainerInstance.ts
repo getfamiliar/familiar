@@ -2,13 +2,11 @@ import { spawn } from "node:child_process";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
-    ContainerConfig,
-    ContainerStartPayload,
-    ContainerState,
-    ContextConfig,
+    ContainerOutput,
+    ContainerParameters,
     TaskDefinition,
-    TaskResult,
-} from "./Types";
+} from "effective-assistant-shared";
+import type { ContainerConfig, ContainerState, ContextConfig } from "./Types";
 
 /**
  * Represents a single running Docker container bound to a context.
@@ -49,20 +47,22 @@ export class ContainerInstance {
 
     /**
      * Spawn the Docker container and pipe the initial task as JSON via stdin.
-     * Resolves with the task result once the container writes the result file.
+     * Resolves with the container output once the container writes the result file.
      *
      * @param task - The first task to execute in this container.
-     * @returns The result written by the container for this task.
+     * @param sessionId - Optional session ID to resume a previous session.
+     * @returns The output written by the container for this task.
      */
-    async start(task: TaskDefinition): Promise<TaskResult> {
+    async start(task: TaskDefinition, sessionId?: string): Promise<ContainerOutput> {
         this._state = "starting";
 
         await this.ensureDirectories();
 
         const resultPromise = this.waitForResult(task.taskId);
 
-        const payload: ContainerStartPayload = {
+        const params: ContainerParameters = {
             contextId: this.context.contextId,
+            sessionId,
             mcpTools: this.context.mcpTools,
             task,
         };
@@ -70,7 +70,7 @@ export class ContainerInstance {
         const args = this.buildDockerArgs();
         const proc = spawn("docker", args, { stdio: ["pipe", "inherit", "inherit"] });
 
-        proc.stdin.write(`${JSON.stringify(payload)}\n`);
+        proc.stdin.write(`${JSON.stringify(params)}\n`);
         proc.stdin.end();
 
         this.containerId = await this.captureContainerId(proc);
@@ -90,13 +90,14 @@ export class ContainerInstance {
 
     /**
      * Send a follow-up task to the running container via an IPC file.
+     * The container already has the session from startup.
      * Resets the idle timeout and waits for the container to write a result file.
      *
      * @param task - The task to send to the container.
-     * @returns The result written by the container for this task.
+     * @returns The output written by the container for this task.
      * @throws If the container is not in the "running" state.
      */
-    async sendTask(task: TaskDefinition): Promise<TaskResult> {
+    async sendTask(task: TaskDefinition): Promise<ContainerOutput> {
         if (this._state !== "running") {
             throw new Error(`Cannot send task to container in state "${this._state}"`);
         }
@@ -198,9 +199,9 @@ export class ContainerInstance {
      * and Docker volume mounts (especially WSL2).
      *
      * @param taskId - The task ID to watch for.
-     * @returns The parsed TaskResult from the result file.
+     * @returns The parsed ContainerOutput from the result file.
      */
-    private async waitForResult(taskId: string): Promise<TaskResult> {
+    private async waitForResult(taskId: string): Promise<ContainerOutput> {
         const resultPath = join(this.contextDir, "ipc", "tasks", `${taskId}.result.json`);
         const pollIntervalMs = 200;
         const maxWaitMs = this.config.timeoutMs;
@@ -210,7 +211,7 @@ export class ContainerInstance {
             try {
                 await access(resultPath);
                 const content = await readFile(resultPath, "utf-8");
-                return JSON.parse(content) as TaskResult;
+                return JSON.parse(content) as ContainerOutput;
             } catch {
                 await new Promise((r) => setTimeout(r, pollIntervalMs));
             }
