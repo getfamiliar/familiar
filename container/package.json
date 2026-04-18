@@ -1,7 +1,7 @@
 {
   "name": "effective-assistant-runner",
   "version": "0.0.1",
-  "description": "Entrypoint inside the docker container, controlling the claude agent sdk calls inside the container.",
+  "description": "Entrypoint inside the docker container, controlling the claude cli calls inside the container.",
   "main": "index.js",
   "scripts": {
     "build": "tsc",

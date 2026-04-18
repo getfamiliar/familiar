@@ -1,13 +1,28 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import type { ContainerOutput, ContainerParameters } from "effective-assistant-shared";
+import { AgentClient } from "./AgentClient";
+
+const TASKS_DIR = "/workspace/context/ipc/tasks";
+
+/**
+ * Write a ContainerOutput result file to the IPC tasks directory.
+ *
+ * @param taskId - The task ID for the result filename.
+ * @param output - The output payload to write.
+ */
+function writeResult(taskId: string, output: ContainerOutput): void {
+    mkdirSync(TASKS_DIR, { recursive: true });
+    const resultPath = join(TASKS_DIR, `${taskId}.result.json`);
+    writeFileSync(resultPath, JSON.stringify(output), "utf-8");
+    console.error(`Result written to ${resultPath}`);
+}
 
 /**
  * Container entry point. Reads ContainerParameters from /tmp/input.json,
- * executes the task, and writes a ContainerOutput result file.
+ * executes the task via the agent SDK, and writes a ContainerOutput result file.
  */
-function main(): void {
+async function main(): Promise<void> {
     const raw = readFileSync("/tmp/input.json", "utf-8");
     const params: ContainerParameters = JSON.parse(raw);
 
@@ -17,33 +32,35 @@ function main(): void {
         process.exit(1);
     }
 
-    const sessionId = params.sessionId ?? generateSessionId();
-    console.error(`Context: ${params.contextId}, Session: ${sessionId}`);
+    console.error(`Context: ${params.contextId}`);
     console.error(`Processing task ${task.taskId}: ${task.prompt}`);
 
-    const output: ContainerOutput = {
-        taskId: task.taskId,
-        sessionId,
-        output: `Did task ${task.taskId}`,
-    };
+    try {
+        const client = new AgentClient(params.sessionId);
+        const executeResult = await client.execute(task.prompt);
 
-    const tasksDir = "/workspace/context/ipc/tasks";
-    mkdirSync(tasksDir, { recursive: true });
+        console.error(`Session: ${executeResult.sessionId}`);
 
-    const resultPath = join(tasksDir, `${task.taskId}.result.json`);
-    writeFileSync(resultPath, JSON.stringify(output), "utf-8");
+        writeResult(task.taskId, {
+            taskId: task.taskId,
+            sessionId: executeResult.sessionId,
+            output: executeResult.result,
+        });
+    } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        console.error(`Task failed: ${errorMessage}`);
 
-    console.error(`Result written to ${resultPath}`);
+        writeResult(task.taskId, {
+            taskId: task.taskId,
+            sessionId: params.sessionId ?? "",
+            output: { error: errorMessage },
+        });
+
+        process.exit(1);
+    }
 }
 
-/**
- * Generate a placeholder session ID. Will be replaced by the actual
- * Anthropic SDK session ID once integrated.
- *
- * @returns A 16-character hex string.
- */
-function generateSessionId(): string {
-    return randomBytes(8).toString("hex");
-}
-
-main();
+main().catch((err) => {
+    console.error("Fatal:", err);
+    process.exit(1);
+});

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import { join } from "node:path";
 import type {
     ContainerOutput,
@@ -139,31 +140,53 @@ export class ContainerInstance {
 
     /**
      * Build the `docker run` argument list from the config.
-     * Mounts data directories into the container's /workspace/:
-     * - data/global/           → /workspace/global/
-     * - data/context-{id}/     → /workspace/context/
-     * - data/context-{id}/.claude/ → /workspace/.claude/
+     * Mounts:
+     * - data/global/              → /workspace/global/
+     * - data/context-{id}/        → /workspace/context/
+     * - data/context-{id}/.claude → /home/node/.claude  (per-context sessions)
+     * - data/.claude-auth/        → /auth (read-only, shared OAuth credentials)
+     *
+     * The entrypoint symlinks auth files from /auth/ into /home/node/.claude/
+     * so each context has isolated session data but shared authentication.
      *
      * @returns The argument array for child_process.spawn.
      */
     private buildDockerArgs(): string[] {
         const globalDir = join(this.config.dataPath, "global");
+        const authDir = join(this.config.dataPath, ".claude-auth");
         const claudeDir = join(this.contextDir, ".claude");
 
         const args = [
             "run",
             "--rm",
             "-i",
+            ...this.hostGatewayArgs(),
             "-v",
             `${globalDir}:/workspace/global`,
             "-v",
             `${this.contextDir}:/workspace/context`,
             "-v",
-            `${claudeDir}:/workspace/.claude`,
+            `${claudeDir}:/home/node/.claude`,
+            "-v",
+            `${authDir}:/auth:ro`,
             ...(this.config.dockerArgs ?? []),
             this.config.imageName,
         ];
+
         return args;
+    }
+
+    /**
+     * Docker CLI args to ensure host.docker.internal resolves inside the container.
+     * On Linux this isn't built-in and must be added explicitly.
+     *
+     * @returns Extra docker run args, or an empty array on macOS/Windows.
+     */
+    private hostGatewayArgs(): string[] {
+        if (os.platform() === "linux") {
+            return ["--add-host=host.docker.internal:host-gateway"];
+        }
+        return [];
     }
 
     /**
@@ -188,6 +211,7 @@ export class ContainerInstance {
      */
     private async ensureDirectories(): Promise<void> {
         await mkdir(join(this.config.dataPath, "global"), { recursive: true });
+        await mkdir(join(this.config.dataPath, ".claude-auth"), { recursive: true });
         await mkdir(join(this.contextDir, ".claude"), { recursive: true });
         await mkdir(join(this.contextDir, "ipc", "input"), { recursive: true });
         await mkdir(join(this.contextDir, "ipc", "tasks"), { recursive: true });

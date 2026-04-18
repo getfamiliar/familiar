@@ -1,6 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { resolve } from "node:path";
 import { ContainerPool } from "./container-runner/index";
 
 /**
@@ -8,13 +6,13 @@ import { ContainerPool } from "./container-runner/index";
  * and logs the result.
  */
 async function main(): Promise<void> {
-    const dataPath = mkdtempSync(join(tmpdir(), "ea-test-"));
+    const dataPath = resolve(__dirname, "../../data");
     console.log(`Data path: ${dataPath}`);
 
     const pool = new ContainerPool({
         imageName: "effective-agent",
         dataPath,
-        timeoutMs: 30_000,
+        timeoutMs: 60_000,
     });
 
     try {
@@ -28,8 +26,7 @@ async function main(): Promise<void> {
         console.log("Task result:", JSON.stringify(result, null, 4));
     } finally {
         await pool.stopAll();
-        rmSync(dataPath, { recursive: true, force: true });
-        console.log("Cleaned up.");
+        console.log("Done.");
     }
 }
 
