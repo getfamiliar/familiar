@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AUTH_DIR="${SCRIPT_DIR}/data/.claude-auth"
+AUTH_DIR="${SCRIPT_DIR}/../data/.claude-auth"
 
 echo ""
 echo "=== Effective Assistant: Claude Login ==="
