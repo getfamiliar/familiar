@@ -12,4 +12,4 @@ if [ ! -d "${AUTH_DIR}" ]; then
 fi
 
 rm -rf "${AUTH_DIR}"
-echo "Removed ${AUTH_DIR}. Run './eacli login' to re-authenticate."
+echo "Removed ${AUTH_DIR}. Run './cli.sh login' to re-authenticate."

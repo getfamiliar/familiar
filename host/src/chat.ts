@@ -32,8 +32,8 @@ async function parseArgs(argv: readonly string[]): Promise<ChatArgs> {
             contextId = arg.slice("--context-id=".length);
         } else if (arg === "--help" || arg === "-h") {
             console.log(
-                "Usage: eacli chat [--context-id <id>] <prompt>\n" +
-                    "       echo <prompt> | eacli chat [--context-id <id>]",
+                "Usage: cli.sh chat [--context-id <id>] <prompt>\n" +
+                    "       echo <prompt> | cli.sh chat [--context-id <id>]",
             );
             process.exit(0);
         } else {

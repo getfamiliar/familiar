@@ -8,14 +8,14 @@ CLI_DIR="${SCRIPT_DIR}/cli"
 
 usage() {
   cat <<EOF
-Usage: ./eacli <command> [args]
+Usage: ./cli.sh <command> [args]
 
 Commands:
   login                             Authenticate via Claude OAuth (shared across contexts).
   logout                            Remove the shared auth folder.
   chat [--context-id <id>] <text>   Send a chat message to the agent.
 
-Run './eacli <command> --help' for command-specific options where available.
+Run './cli.sh <command> --help' for command-specific options where available.
 EOF
 }
 

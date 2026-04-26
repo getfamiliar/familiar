@@ -1,7 +1,7 @@
 #!/bin/bash
 # Sends a single chat message to the agent in a given context.
-# Usage: ./eacli chat [--context-id <id>] "<prompt>"
-#        echo "<prompt>" | ./eacli chat [--context-id <id>]
+# Usage: ./cli.sh chat [--context-id <id>] "<prompt>"
+#        echo "<prompt>" | ./cli.sh chat [--context-id <id>]
 
 set -e
 
