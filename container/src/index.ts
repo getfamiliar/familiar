@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createWriteStream, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ContainerOutput, ContainerParameters } from "effective-assistant-shared";
 import { AgentClient } from "./AgentClient";
@@ -20,7 +20,9 @@ function writeResult(taskId: string, output: ContainerOutput): void {
 
 /**
  * Container entry point. Reads ContainerParameters from /tmp/input.json,
- * executes the task via the agent SDK, and writes a ContainerOutput result file.
+ * executes the task via the agent SDK, streams each emitted event as a
+ * JSONL line into `<taskId>.log.jsonl`, and writes a ContainerOutput
+ * result file.
  */
 async function main(): Promise<void> {
     const raw = readFileSync("/tmp/input.json", "utf-8");
@@ -35,11 +37,20 @@ async function main(): Promise<void> {
     console.error(`Context: ${params.contextId}`);
     console.error(`Processing task ${task.taskId}: ${task.prompt}`);
 
+    mkdirSync(TASKS_DIR, { recursive: true });
+    const logPath = join(TASKS_DIR, `${task.taskId}.log.jsonl`);
+    const logStream = createWriteStream(logPath, { flags: "a" });
+
     try {
         const client = new AgentClient(params.sessionId);
-        const executeResult = await client.execute(task.prompt);
+        const executeResult = await client.execute(task.prompt, (event) => {
+            logStream.write(`${JSON.stringify(event)}\n`);
+        });
 
         console.error(`Session: ${executeResult.sessionId}`);
+        console.error(
+            `Turns: ${executeResult.summary.numTurns}, cost: $${executeResult.summary.totalCostUsd.toFixed(4)}`,
+        );
 
         writeResult(task.taskId, {
             taskId: task.taskId,
@@ -57,6 +68,8 @@ async function main(): Promise<void> {
         });
 
         process.exit(1);
+    } finally {
+        await new Promise<void>((resolve) => logStream.end(resolve));
     }
 }
 

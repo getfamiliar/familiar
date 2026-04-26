@@ -144,10 +144,12 @@ export class ContainerInstance {
      * - data/global/              → /workspace/global/
      * - data/context-{id}/        → /workspace/context/
      * - data/context-{id}/.claude → /home/node/.claude  (per-context sessions)
-     * - data/.claude-auth/        → /auth (read-only, shared OAuth credentials)
+     * - data/.claude-auth/        → /auth (shared OAuth credentials, read-write)
      *
-     * The entrypoint symlinks auth files from /auth/ into /home/node/.claude/
-     * so each context has isolated session data but shared authentication.
+     * The entrypoint copies auth files from /auth/ into /home/node/.claude/
+     * at startup and writes them back on exit so the CLI's OAuth token
+     * refresh persists across container runs. Mounting read-write is
+     * required for the writeback step.
      *
      * @returns The argument array for child_process.spawn.
      */
@@ -168,7 +170,7 @@ export class ContainerInstance {
             "-v",
             `${claudeDir}:/home/node/.claude`,
             "-v",
-            `${authDir}:/auth:ro`,
+            `${authDir}:/auth`,
             ...(this.config.dockerArgs ?? []),
             this.config.imageName,
         ];
