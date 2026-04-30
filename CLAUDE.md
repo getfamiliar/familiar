@@ -4,9 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Effective-assistant is an AI executive assistant built as a containerized agent. It uses Anthropic's `@anthropic-ai/claude-code` inside a docker container. A host application (in `host/`) spawns such containers and provides them with an initial JSON task description, MCP tools and a shared workspace.
+Effective-assistant is an AI executive assistant built as a containerized agent. It uses Anthropic's `@anthropic-ai/claude-agent-sdk` inside a docker container. A host application (in `host/`) spawns such containers and provides them with an initial JSON task description, MCP tools and a shared workspace.
 
 The system supports multiple **contexts** - a context is a narrowed down task environment. For example, "processing the inbox" is another domain than "summarize community chat groups". Each context comes with its own set of task descriptions and available MCP tools and runs in a separate container instance. All contexts share a common workspace for global statements like the soul, for shared memory and file storage.
+
+## Authentication
+
+Put your Anthropic API key in `.env` at the repo root (see `.env.example`). The host runs a singleton sidecar proxy container (`ea-anthropic-proxy`) that injects the key on every request to `api.anthropic.com`. Agent containers reach the proxy on a private per-context Docker bridge network (`ea-net-{contextId}`); they never see the real key and the proxy is not published to the host.
 
 ## Contexts and the `data/` folder
 
@@ -19,12 +23,13 @@ The `data/` folder is the persistent storage for all contexts, memory, sessions 
 ## Architecture
 
 - **shared/**: TypeScript package (`effective-assistant-shared`) with types used by both host and container. Both sides depend on it via `"file:../shared"` in their package.json. Contains `ContainerParameters` (stdin payload), `ContainerOutput` (result payload), and `TaskDefinition`. Must be built (`npm run build`) before host or container can compile. The Docker build handles this automatically.
-- **host/**: Node.js application that spawns and manages agent containers via `ContainerPool`
-- **container/**: Docker container definition for the agent runtime
-  - Base image: `node:24-slim` with `@anthropic-ai/claude-code` installed globally
-  - `src/`: TypeScript application
-  - Runs as non-root `node` user
-  - Docker build context is the project root (not `container/`), so `shared/` is available during image build
+- **host/**: Node.js application that spawns and manages agent containers via `ContainerPool`. Owns the `AnthropicProxyManager` lifecycle.
+- **container/**: Docker container definition for the agent runtime.
+  - Base image: `node:24-slim` with `@anthropic-ai/claude-agent-sdk` as a regular dependency.
+  - `src/`: TypeScript application using the SDK's `query()` API.
+  - Runs as non-root `node` user.
+  - Docker build context is the project root (not `container/`), so `shared/` is available during image build.
+- **proxy/**: Tiny Node HTTP reverse proxy. Reads `ANTHROPIC_API_KEY` from its env, forwards every request to `api.anthropic.com`, and overwrites the `x-api-key` header on the way through. Built into the `effective-anthropic-proxy` image.
 
 ## Code Style
 

@@ -4,6 +4,5 @@ import type { TaskDefinition } from "./TaskDefinition";
 export interface ContainerParameters {
     readonly contextId: string;
     readonly sessionId?: string;
-    readonly mcpTools?: string[];
     readonly task: TaskDefinition;
 }

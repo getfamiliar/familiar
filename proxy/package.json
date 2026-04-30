@@ -1,21 +1,18 @@
 {
-  "name": "effective-assistant-runner",
+  "name": "effective-assistant-anthropic-proxy",
   "version": "0.0.1",
-  "description": "Entrypoint inside the docker container, driving @anthropic-ai/claude-agent-sdk to execute tasks.",
-  "main": "index.js",
+  "description": "Reverse proxy that injects ANTHROPIC_API_KEY into requests forwarded to api.anthropic.com.",
+  "main": "build/index.js",
   "scripts": {
     "build": "tsc",
     "format": "biome format --write --config-path .. src/",
     "format:check": "biome format --config-path .. src/",
     "lint": "biome lint --config-path .. src/",
-    "check": "biome check --config-path .. src/",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "check": "biome check --config-path .. src/"
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.119",
-    "effective-assistant-shared": "file:../shared",
     "typescript": "^6.0.3"
   },
   "devDependencies": {

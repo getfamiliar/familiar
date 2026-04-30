@@ -11,8 +11,6 @@ usage() {
 Usage: ./cli.sh <command> [args]
 
 Commands:
-  login                             Authenticate via Claude OAuth (shared across contexts).
-  logout                            Remove the shared auth folder.
   chat [--context-id <id>] <text>   Send a chat message to the agent.
 
 Run './cli.sh <command> --help' for command-specific options where available.
@@ -28,12 +26,6 @@ command="$1"
 shift
 
 case "${command}" in
-  login)
-    exec "${CLI_DIR}/login.sh" "$@"
-    ;;
-  logout)
-    exec "${CLI_DIR}/logout.sh" "$@"
-    ;;
   chat)
     exec "${CLI_DIR}/chat.sh" "$@"
     ;;

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { ContainerOutput, TaskDefinition } from "effective-assistant-shared";
+import { AnthropicProxyManager } from "../proxy/AnthropicProxyManager";
 import { ContainerInstance } from "./ContainerInstance";
 import type { ContainerConfig, ContainerState, ContextConfig } from "./Types";
 
@@ -33,6 +34,7 @@ export interface ContainerStatus {
  */
 export class ContainerPool {
     private readonly config: ContainerConfig;
+    private readonly proxyManager = new AnthropicProxyManager();
     private readonly containers = new Map<string, ContainerInstance>();
     private readonly sessions = new Map<string, string>();
 
@@ -134,7 +136,7 @@ export class ContainerPool {
         context: ContextConfig,
         task: TaskDefinition,
     ): Promise<ContainerOutput> {
-        const instance = new ContainerInstance(this.config, context);
+        const instance = new ContainerInstance(this.config, context, this.proxyManager);
 
         instance.onExit = () => {
             this.containers.delete(context.contextId);

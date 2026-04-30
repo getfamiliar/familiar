@@ -84,10 +84,7 @@ async function main(): Promise<void> {
     });
 
     try {
-        const result = await pool.submitTask(
-            { contextId: args.contextId, mcpTools: [] },
-            args.prompt,
-        );
+        const result = await pool.submitTask({ contextId: args.contextId }, args.prompt);
 
         console.log(JSON.stringify(result, null, 4));
     } finally {

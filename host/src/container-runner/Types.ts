@@ -1,7 +1,6 @@
 /** A context defines a task environment — one container runs per context. */
 export interface ContextConfig {
     readonly contextId: string;
-    readonly mcpTools?: string[];
 }
 
 /** Configuration for spawning containers. */

@@ -7,6 +7,11 @@ import type {
     ContainerParameters,
     TaskDefinition,
 } from "effective-assistant-shared";
+import {
+    AnthropicProxyManager,
+    PROXY_BASE_URL,
+    networkNameForContext,
+} from "../proxy/AnthropicProxyManager";
 import type { ContainerConfig, ContainerState, ContextConfig } from "./Types";
 
 /**
@@ -18,14 +23,20 @@ export class ContainerInstance {
 
     private readonly config: ContainerConfig;
     private readonly context: ContextConfig;
+    private readonly proxyManager: AnthropicProxyManager;
     private containerId: string | undefined;
     private _state: ContainerState = "stopped";
     private timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     private _onExit: ((code: number | null) => void) | undefined;
 
-    constructor(config: ContainerConfig, context: ContextConfig) {
+    constructor(
+        config: ContainerConfig,
+        context: ContextConfig,
+        proxyManager: AnthropicProxyManager,
+    ) {
         this.config = config;
         this.context = context;
+        this.proxyManager = proxyManager;
         this.contextId = context.contextId;
     }
 
@@ -58,13 +69,14 @@ export class ContainerInstance {
         this._state = "starting";
 
         await this.ensureDirectories();
+        await this.proxyManager.ensureProxy();
+        await this.proxyManager.attachToContextNetwork(this.contextId);
 
         const resultPromise = this.waitForResult(task.taskId);
 
         const params: ContainerParameters = {
             contextId: this.context.contextId,
             sessionId,
-            mcpTools: this.context.mcpTools,
             task,
         };
 
@@ -140,28 +152,33 @@ export class ContainerInstance {
 
     /**
      * Build the `docker run` argument list from the config.
+     *
      * Mounts:
      * - data/global/              → /workspace/global/
      * - data/context-{id}/        → /workspace/context/
      * - data/context-{id}/.claude → /home/node/.claude  (per-context sessions)
-     * - data/.claude-auth/        → /auth (shared OAuth credentials, read-write)
      *
-     * The entrypoint copies auth files from /auth/ into /home/node/.claude/
-     * at startup and writes them back on exit so the CLI's OAuth token
-     * refresh persists across container runs. Mounting read-write is
-     * required for the writeback step.
+     * Network: joins the per-context bridge `ea-net-{id}` so the agent can
+     * reach the shared `ea-anthropic-proxy` container. The proxy holds the
+     * real ANTHROPIC_API_KEY; the agent only sees the placeholder
+     * `via-proxy` value, which satisfies the SDK's import-time check.
      *
      * @returns The argument array for child_process.spawn.
      */
     private buildDockerArgs(): string[] {
         const globalDir = join(this.config.dataPath, "global");
-        const authDir = join(this.config.dataPath, ".claude-auth");
         const claudeDir = join(this.contextDir, ".claude");
 
         const args = [
             "run",
             "--rm",
             "-i",
+            "--network",
+            networkNameForContext(this.contextId),
+            "-e",
+            `ANTHROPIC_BASE_URL=${PROXY_BASE_URL}`,
+            "-e",
+            "ANTHROPIC_API_KEY=via-proxy",
             ...this.hostGatewayArgs(),
             "-v",
             `${globalDir}:/workspace/global`,
@@ -169,8 +186,6 @@ export class ContainerInstance {
             `${this.contextDir}:/workspace/context`,
             "-v",
             `${claudeDir}:/home/node/.claude`,
-            "-v",
-            `${authDir}:/auth`,
             ...(this.config.dockerArgs ?? []),
             this.config.imageName,
         ];
@@ -213,7 +228,6 @@ export class ContainerInstance {
      */
     private async ensureDirectories(): Promise<void> {
         await mkdir(join(this.config.dataPath, "global"), { recursive: true });
-        await mkdir(join(this.config.dataPath, ".claude-auth"), { recursive: true });
         await mkdir(join(this.contextDir, ".claude"), { recursive: true });
         await mkdir(join(this.contextDir, "ipc", "input"), { recursive: true });
         await mkdir(join(this.contextDir, "ipc", "tasks"), { recursive: true });
