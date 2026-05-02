@@ -1,53 +1,30 @@
 #!/bin/bash
-# Effective Assistant CLI — dispatches to command scripts in cli/.
+# Effective Assistant CLI — single entry point.
+# Loads .env, builds the host package if stale, and dispatches to the
+# citty-based subcommand router in host/src/index.ts.
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLI_DIR="${SCRIPT_DIR}/cli"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOST="${ROOT}/host"
+ENV_FILE="${ROOT}/.env"
 
-usage() {
-  cat <<EOF
-Usage: ./cli.sh <command> [args]
-
-Commands:
-  start              Start the host daemon (foreground; manages proxy + agent container).
-  stop               Stop the host daemon and tear down the agent container.
-  chat <text>        Send a chat message to the running agent.
-  event <topic> ...  Inject an event into the bus-state DB.
-
-Run './cli.sh <command> --help' for command-specific options where available.
-EOF
-}
-
-if [ $# -eq 0 ]; then
-  usage
+if [ ! -f "${ENV_FILE}" ]; then
+  echo "Error: ${ENV_FILE} not found. Copy .env.example to .env and fill it in." >&2
   exit 1
 fi
 
-command="$1"
-shift
+# Load .env into the environment for the Node process.
+# (Node 20.6+ has --env-file natively; we shell-source for portability with older nodes.)
+set -a
+# shellcheck disable=SC1090
+source "${ENV_FILE}"
+set +a
 
-case "${command}" in
-  start)
-    exec "${CLI_DIR}/start.sh" "$@"
-    ;;
-  stop)
-    exec "${CLI_DIR}/stop.sh" "$@"
-    ;;
-  chat)
-    exec "${CLI_DIR}/chat.sh" "$@"
-    ;;
-  event)
-    exec "${CLI_DIR}/event.sh" "$@"
-    ;;
-  -h|--help|help)
-    usage
-    ;;
-  *)
-    echo "Unknown command: ${command}" >&2
-    echo >&2
-    usage >&2
-    exit 1
-    ;;
-esac
+if [ ! -f "${HOST}/build/index.js" ] \
+   || [ "${HOST}/src/index.ts" -nt "${HOST}/build/index.js" ]; then
+  echo "Building host..." >&2
+  (cd "${HOST}" && npm run build >&2)
+fi
+
+exec node "${HOST}/build/index.js" "$@"
