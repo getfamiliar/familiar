@@ -11,7 +11,9 @@ usage() {
 Usage: ./cli.sh <command> [args]
 
 Commands:
-  chat [--context-id <id>] <text>   Send a chat message to the agent.
+  start              Start the host daemon (foreground; manages proxy + agent container).
+  stop               Stop the host daemon and tear down the agent container.
+  chat <text>        Send a chat message to the running agent.
 
 Run './cli.sh <command> --help' for command-specific options where available.
 EOF
@@ -26,6 +28,12 @@ command="$1"
 shift
 
 case "${command}" in
+  start)
+    exec "${CLI_DIR}/start.sh" "$@"
+    ;;
+  stop)
+    exec "${CLI_DIR}/stop.sh" "$@"
+    ;;
   chat)
     exec "${CLI_DIR}/chat.sh" "$@"
     ;;

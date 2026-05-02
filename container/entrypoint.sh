@@ -8,12 +8,5 @@ cd /app && npx tsc --outDir /tmp/build 2>&1 >&2
 ln -s /app/node_modules /tmp/build/node_modules
 chmod -R a-w /tmp/build
 
-echo "Starting agent with input from stdin..."
-
-# Read the input JSON from stdin (with 1s timeout), defaulting to {} if empty
-if read -t 1 -r line; then
-  { echo "$line"; cat; } > /tmp/input.json
-else
-  echo '{}' > /tmp/input.json
-fi
-node /tmp/build/index.js < /tmp/input.json
+echo "Starting agent task loop..."
+exec node /tmp/build/index.js

@@ -324,20 +324,25 @@ When in doubt during implementation:
 - **Auditability over efficiency.** When in doubt, log it. Make every consequential decision inspectable.
 - **One agent container, multiple workers.** Don't isolate subagents in separate containers. Process-level isolation gains nothing here and costs latency and IPC complexity.
 
-## Contexts and the `data/` folder
+## The `data/` folder
 
-The `data/` folder is the persistent storage for all contexts, memory, sessions etc.
+The `data/` folder is the persistent host-side storage. Layout:
+
+- `data/workspace/` — mounted into the agent container as `/workspace`. The assistant's memory and personality live here (SOUL.md, CONTEXT.md, plugin folders, people/, etc.). The container persists the most recent SDK session id to `data/workspace/.last-session` so subsequent chat tasks resume the same conversation.
+- `data/ipc/input/` and `data/ipc/output/` — task IPC. The chat CLI writes `{taskId}.json` to `input/`; the container's TaskLoop drains it, runs the task, and writes `{taskId}.json` to `output/`. The host daemon stays out of this path.
+- `data/.claude/` — mounted into the container as `/home/node/.claude`. Holds the Agent SDK's session store so resume works across container restarts.
+- `data/.daemon.pid` — pidfile written by the daemon and consumed by `cli/stop.sh`.
 
 ## Architecture
 
-- **shared/**: TypeScript package (`effective-assistant-shared`) with types used by both host and container. Both sides depend on it via `"file:../shared"` in their package.json. Contains `ContainerParameters` (stdin payload), `ContainerOutput` (result payload), and `TaskDefinition`. Must be built (`npm run build`) before host or container can compile. The Docker build handles this automatically.
-- **host/**: Node.js application that spawns and manages agent containers via `ContainerPool`. Owns the `AnthropicProxyManager` lifecycle.
-- **container/**: Docker container definition for the agent runtime.
+- **shared/**: TypeScript package (`effective-assistant-shared`) with types used by both host and container. Both sides depend on it via `"file:../shared"` in their package.json. Contains `ContainerParameters` (per-task IPC input file), `ContainerOutput` (per-task result file), and `TaskDefinition`. Must be built (`npm run build`) before host or container can compile. The Docker build handles this automatically.
+- **host/**: Long-running Node.js daemon (entry: `host/src/daemon.ts`, started via `cli/start.sh`). Manages exactly two Docker containers: the singleton `effective-anthropic-proxy` and the singleton long-running agent container `ea-agent`. Both join the shared bridge network `ea-net`. The daemon does not participate in per-task IPC — chat clients talk to the agent directly via `data/ipc/`.
+- **container/**: Docker container definition for the agent runtime. Long-running; built once, started by the host daemon and reused across all tasks.
   - Base image: `node:24-slim` with `@anthropic-ai/claude-agent-sdk` as a regular dependency.
-  - `src/`: TypeScript application using the SDK's `query()` API.
+  - `src/TaskLoop.ts` polls `/ipc/input/` for `{taskId}.json` files, processes them sequentially, and writes results to `/ipc/output/`. Sequential because the supervisor model has only one concurrent slot anyway.
   - Runs as non-root `node` user.
   - Docker build context is the project root (not `container/`), so `shared/` is available during image build.
-- **proxy/**: Tiny Node HTTP reverse proxy. Reads `ANTHROPIC_API_KEY` from its env, forwards every request to `api.anthropic.com`, and overwrites the `x-api-key` header on the way through. Built into the `effective-anthropic-proxy` image.
+- **proxy/**: Tiny Node HTTP reverse proxy. Reads `ANTHROPIC_API_KEY` from its env, forwards every request to `api.anthropic.com`, and overwrites the `x-api-key` header on the way through. Built into the `effective-anthropic-proxy` image. Stays as its own container for credential isolation; the agent container only sees the placeholder `ANTHROPIC_API_KEY=via-proxy`.
 
 ## Code Style
 

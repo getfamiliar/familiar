@@ -3,16 +3,10 @@ import { spawn } from "node:child_process";
 const PROXY_CONTAINER_NAME = "ea-anthropic-proxy";
 const PROXY_IMAGE_NAME = "effective-anthropic-proxy:latest";
 const PROXY_PORT = 8788;
+const SHARED_NETWORK = "ea-net";
 
-/**
- * Build the Docker network name for a given context.
- *
- * @param contextId - The context identifier.
- * @returns The bridge network name (e.g. `ea-net-inbox`).
- */
-export function networkNameForContext(contextId: string): string {
-    return `ea-net-${contextId}`;
-}
+/** Docker network shared by the proxy and the agent container. */
+export const SHARED_NETWORK_NAME = SHARED_NETWORK;
 
 /** The DNS name agent containers use to reach the proxy. */
 export const PROXY_HOSTNAME = PROXY_CONTAINER_NAME;
@@ -24,21 +18,36 @@ export const PROXY_PORT_NUMBER = PROXY_PORT;
 export const PROXY_BASE_URL = `http://${PROXY_HOSTNAME}:${PROXY_PORT}`;
 
 /**
- * Manages the lifecycle of the shared Anthropic reverse proxy container
- * and the per-context Docker bridge networks that agent containers join.
- *
- * The proxy is a singleton: started on first need, reused across every
- * context. It holds the real `ANTHROPIC_API_KEY`. Agent containers reach
- * it only via the per-context network, never via a published host port.
+ * Manages the lifecycle of the singleton Anthropic reverse-proxy container
+ * and the shared `ea-net` bridge network that both the proxy and the agent
+ * container join. The proxy holds the real `ANTHROPIC_API_KEY`; the agent
+ * container only ever sees the placeholder `via-proxy` value, satisfying
+ * the SDK's import-time check without granting real credentials.
  */
 export class AnthropicProxyManager {
     private proxyEnsured = false;
-    private readonly attachedNetworks = new Set<string>();
+    private networkEnsured = false;
 
     /**
-     * Ensure the singleton proxy container is running. Idempotent: a no-op
-     * after the first successful call. Reads `ANTHROPIC_API_KEY` from the
-     * host process environment and passes it to the proxy container.
+     * Ensure the shared bridge network exists.
+     */
+    async ensureNetwork(): Promise<string> {
+        if (this.networkEnsured) {
+            return SHARED_NETWORK;
+        }
+
+        if (!(await this.networkExists(SHARED_NETWORK))) {
+            await this.dockerExec(["network", "create", SHARED_NETWORK]);
+        }
+
+        this.networkEnsured = true;
+        return SHARED_NETWORK;
+    }
+
+    /**
+     * Ensure the singleton proxy container is running and attached to the
+     * shared network. Idempotent. Reads `ANTHROPIC_API_KEY` from the host
+     * process environment and passes it to the proxy container.
      *
      * @throws If `ANTHROPIC_API_KEY` is not set on the host.
      */
@@ -54,12 +63,13 @@ export class AnthropicProxyManager {
             );
         }
 
+        await this.ensureNetwork();
+
         if (await this.containerIsRunning(PROXY_CONTAINER_NAME)) {
             this.proxyEnsured = true;
             return;
         }
 
-        // Remove any stopped container with the same name so `run --name` can succeed.
         await this.dockerExec(["rm", "-f", PROXY_CONTAINER_NAME], { allowFailure: true });
 
         await this.dockerExec([
@@ -68,6 +78,8 @@ export class AnthropicProxyManager {
             "-d",
             "--name",
             PROXY_CONTAINER_NAME,
+            "--network",
+            SHARED_NETWORK,
             "-e",
             `ANTHROPIC_API_KEY=${apiKey}`,
             "-e",
@@ -79,47 +91,16 @@ export class AnthropicProxyManager {
     }
 
     /**
-     * Ensure a per-context bridge network exists and the proxy container is
-     * attached to it. Idempotent: subsequent calls for the same context are
-     * no-ops within a single host process lifetime.
-     *
-     * @param contextId - The context identifier.
-     * @returns The network name that agent containers should join.
-     */
-    async attachToContextNetwork(contextId: string): Promise<string> {
-        const networkName = networkNameForContext(contextId);
-
-        if (this.attachedNetworks.has(networkName)) {
-            return networkName;
-        }
-
-        if (!(await this.networkExists(networkName))) {
-            await this.dockerExec(["network", "create", networkName]);
-        }
-
-        if (!(await this.proxyAttachedTo(networkName))) {
-            await this.dockerExec(["network", "connect", networkName, PROXY_CONTAINER_NAME]);
-        }
-
-        this.attachedNetworks.add(networkName);
-        return networkName;
-    }
-
-    /**
      * Stop the proxy container. Used by tests and graceful shutdown.
      * In production the proxy can outlive any single host invocation.
      */
     async teardown(): Promise<void> {
         await this.dockerExec(["rm", "-f", PROXY_CONTAINER_NAME], { allowFailure: true });
         this.proxyEnsured = false;
-        this.attachedNetworks.clear();
     }
 
     /**
      * Check whether a container with the given name is currently running.
-     *
-     * @param name - The container name.
-     * @returns True if the container exists and is running.
      */
     private async containerIsRunning(name: string): Promise<boolean> {
         const { stdout, code } = await this.dockerCapture([
@@ -132,44 +113,14 @@ export class AnthropicProxyManager {
         return code === 0 && stdout.trim() === "true";
     }
 
-    /**
-     * Check whether a Docker network with the given name already exists.
-     *
-     * @param name - The network name.
-     */
+    /** Check whether a Docker network with the given name already exists. */
     private async networkExists(name: string): Promise<boolean> {
         const { code } = await this.dockerCapture(["network", "inspect", name]);
         return code === 0;
     }
 
     /**
-     * Check whether the proxy container is already attached to a given
-     * network. Avoids `network connect` errors on repeat invocations.
-     *
-     * @param network - The network name to check.
-     */
-    private async proxyAttachedTo(network: string): Promise<boolean> {
-        const { stdout, code } = await this.dockerCapture([
-            "network",
-            "inspect",
-            "-f",
-            "{{range $k, $v := .Containers}}{{$v.Name}}\n{{end}}",
-            network,
-        ]);
-        if (code !== 0) {
-            return false;
-        }
-        return stdout
-            .split("\n")
-            .map((line) => line.trim())
-            .some((name) => name === PROXY_CONTAINER_NAME);
-    }
-
-    /**
      * Run a docker CLI command and discard output.
-     *
-     * @param args - Arguments to pass to `docker`.
-     * @param options.allowFailure - If true, non-zero exit codes resolve instead of throwing.
      */
     private dockerExec(
         args: readonly string[],
@@ -191,9 +142,6 @@ export class AnthropicProxyManager {
     /**
      * Run a docker CLI command and capture stdout. Never throws on non-zero
      * exit; callers inspect the returned `code`.
-     *
-     * @param args - Arguments to pass to `docker`.
-     * @returns The exit code and captured stdout.
      */
     private dockerCapture(
         args: readonly string[],

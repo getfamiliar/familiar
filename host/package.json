@@ -2,7 +2,7 @@
   "name": "effective-assistant-host",
   "version": "0.0.1",
   "description": "Host application for the effective assistant.",
-  "main": "index.js",
+  "main": "build/daemon.js",
   "scripts": {
     "build": "tsc",
     "format": "biome format --write --config-path .. src/",

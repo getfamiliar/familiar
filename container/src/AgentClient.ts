@@ -1,6 +1,6 @@
 import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
-const WORKSPACE_CONTEXT = "/workspace/context";
+const WORKSPACE_DIR = "/workspace";
 
 /** Callback invoked for each event emitted by the SDK. */
 export type StreamEventHandler = (event: SDKMessage) => void;
@@ -49,7 +49,7 @@ export class AgentClient {
         const iterator = query({
             prompt,
             options: {
-                cwd: WORKSPACE_CONTEXT,
+                cwd: WORKSPACE_DIR,
                 permissionMode: "bypassPermissions",
                 allowDangerouslySkipPermissions: true,
                 pathToClaudeCodeExecutable: "/usr/local/bin/claude",

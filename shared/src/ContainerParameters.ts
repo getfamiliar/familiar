@@ -1,8 +1,10 @@
 import type { TaskDefinition } from "./TaskDefinition";
 
-/** The JSON payload piped to a container's stdin on start. */
+/**
+ * Per-task input file written by the host (or the chat CLI) and consumed
+ * by the agent container's task loop. Lives at `/ipc/input/{taskId}.json`.
+ */
 export interface ContainerParameters {
-    readonly contextId: string;
     readonly sessionId?: string;
     readonly task: TaskDefinition;
 }
