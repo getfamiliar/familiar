@@ -1,7 +1,7 @@
 {
   "name": "effective-assistant-runner",
   "version": "0.0.1",
-  "description": "Entrypoint inside the docker container, driving @anthropic-ai/claude-agent-sdk to execute tasks.",
+  "description": "Long-running agent container that consumes events from the bus-state postgres.",
   "main": "index.js",
   "scripts": {
     "build": "tsc",
@@ -14,7 +14,6 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.119",
     "effective-assistant-shared": "file:../shared",
     "typescript": "^6.0.3"
   },

@@ -1,11 +1,9 @@
 import {
     SHARED_NETWORK_NAME,
     dockerExec,
-    hostGatewayArgs,
     removeContainer,
     stopContainer,
 } from "../DockerTools";
-import { PROXY_BASE_URL } from "../proxy/AnthropicProxyManager";
 
 const CONTAINER_NAME = "ea-agent";
 
@@ -13,7 +11,7 @@ const CONTAINER_NAME = "ea-agent";
 export interface AgentContainerConfig {
     /** Docker image tag to run (e.g. `effective-agent`). */
     readonly imageName: string;
-    /** Absolute host path to the data directory; mounted as workspace + ipc. */
+    /** Absolute host path to the data directory; mounted as workspace. */
     readonly dataPath: string;
     /** Postgres password forwarded to the agent as `POSTGRES_PASSWORD`. */
     readonly postgresPassword: string;
@@ -23,16 +21,11 @@ export interface AgentContainerConfig {
  * Manages the single long-running agent container (`ea-agent`).
  *
  * Mounts:
- *   - {dataPath}/workspace → /workspace         (assistant memory)
- *   - {dataPath}/.claude   → /home/node/.claude (SDK session store, persists across restarts)
+ *   - {dataPath}/workspace → /workspace (assistant memory)
  *
- * Container joins `ea-net` so it can reach the `ea-anthropic-proxy`
- * container by hostname. The agent never sees the real
- * `ANTHROPIC_API_KEY` — it gets the placeholder `via-proxy`, satisfying
- * the SDK while routing all calls through the proxy.
- *
- * All host↔container communication flows through postgres events; there
- * is no file-based IPC channel.
+ * Container joins `ea-net` so it can reach `ea-postgres` by hostname.
+ * All host↔container communication flows through the postgres `events`
+ * table — no file-based IPC, no host-side reverse proxy.
  */
 export class AgentContainer {
     private readonly config: AgentContainerConfig;
@@ -55,7 +48,6 @@ export class AgentContainer {
         await removeContainer(CONTAINER_NAME);
 
         const workspaceDir = `${this.config.dataPath}/workspace`;
-        const claudeDir = `${this.config.dataPath}/.claude`;
 
         const args = [
             "run",
@@ -65,16 +57,9 @@ export class AgentContainer {
             "--network",
             SHARED_NETWORK_NAME,
             "-e",
-            `ANTHROPIC_BASE_URL=${PROXY_BASE_URL}`,
-            "-e",
-            "ANTHROPIC_API_KEY=via-proxy",
-            "-e",
             `POSTGRES_PASSWORD=${this.config.postgresPassword}`,
-            ...hostGatewayArgs(),
             "-v",
             `${workspaceDir}:/workspace`,
-            "-v",
-            `${claudeDir}:/home/node/.claude`,
             this.config.imageName,
         ];
 
@@ -84,8 +69,8 @@ export class AgentContainer {
 
     /**
      * Stop and remove the agent container. SIGTERM-equivalent; the
-     * container's TaskLoop catches the signal and drains any in-flight
-     * task before exiting. Defaults to docker's 10 s grace period.
+     * container's worker loops catch the signal and drain any in-flight
+     * work before exiting. Defaults to docker's 10 s grace period.
      */
     async stop(): Promise<void> {
         if (!this.running) {

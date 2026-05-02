@@ -329,7 +329,6 @@ When in doubt during implementation:
 The `data/` folder is the persistent host-side storage. Layout:
 
 - `data/workspace/` — mounted into the agent container as `/workspace`. The assistant's memory and personality live here (SOUL.md, CONTEXT.md, plugin folders, people/, etc.).
-- `data/.claude/` — mounted into the container as `/home/node/.claude`. Holds the Agent SDK's session store so resume works across container restarts.
 - `data/postgres/` — bind-mounted into `ea-postgres` as `/var/lib/postgresql/data`. Cluster state for the bus-state DB. Files are owned by the postgres uid (70 in alpine), so `rm -rf data/postgres` from the host needs `sudo`.
 - `data/.daemon.pid` — pidfile written by the daemon and consumed by `./cli.sh stop`.
 - `data/.postgres-port` — chosen loopback host port that `ea-postgres` is published on (e.g. `5432`, or the next free port if 5432 was taken at startup). Read by anything host-side that wants to `psql` or use a `pg` client.
@@ -337,14 +336,13 @@ The `data/` folder is the persistent host-side storage. Layout:
 ## Architecture
 
 - **shared/**: TypeScript package (`effective-assistant-shared`) used by both host and container. Both sides depend on it via `"file:../shared"` in their package.json. Contains the `EventBus` / `PostgresConnection` clients, the `events` schema, and the related types. Must be built (`npm run build`) before host or container can compile. The Docker build handles this automatically.
-- **host/**: Single Node.js CLI entry at `host/src/index.ts` using [citty](https://github.com/unjs/citty) for subcommand dispatch. Subcommands live in `host/src/commands/` (`Start`, `Stop`, `Event`); shared paths and env access live in `host/src/Bootstrap.ts`. Invoked through one root wrapper, `./cli.sh <subcommand>`, which loads `.env` and rebuilds the host package if stale. The `start` subcommand runs as a long-running daemon that manages three singleton Docker containers: the bus-state postgres `ea-postgres`, the anthropic reverse proxy `ea-anthropic-proxy`, and the agent runtime `ea-agent`. All three join the shared bridge network `ea-net`. Postgres is published on `127.0.0.1:<port>:5432` only (port chosen at startup; written to `data/.postgres-port`). All host↔container communication flows through the postgres `events` table — there is no file-based IPC.
+- **host/**: Single Node.js CLI entry at `host/src/index.ts` using [citty](https://github.com/unjs/citty) for subcommand dispatch. Subcommands live in `host/src/commands/` (`Start`, `Stop`, `Event`); shared paths and env access live in `host/src/Bootstrap.ts`. Invoked through one root wrapper, `./cli.sh <subcommand>`, which loads `.env` and rebuilds the host package if stale. The `start` subcommand runs as a long-running daemon that manages two singleton Docker containers: the bus-state postgres `ea-postgres` and the agent runtime `ea-agent`. Both join the shared bridge network `ea-net`. Postgres is published on `127.0.0.1:<port>:5432` only (port chosen at startup; written to `data/.postgres-port`). All host↔container communication flows through the postgres `events` table — there is no file-based IPC.
 - **host/src/db/**: Postgres lifecycle. `PostgresContainer` runs `postgres:16-alpine`, picks a free loopback port, joins `ea-net`, and waits for `pg_isready`. Hardcoded dev credentials: `POSTGRES_USER=ea`, `POSTGRES_PASSWORD=ea`, `POSTGRES_DB=ea`. Container code reaches the DB at `ea-postgres:5432`; host code at `127.0.0.1:<port>` (port from `data/.postgres-port`).
 - **container/**: Docker container definition for the agent runtime. Long-running; built once, started by the host daemon and reused across all tasks.
-  - Base image: `node:24-slim` with `@anthropic-ai/claude-agent-sdk` available.
-  - `src/EventWatcher.ts` subscribes to the bus-state events table via `EventBus.waitForNext` and processes incoming events. Sequential — the supervisor model has only one concurrent slot anyway.
+  - Base image: `node:24-slim`. Currently no LLM SDK is installed — Featherless integration is the next step.
+  - `src/TriageWatcher.ts` and `src/SupervisorWatcher.ts` consume events from the bus via `EventBus.waitAndClaim` (atomic `pending → triaging` and `supervisor-ready → supervising` transitions). Both run concurrently in the same process.
   - Runs as non-root `node` user.
   - Docker build context is the project root (not `container/`), so `shared/` is available during image build.
-- **proxy/**: Tiny Node HTTP reverse proxy. Reads `ANTHROPIC_API_KEY` from its env, forwards every request to `api.anthropic.com`, and overwrites the `x-api-key` header on the way through. Built into the `effective-anthropic-proxy` image. Stays as its own container for credential isolation; the agent container only sees the placeholder `ANTHROPIC_API_KEY=via-proxy`.
 
 ## Code Style
 

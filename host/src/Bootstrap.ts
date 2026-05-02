@@ -14,7 +14,6 @@ export interface Bootstrap {
     readonly pidFile: string;
     readonly postgresPortFile: string;
     readonly workspaceDir: string;
-    readonly claudeDir: string;
     readonly postgresDataDir: string;
     /**
      * Read `process.env[name]` or throw a clear actionable error.
@@ -37,7 +36,6 @@ export function bootstrap(): Bootstrap {
         pidFile: `${dataDir}/.daemon.pid`,
         postgresPortFile: `${dataDir}/.postgres-port`,
         workspaceDir: `${dataDir}/workspace`,
-        claudeDir: `${dataDir}/.claude`,
         postgresDataDir: `${dataDir}/postgres`,
         requireEnv,
     });

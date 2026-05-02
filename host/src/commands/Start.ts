@@ -5,15 +5,13 @@ import { bootstrap } from "../Bootstrap";
 import { AgentContainer } from "../container-runner/AgentContainer";
 import { PostgresContainer } from "../db/PostgresContainer";
 import { SHARED_NETWORK_NAME, ensureNetwork } from "../DockerTools";
-import { AnthropicProxyManager } from "../proxy/AnthropicProxyManager";
 
 /**
- * `ea start` — bring up the daemon: postgres, schema, anthropic proxy,
- * agent container, then idle waiting for SIGTERM/SIGINT to drain
- * everything cleanly.
+ * `ea start` — bring up the daemon: postgres, schema, agent container,
+ * then idle waiting for SIGTERM/SIGINT to drain everything cleanly.
  *
- * Start order:   ea-net → postgres → schema → proxy → agent
- * Stop order:    agent  → proxy    → postgres
+ * Start order:   ea-net → postgres → schema → agent
+ * Stop order:    agent  → postgres
  */
 export const startCommand = defineCommand({
     meta: {
@@ -27,7 +25,6 @@ export const startCommand = defineCommand({
         ensureDirs(boot);
         writePidFile(boot.pidFile);
 
-        const proxy = new AnthropicProxyManager();
         const postgres = new PostgresContainer({
             dataPath: boot.dataDir,
             portFilePath: boot.postgresPortFile,
@@ -54,9 +51,6 @@ export const startCommand = defineCommand({
             await schemaConnection.close();
         }
 
-        await proxy.ensureProxy();
-        console.error("anthropic-proxy ready");
-
         await container.start();
         console.error(
             `agent container started: ${container.isRunning ? "ea-agent" : "(failed)"}`,
@@ -71,9 +65,6 @@ export const startCommand = defineCommand({
             console.error(`Received ${signal}, draining…`);
 
             await safeStop("agent container", () => container.stop());
-            // Proxy is intentionally left running across daemon restarts for
-            // cheap warm-up; uncomment if/when that changes.
-            // await safeStop("anthropic-proxy", () => proxy.teardown());
             await safeStop("postgres", () => postgres.stop());
 
             removePidFile(boot.pidFile);
@@ -113,7 +104,6 @@ async function safeStop(label: string, stop: () => Promise<void>): Promise<void>
 /** Ensure all directories the daemon and agent container expect are present. */
 function ensureDirs(boot: ReturnType<typeof bootstrap>): void {
     mkdirSync(boot.workspaceDir, { recursive: true });
-    mkdirSync(boot.claudeDir, { recursive: true });
 }
 
 /** Write the current pid into the well-known pidfile for the stop command. */

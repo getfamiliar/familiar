@@ -8,10 +8,6 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install claude-code globally — the agent SDK still expects the binary to be
-# available in this image.
-RUN npm install -g @anthropic-ai/claude-code
-
 # Copy shared types package and build it
 COPY shared/ /shared
 RUN cd /shared && npm install && npm run build
@@ -33,17 +29,17 @@ RUN chmod +x entrypoint.sh
 # Copy source code. This is only used if the sourcecode is not mounted at runtime
 COPY container/src/ ./src
 
-# Create workspace directories
+# Create workspace directory
 RUN mkdir -p /workspace
 
 # Set ownership to node user (non-root) for writable directories
 RUN chown -R node:node /workspace
 
-# Switch to non-root user (the agent SDK requires running as non-root with bypassPermissions)
+# Run as non-root
 USER node
 
-# Set working directory to group workspace
+# Set working directory to workspace
 WORKDIR /workspace/
 
-# Entry point reads JSON from stdin, outputs JSON to stdout
+# Long-running entry: drains the events table via worker loops.
 ENTRYPOINT ["/app/entrypoint.sh"]
