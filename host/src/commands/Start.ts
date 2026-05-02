@@ -4,6 +4,7 @@ import { EventBus } from "effective-assistant-shared";
 import { bootstrap } from "../Bootstrap";
 import { AgentContainer } from "../container-runner/AgentContainer";
 import { PostgresContainer } from "../db/PostgresContainer";
+import { SHARED_NETWORK_NAME, ensureNetwork } from "../DockerTools";
 import { AnthropicProxyManager } from "../proxy/AnthropicProxyManager";
 
 /**
@@ -38,8 +39,8 @@ export const startCommand = defineCommand({
             postgresPassword,
         });
 
-        await proxy.ensureNetwork();
-        console.error("ensured network ea-net");
+        await ensureNetwork(SHARED_NETWORK_NAME);
+        console.error(`ensured network ${SHARED_NETWORK_NAME}`);
 
         const postgresPort = await postgres.start();
         console.error(`postgres ready on 127.0.0.1:${postgresPort}`);

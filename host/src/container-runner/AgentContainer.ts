@@ -1,6 +1,11 @@
-import { spawn } from "node:child_process";
-import os from "node:os";
-import { PROXY_BASE_URL, SHARED_NETWORK_NAME } from "../proxy/AnthropicProxyManager";
+import {
+    SHARED_NETWORK_NAME,
+    dockerExec,
+    hostGatewayArgs,
+    removeContainer,
+    stopContainer,
+} from "../DockerTools";
+import { PROXY_BASE_URL } from "../proxy/AnthropicProxyManager";
 
 const CONTAINER_NAME = "ea-agent";
 
@@ -45,7 +50,7 @@ export class AgentContainer {
      * with the same name first so this is safe to call after a crash.
      */
     async start(): Promise<void> {
-        await this.dockerExec(["rm", "-f", CONTAINER_NAME], { allowFailure: true });
+        await removeContainer(CONTAINER_NAME);
 
         const workspaceDir = `${this.config.dataPath}/workspace`;
         const ipcDir = `${this.config.dataPath}/ipc`;
@@ -64,7 +69,7 @@ export class AgentContainer {
             "ANTHROPIC_API_KEY=via-proxy",
             "-e",
             `POSTGRES_PASSWORD=${this.config.postgresPassword}`,
-            ...this.hostGatewayArgs(),
+            ...hostGatewayArgs(),
             "-v",
             `${workspaceDir}:/workspace`,
             "-v",
@@ -74,7 +79,7 @@ export class AgentContainer {
             this.config.imageName,
         ];
 
-        await this.dockerExec(args);
+        await dockerExec(args);
         this.running = true;
     }
 
@@ -88,48 +93,9 @@ export class AgentContainer {
             return;
         }
 
-        try {
-            await this.dockerExec(["stop", CONTAINER_NAME]);
-        } catch {
-            // already gone
-        }
-        try {
-            await this.dockerExec(["rm", "-f", CONTAINER_NAME]);
-        } catch {
-            // already removed
-        }
+        await stopContainer(CONTAINER_NAME);
+        await removeContainer(CONTAINER_NAME);
 
         this.running = false;
-    }
-
-    /**
-     * On Linux, host.docker.internal isn't built-in and must be mapped to
-     * the host gateway explicitly. macOS and Windows resolve it natively.
-     */
-    private hostGatewayArgs(): string[] {
-        if (os.platform() === "linux") {
-            return ["--add-host=host.docker.internal:host-gateway"];
-        }
-        return [];
-    }
-
-    /**
-     * Run a docker CLI command and discard output.
-     */
-    private dockerExec(
-        args: readonly string[],
-        options: { allowFailure?: boolean } = {},
-    ): Promise<void> {
-        return new Promise((resolve, reject) => {
-            const proc = spawn("docker", [...args], { stdio: "ignore" });
-            proc.on("close", (code) => {
-                if (code === 0 || options.allowFailure) {
-                    resolve();
-                } else {
-                    reject(new Error(`docker ${args.join(" ")} exited with code ${code}`));
-                }
-            });
-            proc.on("error", reject);
-        });
     }
 }

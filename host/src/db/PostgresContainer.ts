@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import {
     POSTGRES_DB,
@@ -7,7 +6,13 @@ import {
     POSTGRES_USER,
     PostgresConnection,
 } from "effective-assistant-shared";
-import { SHARED_NETWORK_NAME } from "../proxy/AnthropicProxyManager";
+import {
+    SHARED_NETWORK_NAME,
+    dockerCapture,
+    dockerExec,
+    removeContainer,
+    stopContainer,
+} from "../DockerTools";
 import { pickFreeLoopbackPort } from "./PortTools";
 
 const IMAGE_NAME = "postgres:16-alpine";
@@ -109,7 +114,7 @@ export class PostgresContainer {
      * @returns The host port that postgres is reachable on (`127.0.0.1:<port>`).
      */
     async start(): Promise<number> {
-        await this.dockerExec(["rm", "-f", POSTGRES_HOST], { allowFailure: true });
+        await removeContainer(POSTGRES_HOST);
 
         const dataDir = `${this.config.dataPath}/postgres`;
         mkdirSync(dataDir, { recursive: true });
@@ -117,7 +122,7 @@ export class PostgresContainer {
         const preferredPort = this.config.preferredHostPort ?? 5432;
         const hostPort = await pickFreeLoopbackPort(preferredPort);
 
-        await this.dockerExec([
+        await dockerExec([
             "run",
             "-d",
             "--name",
@@ -153,16 +158,8 @@ export class PostgresContainer {
             return;
         }
 
-        try {
-            await this.dockerExec(["stop", POSTGRES_HOST]);
-        } catch {
-            // already gone
-        }
-        try {
-            await this.dockerExec(["rm", "-f", POSTGRES_HOST]);
-        } catch {
-            // already removed
-        }
+        await stopContainer(POSTGRES_HOST);
+        await removeContainer(POSTGRES_HOST);
 
         try {
             unlinkSync(this.config.portFilePath);
@@ -183,7 +180,7 @@ export class PostgresContainer {
     private async waitForReady(timeoutS: number): Promise<void> {
         const deadline = Date.now() + timeoutS * 1000;
         while (Date.now() < deadline) {
-            const { code } = await this.dockerCapture([
+            const { code } = await dockerCapture([
                 "exec",
                 POSTGRES_HOST,
                 "pg_isready",
@@ -195,47 +192,13 @@ export class PostgresContainer {
             if (code === 0) {
                 return;
             }
-            await this.sleep(250);
+            await sleep(250);
         }
         throw new Error(`postgres not ready within ${timeoutS}s`);
     }
+}
 
-    /** Promise-based setTimeout. */
-    private sleep(ms: number): Promise<void> {
-        return new Promise((resolve) => setTimeout(resolve, ms));
-    }
-
-    /** Run a docker CLI command and discard output. */
-    private dockerExec(
-        args: readonly string[],
-        options: { allowFailure?: boolean } = {},
-    ): Promise<void> {
-        return new Promise((resolve, reject) => {
-            const proc = spawn("docker", [...args], { stdio: "ignore" });
-            proc.on("close", (code) => {
-                if (code === 0 || options.allowFailure) {
-                    resolve();
-                } else {
-                    reject(new Error(`docker ${args.join(" ")} exited with code ${code}`));
-                }
-            });
-            proc.on("error", reject);
-        });
-    }
-
-    /**
-     * Run a docker CLI command and capture its exit code (stdout discarded).
-     * Never throws on non-zero exit; callers inspect `code`.
-     */
-    private dockerCapture(
-        args: readonly string[],
-    ): Promise<{ readonly code: number | null }> {
-        return new Promise((resolve, reject) => {
-            const proc = spawn("docker", [...args], { stdio: "ignore" });
-            proc.on("close", (code) => {
-                resolve({ code });
-            });
-            proc.on("error", reject);
-        });
-    }
+/** Promise-based setTimeout. */
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
