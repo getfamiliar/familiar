@@ -1,4 +1,4 @@
-import type { EventFilter, EventPatch, EventRow, NewEvent } from "./Event";
+import type { EventFilter, EventPatch, EventRow, EventState, NewEvent } from "./Event";
 import type { NotificationHandler, PostgresConnection } from "./PostgresConnection";
 import { EVENTS_NOTIFY_CHANNEL, EVENTS_SCHEMA_SQL } from "./Schema";
 
@@ -186,13 +186,21 @@ export class EventBus {
     }
 }
 
-/** Convert a snake_case raw row into the camelCase {@link EventRow}. */
+/**
+ * Convert a snake_case raw row into the camelCase {@link EventRow}.
+ *
+ * The DB column is `text` with no CHECK constraint, so `raw.state` is
+ * trusted to be a known {@link EventState} (we control every writer).
+ * Pre-existing rows from before the union was introduced may surface
+ * with stale labels like `"processed"`; truncate `events` if that
+ * matters.
+ */
 function mapRow(raw: RawEventRow): EventRow {
     return {
         id: raw.id,
         topic: raw.topic,
         priority: raw.priority,
-        state: raw.state,
+        state: raw.state as EventState,
         payload: raw.payload,
         idempotencyKey: raw.idempotency_key,
         causationChain: raw.causation_chain ?? [],

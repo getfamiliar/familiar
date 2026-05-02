@@ -9,16 +9,19 @@ import {
 } from "effective-assistant-shared";
 
 /**
- * Long-running consumer of the bus-state events table inside the agent
- * container. Subscribes to a single topic for the verification scenario:
- * receives an event, prints it, and marks it `processed`. This is the
- * skeleton the future triage worker will hang off of.
+ * Iterator-style consumer of the bus-state events table inside the agent
+ * container. Owns a {@link PostgresConnection} and a topic-filtered
+ * {@link EventBus}; exposes `nextEvent()` / `markX()` / `close()` so the
+ * caller controls the loop and state-transition policy.
+ *
+ * Sequential by design: there's only one supervisor slot upstream, and
+ * the bus does not atomically claim, so callers should not run multiple
+ * concurrent `nextEvent()` waits on the same watcher.
  */
 export class EventWatcher {
     private readonly connection: PostgresConnection;
     private readonly bus: EventBus;
     private readonly topic: string;
-    private readonly abortController = new AbortController();
 
     constructor(topic: string, password: string) {
         this.topic = topic;
@@ -33,51 +36,43 @@ export class EventWatcher {
     }
 
     /**
-     * Run the watch loop until {@link requestStop} is called. Each
-     * matching event is logged and then transitioned to `processed`.
+     * Wait for and return the next pending event matching this watcher's
+     * topic. Resolves to `null` when `signal` aborts, so callers can
+     * write `while ((event = await w.nextEvent(signal)) !== null)`.
+     *
+     * @throws Other errors from the bus surface unchanged.
      */
-    async run(): Promise<void> {
-        console.error(`Event watcher subscribed to topic "${this.topic}"`);
-        while (!this.abortController.signal.aborted) {
-            let event: EventRow;
-            try {
-                event = await this.bus.waitForNext(
-                    { topics: [this.topic] },
-                    this.abortController.signal,
-                );
-            } catch (err) {
-                if (this.abortController.signal.aborted) {
-                    break;
-                }
-                console.error(
-                    `EventWatcher error: ${err instanceof Error ? err.message : String(err)}`,
-                );
-                await this.sleep(500);
-                continue;
-            }
-
-            console.log(
-                `[event] id=${event.id} topic=${event.topic} payload=${JSON.stringify(event.payload)}`,
-            );
-
-            try {
-                await this.bus.update(event.id, { state: "processed" });
-            } catch (err) {
-                console.error(
-                    `EventWatcher update failed for id=${event.id}: ${err instanceof Error ? err.message : String(err)}`,
-                );
-            }
+    async nextEvent(signal?: AbortSignal): Promise<EventRow | null> {
+        if (signal?.aborted) {
+            return null;
         }
+        try {
+            return await this.bus.waitForNext({ topics: [this.topic] }, signal);
+        } catch (err) {
+            if (signal?.aborted) {
+                return null;
+            }
+            throw err;
+        }
+    }
+
+    /** Transition an event to `processing`. */
+    async markProcessing(id: string): Promise<void> {
+        await this.bus.update(id, { state: "processing" });
+    }
+
+    /** Transition an event to `done`. */
+    async markDone(id: string): Promise<void> {
+        await this.bus.update(id, { state: "done" });
+    }
+
+    /** Transition an event to `failed`. */
+    async markFailed(id: string): Promise<void> {
+        await this.bus.update(id, { state: "failed" });
+    }
+
+    /** Close the underlying postgres connection (pool + listen client). */
+    async close(): Promise<void> {
         await this.connection.close();
-        console.error("Event watcher stopped");
-    }
-
-    /** Signal the loop to stop after the current wait completes. */
-    requestStop(): void {
-        this.abortController.abort();
-    }
-
-    private sleep(ms: number): Promise<void> {
-        return new Promise((resolve) => setTimeout(resolve, ms));
     }
 }

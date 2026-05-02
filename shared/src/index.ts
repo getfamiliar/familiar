@@ -1,4 +1,4 @@
-export type { EventFilter, EventPatch, EventRow, NewEvent } from "./Event";
+export type { EventFilter, EventPatch, EventRow, EventState, NewEvent } from "./Event";
 export { EventBus } from "./EventBus";
 export {
     POSTGRES_DB,
