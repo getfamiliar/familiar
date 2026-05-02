@@ -7,7 +7,7 @@ import { createServer } from "node:net";
  * @returns True if a server could bind and was released cleanly; false on EADDRINUSE.
  * @throws For any binding error other than `EADDRINUSE` (e.g. permission denied).
  */
-function loopbackPortIsFree(port: number): Promise<boolean> {
+function isLoopbackPortFree(port: number): Promise<boolean> {
     return new Promise((resolve, reject) => {
         const server = createServer();
         server.unref();
@@ -43,7 +43,7 @@ export async function pickFreeLoopbackPort(
 ): Promise<number> {
     for (let offset = 0; offset < attempts; offset += 1) {
         const candidate = preferred + offset;
-        if (await loopbackPortIsFree(candidate)) {
+        if (await isLoopbackPortFree(candidate)) {
             return candidate;
         }
     }

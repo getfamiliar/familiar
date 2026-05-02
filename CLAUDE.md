@@ -355,6 +355,7 @@ All TypeScript code is auto-formatted by [Biome](https://biomejs.dev/) on every 
 
 - Document every function with a JSDoc comment: purpose, `@param`, `@returns`, and `@throws` where applicable.
 - Use descriptive names — prefer `connectionTimeout` over `connTO`.
+- Functions returning a boolean must start with `is` or `has` (e.g. `isLoopbackPortFree`, `hasPendingTasks`) — never the predicate-as-suffix form (`loopbackPortIsFree`).
 - Prefer `const` over `let`. Never use `var`.
 - Prefer early returns to reduce nesting depth.
 - Keep functions focused and readable; extract helpers when complexity warrants it.

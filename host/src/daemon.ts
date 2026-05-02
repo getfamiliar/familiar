@@ -1,5 +1,6 @@
 import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { EventBus } from "effective-assistant-shared";
 import { AgentContainer } from "./container-runner/AgentContainer";
 import { PostgresContainer } from "./db/PostgresContainer";
 import { AnthropicProxyManager } from "./proxy/AnthropicProxyManager";
@@ -11,7 +12,6 @@ const WORKSPACE_DIR = `${DATA_DIR}/workspace`;
 const IPC_INPUT_DIR = `${DATA_DIR}/ipc/input`;
 const IPC_OUTPUT_DIR = `${DATA_DIR}/ipc/output`;
 const CLAUDE_DIR = `${DATA_DIR}/.claude`;
-const POSTGRES_DATA_DIR = `${DATA_DIR}/postgres`;
 
 /**
  * Host daemon: brings up the bus-state postgres, the anthropic proxy,
@@ -19,26 +19,46 @@ const POSTGRES_DATA_DIR = `${DATA_DIR}/postgres`;
  * to drain everything cleanly. The host has no role in per-task IPC —
  * the chat CLI talks to the agent directly via `data/ipc/`.
  *
- * Start order:   ea-net  →  postgres  →  proxy  →  agent
+ * Start order:   ea-net  →  postgres  →  schema  →  proxy  →  agent
  * Stop order:    agent   →  proxy     →  postgres
  */
 async function main(): Promise<void> {
+    const postgresPassword = process.env.POSTGRES_PASSWORD;
+    if (!postgresPassword) {
+        throw new Error(
+            "POSTGRES_PASSWORD is not set. Add it to .env at the repo root.",
+        );
+    }
+
     ensureDirs();
     writePidFile();
 
     const proxy = new AnthropicProxyManager();
-    const postgres = new PostgresContainer({ dataPath: DATA_DIR });
+    const postgres = new PostgresContainer({
+        dataPath: DATA_DIR,
+        portFilePath: POSTGRES_PORT_FILE,
+        password: postgresPassword,
+    });
     const container = new AgentContainer({
         imageName: "effective-agent",
         dataPath: DATA_DIR,
+        postgresPassword,
     });
 
     await proxy.ensureNetwork();
     console.error("ensured network ea-net");
 
     const postgresPort = await postgres.start();
-    writeFileSync(POSTGRES_PORT_FILE, `${postgresPort}\n`, "utf-8");
     console.error(`postgres ready on 127.0.0.1:${postgresPort}`);
+
+    const schemaConnection = postgres.getConnection();
+    try {
+        const bus = new EventBus(schemaConnection);
+        await bus.installSchema();
+        console.error("bus-state schema installed");
+    } finally {
+        await schemaConnection.close();
+    }
 
     await proxy.ensureProxy();
     console.error("anthropic-proxy ready");
@@ -60,7 +80,6 @@ async function main(): Promise<void> {
         // await safeStop("anthropic-proxy", () => proxy.teardown());
         await safeStop("postgres", () => postgres.stop());
 
-        removePostgresPortFile();
         removePidFile();
         process.exit(0);
     };
@@ -102,7 +121,6 @@ function ensureDirs(): void {
     mkdirSync(IPC_INPUT_DIR, { recursive: true });
     mkdirSync(IPC_OUTPUT_DIR, { recursive: true });
     mkdirSync(CLAUDE_DIR, { recursive: true });
-    mkdirSync(POSTGRES_DATA_DIR, { recursive: true });
 }
 
 /** Write the current pid into the well-known pidfile for cli/stop.sh. */
@@ -119,18 +137,8 @@ function removePidFile(): void {
     }
 }
 
-/** Best-effort delete of the postgres port file during shutdown. */
-function removePostgresPortFile(): void {
-    try {
-        unlinkSync(POSTGRES_PORT_FILE);
-    } catch {
-        // ignore
-    }
-}
-
 main().catch((err) => {
     console.error("Daemon fatal:", err instanceof Error ? err.message : err);
-    removePostgresPortFile();
     removePidFile();
     process.exit(1);
 });

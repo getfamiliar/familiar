@@ -1,7 +1,7 @@
 {
     "name": "effective-assistant-shared",
     "version": "0.0.1",
-    "description": "Shared types between host and container.",
+    "description": "Shared types and bus-state client between host and container.",
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "scripts": {
@@ -12,8 +12,13 @@
         "check": "biome check --config-path .. src/"
     },
     "license": "MIT",
+    "dependencies": {
+        "pg": "^8.13.1"
+    },
     "devDependencies": {
-        "typescript": "^6.0.3",
-        "@biomejs/biome": "^2.4.12"
+        "@biomejs/biome": "^2.4.12",
+        "@types/node": "^25.6.0",
+        "@types/pg": "^8.11.10",
+        "typescript": "^6.0.3"
     }
 }

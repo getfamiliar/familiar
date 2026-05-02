@@ -10,6 +10,8 @@ export interface AgentContainerConfig {
     readonly imageName: string;
     /** Absolute host path to the data directory; mounted as workspace + ipc. */
     readonly dataPath: string;
+    /** Postgres password forwarded to the agent as `POSTGRES_PASSWORD`. */
+    readonly postgresPassword: string;
 }
 
 /**
@@ -60,6 +62,8 @@ export class AgentContainer {
             `ANTHROPIC_BASE_URL=${PROXY_BASE_URL}`,
             "-e",
             "ANTHROPIC_API_KEY=via-proxy",
+            "-e",
+            `POSTGRES_PASSWORD=${this.config.postgresPassword}`,
             ...this.hostGatewayArgs(),
             "-v",
             `${workspaceDir}:/workspace`,

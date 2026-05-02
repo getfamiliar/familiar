@@ -14,6 +14,7 @@ Commands:
   start              Start the host daemon (foreground; manages proxy + agent container).
   stop               Stop the host daemon and tear down the agent container.
   chat <text>        Send a chat message to the running agent.
+  event <topic> ...  Inject an event into the bus-state DB.
 
 Run './cli.sh <command> --help' for command-specific options where available.
 EOF
@@ -36,6 +37,9 @@ case "${command}" in
     ;;
   chat)
     exec "${CLI_DIR}/chat.sh" "$@"
+    ;;
+  event)
+    exec "${CLI_DIR}/event.sh" "$@"
     ;;
   -h|--help|help)
     usage
