@@ -9,6 +9,7 @@ interface RawEventRow {
     priority: number;
     state: string;
     payload: unknown;
+    supervisor_prompt: string | null;
     idempotency_key: string | null;
     causation_chain: string[] | null;
     created_at: Date;
@@ -59,14 +60,16 @@ export class EventBus {
      */
     async add(event: NewEvent): Promise<EventRow> {
         const result = await this.connection.getPool().query<RawEventRow>(
-            `INSERT INTO events (topic, payload, priority, state, idempotency_key, causation_chain)
-             VALUES ($1, $2::jsonb, $3, $4, $5, $6::bigint[])
+            `INSERT INTO events
+                (topic, payload, priority, state, supervisor_prompt, idempotency_key, causation_chain)
+             VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7::bigint[])
              RETURNING *`,
             [
                 event.topic,
                 JSON.stringify(event.payload ?? {}),
                 event.priority ?? 50,
                 event.state ?? "pending",
+                event.supervisorPrompt ?? null,
                 event.idempotencyKey ?? null,
                 event.causationChain ?? [],
             ],
@@ -108,8 +111,12 @@ export class EventBus {
     /**
      * Block until an event matching `filter` is in the table. Returns
      * the highest-priority such event (FIFO within priority). Subscribes
-     * to `LISTEN events_new` on first call so subsequent waits sleep
+     * to `LISTEN events_changed` on first call so subsequent waits sleep
      * until a NOTIFY arrives instead of polling.
+     *
+     * **Read-only**: does not mutate the row. For multi-consumer queues,
+     * use {@link waitAndClaim} instead, which atomically transitions the
+     * row's state on read.
      *
      * @param filter - Topic / state filter; default `{ states: ["pending"] }`.
      * @param signal - Optional AbortSignal to cancel the wait.
@@ -124,6 +131,63 @@ export class EventBus {
             }
 
             const row = await this.queryOne(filter);
+            if (row) {
+                return row;
+            }
+
+            await this.waitForNotification(signal);
+        }
+    }
+
+    /**
+     * Atomically transition the highest-priority event in `fromState` to
+     * `toState` and return the updated row. Race-safe across multiple
+     * concurrent workers via `FOR UPDATE SKIP LOCKED`.
+     *
+     * Returns `undefined` if no row is in `fromState`. Non-blocking — for
+     * blocking semantics, use {@link waitAndClaim}.
+     */
+    async claim(
+        fromState: EventState,
+        toState: EventState,
+    ): Promise<EventRow | undefined> {
+        const result = await this.connection.getPool().query<RawEventRow>(
+            `UPDATE events
+             SET state = $1, updated_at = now()
+             WHERE id = (
+               SELECT id FROM events
+               WHERE state = $2
+               ORDER BY priority DESC, id ASC
+               FOR UPDATE SKIP LOCKED
+               LIMIT 1
+             )
+             RETURNING *`,
+            [toState, fromState],
+        );
+        return result.rows.length > 0 ? mapRow(result.rows[0]) : undefined;
+    }
+
+    /**
+     * Block until an event in `fromState` is available, then atomically
+     * claim it (transition to `toState`) and return it. Combines
+     * {@link claim} with the LISTEN/NOTIFY wait loop used by
+     * {@link waitForNext}.
+     *
+     * @throws If aborted via `signal`.
+     */
+    async waitAndClaim(
+        fromState: EventState,
+        toState: EventState,
+        signal?: AbortSignal,
+    ): Promise<EventRow> {
+        await this.ensureListening();
+
+        for (;;) {
+            if (signal?.aborted) {
+                throw new Error("waitAndClaim aborted");
+            }
+
+            const row = await this.claim(fromState, toState);
             if (row) {
                 return row;
             }
@@ -202,6 +266,7 @@ function mapRow(raw: RawEventRow): EventRow {
         priority: raw.priority,
         state: raw.state as EventState,
         payload: raw.payload,
+        supervisorPrompt: raw.supervisor_prompt,
         idempotencyKey: raw.idempotency_key,
         causationChain: raw.causation_chain ?? [],
         createdAt: raw.created_at,

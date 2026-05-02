@@ -1,15 +1,20 @@
-import type { EventRow } from "effective-assistant-shared";
-import { EventWatcher } from "./EventWatcher";
-
-const TEST_TOPIC = "test.hello";
+import {
+    POSTGRES_DB,
+    POSTGRES_HOST,
+    POSTGRES_PORT,
+    POSTGRES_USER,
+    PostgresConnection,
+} from "effective-assistant-shared";
+import { SupervisorWatcher } from "./SupervisorWatcher";
+import { TriageWatcher } from "./TriageWatcher";
 
 /**
- * Container entry point. Loops over events from the bus on the
- * verification topic, transitioning each through the lifecycle:
- * `pending → processing → done` (or `failed` on error).
+ * Container entry point. Owns the postgres connection, spawns the
+ * triage and supervisor workers off it, runs them concurrently, and
+ * closes the connection on exit.
  *
- * SIGTERM/SIGINT abort the iterator; `nextEvent` then resolves to
- * `null` and the loop exits cleanly.
+ * SIGTERM/SIGINT abort both workers; their loops exit cleanly and the
+ * top-level `Promise.all` resolves.
  */
 async function main(): Promise<void> {
     const postgresPassword = process.env.POSTGRES_PASSWORD;
@@ -20,9 +25,18 @@ async function main(): Promise<void> {
         );
     }
 
-    const watcher = new EventWatcher(TEST_TOPIC, postgresPassword);
-    const abortController = new AbortController();
+    const connection = new PostgresConnection({
+        host: POSTGRES_HOST,
+        port: POSTGRES_PORT,
+        user: POSTGRES_USER,
+        password: postgresPassword,
+        database: POSTGRES_DB,
+    });
 
+    const triage = new TriageWatcher(connection);
+    const supervisor = new SupervisorWatcher(connection);
+
+    const abortController = new AbortController();
     const shutdown = (signal: string) => {
         console.error(`Received ${signal}, draining…`);
         abortController.abort();
@@ -30,41 +44,11 @@ async function main(): Promise<void> {
     process.on("SIGTERM", () => shutdown("SIGTERM"));
     process.on("SIGINT", () => shutdown("SIGINT"));
 
-    console.error(`Event watcher subscribed to topic "${TEST_TOPIC}"`);
-
     try {
-        let event: EventRow | null;
-        while ((event = await watcher.nextEvent(abortController.signal)) !== null) {
-            await processEvent(watcher, event);
-        }
+        await Promise.all([triage.run(abortController.signal), supervisor.run(abortController.signal)]);
     } finally {
-        await watcher.close();
+        await connection.close();
         console.error("Agent container exiting cleanly");
-    }
-}
-
-/**
- * Run the test topic's processing policy: log the event, mark it
- * `done`. Marks `failed` on any error so the row reflects the outcome.
- */
-async function processEvent(watcher: EventWatcher, event: EventRow): Promise<void> {
-    try {
-        await watcher.markProcessing(event.id);
-        console.log(
-            `[event] id=${event.id} topic=${event.topic} payload=${JSON.stringify(event.payload)}`,
-        );
-        // Real processing would happen here.
-        await watcher.markDone(event.id);
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error(`Event id=${event.id} failed: ${message}`);
-        try {
-            await watcher.markFailed(event.id);
-        } catch (markErr) {
-            console.error(
-                `Also failed to mark failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`,
-            );
-        }
     }
 }
 

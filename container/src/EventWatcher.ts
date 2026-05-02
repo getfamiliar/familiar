@@ -1,53 +1,63 @@
 import {
     EventBus,
     type EventRow,
-    POSTGRES_DB,
-    POSTGRES_HOST,
-    POSTGRES_PORT,
-    POSTGRES_USER,
-    PostgresConnection,
+    type EventState,
+    type NewEvent,
+    type PostgresConnection,
 } from "effective-assistant-shared";
+
+/** Configuration for an {@link EventWatcher}. */
+export interface EventWatcherConfig {
+    /** Open postgres connection used for queries and the LISTEN client. Caller owns its lifecycle. */
+    readonly connection: PostgresConnection;
+    /** State this watcher claims events from (e.g. `"pending"` for triage). */
+    readonly watchState: EventState;
+    /** State the claimed event is transitioned into (e.g. `"triaging"`). */
+    readonly claimedState: EventState;
+}
 
 /**
  * Iterator-style consumer of the bus-state events table inside the agent
- * container. Owns a {@link PostgresConnection} and a topic-filtered
- * {@link EventBus}; exposes `nextEvent()` / `markX()` / `close()` so the
- * caller controls the loop and state-transition policy.
+ * container. Subscribes to a single {@link EventState}; each
+ * {@link claimNextEvent} call atomically transitions the next matching
+ * row to {@link EventWatcherConfig.claimedState} and returns it.
  *
- * Sequential by design: there's only one supervisor slot upstream, and
- * the bus does not atomically claim, so callers should not run multiple
- * concurrent `nextEvent()` waits on the same watcher.
+ * Race-safe across multiple concurrent watcher processes — the claim is
+ * a single `UPDATE ... FOR UPDATE SKIP LOCKED` round-trip in
+ * {@link EventBus.claim}.
+ *
+ * One watcher per process (or per logical worker) is the intended
+ * pattern. Two `claimNextEvent()` calls on the same watcher should not
+ * run concurrently.
+ *
+ * The connection is *not* owned by the watcher; the caller (typically
+ * the container entry point) builds and closes it.
  */
 export class EventWatcher {
-    private readonly connection: PostgresConnection;
     private readonly bus: EventBus;
-    private readonly topic: string;
+    private readonly watchState: EventState;
+    private readonly claimedState: EventState;
 
-    constructor(topic: string, password: string) {
-        this.topic = topic;
-        this.connection = new PostgresConnection({
-            host: POSTGRES_HOST,
-            port: POSTGRES_PORT,
-            user: POSTGRES_USER,
-            password,
-            database: POSTGRES_DB,
-        });
-        this.bus = new EventBus(this.connection);
+    constructor(config: EventWatcherConfig) {
+        this.bus = new EventBus(config.connection);
+        this.watchState = config.watchState;
+        this.claimedState = config.claimedState;
     }
 
     /**
-     * Wait for and return the next pending event matching this watcher's
-     * topic. Resolves to `null` when `signal` aborts, so callers can
-     * write `while ((event = await w.nextEvent(signal)) !== null)`.
+     * Wait for and atomically claim the next event in `watchState`,
+     * transitioning it to `claimedState`. Returns `null` when `signal`
+     * aborts so callers can write
+     * `while ((event = await w.claimNextEvent(signal)) !== null)`.
      *
      * @throws Other errors from the bus surface unchanged.
      */
-    async nextEvent(signal?: AbortSignal): Promise<EventRow | null> {
+    async claimNextEvent(signal?: AbortSignal): Promise<EventRow | null> {
         if (signal?.aborted) {
             return null;
         }
         try {
-            return await this.bus.waitForNext({ topics: [this.topic] }, signal);
+            return await this.bus.waitAndClaim(this.watchState, this.claimedState, signal);
         } catch (err) {
             if (signal?.aborted) {
                 return null;
@@ -56,23 +66,16 @@ export class EventWatcher {
         }
     }
 
-    /** Transition an event to `processing`. */
-    async markProcessing(id: string): Promise<void> {
-        await this.bus.update(id, { state: "processing" });
+    /** Transition an event to a new state (typically `done` or `failed`). */
+    async setState(id: string, state: EventState): Promise<void> {
+        await this.bus.update(id, { state });
     }
 
-    /** Transition an event to `done`. */
-    async markDone(id: string): Promise<void> {
-        await this.bus.update(id, { state: "done" });
-    }
-
-    /** Transition an event to `failed`. */
-    async markFailed(id: string): Promise<void> {
-        await this.bus.update(id, { state: "failed" });
-    }
-
-    /** Close the underlying postgres connection (pool + listen client). */
-    async close(): Promise<void> {
-        await this.connection.close();
+    /**
+     * Insert a new event. Convenience for workers that spawn follow-up
+     * events (e.g. triage spawning `supervisor-ready` jobs).
+     */
+    async addEvent(newEvent: NewEvent): Promise<EventRow> {
+        return this.bus.add(newEvent);
     }
 }

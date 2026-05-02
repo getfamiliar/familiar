@@ -1,15 +1,31 @@
 /**
  * Lifecycle states an event can be in.
  *
- * Normal flow: `pending` → `processing` → `done`.
- * On error during processing: `processing` → `failed`.
+ * Each event row runs through one of two lifecycles:
  *
- * The transition is the caller's responsibility; the bus does not
- * atomically claim events on read. With multiple consumers later, an
- * atomic `claim()` will be added that flips `pending → processing` in a
- * single statement.
+ * - **Input events** (everything ingested by the host): `pending` →
+ *   `triaging` → `done`. The triage worker owns this. It does *not*
+ *   transition input events to supervisor states; instead, when a
+ *   plugin's triage decides supervision is needed, it inserts one or
+ *   more *new* events with state `supervisor-ready`. Multiple plugins
+ *   triaging the same input can spawn multiple supervisor jobs.
+ * - **Supervisor jobs** (spawned by triage): `supervisor-ready` →
+ *   `supervising` → `done`.
+ *
+ * Any state can transition to `failed` on error.
+ *
+ * State changes between worker stages (`pending → triaging`,
+ * `supervisor-ready → supervising`) are atomic via {@link EventBus.claim}.
+ * Terminal transitions (`done` / `failed`) are explicit `update(...)`
+ * calls by the worker that owns the row.
  */
-export type EventState = "pending" | "processing" | "done" | "failed";
+export type EventState =
+    | "pending"
+    | "triaging"
+    | "supervisor-ready"
+    | "supervising"
+    | "done"
+    | "failed";
 
 /**
  * Shape of a row in the `events` table after JSON-decoding from postgres.
@@ -40,6 +56,12 @@ export interface EventRow {
      */
     readonly payload: unknown;
     /**
+     * Prompt the supervisor uses for this event. Set by triage when it
+     * spawns a `supervisor-ready` job; `null` for input events and any
+     * row that has no supervisor session attached.
+     */
+    readonly supervisorPrompt: string | null;
+    /**
      * Globally unique key for dedup. `null` when the producer didn't
      * supply one (then no dedup happens).
      */
@@ -67,6 +89,8 @@ export interface NewEvent {
     readonly idempotencyKey?: string;
     /** IDs of the events that caused this one (for lineage). */
     readonly causationChain?: readonly string[];
+    /** Prompt for the supervisor. Required when `state` is `supervisor-ready`. */
+    readonly supervisorPrompt?: string;
 }
 
 /** Patch shape for {@link EventBus.update}. */
