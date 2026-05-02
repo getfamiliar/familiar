@@ -1,18 +1,11 @@
 import { EventWatcher } from "./EventWatcher";
-import { TaskLoop } from "./TaskLoop";
 
 const TEST_TOPIC = "test.hello";
 
 /**
- * Container entry point. Runs two concurrent loops:
- *
- *   - TaskLoop: drains chat tasks from `/ipc/input/`.
- *   - EventWatcher: subscribes to the bus-state events table and prints
- *     anything that arrives on the verification topic.
- *
- * SIGTERM/SIGINT triggers a graceful drain of both. Either one resolving
- * unexpectedly is treated as a fatal exit (something went wrong in a
- * loop that should run forever).
+ * Container entry point. Runs the bus-state event watcher, which is
+ * the only host↔container communication channel. SIGTERM/SIGINT
+ * triggers a graceful drain.
  */
 async function main(): Promise<void> {
     const postgresPassword = process.env.POSTGRES_PASSWORD;
@@ -23,18 +16,16 @@ async function main(): Promise<void> {
         );
     }
 
-    const taskLoop = new TaskLoop();
     const eventWatcher = new EventWatcher(TEST_TOPIC, postgresPassword);
 
     const shutdown = (signal: string) => {
         console.error(`Received ${signal}, draining…`);
-        taskLoop.requestStop();
         eventWatcher.requestStop();
     };
     process.on("SIGTERM", () => shutdown("SIGTERM"));
     process.on("SIGINT", () => shutdown("SIGINT"));
 
-    await Promise.all([taskLoop.run(), eventWatcher.run()]);
+    await eventWatcher.run();
     console.error("Agent container exiting cleanly");
 }
 

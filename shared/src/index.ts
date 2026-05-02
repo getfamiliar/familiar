@@ -1,6 +1,3 @@
-export type { ContainerOutput } from "./ContainerOutput";
-export type { ContainerParameters } from "./ContainerParameters";
-export type { TaskDefinition } from "./TaskDefinition";
 export type { EventFilter, EventPatch, EventRow, NewEvent } from "./Event";
 export { EventBus } from "./EventBus";
 export {

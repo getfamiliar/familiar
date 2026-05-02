@@ -14,8 +14,6 @@ export interface Bootstrap {
     readonly pidFile: string;
     readonly postgresPortFile: string;
     readonly workspaceDir: string;
-    readonly ipcInputDir: string;
-    readonly ipcOutputDir: string;
     readonly claudeDir: string;
     readonly postgresDataDir: string;
     /**
@@ -39,8 +37,6 @@ export function bootstrap(): Bootstrap {
         pidFile: `${dataDir}/.daemon.pid`,
         postgresPortFile: `${dataDir}/.postgres-port`,
         workspaceDir: `${dataDir}/workspace`,
-        ipcInputDir: `${dataDir}/ipc/input`,
-        ipcOutputDir: `${dataDir}/ipc/output`,
         claudeDir: `${dataDir}/.claude`,
         postgresDataDir: `${dataDir}/postgres`,
         requireEnv,

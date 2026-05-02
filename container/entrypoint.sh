@@ -8,5 +8,5 @@ cd /app && npx tsc --outDir /tmp/build 2>&1 >&2
 ln -s /app/node_modules /tmp/build/node_modules
 chmod -R a-w /tmp/build
 
-echo "Starting agent task loop..."
+echo "Starting agent..."
 exec node /tmp/build/index.js

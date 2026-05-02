@@ -23,14 +23,16 @@ export interface AgentContainerConfig {
  * Manages the single long-running agent container (`ea-agent`).
  *
  * Mounts:
- *   - {dataPath}/workspace → /workspace         (assistant memory, .last-session)
- *   - {dataPath}/ipc       → /ipc               (per-task input/output files)
+ *   - {dataPath}/workspace → /workspace         (assistant memory)
  *   - {dataPath}/.claude   → /home/node/.claude (SDK session store, persists across restarts)
  *
  * Container joins `ea-net` so it can reach the `ea-anthropic-proxy`
  * container by hostname. The agent never sees the real
  * `ANTHROPIC_API_KEY` — it gets the placeholder `via-proxy`, satisfying
  * the SDK while routing all calls through the proxy.
+ *
+ * All host↔container communication flows through postgres events; there
+ * is no file-based IPC channel.
  */
 export class AgentContainer {
     private readonly config: AgentContainerConfig;
@@ -53,7 +55,6 @@ export class AgentContainer {
         await removeContainer(CONTAINER_NAME);
 
         const workspaceDir = `${this.config.dataPath}/workspace`;
-        const ipcDir = `${this.config.dataPath}/ipc`;
         const claudeDir = `${this.config.dataPath}/.claude`;
 
         const args = [
@@ -72,8 +73,6 @@ export class AgentContainer {
             ...hostGatewayArgs(),
             "-v",
             `${workspaceDir}:/workspace`,
-            "-v",
-            `${ipcDir}:/ipc`,
             "-v",
             `${claudeDir}:/home/node/.claude`,
             this.config.imageName,

@@ -113,8 +113,6 @@ async function safeStop(label: string, stop: () => Promise<void>): Promise<void>
 /** Ensure all directories the daemon and agent container expect are present. */
 function ensureDirs(boot: ReturnType<typeof bootstrap>): void {
     mkdirSync(boot.workspaceDir, { recursive: true });
-    mkdirSync(boot.ipcInputDir, { recursive: true });
-    mkdirSync(boot.ipcOutputDir, { recursive: true });
     mkdirSync(boot.claudeDir, { recursive: true });
 }
 
