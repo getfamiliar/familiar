@@ -25,3 +25,12 @@ export {
     SCHEMA_SQL,
     TOPIC_PATTERN,
 } from "./Schema";
+export type {
+    AnyCommandDef,
+    HostContext,
+    PluginContainerManifest,
+    PluginCronjob,
+    PluginHostManifest,
+    PluginManifest,
+} from "./Plugin";
+export { definePlugin } from "./Plugin";

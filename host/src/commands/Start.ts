@@ -6,6 +6,7 @@ import { AgentContainer } from "../container-runner/AgentContainer";
 import { ReverseProxyContainer } from "../container-runner/ReverseProxyContainer";
 import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools";
 import { PostgresContainer } from "../db/PostgresContainer";
+import { PluginHost } from "../plugins/PluginHost";
 
 const FEATHERLESS_UPSTREAM_BASE = "https://api.featherless.ai";
 const FEATHERLESS_BASE_URL_FOR_AGENT = "http://ea-reverse-proxy:8788/v1";
@@ -29,6 +30,10 @@ export const startCommand = defineCommand({
 
         ensureDirs(boot);
         writePidFile(boot.pidFile);
+
+        const pluginHost = new PluginHost(boot);
+        pluginHost.installWorkspaceTemplates();
+        console.error("plugin workspace templates installed");
 
         const postgres = new PostgresContainer({
             dataPath: boot.dataDir,
@@ -70,6 +75,9 @@ export const startCommand = defineCommand({
         await container.start();
         console.error(`agent container started: ${container.isRunning ? "ea-agent" : "(failed)"}`);
 
+        await pluginHost.startDaemons();
+        console.error("plugin daemons started");
+
         let shuttingDown = false;
         const shutdown = async (signal: string) => {
             if (shuttingDown) {
@@ -78,6 +86,7 @@ export const startCommand = defineCommand({
             shuttingDown = true;
             console.error(`Received ${signal}, draining…`);
 
+            await safeStop("plugin host", () => pluginHost.close());
             await safeStop("agent container", () => container.stop());
             await safeStop("reverse proxy", () => reverseProxy.stop());
             await safeStop("postgres", () => postgres.stop());

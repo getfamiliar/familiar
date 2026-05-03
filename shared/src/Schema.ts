@@ -37,11 +37,13 @@ export const TOPIC_PATTERN = "^\\w+(:\\w+)?$";
 
 export const SCHEMA_SQL = `
 -- Drop legacy single-table artifacts from before the events/agentruns
--- split. Safe no-ops on fresh databases.
+-- split. Safe no-ops on fresh databases. The current schema reuses the
+-- name events_notify_new() for its own NOTIFY function, so we do NOT
+-- drop it here (CREATE OR REPLACE FUNCTION below handles the update);
+-- dropping would fail anyway once the current events_new_trg exists.
 DROP TRIGGER IF EXISTS events_notify_changed_trg ON events;
 DROP TRIGGER IF EXISTS events_notify_new_trg ON events;
 DROP FUNCTION IF EXISTS events_notify_changed();
-DROP FUNCTION IF EXISTS events_notify_new();
 DROP INDEX IF EXISTS events_pending_priority_idx;
 DROP INDEX IF EXISTS events_state_priority_idx;
 
