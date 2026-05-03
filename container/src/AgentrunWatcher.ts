@@ -69,7 +69,7 @@ export class AgentrunWatcher {
         console.log(`[agentrun] id=${row.id} topic=${row.topic} handler=${row.handler}`);
         try {
             const text = await new AgentRunner(row).run();
-            await this.bus.settle(row.id, "done", { result: { text } });
+            await this.bus.settle(row.id, "done", { resultText: text });
             console.log(`[agentrun] id=${row.id} done`);
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);

@@ -2,12 +2,12 @@ import { cpSync, existsSync } from "node:fs";
 import { defineCommand } from "citty";
 import {
     type AnyCommandDef,
-    EventBus,
     type HostContext,
     type PostgresConnection,
 } from "effective-assistant-shared";
 import type { Bootstrap } from "../Bootstrap";
 import { PostgresContainer } from "../db/PostgresContainer";
+import { HostContextImpl } from "./HostContextImpl";
 import { plugins } from "./Registry";
 
 /**
@@ -24,7 +24,6 @@ import { plugins } from "./Registry";
 export class PluginHost {
     private readonly boot: Bootstrap;
     private connection: PostgresConnection | undefined;
-    private bus: EventBus | undefined;
 
     constructor(boot: Bootstrap) {
         this.boot = boot;
@@ -101,34 +100,31 @@ export class PluginHost {
         }
         const conn = this.connection;
         this.connection = undefined;
-        this.bus = undefined;
         await conn.close();
     }
 
     /**
      * Build the {@link HostContext} that every plugin lifecycle
-     * method receives. Capabilities lazily initialize the postgres
-     * connection on first use.
+     * method receives. The contract — what plugins are allowed to do
+     * — lives in {@link HostContextImpl}, not in this class.
      */
     private context(): HostContext {
-        return {
-            events: {
-                emit: async (event) => (await this.ensureBus()).add(event),
-            },
+        return new HostContextImpl({
+            ensureConnection: () => this.ensureConnection(),
             log: (message) => {
                 console.error(`[plugin] ${message}`);
             },
-        };
+        });
     }
 
     /**
-     * Open the bus / connection on demand. Reads `POSTGRES_PASSWORD`
-     * only when first called, so commands that don't touch the bus
-     * don't trigger env validation.
+     * Open the postgres connection on demand. Reads
+     * `POSTGRES_PASSWORD` only when first called, so commands that
+     * don't touch the bus don't trigger env validation.
      */
-    private async ensureBus(): Promise<EventBus> {
-        if (this.bus) {
-            return this.bus;
+    private async ensureConnection(): Promise<PostgresConnection> {
+        if (this.connection) {
+            return this.connection;
         }
         const password = this.boot.requireEnv("POSTGRES_PASSWORD");
         const postgres = new PostgresContainer({
@@ -137,8 +133,7 @@ export class PluginHost {
             password,
         });
         this.connection = postgres.getConnection();
-        this.bus = new EventBus(this.connection);
-        return this.bus;
+        return this.connection;
     }
 
     /**

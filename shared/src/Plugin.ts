@@ -1,5 +1,5 @@
 import type { CommandDef } from "citty";
-import type { EventRow, NewEvent } from "./Event";
+import type { NewEvent } from "./Event";
 
 /**
  * Citty's `CommandDef` is generic over its `ArgsDef`, and that
@@ -30,9 +30,19 @@ export type AnyCommandDef = CommandDef<any>;
  * plugins surface them.
  */
 export interface HostContext {
-    /** Emit events into the bus. Wraps {@link EventBus.add}. */
+    /**
+     * Emit an event into the bus and **wait** for it to settle.
+     *
+     * On `done`: returns the `result_text` of the last-settled
+     * agentrun for the event (empty string if the handler wrote no
+     * text). On `failed`: throws an `Error` carrying that agentrun's
+     * `error` message.
+     *
+     * Implementation subscribes to `events_state` before inserting
+     * to avoid missing the terminal NOTIFY on a fast-processed event.
+     */
     readonly events: {
-        emit(event: NewEvent): Promise<EventRow>;
+        emit(event: NewEvent): Promise<string>;
     };
     /** Structured-ish log line. Future: scoped by plugin id, severity, etc. */
     readonly log: (message: string) => void;

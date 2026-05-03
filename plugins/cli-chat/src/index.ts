@@ -27,14 +27,19 @@ export default definePlugin({
 });
 
 /**
- * `cli.sh cli-chat send "<message>"` — emit a single chat:cli event
- * carrying the message and print the persisted event id.
+ * `cli.sh cli-chat send "<message>"` — emit a single chat:cli event,
+ * await the agent's reply, and print it.
+ *
+ * `ctx.events.emit` blocks until the event reaches `done` (returns
+ * the agentrun's `result_text`) or `failed` (throws). The thrown
+ * error here surfaces as a non-zero exit and a stack trace; the
+ * REPL plan will handle that more gracefully.
  */
 function sendCommand(ctx: HostContext) {
     return defineCommand({
         meta: {
             name: "send",
-            description: "Emit a one-shot chat:cli event (stub; REPL comes later).",
+            description: "Send one chat:cli message and print the assistant's reply.",
         },
         args: {
             message: {
@@ -44,11 +49,11 @@ function sendCommand(ctx: HostContext) {
             },
         },
         async run({ args }) {
-            const event = await ctx.events.emit({
+            const reply = await ctx.events.emit({
                 topic: "chat:cli",
                 payload: { message: args.message },
             });
-            ctx.log(`emitted event id=${event.id}`);
+            process.stdout.write(`${reply}\n`);
         },
     });
 }

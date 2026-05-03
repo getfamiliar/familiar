@@ -79,11 +79,16 @@ CREATE TABLE IF NOT EXISTS agentruns (
   prompt             text,
   payload            jsonb NOT NULL DEFAULT '{}'::jsonb,
   result             jsonb,
+  result_text        text,
   error              text,
   created_at         timestamptz NOT NULL DEFAULT now(),
   updated_at         timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT agentruns_topic_format CHECK (topic ~ '${TOPIC_PATTERN}')
 );
+
+-- Forward-compat ALTER for databases created before result_text landed.
+-- Safe no-op on fresh databases where the column already exists.
+ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS result_text text;
 
 CREATE INDEX IF NOT EXISTS agentruns_state_priority_idx
   ON agentruns (state, priority DESC, id ASC);

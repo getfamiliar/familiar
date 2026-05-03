@@ -20,6 +20,7 @@ interface RawAgentRunRow {
     prompt: string | null;
     payload: unknown;
     result: unknown;
+    result_text: string | null;
     error: string | null;
     created_at: Date;
     updated_at: Date;
@@ -113,6 +114,10 @@ export class AgentRunBus {
         if (patch.result !== undefined) {
             sets.push(`result = $${n++}::jsonb`);
             values.push(JSON.stringify(patch.result));
+        }
+        if (patch.resultText !== undefined) {
+            sets.push(`result_text = $${n++}`);
+            values.push(patch.resultText);
         }
         if (patch.error !== undefined) {
             sets.push(`error = $${n++}`);
@@ -218,8 +223,9 @@ export class AgentRunBus {
 
     /**
      * Terminal write for an agentrun. Transitions the row to `done` or
-     * `failed`, optionally recording `result` / `error`, and recomputes
-     * the parent event's terminal state in the **same transaction**.
+     * `failed`, optionally recording `result` / `resultText` / `error`,
+     * and recomputes the parent event's terminal state in the **same
+     * transaction**.
      *
      * The reactive event update is intentionally not a counter: it
      * relies on the `agentruns(event_id)` index to check whether any
@@ -228,7 +234,11 @@ export class AgentRunBus {
     async settle(
         id: string,
         toState: "done" | "failed",
-        outcome: { readonly result?: unknown; readonly error?: string | null } = {},
+        outcome: {
+            readonly result?: unknown;
+            readonly resultText?: string | null;
+            readonly error?: string | null;
+        } = {},
     ): Promise<void> {
         const pool = this.connection.getPool();
         const client = await pool.connect();
@@ -239,13 +249,15 @@ export class AgentRunBus {
                 `UPDATE agentruns
                  SET state = $1,
                      result = COALESCE($2::jsonb, result),
-                     error = COALESCE($3, error),
+                     result_text = COALESCE($3, result_text),
+                     error = COALESCE($4, error),
                      updated_at = now()
-                 WHERE id = $4
+                 WHERE id = $5
                  RETURNING event_id`,
                 [
                     toState,
                     outcome.result === undefined ? null : JSON.stringify(outcome.result),
+                    outcome.resultText ?? null,
                     outcome.error ?? null,
                     id,
                 ],
@@ -339,6 +351,7 @@ function mapRow(raw: RawAgentRunRow): AgentRunRow {
         prompt: raw.prompt,
         payload: raw.payload,
         result: raw.result,
+        resultText: raw.result_text,
         error: raw.error,
         createdAt: raw.created_at,
         updatedAt: raw.updated_at,

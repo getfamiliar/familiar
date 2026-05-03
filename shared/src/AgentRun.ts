@@ -52,8 +52,15 @@ export interface AgentRunRow {
     readonly prompt: string | null;
     /** Spawn-time inputs from the calling agent (or the root event). */
     readonly payload: unknown;
-    /** Terminal output written when the run reaches `done` / `failed`. */
+    /** Structured terminal output (arbitrary JSON) when the run reaches `done` / `failed`. */
     readonly result: unknown;
+    /**
+     * The agent's final text output. Populated by the agentrun watcher
+     * on success. Distinct from {@link result} so callers (notably
+     * `HostContext.events.emit`'s await-and-return path) have a
+     * typed, dedicated text channel without rummaging in JSON.
+     */
+    readonly resultText: string | null;
     /** Error message when state is `failed`. */
     readonly error: string | null;
     /** Insert timestamp — postgres `now()` at INSERT. */
@@ -87,6 +94,7 @@ export interface AgentRunPatch {
     readonly state?: AgentRunState;
     readonly payload?: unknown;
     readonly result?: unknown;
+    readonly resultText?: string | null;
     readonly error?: string | null;
     readonly priority?: number;
 }
