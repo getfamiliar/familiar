@@ -1,6 +1,6 @@
 import type { EventFilter, EventPatch, EventRow, EventState, NewEvent } from "./Event";
 import type { NotificationHandler, PostgresConnection } from "./PostgresConnection";
-import { EVENTS_NOTIFY_CHANNEL, EVENTS_SCHEMA_SQL } from "./Schema";
+import { EVENTS_NEW_CHANNEL, SCHEMA_SQL } from "./Schema";
 
 /** Raw row shape returned by the SELECT. `pg` returns bigints as strings. */
 interface RawEventRow {
@@ -9,9 +9,7 @@ interface RawEventRow {
     priority: number;
     state: string;
     payload: unknown;
-    supervisor_prompt: string | null;
     idempotency_key: string | null;
-    causation_chain: string[] | null;
     created_at: Date;
     updated_at: Date;
 }
@@ -22,8 +20,13 @@ interface RawEventRow {
  * Uses an injected {@link PostgresConnection} for pool + LISTEN access;
  * does not own connection lifecycle. Several `EventBus` instances can
  * share a connection, and the connection can be reused by other domain
- * clients (e.g. a future `PendingActionsBus`) without opening more
- * sockets.
+ * clients (e.g. {@link AgentRunBus}) without opening more sockets.
+ *
+ * Listens on `events_new` for wake-ups — the channel that fires on
+ * INSERT into `events`. State updates (which fire on `events_state`)
+ * are not consumed here; host plugins that need to wait for an event to
+ * settle should subscribe to that channel directly via
+ * {@link PostgresConnection.listen}.
  *
  * `waitForNext()` does an initial query before sleeping on the listen
  * channel, so events that already existed when the call started are
@@ -48,30 +51,32 @@ export class EventBus {
         this.connection = connection;
     }
 
-    /** Apply the events schema (idempotent). Safe to call on every daemon start. */
+    /**
+     * Apply the events + agentruns schema (idempotent). Safe to call on
+     * every daemon start. The same SQL bundle is consumed by
+     * {@link AgentRunBus.installSchema}, so calling either is sufficient.
+     */
     async installSchema(): Promise<void> {
-        await this.connection.getPool().query(EVENTS_SCHEMA_SQL);
+        await this.connection.getPool().query(SCHEMA_SQL);
     }
 
     /**
      * Insert a new event and return the persisted row.
      *
-     * @throws If `idempotencyKey` collides with an existing event.
+     * @throws If `idempotencyKey` collides with an existing event, or if
+     *   `topic` does not match `\w+(:\w+)?`.
      */
     async add(event: NewEvent): Promise<EventRow> {
         const result = await this.connection.getPool().query<RawEventRow>(
-            `INSERT INTO events
-                (topic, payload, priority, state, supervisor_prompt, idempotency_key, causation_chain)
-             VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7::bigint[])
+            `INSERT INTO events (topic, payload, priority, state, idempotency_key)
+             VALUES ($1, $2::jsonb, $3, $4, $5)
              RETURNING *`,
             [
                 event.topic,
                 JSON.stringify(event.payload ?? {}),
                 event.priority ?? 50,
                 event.state ?? "pending",
-                event.supervisorPrompt ?? null,
                 event.idempotencyKey ?? null,
-                event.causationChain ?? [],
             ],
         );
         return mapRow(result.rows[0]);
@@ -111,7 +116,7 @@ export class EventBus {
     /**
      * Block until an event matching `filter` is in the table. Returns
      * the highest-priority such event (FIFO within priority). Subscribes
-     * to `LISTEN events_changed` on first call so subsequent waits sleep
+     * to `LISTEN events_new` on first call so subsequent waits sleep
      * until a NOTIFY arrives instead of polling.
      *
      * **Read-only**: does not mutate the row. For multi-consumer queues,
@@ -196,13 +201,13 @@ export class EventBus {
         }
     }
 
-    /** Subscribe this bus's wake-handler to {@link EVENTS_NOTIFY_CHANNEL}. */
+    /** Subscribe this bus's wake-handler to {@link EVENTS_NEW_CHANNEL}. */
     private async ensureListening(): Promise<void> {
         if (this.listenInstalled) {
             return;
         }
         this.listenInstalled = true;
-        await this.connection.listen(EVENTS_NOTIFY_CHANNEL, this.listenHandler);
+        await this.connection.listen(EVENTS_NEW_CHANNEL, this.listenHandler);
     }
 
     /** Resolve as soon as the next NOTIFY arrives or `signal` aborts. */
@@ -253,11 +258,9 @@ export class EventBus {
 /**
  * Convert a snake_case raw row into the camelCase {@link EventRow}.
  *
- * The DB column is `text` with no CHECK constraint, so `raw.state` is
- * trusted to be a known {@link EventState} (we control every writer).
- * Pre-existing rows from before the union was introduced may surface
- * with stale labels like `"processed"`; truncate `events` if that
- * matters.
+ * The DB column is `text` with no CHECK constraint on the value, so
+ * `raw.state` is trusted to be a known {@link EventState} (we control
+ * every writer).
  */
 function mapRow(raw: RawEventRow): EventRow {
     return {
@@ -266,9 +269,7 @@ function mapRow(raw: RawEventRow): EventRow {
         priority: raw.priority,
         state: raw.state as EventState,
         payload: raw.payload,
-        supervisorPrompt: raw.supervisor_prompt,
         idempotencyKey: raw.idempotency_key,
-        causationChain: raw.causation_chain ?? [],
         createdAt: raw.created_at,
         updatedAt: raw.updated_at,
     };

@@ -1,36 +1,25 @@
 /**
- * Lifecycle states an event can be in.
+ * Lifecycle states for an `events` row.
  *
- * Each event row runs through one of two lifecycles:
+ * Events are the immutable record of "the world said this happened".
+ * They no longer participate in any worker state machine themselves —
+ * the actual work runs in `agentruns` rows that reference the event.
  *
- * - **Input events** (everything ingested by the host): `pending` →
- *   `triaging` → `done`. The triage worker owns this. It does *not*
- *   transition input events to supervisor states; instead, when a
- *   plugin's triage decides supervision is needed, it inserts one or
- *   more *new* events with state `supervisor-ready`. Multiple plugins
- *   triaging the same input can spawn multiple supervisor jobs.
- * - **Supervisor jobs** (spawned by triage): `supervisor-ready` →
- *   `supervising` → `done`.
+ * Transitions:
  *
- * Any state can transition to `failed` on error.
- *
- * State changes between worker stages (`pending → triaging`,
- * `supervisor-ready → supervising`) are atomic via {@link EventBus.claim}.
- * Terminal transitions (`done` / `failed`) are explicit `update(...)`
- * calls by the worker that owns the row.
+ * - `pending`: row inserted by a host plugin via {@link EventBus.add}.
+ * - `running`: the container's input-event watcher has spawned the root
+ *   agentrun for this event.
+ * - `done` / `failed`: set reactively when the last `pending` /
+ *   `running` agentrun for this event settles. `failed` wins if any
+ *   agentrun for the event has failed.
  */
-export type EventState =
-    | "pending"
-    | "triaging"
-    | "supervisor-ready"
-    | "supervising"
-    | "done"
-    | "failed";
+export type EventState = "pending" | "running" | "done" | "failed";
 
 /**
  * Shape of a row in the `events` table after JSON-decoding from postgres.
- * The numeric `id` and `causationChain` entries are kept as strings because
- * postgres `bigint` exceeds JavaScript's safe integer range.
+ * The numeric `id` is kept as a string because postgres `bigint` exceeds
+ * JavaScript's safe integer range.
  */
 export interface EventRow {
     /**
@@ -39,13 +28,13 @@ export interface EventRow {
      */
     readonly id: string;
     /**
-     * Hierarchical event name, dot-separated (e.g. `mail.received`,
-     * `chat.message.sent`). Used by triage / watchers for routing.
+     * Event topic, matching `\w+(:\w+)?` (e.g. `mail`, `chat:whatsapp`).
+     * Resolved to a handler file by the container at runtime.
      */
     readonly topic: string;
     /**
      * Higher = processed first within a queue. FIFO within priority.
-     * Default 50.
+     * Default 50. Inherited by all agentruns spawned for this event.
      */
     readonly priority: number;
     /** Lifecycle state — see {@link EventState}. */
@@ -56,21 +45,10 @@ export interface EventRow {
      */
     readonly payload: unknown;
     /**
-     * Prompt the supervisor uses for this event. Set by triage when it
-     * spawns a `supervisor-ready` job; `null` for input events and any
-     * row that has no supervisor session attached.
-     */
-    readonly supervisorPrompt: string | null;
-    /**
      * Globally unique key for dedup. `null` when the producer didn't
      * supply one (then no dedup happens).
      */
     readonly idempotencyKey: string | null;
-    /**
-     * IDs of the events that caused this one (lineage; index 0 is the
-     * root). Used by the hop counter to prevent runaway chains.
-     */
-    readonly causationChain: readonly string[];
     /** Insert timestamp — postgres `now()` at INSERT. */
     readonly createdAt: Date;
     /** Last `update()` timestamp — bumped to `now()` on every update. */
@@ -87,10 +65,6 @@ export interface NewEvent {
     readonly state?: EventState;
     /** Globally unique key for dedup; null = no dedup. */
     readonly idempotencyKey?: string;
-    /** IDs of the events that caused this one (for lineage). */
-    readonly causationChain?: readonly string[];
-    /** Prompt for the supervisor. Required when `state` is `supervisor-ready`. */
-    readonly supervisorPrompt?: string;
 }
 
 /** Patch shape for {@link EventBus.update}. */

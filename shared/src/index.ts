@@ -1,5 +1,13 @@
 export type { EventFilter, EventPatch, EventRow, EventState, NewEvent } from "./Event";
 export { EventBus } from "./EventBus";
+export type {
+    AgentRunFilter,
+    AgentRunPatch,
+    AgentRunRow,
+    AgentRunState,
+    NewAgentRun,
+} from "./AgentRun";
+export { AgentRunBus } from "./AgentRunBus";
 export {
     POSTGRES_DB,
     POSTGRES_HOST,
@@ -9,4 +17,11 @@ export {
     type PostgresConnectionConfig,
     type NotificationHandler,
 } from "./PostgresConnection";
-export { EVENTS_NOTIFY_CHANNEL, EVENTS_SCHEMA_SQL } from "./Schema";
+export {
+    AGENTRUNS_CHANNEL,
+    EVENT_TERMINAL_UPDATE_SQL,
+    EVENTS_NEW_CHANNEL,
+    EVENTS_STATE_CHANNEL,
+    SCHEMA_SQL,
+    TOPIC_PATTERN,
+} from "./Schema";

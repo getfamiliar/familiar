@@ -2,14 +2,13 @@ import type { EventRow, PostgresConnection } from "effective-assistant-shared";
 import { EventWatcher } from "./EventWatcher";
 
 /**
- * Triage worker. Claims events in `pending`, runs the (placeholder)
- * triage policy, marks them `done` — or `failed` on error.
+ * Placeholder input-event watcher. Claims `pending` events into
+ * `running` and marks them `done`.
  *
- * Real triage will: load subscribed plugins for the event's topic, run
- * their triage functions, and insert any *new* events with state
- * `supervisor-ready` for the supervisor worker to pick up. The input
- * event itself transitions to `done` regardless of how many supervisor
- * jobs were spawned.
+ * This file is a temporary stub kept so the container compiles after
+ * the events/agentruns split. The real input-event watcher (which
+ * spawns a root agentrun per event and lets the agentrun lifecycle
+ * drive the event terminal state) lands in the next plan.
  */
 export class TriageWatcher {
     private readonly watcher: EventWatcher;
@@ -18,13 +17,13 @@ export class TriageWatcher {
         this.watcher = new EventWatcher({
             connection,
             watchState: "pending",
-            claimedState: "triaging",
+            claimedState: "running",
         });
     }
 
-    /** Run the claim-handle-mark loop until `signal` aborts. */
+    /** Claim-and-finish loop until `signal` aborts. */
     async run(signal: AbortSignal): Promise<void> {
-        console.error("Triage worker watching state=pending");
+        console.error("Input-event watcher (stub) watching state=pending");
         for (;;) {
             const event = await this.watcher.claimNextEvent(signal);
             if (event === null) {
@@ -32,45 +31,23 @@ export class TriageWatcher {
             }
             await this.handle(event);
         }
-        console.error("Triage worker stopped");
+        console.error("Input-event watcher stopped");
     }
 
-    /**
-     * Process a single claimed (now `triaging`) event.
-     *
-     * Placeholder policy: spawn one supervisor-ready event per input
-     * with a generic prompt, then mark the input event done. Real
-     * triage will run plugin functions and decide *whether* to spawn,
-     * what topic to spawn, and how to format the prompt.
-     */
     private async handle(event: EventRow): Promise<void> {
         try {
-            const supervisorPrompt = `Process the following payload: ${JSON.stringify(event.payload)}`;
-            const spawned = await this.watcher.addEvent({
-                topic: event.topic,
-                payload: event.payload,
-                state: "supervisor-ready",
-                supervisorPrompt,
-                causationChain: [event.id],
-            });
-            console.log(
-                `[triage] id=${event.id} topic=${event.topic} → spawned supervisor job id=${spawned.id}`,
-            );
+            console.log(`[input-event] id=${event.id} topic=${event.topic} (stub: marking done)`);
             await this.watcher.setState(event.id, "done");
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            console.error(`Triage failed for id=${event.id}: ${message}`);
-            await this.markFailedQuietly(event.id);
-        }
-    }
-
-    private async markFailedQuietly(id: string): Promise<void> {
-        try {
-            await this.watcher.setState(id, "failed");
-        } catch (err) {
-            console.error(
-                `Also failed to mark id=${id} failed: ${err instanceof Error ? err.message : String(err)}`,
-            );
+            console.error(`Input-event handling failed for id=${event.id}: ${message}`);
+            try {
+                await this.watcher.setState(event.id, "failed");
+            } catch (markErr) {
+                console.error(
+                    `Also failed to mark id=${event.id} failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`,
+                );
+            }
         }
     }
 }

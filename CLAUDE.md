@@ -8,7 +8,7 @@ Effective-assistant is an AI executive assistant built as a containerized agent.
 
 - **Proactive, not reactive.** It reacts to world events (incoming mail, calendar invitations, Jira webhooks), not just user prompts.
 - **Personal.** The assistant's behavior is shaped by markdown files the user can edit. The "personality" lives in the workspace, not in code or model weights.
-- **Extensible.** Plugins add capabilities (new event sources, new tools). Rules and workflows let the user compose behavior without writing code.
+- **Extensible.** Plugins add capabilities (new event sources, new tools). Workflows let the user compose behavior without writing code.
 - **Auditable.** Every decision and action leaves a trace. The user can read why something happened.
 - **Safely sandboxed.** Reasoning runs in a container that cannot see credentials. The host injects auth into MCP calls via a reverse proxy.
 
@@ -21,12 +21,12 @@ Using open-weight models is the deliberate choice to keep costs predictable and 
 - **TypeScript** end to end (host and container)
 - **Docker** with a single agent container plus the Docker MCP Toolkit for tool aggregation
 - **Postgres** for bus state (uses LISTEN/NOTIFY for event signaling)
-- **Markdown** for all user-facing configuration, rules, instructions, and the assistant's accumulated knowledge
+- **Markdown** for all user-facing configuration, workflows, and the assistant's accumulated knowledge
 
 Concerning LLM models, the system is flexible but opinionated towards:
 
 - **Featherless.ai** as primary LLM provider (flat-rate, broad model selection); architecture is provider-agnostic so DeepSeek-API direct or Anthropic remain viable fallbacks
-- **DeepSeek V4 Pro** as supervisor model, **V4 Flash** for triage and lightweight subagent work
+- **DeepSeek V4 Pro** for handlers that need heavy reasoning, **V4 Flash** for routing and lightweight handlers. Each handler chooses its own model.
 
 
 ## Top-level topology
@@ -45,13 +45,14 @@ The system splits into two trust zones: a **host** that holds credentials and or
 │   └──────────────┘   └──────────────┘   └──────────────────────┘    │
 └─────────────────────────────────│──────────────────│────────────────┘
                                   │                  │
-                          pulls events       all MCP calls
-                          via LISTEN/NOTIFY  go through gateway
+                          watches events &    all MCP calls
+                          agentruns via       go through gateway
+                          LISTEN/NOTIFY              │
                                   │                  │
 ┌─────────────────────────────── CONTAINER ───────────────────────────┐
-│  Triage workers, action workers, supervisor                         │
-│  Plugin container-side code mounted in                              │
-│  Workspace (markdown files: instructions, rules, workflows,         │
+│  Input-event watcher, agentrun watcher                              │
+│  Plugin container-side code mounted in (MCPs)                       │
+│  Workspace (markdown files: handlers, workflows,                    │
 │   people, projects, plugin-specific knowledge)                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -61,18 +62,19 @@ The system splits into two trust zones: a **host** that holds credentials and or
 - **Plugin lifecycle.** Plugins are npm packages. Each declares a manifest. The host loads them, runs their host-side code (event sources, daemons, cronjobs), and mounts their container-side code into the agent container.
 - **Event ingestion.** Host-side plugin code produces events (incoming mails, Slack via socket, Jira via webhook, scheduled triggers, etc.) and writes them to the bus state database with idempotency checks.
 - **Credential management.** OAuth tokens, API keys, and similar secrets live in the host. They are never passed to the container. The host refreshes tokens via cronjobs and injects them at call time through the MCP gateway.
-- **MCP gateway.** All MCP servers are aggregated behind the Docker MCP Toolkit gateway. The container sees a single endpoint. Per-call authentication is injected by the gateway based on the calling subagent's permissions.
-- **Approval gate.** When the container proposes a write action that requires user confirmation, it writes a pending action to the database. The host watches for these (LISTEN/NOTIFY), pushes a notification (Telegram, web UI, etc.), and writes the user's response back to the database.
-- **Logging service.** Centralized structured logging endpoint. Container, supervisor, subagents, and host plugins all log here with event lineage for correlation.
+- **MCP gateway.** All MCP servers are aggregated behind the Docker MCP Toolkit gateway. The container sees a single endpoint. Per-call authentication is injected by the gateway based on the calling agentrun's permissions.
+- **Approval gate.** When a handler proposes a write that requires user confirmation, it writes a pending action to the database. The host watches for these (LISTEN/NOTIFY), pushes a notification (Telegram, web UI, etc.), and writes the user's response back to the database.
+- **Logging service.** Centralized structured logging endpoint. Container watchers, individual agentruns, and host plugins all log here with event + agentrun lineage for correlation.
 - **Container lifecycle.** The host starts the container, mounts plugin container-side directories and sets up the containers network including the MCP gateway.
 
 ### Container responsibilities
 
-The container runs three independent worker loops, all pull-based against the bus state database:
+The container runs two pull-based watchers against the bus state database:
 
-- **Triage worker.** Pulls events from the event queue. For each event, runs all subscribed plugin triage functions (independently — see "Triage" below). Writes resulting deterministic actions to the action queue or supervisor jobs to the supervisor queue.
-- **Action worker.** Pulls deterministic actions from the action queue. Executes them via MCP calls. Writes audit entries.
-- **Supervisor worker.** Pulls supervisor jobs from the priority queue (chat > normal > low, FIFO within priority). One job at a time due to concurrency limits on the supervisor model. Plans and executes via MCP calls and subagent invocations. Proposes pending actions through the approval gate.
+- **Input-event watcher.** Watches the `events` table for new rows in `pending`, atomically claims them (`pending → running`), and inserts a root `agentruns` row pointing at `<topic>/index.md` in the workspace. After that the input event is no longer of interest to the watcher; the event's terminal state is set reactively when its agentrun tree settles.
+- **Agentrun watcher.** Watches the `agentruns` table for `pending` rows, atomically claims one (`pending → running`), resolves its handler markdown file, runs it via the agent runner, and settles it (`done`/`failed`). On terminal write the parent event's state is recomputed in the same transaction. **One agentrun runs at a time** for now (one supervisor slot on Featherless); per-model parallelism is a deferred open question.
+
+A handler can queue follow-up agentruns by handler basename via a tool call (`queue_next("analyze", payload)`). This produces an arbitrary, branching workflow tree rooted at `<topic>/index.md` instead of a fixed pipeline.
 
 The container has no direct network access except through the MCP gateway. It has no credentials. It can read and write its workspace and the bus state database.
 
@@ -81,34 +83,27 @@ The container has no direct network access except through the MCP gateway. It ha
 A canonical event lifecycle:
 
 1. **Host plugin** detects something in the world (e.g. new mail via IMAP IDLE) and calls a standardized event ingestion API on the host.
-2. **Host** writes the event to the `events` table with a globally unique idempotency key. Postgres NOTIFY is sent.
-3. **Container's triage worker** wakes up, claims the next pending event with `UPDATE ... WHERE state='pending' RETURNING *` (atomic), and reads it.
-4. **Triage worker** identifies all plugins subscribed to the event's topic and invokes their triage functions independently. Each can return one of three outcomes:
-   - `ignore` (this plugin doesn't care about this event)
-   - `deterministic action` (run a specific tool sequence directly)
-   - `supervisor job` (build a prompt and queue a supervisor task)
-   
-   Multiple plugins may all return non-ignore outcomes — they are processed independently. There is no consensus mechanism.
-5. **Triage worker** writes resulting actions to the action queue and/or supervisor jobs to the supervisor queue, marks the event as `triaged`.
-6. **Action worker** picks up deterministic actions, runs them, writes audit entries.
-7. **Supervisor worker** picks up jobs by priority. The supervisor (V4 Pro) plans and executes, calling subagents (often V4 Flash) and MCPs. Reads from workspace markdown for context.
-8. For risky writes, the supervisor proposes a **pending action** (or compound pending action) through the approval gate.
-9. **User** receives notification, approves or modifies. Approval gate updates the database.
-10. **Action worker** picks up approved actions, executes them, writes audit. May emit follow-up events (e.g. `calendar.event_moved`), which re-enter the loop at step 1 — with hop counter tracking to prevent runaway chains.
+2. **Host** writes the event to the `events` table with a globally unique idempotency key. Topic matches `\w+(:\w+)?` (e.g. `mail:new`). `NOTIFY events_new` wakes the container.
+3. **Container's input-event watcher** atomically claims the event (`pending → running`) and inserts a root `agentruns` row for it, with `handler='index'` and `topic` copied from the event. `NOTIFY agentruns_changed` wakes the agentrun watcher.
+4. **Agentrun watcher** claims the row (`pending → running`), resolves the handler markdown file (see "Handler resolution"), and runs an agent session against it. The handler's content is the prompt; the agent has MCP tools and the `queue_next` tool.
+5. **Inside the handler**, the agent decides what to do next. It may call MCP tools, edit workspace files, and call `queue_next(handler, payload)` to spawn child agentruns (e.g. `index.md` triages, then queues `analyze` and `respond`). Each child is another `agentruns` row with `parent_agentrun_id` set to the spawning row and `event_id` propagated.
+6. **For risky writes**, the handler proposes a **pending action** through the approval gate. The agentrun **suspends** until the user responds, then resumes and continues. Suspend/resume mechanics are TBD — see open questions.
+7. **When the agentrun finishes**, `AgentRunBus.settle()` writes its terminal state and, in the same transaction, recomputes the parent event's state via `EVENT_TERMINAL_UPDATE_SQL`: the event flips to `done` once no `pending`/`running` agentruns remain for it, or `failed` if any agentrun in the tree failed. `NOTIFY events_state` lets host plugins react to the final outcome (e.g. send a chat reply back to the user).
+8. **Consequence events** (a write that triggers another world change) re-enter step 1 as fresh events with a new id. There is no global causation chain across events; lineage *within* an event lives on `agentruns.parent_agentrun_id`. Producers can pass parent context in the new event's payload if needed.
 
-## Inter-agent communication
+### Handler resolution
 
-This is the architectural heart of the system. The rules:
+The agentrun's `topic` and `handler` fields determine which markdown file to load. Override rule for a topic like `chat:telegram` and handler `analyze`:
 
-- **Reads can cross agent boundaries.** A subagent can synchronously call another subagent's read-only tools (e.g. `schedule.find_slots`). MCPs can also be called directly when no subagent reasoning is needed for the read.
-- **Writes are linear.** Writes never cascade through agent-to-agent calls. They flow only via: triage → domain agent → approval gate → action worker.
-- **Consequence writes go back through the bus.** If a write produces a follow-up effect (calendar move triggers Jira update), this happens by emitting a new event with `causation_chain` extended, which re-enters triage. This guarantees every write passes through approval logic and audit, and prevents hidden agent-to-agent triggering.
+1. Try `workspace/chat/telegram/analyze.md`.
+2. Fall back to `workspace/chat/analyze.md`.
+
+The override applies uniformly to all handlers, not just `index`. Validation happens at `queue_next` time: the tool resolves the path and refuses to queue if neither file exists, so the calling agent gets a synchronous error.
 
 ### Safety mechanisms
 
-- **Hop counter on causation chain.** Events carry their full lineage. Beyond a configured depth (default 3), processing halts and the user is notified. Prevents runaway loops even if the supervisor misbehaves.
-- **Tool budget per agent invocation.** Each agent run has a hard tool-call limit (default 15). Exceeding it terminates the run and logs the failure. Protects against models that loop on weaker tool-calling adherence.
-- **Whitelist of cross-agent reads.** Allowed read targets are declared statically in plugin manifests, not negotiated at runtime. The possible call graph is therefore knowable in advance.
+- **Tree-depth limit on agentrun lineage.** The `parent_agentrun_id` chain has a maximum depth (default 3, configurable). Past that, `queue_next` refuses to spawn and the user is notified. Prevents runaway loops.
+- **Tool budget per agent invocation.** Each agentrun has a hard tool-call limit (default 15). Exceeding it terminates the run as `failed` and logs the failure. Protects against models that loop on weaker tool-calling adherence.
 
 ## Storage layers
 
@@ -116,12 +111,14 @@ Three distinct storage layers, each with a clear purpose and owner.
 
 ### 1. Bus state (host, transactional)
 
-Postgres database, owned by the host. The container accesses it through a host-provided MCP server ("bus state MCP") so that all bus operations are uniformly auditable. Tables include:
+Postgres database, owned by the host. Both host and container access it via the shared `EventBus` / `AgentRunBus` clients in `shared/`. Two tables today:
 
-- `events` — all events, with `causation_chain`, `idempotency_key`, `priority`, `topic`, `state`, payload
-- `pending_actions` — triaged events ready for the supervisor and proposed writes awaiting approval, with `compound_id`, `state`, `expires_at`
-- `scheduled_triggers` — one-shot scheduled events created by event-based rules (e.g. "30 min before this specific meeting")
-- `audit_log` — append-only record of all consequential actions
+- `events` — `id`, `topic` (CHECK against `\w+(:\w+)?`), `priority`, `state` (`pending|running|done|failed`), `payload`, `idempotency_key`, timestamps. Immutable record of "the world said this happened". State transitions are bookkeeping — nothing wakes on them except host-side completion waiters via `NOTIFY events_state`.
+- `agentruns` — `id`, `event_id` (FK), `parent_agentrun_id` (self-FK, null for root), `topic`, `handler`, `priority`, `state` (`pending|running|done|failed`), `prompt`, `payload`, `result`, `error`, timestamps. The assistant's response tree per event.
+
+Three NOTIFY channels: `events_new` (INSERT into events; wakes the input-event watcher), `events_state` (state UPDATE on events; for host-side completion waiters), `agentruns_changed` (INSERT and state UPDATE on agentruns; wakes the agentrun watcher).
+
+Planned but not yet implemented: `pending_actions` (approval gate), `scheduled_triggers` (one-shot triggers from workflows, e.g. "30 min before this meeting"), `audit_log`.
 
 ### 2. Workspace (container, markdown)
 
@@ -129,25 +126,26 @@ Mounted directory, the assistant's "memory and personality." Conventions:
 
 ```
 workspace/
-  SOUL.md                   # the assistant's core identity and values, read by supervisor on every job
-  CONTEXT.md                # situational context for the assistant - the job, relations, duties etc.
+  SOUL.md                   # the assistant's core identity and values, read by every handler
+  CONTEXT.md                # situational context — the job, relations, duties etc.
   workflows/                # time-driven workflows (user-defined cronjobs)
     monday-digest.md
     monthly-spending-review.md
     ...
   people/                   # cross-plugin facts about people
-    anna.md                 # written and updated by supervisor, user-correctable
+    anna.md                 # written and updated by handlers, user-correctable
     ...
-  <plugin>/                 # plugin-specific space
-    instructions.md         # plugin-default, user-editable
-    <event-type>.md         # event-specific guidance, user-editable
-    rules/                  # event-driven rules (user-defined)
-      coaching-prep.md
-      newsletter-archive.md
+  <topic>/                  # one folder per top-level topic (e.g. mail/, chat/, calendar/)
+    index.md                # default entry-point handler for events of this topic
+    analyze.md              # additional handler, queued by name from another handler
+    ...
+    <subtopic>/             # optional override folder for `<topic>:<subtopic>`
+      index.md              # overrides the parent index.md for this subtype
+      analyze.md            # overrides the parent analyze.md
       ...
 ```
 
-Files are plain markdown. The supervisor reads and writes them through the file-system MCP. The workspace can be backed by a git repo for free versioning.
+Files are plain markdown. Handlers read and write them through the file-system MCP. The workspace can be backed by a git repo for free versioning.
 
 ### 3. Plugin configuration and secrets (host, encrypted)
 
@@ -164,60 +162,30 @@ my-plugin/
   host/                     # runs in host process
     index.ts                # event sources, cronjobs, daemons
   container/                # mounted into container
-    triage.ts               # triage functions for subscribed event topics
     mcps/                   # plugin-provided MCP servers (optional)
   workspace-template/       # copied into workspace on first install
-    instructions.md
-    new-event.md
-    ...
+    <topic>/
+      index.md
+      ...
 ```
+
+A plugin owns one or more topics, each represented as a folder under `workspace-template/`. The plugin ships default handler markdown; the user edits or overrides them in `data/workspace/`.
 
 ### Plugin manifest (in package.json)
 
 Declares:
 
-- Plugin id ([a-z0-9-]+), version
-- Event topics produced (with payload schema)
-- Event topics subscribed (for triage)
+- Plugin id (`[a-z0-9-]+`), version
+- Event topics produced (with payload schema), each matching `\w+(:\w+)?`
 - MCPs required (with required scopes)
 - MCPs provided (optional)
 - Cronjobs and daemons (with schedule and entry points)
 
-## Rules and workflows
+## Workflows
 
-The user can extend behavior in two ways without writing code, both via markdown files in the workspace.
+Files in `workspace/workflows/`. The first line describes when the workflow fires and what it does. The rest contains the schedule and detailed instructions.
 
-### Rules (event-driven)
-
-Files in `workspace/{plugin}/rules/`. Each rule's first line describes when the rule applies and what it does (one sentence containing both trigger and action). The rest of the file contains the detailed instructions.
-
-Example: `workspace/calendar/rules/coaching-prep.md`
-
-```markdown
-For events with "Coaching" in the title
-
-# Coaching call preparation message
-
-## Trigger
-A new event in the calendar whose title contains "Coachinggespräch".
-
-## Action
-30 minutes before the meeting starts:
-1. Identify the meeting partner from the attendees.
-2. Search Jira for the last 5 tickets edited or commented by that person.
-3. Summarize and send via Telegram.
-```
-
-Rules are evaluated for every positive plugin triage by the calling environment using a two-stage retrieval:
-
-1. **Index scan.** A platform helper builds a compact prompt with all rule first-lines plus the current event, asks V4 Flash which rules to consider, returns a shortlist of file paths.
-2. **Detail evaluation.** Only shortlisted files are loaded fully and used to drive the triage decision (typically: produce a supervisor job, or schedule a one-shot trigger via `scheduled_triggers`).
-
-This pattern keeps rule evaluation cheap even with many rules. Rule files that are evaluated as being relevant are added to the prompt returned by the triage function, so they can be used for context and guidance in the supervisor job.
-
-### Workflows (time-driven)
-
-Files in `workspace/workflows/`. Same first-line convention. Parsed by the workflow plugin, which extracts the schedule and registers a cronjob. When the cronjob fires, an event is emitted that proceeds through the normal pipeline.
+Parsed by the workflow plugin, which extracts the schedule and registers a cronjob. When the cronjob fires, an event is emitted that proceeds through the normal pipeline.
 
 Example: `workspace/workflows/monday-digest.md`
 
@@ -236,21 +204,21 @@ Compile a briefing of:
 Send the briefing via Telegram.
 ```
 
-### Editing rules and workflows via chat
+### Editing handlers and workflows via chat
 
-When the user expresses a behavior change in chat ("remember: Anna gets priority on mails"), the supervisor identifies the edit intent and edits the relevant markdown files.
+When the user expresses a behavior change in chat ("remember: Anna gets priority on mails"), the handler running the chat event identifies the edit intent and writes to the relevant markdown files (the topic's handler, a person's note, a workflow, etc.).
 
 ## Markdown layers and self-organization
 
-The supervisor's behavior is shaped by markdown files in layers, each with distinct ownership and purpose:
+Handler behavior is shaped by markdown files in layers, each with distinct ownership and purpose:
 
 - **Code-level capability** — what plugins make possible (in TypeScript/MCPs)
-- **Global instructions** — `SOUL.md` and `CONTEXT.md`, written by the user to define the assistant's identity and situational context
-- **Plugin + event layer** — plugin-shipped instructions per plugin (`<plugin>/instructions.md`) and per event type (`<plugin>/<event-type>.md`), user-editable defaults
-- **Behavior layer** — user-defined rules (`rules/`) and workflows (`workflows/`)
-- **Knowledge layer** — facts about people, projects, etc. (`people/`, plugin-specific), built up over time by the supervisor itself, correctable by the user
+- **Global context** — `SOUL.md` and `CONTEXT.md`, written by the user to define the assistant's identity and situational context
+- **Handler layer** — per-topic handler files (`<topic>/index.md`, `<topic>/analyze.md`, …) and sub-topic overrides (`<topic>/<subtopic>/…`). Plugin-shipped defaults, user-editable.
+- **Workflow layer** — user-defined time-driven `workflows/`
+- **Knowledge layer** — facts about people, projects, etc. (`people/`, plugin-specific), built up over time by handlers themselves, correctable by the user
 
-System prompts are kept short. Plugin instructions tell the supervisor how to find more context (e.g. "always read `people/<sender>.md` before processing a mail"). The supervisor pulls additional files into context as needed. This avoids loading large amounts of context into every prompt and lets the assistant build its own knowledge structure over time, guided by user conventions.
+Handler prompts are kept short. They tell the agent how to find more context (e.g. "always read `people/<sender>.md` before drafting a reply"). The agent pulls additional files into context as needed. This avoids loading large amounts of context into every prompt and lets the assistant build its own knowledge structure over time, guided by user conventions.
 
 ## Lifecycle and operations
 
@@ -263,29 +231,28 @@ System prompts are kept short. Plugin instructions tell the supervisor how to fi
 
 ### Logging
 
-All components log using a centralized logging service. Fields include plugin id, severity, timestamp, event lineage (causation chain id), message, structured context. The host persists with rotation. Logs can be correlated across host plugins, container workers, and the supervisor by causation chain.
+All components log using a centralized logging service. Fields include plugin id, severity, timestamp, lineage (event id + agentrun id + parent agentrun id), message, structured context. The host persists with rotation. Logs can be correlated across host plugins, container watchers, and individual agentruns.
 
 ## Concurrency and model usage
 
-The supervisor model is the bottleneck under Featherless premium tier (one concurrent slot for 70B+ models). The architecture accommodates this:
+Each handler's markdown file declares which model the agent runs under. The heavy model (V4 Pro) is the bottleneck: Featherless's premium tier exposes one concurrent slot for 70B+ models.
 
-- Triage uses V4 Flash with multiple concurrent slots — high-throughput, cheap, parallelizable.
-- Action workers do not use the supervisor — they run deterministic tool sequences and can run multiple in parallel.
-- Supervisor jobs are processed sequentially, FIFO within priority class. Chat events have priority over mail/calendar/etc. Burst handling: jobs queue and are processed as the slot frees.
+To keep things simple for now:
 
-Subagent role-modeling (which model handles which subtask) is constrained by both task fit and concurrency: complex domain reasoning that needs the supervisor's slot would block. Drafting subagents and similar can run in V4 Flash.
+- The agentrun watcher processes **one agentrun at a time**, FIFO within priority. Priority is inherited from the parent event (set by the host plugin that ingested the event).
+- Lightweight handlers (V4 Flash) currently share the same single-slot watcher. Per-model concurrency limits — letting Flash handlers run in parallel with one heavy handler — are deferred until the bottleneck actually bites.
 
-The provider boundary is abstracted. The model client interface allows swapping Featherless, DeepSeek-API direct, Anthropic, etc., without changes to agent code. This is important both for cost control and for long-term resilience as open-weight models evolve.
+The provider boundary is abstracted. The model client interface allows swapping Featherless, DeepSeek-API direct, Anthropic, etc., without changes to handler code or watcher logic. This is important both for cost control and for long-term resilience as open-weight models evolve.
 
 ## Approval gate
 
 For any action classified as risky (configurable per tool, declared in the plugin manifest):
 
-- The supervisor writes a `pending_action` row, taking resource locks as needed.
+- The handler writes a `pending_action` row, taking resource locks as needed. The agentrun **suspends** — its row stays in `running`, but the agent loop is parked waiting on user response. (See open questions for the exact suspend/resume mechanics.)
 - The host's approval service watches for new pending actions (LISTEN/NOTIFY), pushes a notification with action details, accepts user response (approve / modify / reject) via Telegram, web UI, or other configured channel.
-- On approve: action worker executes; locks released after success/failure.
-- On reject or timeout: pending action marked rejected, locks released.
-- Compound actions (multiple writes that must commit together) share a `compound_id` and are executed atomically with rollback on partial failure.
+- On approve: the agentrun resumes, executes the write via MCP, releases locks.
+- On reject or timeout: the agentrun resumes, sees the rejection, and continues (or terminates as `failed`) accordingly.
+- Compound actions (multiple writes that must commit together) share a `compound_id` and are presented as one approval request.
 
 Risk classification levels:
 
@@ -297,50 +264,53 @@ Risk classification levels:
 
 The following are deliberately deferred but should be addressed during implementation:
 
-1. **Diff/merge on plugin updates** — when a plugin update brings new defaults but the user has customized their copy, present a diff and let the user choose. OR EVEN BETTER: Let the LLM handle the merge in a guided dialogue!
-2. **Web UI for workspace inspection and audit log browsing** — useful for debugging and understanding system behavior.
-3. **Eval harness** — a way to replay events against the system and measure subagent quality. Critical for confidently swapping models or tuning prompts.
+1. **Suspend/resume mechanics for agentruns awaiting user feedback.** When a handler proposes a pending action — or otherwise asks the user a question — the agentrun has to wait for a response that may take seconds or hours. Does the watcher slot stay parked on the suspended agentrun (simple but burns the single slot for the duration), or does the agentrun get persisted to disk and re-scheduled when the response lands (requires re-hydrating agent + tool state)? Same question for general user-feedback prompts, not just approval gates.
+2. **A successor to the old "rules" concept.** Earlier designs had user-authored event-driven rules (`workspace/<plugin>/rules/`) with a two-stage retrieval helper. That mechanism is dropped for now — handler files cover the same surface less directly. Some way for the user to add cross-cutting reactive behavior without editing a topic's handler is still wanted; shape TBD.
+3. **Per-model concurrency limits.** The agentrun watcher is single-slot today. Letting lightweight handlers run in parallel with one heavy handler is straightforward (model column on `agentruns`, watcher claim filter), but only worth the complexity once the single slot is actually a bottleneck.
+4. **Diff/merge on plugin updates** — when a plugin update brings new defaults but the user has customized their copy, present a diff and let the user choose. Even better: let the LLM handle the merge in a guided dialogue.
+5. **Web UI for workspace inspection and audit log browsing** — useful for debugging and understanding system behavior.
+6. **Eval harness** — a way to replay events against the system and measure handler quality. Critical for confidently swapping models or tuning prompts.
 
 ## Implementation order suggestion
 
-1. **Bus state schema and access** — events, pending_actions, resource_locks, cross_references, scheduled_triggers, audit_log. Plus the bus state MCP server.
-2. **Container worker loops** — triage, action, supervisor, with simple stub implementations that just log.
-3. **Plugin loader and lifecycle** — host-side plugin loading, manifest parsing, container mount, basic lifecycle management.
-4. **Logging service** — centralized structured logging.
-5. **Approval gate** — pending actions table, notification push (start with Telegram or simple web UI), response handling.
-6. **First real plugin** — mail plugin end to end as the reference implementation: IMAP IDLE in host, triage in container, MCP for mail operations behind the gateway, default workspace markdown, one or two example rules.
-7. **Workflow plugin and rule helper** — built-in workflow scanning and rule index-scan helper.
-8. **Additional plugins** — calendar, Jira, Telegram, chat (probably web UI for chat).
+1. **Bus state schema and access** — done: `events` and `agentruns` tables, `EventBus` and `AgentRunBus` clients in `shared/`, reactive event-terminal logic via `EVENT_TERMINAL_UPDATE_SQL`.
+2. **Container watchers** — input-event watcher (events `pending → running`, spawns root agentrun) and agentrun watcher (agentruns `pending → running → done|failed`, runs handler markdown via the agent runner). The current `TriageWatcher.ts` is a stub for the input-event watcher; replace it next.
+3. **Handler resolution + `queue_next` tool** — workspace path resolver with sub-topic override fallback, plus the in-handler tool that queues child agentruns by basename and validates at queue time.
+4. **Plugin loader and lifecycle** — host-side plugin loading, manifest parsing, container mount of `mcps/`, `workspace-template/` copy on first install.
+5. **Logging service** — centralized structured logging.
+6. **Approval gate** — `pending_actions` table, suspend/resume mechanics (per the open question above), notification push (start with Telegram or simple web UI), response handling.
+7. **First real plugin** — mail plugin end to end as the reference implementation: IMAP IDLE in host, `mail/index.md` (and optionally `mail/new/index.md`) handlers in workspace-template, MCP for mail operations behind the gateway.
+8. **Workflow plugin** — built-in workflow scanning, schedule extraction, cron registration.
+9. **Additional plugins** — calendar, Jira, Telegram, chat (probably web UI for chat).
 
 ## Design principles to preserve
 
 When in doubt during implementation:
 
 - **Pull, don't push.** Container pulls work from the database. Host writes events, but does not invoke functions in the container.
-- **Reads cross, writes don't.** Read-only tool calls between agents are fine. Writes only flow through triage → domain agent → approval → action.
 - **Markdown is the user-facing API.** If the user needs to configure or extend something, the answer is a markdown file in the workspace, not a config schema or UI form (unless it's about presenting markdown).
 - **Capability vs. policy separation.** Plugins ship capability. Policy lives in user-editable markdown.
-- **The supervisor builds its own context.** Don't preload everything. Give the supervisor short instructions and conventions for finding more context, then trust it to navigate.
+- **Each handler builds its own context.** Don't preload everything. Give handlers short prompts and conventions for finding more context, then trust the agent to navigate.
 - **Auditability over efficiency.** When in doubt, log it. Make every consequential decision inspectable.
-- **One agent container, multiple workers.** Don't isolate subagents in separate containers. Process-level isolation gains nothing here and costs latency and IPC complexity.
+- **One agent container, multiple watchers and agentruns.** Don't isolate handlers in separate containers. Process-level isolation gains nothing here and costs latency and IPC complexity.
 
 ## The `data/` folder
 
 The `data/` folder is the persistent host-side storage. Layout:
 
-- `data/workspace/` — mounted into the agent container as `/workspace`. The assistant's memory and personality live here (SOUL.md, CONTEXT.md, plugin folders, people/, etc.).
+- `data/workspace/` — mounted into the agent container as `/workspace`. The assistant's memory and personality live here (SOUL.md, CONTEXT.md, topic folders, people/, etc.).
 - `data/postgres/` — bind-mounted into `ea-postgres` as `/var/lib/postgresql/data`. Cluster state for the bus-state DB. Files are owned by the postgres uid (70 in alpine), so `rm -rf data/postgres` from the host needs `sudo`.
 - `data/.daemon.pid` — pidfile written by the daemon and consumed by `./cli.sh stop`.
 - `data/.postgres-port` — chosen loopback host port that `ea-postgres` is published on (e.g. `5432`, or the next free port if 5432 was taken at startup). Read by anything host-side that wants to `psql` or use a `pg` client.
 
 ## Architecture
 
-- **shared/**: TypeScript package (`effective-assistant-shared`) used by both host and container. Both sides depend on it via `"file:../shared"` in their package.json. Contains the `EventBus` / `PostgresConnection` clients, the `events` schema, and the related types. Must be built (`npm run build`) before host or container can compile. The Docker build handles this automatically.
-- **host/**: Single Node.js CLI entry at `host/src/index.ts` using [citty](https://github.com/unjs/citty) for subcommand dispatch. Subcommands live in `host/src/commands/` (`Start`, `Stop`, `Event`); shared paths and env access live in `host/src/Bootstrap.ts`. Invoked through one root wrapper, `./cli.sh <subcommand>`, which loads `.env` and rebuilds the host package if stale. The `start` subcommand runs as a long-running daemon that manages two singleton Docker containers: the bus-state postgres `ea-postgres` and the agent runtime `ea-agent`. Both join the shared bridge network `ea-net`. Postgres is published on `127.0.0.1:<port>:5432` only (port chosen at startup; written to `data/.postgres-port`). All host↔container communication flows through the postgres `events` table — there is no file-based IPC.
+- **shared/**: TypeScript package (`effective-assistant-shared`) used by both host and container. Both sides depend on it via `"file:../shared"` in their package.json. Contains the `EventBus` / `AgentRunBus` / `PostgresConnection` clients, the events + agentruns schema (with `EVENT_TERMINAL_UPDATE_SQL` helper), and the related types. Must be built (`npm run build`) before host or container can compile. The Docker build handles this automatically.
+- **host/**: Single Node.js CLI entry at `host/src/index.ts` using [citty](https://github.com/unjs/citty) for subcommand dispatch. Subcommands live in `host/src/commands/` (`Start`, `Stop`, `Event`); shared paths and env access live in `host/src/Bootstrap.ts`. Invoked through one root wrapper, `./cli.sh <subcommand>`, which loads `.env` and rebuilds the host package if stale. The `start` subcommand runs as a long-running daemon that manages two singleton Docker containers: the bus-state postgres `ea-postgres` and the agent runtime `ea-agent`. Both join the shared bridge network `ea-net`. Postgres is published on `127.0.0.1:<port>:5432` only (port chosen at startup; written to `data/.postgres-port`). All host↔container communication flows through the postgres `events` and `agentruns` tables — there is no file-based IPC.
 - **host/src/db/**: Postgres lifecycle. `PostgresContainer` runs `postgres:16-alpine`, picks a free loopback port, joins `ea-net`, and waits for `pg_isready`. Hardcoded dev credentials: `POSTGRES_USER=ea`, `POSTGRES_PASSWORD=ea`, `POSTGRES_DB=ea`. Container code reaches the DB at `ea-postgres:5432`; host code at `127.0.0.1:<port>` (port from `data/.postgres-port`).
 - **container/**: Docker container definition for the agent runtime. Long-running; built once, started by the host daemon and reused across all tasks.
   - Base image: `node:24-slim`. Currently no LLM SDK is installed — Featherless integration is the next step.
-  - `src/TriageWatcher.ts` and `src/SupervisorWatcher.ts` consume events from the bus via `EventBus.waitAndClaim` (atomic `pending → triaging` and `supervisor-ready → supervising` transitions). Both run concurrently in the same process.
+  - `src/TriageWatcher.ts` is a placeholder for the input-event watcher (claims events `pending → running`, currently just marks them done). The real input-event watcher and the new agentrun watcher land in the next plan.
   - Runs as non-root `node` user.
   - Docker build context is the project root (not `container/`), so `shared/` is available during image build.
 

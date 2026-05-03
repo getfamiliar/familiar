@@ -5,16 +5,16 @@ import {
     POSTGRES_USER,
     PostgresConnection,
 } from "effective-assistant-shared";
-import { SupervisorWatcher } from "./SupervisorWatcher";
 import { TriageWatcher } from "./TriageWatcher";
 
 /**
  * Container entry point. Owns the postgres connection, spawns the
- * triage and supervisor workers off it, runs them concurrently, and
- * closes the connection on exit.
+ * input-event watcher (placeholder), runs it, and closes the
+ * connection on exit.
  *
- * SIGTERM/SIGINT abort both workers; their loops exit cleanly and the
- * top-level `Promise.all` resolves.
+ * SIGTERM/SIGINT abort the watcher; its loop exits cleanly and the
+ * top-level `Promise.all` resolves. The agentrun watcher and the real
+ * input-event behavior land in the next plan.
  */
 async function main(): Promise<void> {
     const postgresPassword = process.env.POSTGRES_PASSWORD;
@@ -34,7 +34,6 @@ async function main(): Promise<void> {
     });
 
     const triage = new TriageWatcher(connection);
-    const supervisor = new SupervisorWatcher(connection);
 
     const abortController = new AbortController();
     const shutdown = (signal: string) => {
@@ -45,10 +44,7 @@ async function main(): Promise<void> {
     process.on("SIGINT", () => shutdown("SIGINT"));
 
     try {
-        await Promise.all([
-            triage.run(abortController.signal),
-            supervisor.run(abortController.signal),
-        ]);
+        await Promise.all([triage.run(abortController.signal)]);
     } finally {
         await connection.close();
         console.error("Agent container exiting cleanly");
