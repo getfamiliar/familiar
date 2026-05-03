@@ -25,8 +25,7 @@ export const eventCommand = defineCommand({
         payload: {
             type: "positional",
             required: false,
-            description:
-                'Payload as JSON; if not parseable, wrapped as { "message": "<raw>" }.',
+            description: 'Payload as JSON; if not parseable, wrapped as { "message": "<raw>" }.',
         },
         priority: {
             type: "string",

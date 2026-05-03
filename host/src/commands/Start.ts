@@ -3,8 +3,12 @@ import { defineCommand } from "citty";
 import { EventBus } from "effective-assistant-shared";
 import { bootstrap } from "../Bootstrap";
 import { AgentContainer } from "../container-runner/AgentContainer";
+import { ReverseProxyContainer } from "../container-runner/ReverseProxyContainer";
+import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools";
 import { PostgresContainer } from "../db/PostgresContainer";
-import { SHARED_NETWORK_NAME, ensureNetwork } from "../DockerTools";
+
+const FEATHERLESS_UPSTREAM_BASE = "https://api.featherless.ai";
+const FEATHERLESS_BASE_URL_FOR_AGENT = "http://ea-reverse-proxy:8788/v1";
 
 /**
  * `ea start` — bring up the daemon: postgres, schema, agent container,
@@ -21,6 +25,7 @@ export const startCommand = defineCommand({
     async run() {
         const boot = bootstrap();
         const postgresPassword = boot.requireEnv("POSTGRES_PASSWORD");
+        const featherlessApiKey = boot.requireEnv("FEATHERLESS_API_KEY");
 
         ensureDirs(boot);
         writePidFile(boot.pidFile);
@@ -30,10 +35,16 @@ export const startCommand = defineCommand({
             portFilePath: boot.postgresPortFile,
             password: postgresPassword,
         });
+        const reverseProxy = new ReverseProxyContainer({
+            imageName: "ea-reverse-proxy",
+            upstreamBase: FEATHERLESS_UPSTREAM_BASE,
+            upstreamApiKey: featherlessApiKey,
+        });
         const container = new AgentContainer({
             imageName: "effective-agent",
             dataPath: boot.dataDir,
             postgresPassword,
+            featherlessBaseUrl: FEATHERLESS_BASE_URL_FOR_AGENT,
         });
 
         await ensureNetwork(SHARED_NETWORK_NAME);
@@ -51,10 +62,13 @@ export const startCommand = defineCommand({
             await schemaConnection.close();
         }
 
-        await container.start();
+        await reverseProxy.start();
         console.error(
-            `agent container started: ${container.isRunning ? "ea-agent" : "(failed)"}`,
+            `reverse proxy started: ${reverseProxy.isRunning ? "ea-reverse-proxy" : "(failed)"}`,
         );
+
+        await container.start();
+        console.error(`agent container started: ${container.isRunning ? "ea-agent" : "(failed)"}`);
 
         let shuttingDown = false;
         const shutdown = async (signal: string) => {
@@ -65,6 +79,7 @@ export const startCommand = defineCommand({
             console.error(`Received ${signal}, draining…`);
 
             await safeStop("agent container", () => container.stop());
+            await safeStop("reverse proxy", () => reverseProxy.stop());
             await safeStop("postgres", () => postgres.stop());
 
             removePidFile(boot.pidFile);

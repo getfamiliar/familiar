@@ -37,10 +37,7 @@ function isLoopbackPortFree(port: number): Promise<boolean> {
  * @returns The first free port number found.
  * @throws If no free port is found within `attempts` tries.
  */
-export async function pickFreeLoopbackPort(
-    preferred: number,
-    attempts = 100,
-): Promise<number> {
+export async function pickFreeLoopbackPort(preferred: number, attempts = 100): Promise<number> {
     for (let offset = 0; offset < attempts; offset += 1) {
         const candidate = preferred + offset;
         if (await isLoopbackPortFree(candidate)) {

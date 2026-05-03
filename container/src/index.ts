@@ -45,7 +45,10 @@ async function main(): Promise<void> {
     process.on("SIGINT", () => shutdown("SIGINT"));
 
     try {
-        await Promise.all([triage.run(abortController.signal), supervisor.run(abortController.signal)]);
+        await Promise.all([
+            triage.run(abortController.signal),
+            supervisor.run(abortController.signal),
+        ]);
     } finally {
         await connection.close();
         console.error("Agent container exiting cleanly");

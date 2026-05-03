@@ -1,4 +1,3 @@
-- Remove contexts and multi-container
 - Are subagents really subagents or just workers with own system prompts?
 
 ## For later

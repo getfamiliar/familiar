@@ -7,10 +7,10 @@ import {
     PostgresConnection,
 } from "effective-assistant-shared";
 import {
-    SHARED_NETWORK_NAME,
     dockerCapture,
     dockerExec,
     removeContainer,
+    SHARED_NETWORK_NAME,
     stopContainer,
 } from "../DockerTools";
 import { pickFreeLoopbackPort } from "./PortTools";
@@ -77,9 +77,7 @@ export class PostgresContainer {
         try {
             raw = readFileSync(this.config.portFilePath, "utf-8");
         } catch {
-            throw new Error(
-                `Cannot read ${this.config.portFilePath} — is the daemon running?`,
-            );
+            throw new Error(`Cannot read ${this.config.portFilePath} — is the daemon running?`);
         }
         const port = Number.parseInt(raw.trim(), 10);
         if (!Number.isFinite(port) || port <= 0) {

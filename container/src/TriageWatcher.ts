@@ -25,8 +25,11 @@ export class TriageWatcher {
     /** Run the claim-handle-mark loop until `signal` aborts. */
     async run(signal: AbortSignal): Promise<void> {
         console.error("Triage worker watching state=pending");
-        let event: EventRow | null;
-        while ((event = await this.watcher.claimNextEvent(signal)) !== null) {
+        for (;;) {
+            const event = await this.watcher.claimNextEvent(signal);
+            if (event === null) {
+                break;
+            }
             await this.handle(event);
         }
         console.error("Triage worker stopped");
