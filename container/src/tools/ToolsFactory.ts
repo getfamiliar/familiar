@@ -8,8 +8,17 @@ import type { ToolSet } from "ai";
  */
 // biome-ignore lint/complexity/noStaticOnlyClass: Reserved as a growth point for tool registration.
 export class ToolsFactory {
-    /** Build the supervisor's tool set. */
-    static build(): ToolSet {
+    /**
+     * Build the tool set for one agentrun, optionally filtered by the
+     * `allowedTools` declared in the handler's YAML header.
+     *
+     * @param allowed Tool ids the handler is permitted to call.
+     *   Currently a no-op — no tools are registered yet, so the filter
+     *   has nothing to filter. Will start being honored once the bus-
+     *   state and file-system MCPs are wired up.
+     */
+    static build(allowed?: readonly string[]): ToolSet {
+        void allowed;
         return {};
     }
 }

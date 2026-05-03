@@ -1,42 +1,59 @@
-import { type LanguageModel, ToolLoopAgent, type ToolSet } from "ai";
-
-/** Configuration for an {@link AgentRunner}. */
-export interface AgentRunnerConfig {
-    /** Language model the agent should call (built by ModelFactory). */
-    readonly model: LanguageModel;
-    /** Tool set the agent may invoke during its loop (built by ToolsFactory). */
-    readonly tools: ToolSet;
-    /** Optional system prompt. Forwarded as the agent's `instructions`. */
-    readonly system?: string;
-}
+import { ToolLoopAgent, type ToolSet } from "ai";
+import type { AgentRunRow } from "effective-assistant-shared";
+import { HandlerFile } from "../HandlerFile";
+import { ModelFactory } from "../models/ModelFactory";
+import { PromptBuilder } from "../PromptBuilder";
+import { ToolsFactory } from "../tools/ToolsFactory";
 
 /**
- * Thin wrapper around the Vercel AI SDK's {@link ToolLoopAgent}. Owns one
- * agent instance per runner, so model + tools are configured once and the
- * loop infrastructure is reused across calls.
+ * One-shot runner for a single agentrun row.
  *
- * Keeping this wrapper means the rest of the container code (in
- * particular {@link SupervisorWatcher}) is decoupled from the AI SDK and
- * never has to construct provider-specific objects.
+ * Construction is cheap and per-row by design: the runner reads the
+ * handler markdown, builds a {@link ToolLoopAgent} configured from the
+ * file's YAML header, runs it once, and is then thrown away. The
+ * underlying `ToolLoopAgent` is itself a lightweight settings holder;
+ * the heavier work (HTTP client, provider config) lives on the
+ * `LanguageModel` returned by {@link ModelFactory.build}, which can be
+ * cached behind that factory once a hot path emerges.
+ *
+ * Call site: {@link AgentrunWatcher.handle} does
+ * `await new AgentRunner(row).run()` per claimed agentrun.
  */
 export class AgentRunner {
-    private readonly agent: ToolLoopAgent<never, ToolSet>;
+    private readonly row: AgentRunRow;
 
-    constructor(config: AgentRunnerConfig) {
-        this.agent = new ToolLoopAgent<never, ToolSet>({
-            model: config.model,
-            tools: config.tools,
-            instructions: config.system,
-        });
+    constructor(row: AgentRunRow) {
+        this.row = row;
     }
 
     /**
-     * Run one tool-loop turn against `prompt` and return the model's final
-     * text. Errors from the model or any tool invocation propagate
-     * unchanged so the caller can decide how to mark the originating event.
+     * Resolve and parse the handler markdown for this agentrun, build a
+     * {@link ToolLoopAgent} per the parsed header (model, temperature,
+     * allowedTools), and run it once. Returns the agent's final text.
+     *
+     * The handler body is passed as the agent's `instructions` (system
+     * prompt). The per-call user prompt is derived from the agentrun's
+     * `prompt` and `payload` fields.
+     *
+     * @throws If the handler file is missing or malformed, the model
+     *   cannot be constructed (e.g. unset env vars), or the agent loop
+     *   itself fails.
      */
-    async run(prompt: string): Promise<string> {
-        const result = await this.agent.generate({ prompt });
+    async run(): Promise<string> {
+        const handler = HandlerFile.load(this.row.topic, this.row.handler);
+        const model = ModelFactory.build(handler.header.model);
+        const tools = ToolsFactory.build(handler.header.allowedTools);
+        const toolNames = Object.keys(tools);
+
+        const agent = new ToolLoopAgent<never, ToolSet>({
+            model,
+            tools,
+            instructions: PromptBuilder.buildSystem(handler.body, toolNames),
+            temperature: handler.header.temperature,
+        });
+
+        const prompt = PromptBuilder.buildPrompt(this.row.prompt, this.row.payload);
+        const result = await agent.generate({ prompt });
         return result.text;
     }
 }

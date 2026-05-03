@@ -1,81 +1,103 @@
 import {
+    AgentRunBus,
     EventBus,
     type EventRow,
-    type EventState,
-    type NewEvent,
     type PostgresConnection,
 } from "effective-assistant-shared";
 
-/** Configuration for an {@link EventWatcher}. */
-export interface EventWatcherConfig {
-    /** Open postgres connection used for queries and the LISTEN client. Caller owns its lifecycle. */
-    readonly connection: PostgresConnection;
-    /** State this watcher claims events from (e.g. `"pending"` for triage). */
-    readonly watchState: EventState;
-    /** State the claimed event is transitioned into (e.g. `"triaging"`). */
-    readonly claimedState: EventState;
-}
-
 /**
- * Iterator-style consumer of the bus-state events table inside the agent
- * container. Subscribes to a single {@link EventState}; each
- * {@link claimNextEvent} call atomically transitions the next matching
- * row to {@link EventWatcherConfig.claimedState} and returns it.
+ * Input-event watcher. Claims `pending` events into `running` and
+ * inserts a root agentrun for each, pointing at the topic's `index`
+ * handler. The event then sits in `running` until its agentrun tree
+ * settles — {@link AgentRunBus.settle} flips it to `done` / `failed`
+ * via the reactive `EVENT_TERMINAL_UPDATE_SQL` once no agentruns for
+ * the event remain pending or running.
  *
- * Race-safe across multiple concurrent watcher processes — the claim is
- * a single `UPDATE ... FOR UPDATE SKIP LOCKED` round-trip in
- * {@link EventBus.claim}.
+ * This watcher does no handler resolution and runs no agent code; it
+ * only routes input events to the agentrun queue. Markdown loading and
+ * `queue_next` resolution live in {@link AgentrunWatcher}.
  *
- * One watcher per process (or per logical worker) is the intended
- * pattern. Two `claimNextEvent()` calls on the same watcher should not
- * run concurrently.
- *
- * The connection is *not* owned by the watcher; the caller (typically
- * the container entry point) builds and closes it.
+ * **Crash window** (intentional, fix in a later pass): if the process
+ * dies between the event claim and the agentrun insert, the event is
+ * stuck in `running` with no agentruns. The reactive terminal logic
+ * never fires for it. The insert-failure path below catches the in-
+ * process error and marks the event `failed`; a hard process crash
+ * between the two writes is not yet covered.
  */
 export class EventWatcher {
-    private readonly bus: EventBus;
-    private readonly watchState: EventState;
-    private readonly claimedState: EventState;
+    private readonly events: EventBus;
+    private readonly agentruns: AgentRunBus;
 
-    constructor(config: EventWatcherConfig) {
-        this.bus = new EventBus(config.connection);
-        this.watchState = config.watchState;
-        this.claimedState = config.claimedState;
+    constructor(connection: PostgresConnection) {
+        this.events = new EventBus(connection);
+        this.agentruns = new AgentRunBus(connection);
+    }
+
+    /** Run the claim-and-spawn loop until `signal` aborts. */
+    async run(signal: AbortSignal): Promise<void> {
+        console.error("Event watcher watching state=pending");
+        for (;;) {
+            const event = await this.claimNext(signal);
+            if (event === null) {
+                break;
+            }
+            await this.handle(event);
+        }
+        console.error("Event watcher stopped");
     }
 
     /**
-     * Wait for and atomically claim the next event in `watchState`,
-     * transitioning it to `claimedState`. Returns `null` when `signal`
-     * aborts so callers can write
-     * `while ((event = await w.claimNextEvent(signal)) !== null)`.
+     * Block until the next pending event is available, atomically claim
+     * it (`pending → running`), and return it. Returns `null` when
+     * `signal` aborts so the caller's loop can exit cleanly.
      *
-     * @throws Other errors from the bus surface unchanged.
+     * @throws Errors from the bus that aren't caused by the abort.
      */
-    async claimNextEvent(signal?: AbortSignal): Promise<EventRow | null> {
-        if (signal?.aborted) {
+    private async claimNext(signal: AbortSignal): Promise<EventRow | null> {
+        if (signal.aborted) {
             return null;
         }
         try {
-            return await this.bus.waitAndClaim(this.watchState, this.claimedState, signal);
+            return await this.events.waitAndClaim("pending", "running", signal);
         } catch (err) {
-            if (signal?.aborted) {
+            if (signal.aborted) {
                 return null;
             }
             throw err;
         }
     }
 
-    /** Transition an event to a new state (typically `done` or `failed`). */
-    async setState(id: string, state: EventState): Promise<void> {
-        await this.bus.update(id, { state });
-    }
-
     /**
-     * Insert a new event. Convenience for workers that spawn follow-up
-     * events (e.g. triage spawning `supervisor-ready` jobs).
+     * Insert a root agentrun for `event` pointing at the topic's
+     * `index` handler. Topic, priority, and payload are copied so the
+     * agentrun is self-contained for handler resolution and execution.
+     *
+     * On insert failure the event is marked `failed` directly — no
+     * agentrun ever existed for it, so the reactive terminal logic has
+     * no tree to walk.
      */
-    async addEvent(newEvent: NewEvent): Promise<EventRow> {
-        return this.bus.add(newEvent);
+    private async handle(event: EventRow): Promise<void> {
+        try {
+            const root = await this.agentruns.add({
+                eventId: event.id,
+                topic: event.topic,
+                handler: "index",
+                priority: event.priority,
+                payload: event.payload,
+            });
+            console.log(
+                `[event] id=${event.id} topic=${event.topic} → root agentrun id=${root.id}`,
+            );
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error(`Event handling failed for id=${event.id}: ${message}`);
+            try {
+                await this.events.update(event.id, { state: "failed" });
+            } catch (markErr) {
+                console.error(
+                    `Also failed to mark event id=${event.id} failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`,
+                );
+            }
+        }
     }
 }
