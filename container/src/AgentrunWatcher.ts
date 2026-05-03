@@ -21,9 +21,11 @@ import { AgentRunner } from "./agent-runner/AgentRunner";
  */
 export class AgentrunWatcher {
     private readonly bus: AgentRunBus;
+    private readonly connection: PostgresConnection;
 
     constructor(connection: PostgresConnection) {
         this.bus = new AgentRunBus(connection);
+        this.connection = connection;
     }
 
     /** Run the claim-and-execute loop until `signal` aborts. */
@@ -70,7 +72,7 @@ export class AgentrunWatcher {
     private async handle(row: AgentRunRow, signal: AbortSignal): Promise<void> {
         console.log(`[agentrun] id=${row.id} topic=${row.topic} handler=${row.handler}`);
         try {
-            const text = await new AgentRunner(row).run(signal);
+            const text = await new AgentRunner(row, this.connection).run(signal);
             await this.bus.settle(row.id, "done", { resultText: text });
             console.log(`[agentrun] id=${row.id} done`);
         } catch (err) {

@@ -5,6 +5,9 @@ import {
     type NewEvent,
     type NotificationHandler,
     type PostgresConnection,
+    StepResultBus,
+    type StepResultRow,
+    type StepResultUnsubscribe,
 } from "effective-assistant-shared";
 
 /**
@@ -39,7 +42,10 @@ export class HostContextImpl implements HostContext {
     }
 
     readonly events = {
-        emit: (event: NewEvent): Promise<string> => this.emitAndAwait(event),
+        emit: (
+            event: NewEvent,
+            onStep?: (step: StepResultRow) => void | Promise<void>,
+        ): Promise<string> => this.emitAndAwait(event, onStep),
     };
 
     log(message: string): void {
@@ -56,8 +62,18 @@ export class HostContextImpl implements HostContext {
      * returning and us subscribing. After insert, a one-shot SELECT
      * covers the (rarer) race where the event terminated before we
      * even saw the NOTIFY.
+     *
+     * When `onStep` is provided, a second LISTEN on
+     * `stepresults_new` is installed (also before the INSERT) and the
+     * callback is invoked for every step row whose `event_id`
+     * matches. Errors thrown inside `onStep` are caught and logged so
+     * a buggy subscriber can't break the emit. When `onStep` is
+     * omitted, no step listener is registered.
      */
-    private async emitAndAwait(event: NewEvent): Promise<string> {
+    private async emitAndAwait(
+        event: NewEvent,
+        onStep?: (step: StepResultRow) => void | Promise<void>,
+    ): Promise<string> {
         const conn = await this.deps.ensureConnection();
         const bus = new EventBus(conn);
 
@@ -84,6 +100,22 @@ export class HostContextImpl implements HostContext {
         };
 
         await conn.listen(EVENTS_STATE_CHANNEL, handler);
+        let stepUnsubscribe: StepResultUnsubscribe | undefined;
+        if (onStep) {
+            const stepBus = new StepResultBus(conn);
+            stepUnsubscribe = await stepBus.listen(async (step) => {
+                if (step.eventId !== waitedFor) {
+                    return;
+                }
+                try {
+                    await onStep(step);
+                } catch (err) {
+                    this.deps.log(
+                        `events.emit onStep callback error for step id=${step.id}: ${err instanceof Error ? err.message : String(err)}`,
+                    );
+                }
+            });
+        }
         try {
             const row = await bus.add(event);
             waitedFor = row.id;
@@ -109,6 +141,9 @@ export class HostContextImpl implements HostContext {
             }
             return (await fetchFinalResultText(conn, row.id)) ?? "";
         } finally {
+            if (stepUnsubscribe) {
+                await stepUnsubscribe();
+            }
             await conn.unlisten(EVENTS_STATE_CHANNEL, handler);
         }
     }

@@ -23,8 +23,11 @@ export {
     EVENTS_NEW_CHANNEL,
     EVENTS_STATE_CHANNEL,
     SCHEMA_SQL,
+    STEPRESULTS_NEW_CHANNEL,
     TOPIC_PATTERN,
 } from "./Schema";
+export type { NewStepResult, StepResultRow } from "./StepResult";
+export { StepResultBus, type StepResultUnsubscribe } from "./StepResultBus";
 export type {
     AnyCommandDef,
     HostContext,

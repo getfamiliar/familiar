@@ -14,7 +14,7 @@
  *   agentrun for each new event; child agentruns are spawned by the
  *   queue-next tool inside a running handler.
  *
- * Three NOTIFY channels:
+ * Three tables, four NOTIFY channels:
  *
  * - `events_new` — fires on INSERT into `events`. Wakes the container's
  *   input-event watcher.
@@ -22,11 +22,17 @@
  *   plugins wait for a specific event to settle.
  * - `agentruns_changed` — fires on INSERT and on state UPDATE on
  *   `agentruns`. Wakes the agentrun watcher.
+ * - `stepresults_new` — fires on INSERT into `stepresults`. Lets host-side
+ *   subscribers (e.g. `HostContext.events.emit`'s `onStep` callback) tail
+ *   per-step audit rows as the agent loop produces them. Payload format
+ *   is `<event_id>:<agent_run_id>:<id>` so subscribers can route on
+ *   event_id without a JOIN.
  */
 
 export const EVENTS_NEW_CHANNEL = "events_new";
 export const EVENTS_STATE_CHANNEL = "events_state";
 export const AGENTRUNS_CHANNEL = "agentruns_changed";
+export const STEPRESULTS_NEW_CHANNEL = "stepresults_new";
 
 /**
  * Topic regex used by the events check constraint and by the container
@@ -95,6 +101,27 @@ CREATE INDEX IF NOT EXISTS agentruns_state_priority_idx
 CREATE INDEX IF NOT EXISTS agentruns_event_id_idx ON agentruns (event_id);
 CREATE INDEX IF NOT EXISTS agentruns_parent_idx ON agentruns (parent_agentrun_id);
 
+CREATE TABLE IF NOT EXISTS stepresults (
+  id              bigserial PRIMARY KEY,
+  agent_run_id    bigint NOT NULL REFERENCES agentruns(id) ON DELETE CASCADE,
+  event_id        bigint NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  step_number     int    NOT NULL,
+  finish_reason   text   NOT NULL,
+  result_text     text,
+  reasoning_text  text,
+  input_tokens    int,
+  output_tokens   int,
+  total_tokens    int,
+  tool_call_count int    NOT NULL DEFAULT 0,
+  tool_calls      jsonb  NOT NULL DEFAULT '[]'::jsonb,
+  tool_results    jsonb  NOT NULL DEFAULT '[]'::jsonb,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT stepresults_step_number_unique UNIQUE (agent_run_id, step_number)
+);
+
+CREATE INDEX IF NOT EXISTS stepresults_agent_run_id_idx ON stepresults (agent_run_id);
+CREATE INDEX IF NOT EXISTS stepresults_event_id_idx     ON stepresults (event_id);
+
 -- ───────── NOTIFY triggers ─────────
 
 CREATE OR REPLACE FUNCTION events_notify_new() RETURNS trigger AS $$
@@ -132,6 +159,21 @@ DROP TRIGGER IF EXISTS agentruns_notify_changed_trg ON agentruns;
 CREATE TRIGGER agentruns_notify_changed_trg
   AFTER INSERT OR UPDATE OF state ON agentruns
   FOR EACH ROW EXECUTE FUNCTION agentruns_notify_changed();
+
+CREATE OR REPLACE FUNCTION stepresults_notify_new() RETURNS trigger AS $$
+BEGIN
+  PERFORM pg_notify(
+    '${STEPRESULTS_NEW_CHANNEL}',
+    NEW.event_id::text || ':' || NEW.agent_run_id::text || ':' || NEW.id::text
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS stepresults_new_trg ON stepresults;
+CREATE TRIGGER stepresults_new_trg
+  AFTER INSERT ON stepresults
+  FOR EACH ROW EXECUTE FUNCTION stepresults_notify_new();
 `;
 
 /**

@@ -1,5 +1,9 @@
 import { ToolLoopAgent, type ToolSet } from "ai";
-import type { AgentRunRow } from "effective-assistant-shared";
+import {
+    type AgentRunRow,
+    type PostgresConnection,
+    StepResultBus,
+} from "effective-assistant-shared";
 import { HandlerFile } from "../HandlerFile";
 import { ModelFactory } from "../models/ModelFactory";
 import { PromptBuilder } from "../PromptBuilder";
@@ -21,9 +25,11 @@ import { ToolsFactory } from "../tools/ToolsFactory";
  */
 export class AgentRunner {
     private readonly row: AgentRunRow;
+    private readonly steps: StepResultBus;
 
-    constructor(row: AgentRunRow) {
+    constructor(row: AgentRunRow, connection: PostgresConnection) {
         this.row = row;
+        this.steps = new StepResultBus(connection);
     }
 
     /**
@@ -56,7 +62,39 @@ export class AgentRunner {
         });
 
         const prompt = PromptBuilder.buildPrompt(this.row.prompt, this.row.payload);
-        const result = await agent.generate({ prompt, abortSignal: signal });
+        const result = await agent.generate({
+            prompt,
+            abortSignal: signal,
+            onStepFinish: (step) => this.recordStep(step),
+        });
         return result.text;
+    }
+
+    /**
+     * Persist one step into `stepresults`. Awaited inside the SDK's
+     * `onStepFinish` so step writes are sequential and any insert
+     * failure aborts the current `generate` call.
+     */
+    private async recordStep(step: {
+        readonly stepNumber: number;
+        readonly finishReason: string;
+        readonly text: string;
+        readonly reasoningText: string | undefined;
+        readonly usage: { readonly inputTokens?: number; readonly outputTokens?: number };
+        readonly toolCalls: unknown;
+        readonly toolResults: unknown;
+    }): Promise<void> {
+        await this.steps.add({
+            agentRunId: this.row.id,
+            eventId: this.row.eventId,
+            stepNumber: step.stepNumber,
+            finishReason: step.finishReason,
+            resultText: step.text || null,
+            reasoningText: step.reasoningText ?? null,
+            inputTokens: step.usage.inputTokens ?? null,
+            outputTokens: step.usage.outputTokens ?? null,
+            toolCalls: step.toolCalls,
+            toolResults: step.toolResults,
+        });
     }
 }

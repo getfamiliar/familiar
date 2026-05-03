@@ -1,5 +1,6 @@
 import type { CommandDef } from "citty";
 import type { NewEvent } from "./Event";
+import type { StepResultRow } from "./StepResult";
 
 /**
  * Citty's `CommandDef` is generic over its `ArgsDef`, and that
@@ -40,9 +41,18 @@ export interface HostContext {
      *
      * Implementation subscribes to `events_state` before inserting
      * to avoid missing the terminal NOTIFY on a fast-processed event.
+     *
+     * @param onStep Optional callback fired for every step row
+     *   inserted into `stepresults` for this event, in INSERT order.
+     *   Errors thrown by the callback are caught and logged so a bad
+     *   subscriber can't break the emit. When omitted, no
+     *   `stepresults_new` LISTEN is registered (zero overhead).
      */
     readonly events: {
-        emit(event: NewEvent): Promise<string>;
+        emit(
+            event: NewEvent,
+            onStep?: (step: StepResultRow) => void | Promise<void>,
+        ): Promise<string>;
     };
     /** Structured-ish log line. Future: scoped by plugin id, severity, etc. */
     readonly log: (message: string) => void;
