@@ -35,11 +35,14 @@ export class AgentRunner {
      * prompt). The per-call user prompt is derived from the agentrun's
      * `prompt` and `payload` fields.
      *
+     * @param signal Optional abort signal threaded into
+     *   `ToolLoopAgent.generate` so an in-flight model call is
+     *   interrupted when the container shuts down.
      * @throws If the handler file is missing or malformed, the model
      *   cannot be constructed (e.g. unset env vars), or the agent loop
-     *   itself fails.
+     *   itself fails (including abort).
      */
-    async run(): Promise<string> {
+    async run(signal?: AbortSignal): Promise<string> {
         const handler = HandlerFile.load(this.row.topic, this.row.handler);
         const model = ModelFactory.build(handler.header.model);
         const tools = ToolsFactory.build(handler.header.allowedTools);
@@ -53,7 +56,7 @@ export class AgentRunner {
         });
 
         const prompt = PromptBuilder.buildPrompt(this.row.prompt, this.row.payload);
-        const result = await agent.generate({ prompt });
+        const result = await agent.generate({ prompt, abortSignal: signal });
         return result.text;
     }
 }

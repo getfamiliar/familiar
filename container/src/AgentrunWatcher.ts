@@ -34,7 +34,7 @@ export class AgentrunWatcher {
             if (row === null) {
                 break;
             }
-            await this.handle(row);
+            await this.handle(row, signal);
         }
         console.error("Agentrun watcher stopped");
     }
@@ -62,13 +62,15 @@ export class AgentrunWatcher {
 
     /**
      * Run a fresh {@link AgentRunner} against the claimed row and
-     * settle it. Errors from the runner surface as `failed` with the
-     * message in `error`; success stores the agent's text in `result`.
+     * settle it. The shutdown signal is threaded into the agent loop
+     * so an in-flight model call is interrupted on container stop.
+     * Errors from the runner surface as `failed` with the message in
+     * `error`; success stores the agent's text in `result_text`.
      */
-    private async handle(row: AgentRunRow): Promise<void> {
+    private async handle(row: AgentRunRow, signal: AbortSignal): Promise<void> {
         console.log(`[agentrun] id=${row.id} topic=${row.topic} handler=${row.handler}`);
         try {
-            const text = await new AgentRunner(row).run();
+            const text = await new AgentRunner(row).run(signal);
             await this.bus.settle(row.id, "done", { resultText: text });
             console.log(`[agentrun] id=${row.id} done`);
         } catch (err) {
