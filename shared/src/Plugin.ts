@@ -109,6 +109,18 @@ export interface PluginHostManifest {
      */
     start?(ctx: HostContext): Promise<void>;
     /**
+     * Default command for the plugin's CLI root. When set, invoking
+     * the plugin id with no subcommand (e.g. `cli.sh cli-chat`) runs
+     * this command's `run`. Its `args` are also lifted onto the root.
+     * Useful for plugins whose primary mode is interactive (REPL-like)
+     * — the user shouldn't have to remember a subcommand name.
+     *
+     * Subcommands declared in {@link commands} are still available
+     * under the same root, so `cli.sh cli-chat send "hi"` keeps
+     * working alongside the bare-root invocation.
+     */
+    main?(ctx: HostContext): AnyCommandDef;
+    /**
      * Citty commands contributed by this plugin. They are mounted
      * under `subCommands[<plugin.id>]` in the root CLI by default
      * (e.g. `cli.sh cli-chat send "hi"`).

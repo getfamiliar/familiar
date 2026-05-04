@@ -1,42 +1,57 @@
 import path from "node:path";
 import { defineCommand } from "citty";
 import { definePlugin, type HostContext } from "effective-assistant-shared";
+import { runRepl } from "./Repl";
 
 /**
  * cli-chat plugin.
  *
- * Single one-shot CLI command (`send`) that:
+ * Two CLI surfaces:
  *
- * 1. Subscribes to assistant chat messages on channel `"cli"` BEFORE
- *    emitting anything so a fast assistant reply isn't missed.
- * 2. Emits a `chat:cli` event with `isChat: true` and the user's text
- *    in `payload.text`. `EventBus.add` persists the user message into
- *    `chatmessages` atomically with the event INSERT, so the agent's
- *    `ChatManager.fetchHistory` sees it as the latest turn.
- * 3. Streams every assistant message that arrives on the `cli` channel
- *    to stdout. Includes any messages that were undelivered from
- *    earlier sessions — the bus replays those on subscribe.
- * 4. Awaits the event's terminal state as the "agent done" signal.
- * 5. Unsubscribes in `finally` so the postgres LISTEN client doesn't
- *    keep the process alive.
+ * - `./cli.sh cli-chat` (no subcommand) enters an interactive REPL.
+ *   Readline-driven; a grey "thinking" line above the prompt updates
+ *   as the agent steps; assistant replies print above as they arrive
+ *   via `ctx.chat.subscribe`. The user can type the next message
+ *   while the previous one is still being processed. `/exit`,
+ *   Ctrl-C, or Ctrl-D exit the loop. See {@link runRepl} for details.
  *
- * The interactive REPL — readline loop, keep-alive subscription
- * across multiple turns — is a separate plan.
+ * - `./cli.sh cli-chat send "<msg>"` is a one-shot for non-TTY
+ *   scripting and CI smoke tests. Emits one event, prints any
+ *   assistant replies that arrive on the cli channel during the
+ *   agentrun, plus the agentrun's terminal `result_text`.
+ *
+ * Both use the same chat-persistence pipeline (`isChat=true`,
+ * `payload.text`, channel `"cli"`); the difference is purely the
+ * shell of the CLI command.
  */
 export default definePlugin({
     id: "cli-chat",
     workspaceTemplate: path.join(__dirname, "..", "workspace-template"),
     host: {
+        main: (ctx) => replCommand(ctx),
         commands: (ctx) => [sendCommand(ctx)],
     },
 });
 
 const CLI_CHANNEL = "cli";
 
+/** Bare `./cli.sh cli-chat` — interactive REPL. */
+function replCommand(ctx: HostContext) {
+    return defineCommand({
+        meta: {
+            name: "cli-chat",
+            description: "Interactive chat REPL.",
+        },
+        async run() {
+            await runRepl(ctx);
+        },
+    });
+}
+
 /**
- * `cli.sh cli-chat send "<message>"` — emit one chat:cli event and
- * print every assistant reply that arrives on the cli channel until
- * the agent finishes processing it.
+ * `./cli.sh cli-chat send "<message>"` — one-shot send. Emits a single
+ * `chat:cli` event and prints assistant replies (via subscription) plus
+ * the agentrun's terminal result_text.
  */
 function sendCommand(ctx: HostContext) {
     return defineCommand({
@@ -66,11 +81,6 @@ function sendCommand(ctx: HostContext) {
                     preferredChatChannelId: CLI_CHANNEL,
                     payload: { text: args.message },
                 });
-                // Print the agentrun's terminal result_text in addition to
-                // any send_chat replies streamed via the subscription. The
-                // model isn't always deterministic about choosing the
-                // tool path; surfacing both makes it visible when it
-                // doesn't and aids debugging in general.
                 process.stdout.write(`[result_text] ${resultText}\n`);
             } finally {
                 await unsubscribe();

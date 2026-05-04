@@ -40,11 +40,13 @@ export class PluginHost {
             if (map[plugin.id]) {
                 throw new Error(`Duplicate plugin id: ${plugin.id}`);
             }
-            if (!plugin.host?.commands) {
+            const host = plugin.host;
+            if (!host?.commands && !host?.main) {
                 continue;
             }
-            const cmds = plugin.host.commands(ctx).map((cmd) => this.wrapForExit(cmd));
-            map[plugin.id] = pluginRoot(plugin.id, cmds);
+            const subCmds = host.commands?.(ctx).map((cmd) => this.wrapForExit(cmd)) ?? [];
+            const main = host.main ? this.wrapForExit(host.main(ctx)) : undefined;
+            map[plugin.id] = pluginRoot(plugin.id, subCmds, main);
         }
         return map;
     }
@@ -159,8 +161,16 @@ export class PluginHost {
 /**
  * Wrap a plugin's commands in a parent command keyed by the plugin's
  * id, so they appear under `cli.sh <plugin-id> ...` in the CLI tree.
+ *
+ * When `main` is provided, its `args` and `run` are lifted onto the
+ * root so `cli.sh <plugin-id>` (no subcommand) executes that command
+ * directly. Subcommands continue to work alongside it.
  */
-function pluginRoot(id: string, cmds: readonly AnyCommandDef[]): AnyCommandDef {
+function pluginRoot(
+    id: string,
+    cmds: readonly AnyCommandDef[],
+    main?: AnyCommandDef,
+): AnyCommandDef {
     const subCommands: Record<string, AnyCommandDef> = {};
     for (const cmd of cmds) {
         const meta = cmd.meta;
@@ -178,6 +188,8 @@ function pluginRoot(id: string, cmds: readonly AnyCommandDef[]): AnyCommandDef {
     }
     return defineCommand({
         meta: { name: id, description: `Commands provided by the ${id} plugin` },
+        args: main?.args,
+        run: main?.run,
         subCommands,
     });
 }
