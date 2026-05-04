@@ -17,6 +17,12 @@ export interface AgentContainerConfig {
     readonly imageName: string;
     /** Absolute host path to the data directory; mounted as workspace. */
     readonly dataPath: string;
+    /**
+     * Absolute host path of `container/src/`. Bind-mounted (read-only)
+     * over `/app/src` inside the container so the tsx-watch entrypoint
+     * picks up source edits without an image rebuild.
+     */
+    readonly containerSrcPath: string;
     /** Postgres password forwarded to the agent as `POSTGRES_PASSWORD`. */
     readonly postgresPassword: string;
     /**
@@ -32,6 +38,7 @@ export interface AgentContainerConfig {
  *
  * Mounts:
  *   - {dataPath}/workspace → /workspace (assistant memory)
+ *   - {containerSrcPath} → /app/src (read-only, hot-reload via tsx watch)
  *
  * Container joins `ea-net` so it can reach `ea-postgres` by hostname.
  * All host↔container communication flows through the postgres `events`
@@ -74,6 +81,8 @@ export class AgentContainer {
             `FEATHERLESS_API_KEY=${PLACEHOLDER_API_KEY}`,
             "-v",
             `${workspaceDir}:/workspace`,
+            "-v",
+            `${this.config.containerSrcPath}:/app/src:ro`,
             this.config.imageName,
         ];
 

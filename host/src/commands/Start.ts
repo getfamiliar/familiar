@@ -52,6 +52,7 @@ export const startCommand = defineCommand({
         const container = new AgentContainer({
             imageName: "effective-agent",
             dataPath: boot.dataDir,
+            containerSrcPath: boot.containerSrcDir,
             postgresPassword,
             featherlessBaseUrl: FEATHERLESS_BASE_URL_FOR_AGENT,
         });

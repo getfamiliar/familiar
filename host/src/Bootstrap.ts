@@ -16,6 +16,12 @@ export interface Bootstrap {
     readonly workspaceDir: string;
     readonly postgresDataDir: string;
     /**
+     * Absolute host path of `container/src/`. Bind-mounted into the
+     * agent container at `/app/src` so tsx-watch picks up edits
+     * without an image rebuild.
+     */
+    readonly containerSrcDir: string;
+    /**
      * Read `process.env[name]` or throw a clear actionable error.
      *
      * @throws If the variable is unset or empty.
@@ -31,12 +37,14 @@ export interface Bootstrap {
  */
 export function bootstrap(): Bootstrap {
     const dataDir = resolve(__dirname, "../../data");
+    const containerSrcDir = resolve(__dirname, "../../container/src");
     return Object.freeze({
         dataDir,
         pidFile: `${dataDir}/.daemon.pid`,
         postgresPortFile: `${dataDir}/.postgres-port`,
         workspaceDir: `${dataDir}/workspace`,
         postgresDataDir: `${dataDir}/postgres`,
+        containerSrcDir,
         requireEnv,
     });
 }
