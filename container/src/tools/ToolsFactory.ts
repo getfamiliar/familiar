@@ -1,6 +1,6 @@
 import type { ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager";
-import { buildDoneTool } from "./done";
+import { buildGetWeatherTool } from "./getWeather";
 import { buildSendChatTool } from "./sendChat";
 
 /** Inputs the {@link AgentRunner} threads into the factory per agentrun. */
@@ -19,25 +19,25 @@ export interface ToolsFactoryContext {
  *
  * Two categories of tools:
  *
- * - **System tools** (`send_chat`, `done`) are owned by the agent
- *   runtime and ALWAYS registered, regardless of the handler's
- *   `allowedTools` filter. `done` is the loop terminator (no execute);
- *   `send_chat` is how the agent reaches the user. Without these the
- *   agent can't function.
- * - **Handler tools** (future: bus-state MCP, file-system MCP, plugin
- *   MCPs) are filtered by `allowedTools` in the handler's YAML header.
- *   None registered yet.
+ * - **System tools** (`send_chat`) are owned by the agent runtime
+ *   and ALWAYS registered. `send_chat` is how the agent reaches the
+ *   user; without it chat handlers can't function.
+ * - **Probe / handler tools** (currently `get_weather`) are utility
+ *   tools used to exercise tool-calling. The `allowedTools` filter
+ *   would normally narrow these per-handler; for the moment we
+ *   register `get_weather` unconditionally so any handler can pick
+ *   it up while we measure tool-call reliability across providers.
  */
 // biome-ignore lint/complexity/noStaticOnlyClass: Reserved as a growth point for tool registration.
 export class ToolsFactory {
     /**
      * Build the tool set for one agentrun. System tools are always
      * present; the handler's `allowedTools` filter only narrows
-     * non-system tools.
+     * non-system tools (none of which exist yet).
      */
     static build(context: ToolsFactoryContext = {}): ToolSet {
         const systemTools: ToolSet = {
-            done: buildDoneTool(),
+            get_weather: buildGetWeatherTool(),
         };
         if (context.chat && context.eventId) {
             systemTools.send_chat = buildSendChatTool(context.chat, context.eventId);

@@ -29,6 +29,17 @@ export interface HandlerFileHeader {
      * overridable per handler.
      */
     readonly maxOutputTokens?: number;
+    /**
+     * When `true`, the agentrun's final `result_text` is also persisted
+     * to the `chatmessages` table as an assistant message on the parent
+     * event's channel. Useful for chat handlers running on models that
+     * stubbornly emit text instead of calling `send_chat` — the agent's
+     * natural reply still reaches the user. Default `false`.
+     *
+     * Note: if the model ALSO calls `send_chat`, both rows are stored
+     * and the user sees duplicates. Choose one or the other per handler.
+     */
+    readonly outputChat?: boolean;
 }
 
 /**
@@ -203,6 +214,7 @@ function parseHandler(
         temperature: optionalNumber(filePath, raw, "temperature"),
         allowedTools: optionalStringArray(filePath, raw, "allowedTools"),
         maxOutputTokens: optionalPositiveInteger(filePath, raw, "maxOutputTokens"),
+        outputChat: optionalBoolean(filePath, raw, "outputChat"),
     };
 
     return { header, body };
@@ -222,6 +234,7 @@ function mergeDefaults(
         temperature: declared.temperature ?? defaults.temperature,
         allowedTools: declared.allowedTools ?? defaults.allowedTools,
         maxOutputTokens: declared.maxOutputTokens ?? defaults.maxOutputTokens,
+        outputChat: declared.outputChat ?? defaults.outputChat,
     };
 }
 
@@ -251,6 +264,21 @@ function optionalNumber(
     const value = raw[field];
     if (typeof value !== "number" || !Number.isFinite(value)) {
         throw new Error(`${filePath}: header field "${field}" must be a finite number`);
+    }
+    return value;
+}
+
+function optionalBoolean(
+    filePath: string,
+    raw: Record<string, unknown>,
+    field: string,
+): boolean | undefined {
+    if (!(field in raw) || raw[field] === undefined) {
+        return undefined;
+    }
+    const value = raw[field];
+    if (typeof value !== "boolean") {
+        throw new Error(`${filePath}: header field "${field}" must be a boolean`);
     }
     return value;
 }

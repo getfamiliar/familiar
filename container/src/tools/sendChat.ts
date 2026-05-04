@@ -23,10 +23,9 @@ export function buildSendChatTool(
 ): Tool<SendChatInput, { ok: true }> {
     return tool<SendChatInput, { ok: true }>({
         description:
-            "Send a message to the user. The message becomes part of the persistent " +
-            "chat history and is forwarded to the user on whichever channel the " +
-            "current conversation lives on. Use it to reply, ask follow-up " +
-            "questions, or proactively notify.",
+            "Send a chat message to the user. Use it to reply, ask follow-up questions, or proactively notify." +
+            'Use like that: `send_chat({text: "Hi there!"})`.',
+
         inputSchema: jsonSchema<SendChatInput>({
             type: "object",
             additionalProperties: false,
@@ -39,7 +38,7 @@ export function buildSendChatTool(
             },
         }),
         execute: async ({ text }) => {
-            await chat.appendAssistantMessage(eventId, text);
+            await chat.appendAssistantMessage(eventId, text ?? "...");
             return { ok: true };
         },
     });
