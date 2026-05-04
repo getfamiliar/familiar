@@ -75,10 +75,11 @@ export class AgentRunner {
             tools,
             instructions: PromptBuilder.buildSystem(handler.body, toolNames),
             temperature: handler.header.temperature,
-            toolChoice: {
-                type: "tool",
-                toolName: "send_chat",
-            },
+            // Force the model to call SOME tool every step. Combined
+            // with the `done` sentinel tool (no execute → loop ends),
+            // this makes plain-text outputs structurally impossible:
+            // every turn must terminate via `done({text: ...})`.
+            toolChoice: "required",
             maxOutputTokens: handler.header.maxOutputTokens,
             stopWhen: stepCountIs(MAX_STEPS_PER_RUN),
         });
@@ -110,7 +111,22 @@ export class AgentRunner {
             abortSignal: signal,
             onStepFinish: (step) => this.recordStep(step),
         });
-        return result.text;
+        return extractDoneText(result.toolCalls) ?? this.fallbackText(result.text);
+    }
+
+    /**
+     * Returned when the loop terminated without an explicit `done`
+     * call (e.g. step cap reached, model behaved oddly). Logs a
+     * warning so this is visible in container logs, then yields the
+     * SDK's `result.text` as a best-effort fallback.
+     */
+    private fallbackText(sdkText: string): string {
+        console.warn(
+            `[agentrun ${this.row.id}] terminated without a 'done' tool call; ` +
+                "returning SDK result.text as fallback. Check the handler markdown " +
+                "and the step-count cap.",
+        );
+        return sdkText;
     }
 
     /**
@@ -140,4 +156,33 @@ export class AgentRunner {
             toolResults: step.toolResults,
         });
     }
+}
+
+/**
+ * Find the `done` tool call in the SDK's last-step `toolCalls` array
+ * and pull out its `text` argument. Returns `undefined` if the model
+ * never called `done` (degenerate path: step cap, abort, etc.).
+ *
+ * `result.toolCalls` is the *last step's* tool calls — exactly what
+ * we want, since `done` (no execute) terminates the loop the moment
+ * it's invoked, so the call lives in the final step.
+ */
+function extractDoneText(toolCalls: readonly unknown[]): string | undefined {
+    for (const call of toolCalls) {
+        if (!call || typeof call !== "object") {
+            continue;
+        }
+        const c = call as { toolName?: unknown; input?: unknown };
+        if (c.toolName !== "done") {
+            continue;
+        }
+        const input = c.input;
+        if (input && typeof input === "object") {
+            const text = (input as { text?: unknown }).text;
+            if (typeof text === "string") {
+                return text;
+            }
+        }
+    }
+    return undefined;
 }
