@@ -20,6 +20,15 @@ export interface HandlerFileHeader {
     readonly temperature?: number;
     /** Tool ids the agent is permitted to call during this handler's run. */
     readonly allowedTools?: readonly string[];
+    /**
+     * Maximum number of tokens the model is allowed to generate in any
+     * single step of the tool-loop. Bounds worst-case latency and the
+     * size of `result_text` rows when a model goes off the rails into
+     * a long monologue (e.g. simulating a transcript). Process-wide
+     * default is set by the container entrypoint and should be
+     * overridable per handler.
+     */
+    readonly maxOutputTokens?: number;
 }
 
 /**
@@ -193,6 +202,7 @@ function parseHandler(
         model: optionalString(filePath, raw, "model"),
         temperature: optionalNumber(filePath, raw, "temperature"),
         allowedTools: optionalStringArray(filePath, raw, "allowedTools"),
+        maxOutputTokens: optionalPositiveInteger(filePath, raw, "maxOutputTokens"),
     };
 
     return { header, body };
@@ -211,6 +221,7 @@ function mergeDefaults(
         model: declared.model ?? defaults.model,
         temperature: declared.temperature ?? defaults.temperature,
         allowedTools: declared.allowedTools ?? defaults.allowedTools,
+        maxOutputTokens: declared.maxOutputTokens ?? defaults.maxOutputTokens,
     };
 }
 
@@ -240,6 +251,21 @@ function optionalNumber(
     const value = raw[field];
     if (typeof value !== "number" || !Number.isFinite(value)) {
         throw new Error(`${filePath}: header field "${field}" must be a finite number`);
+    }
+    return value;
+}
+
+function optionalPositiveInteger(
+    filePath: string,
+    raw: Record<string, unknown>,
+    field: string,
+): number | undefined {
+    if (!(field in raw) || raw[field] === undefined) {
+        return undefined;
+    }
+    const value = raw[field];
+    if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+        throw new Error(`${filePath}: header field "${field}" must be a positive integer`);
     }
     return value;
 }

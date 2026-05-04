@@ -7,6 +7,17 @@ import {
 } from "effective-assistant-shared";
 import { AgentrunWatcher } from "./AgentrunWatcher";
 import { EventWatcher } from "./EventWatcher";
+import { HandlerFile } from "./HandlerFile";
+
+/**
+ * Process-wide handler-header defaults. A handler can override any of
+ * these in its YAML frontmatter; values left undeclared fall through
+ * to these defaults.
+ */
+const HEADER_DEFAULTS = {
+    /** Bound the size of any single model step. See HandlerFileHeader. */
+    maxOutputTokens: 1000,
+};
 
 /**
  * Container entry point. Owns the postgres connection, spawns the
@@ -24,6 +35,8 @@ async function main(): Promise<void> {
                 "The host daemon should have passed it in via -e POSTGRES_PASSWORD=...",
         );
     }
+
+    HandlerFile.setHeaderDefaults(HEADER_DEFAULTS);
 
     const connection = new PostgresConnection({
         host: POSTGRES_HOST,
