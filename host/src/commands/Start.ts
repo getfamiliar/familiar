@@ -27,6 +27,10 @@ export const startCommand = defineCommand({
         const boot = bootstrap();
         const postgresPassword = boot.requireEnv("POSTGRES_PASSWORD");
         const featherlessApiKey = boot.requireEnv("FEATHERLESS_API_KEY");
+        // Validated at startup so the daemon fails fast; the actual
+        // value is read lazily via `boot.requireEnv` from inside
+        // `HostContextImpl` when chat events are stamped.
+        boot.requireEnv("DEFAULT_CHAT_CHANNEL_ID");
 
         ensureDirs(boot);
         writePidFile(boot.pidFile);

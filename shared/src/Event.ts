@@ -49,6 +49,21 @@ export interface EventRow {
      * supply one (then no dedup happens).
      */
     readonly idempotencyKey: string | null;
+    /**
+     * Whether this event is a chat message from the user. When `true`,
+     * `EventBus.add` persists `payload.text` into `chatmessages` (role
+     * `'user'`) in the same transaction as the event INSERT.
+     */
+    readonly isChat: boolean;
+    /**
+     * Channel the assistant should reply on (e.g. `"cli"`, `"telegram"`).
+     * Stamped host-side at emit time, falling back to
+     * `DEFAULT_CHAT_CHANNEL_ID`. The container never reads this field;
+     * routing happens via JOIN in the chatmessages trigger and in
+     * `ChatMessageBus`. May be `null` for non-chat events whose source
+     * plugin didn't set a default routing target.
+     */
+    readonly preferredChatChannelId: string | null;
     /** Insert timestamp — postgres `now()` at INSERT. */
     readonly createdAt: Date;
     /** Last `update()` timestamp — bumped to `now()` on every update. */
@@ -65,6 +80,19 @@ export interface NewEvent {
     readonly state?: EventState;
     /** Globally unique key for dedup; null = no dedup. */
     readonly idempotencyKey?: string;
+    /**
+     * Mark this event as a chat message from the user. When `true`,
+     * `payload` MUST be an object with a `text: string` field;
+     * `EventBus.add` will persist that text to `chatmessages` (role
+     * `'user'`) in the same transaction. Default `false`.
+     */
+    readonly isChat?: boolean;
+    /**
+     * Channel id the assistant should reply on. Plugins typically set
+     * this to their own channel name (e.g. `"cli"`). When omitted, the
+     * host's `HostContextImpl.emit` stamps `DEFAULT_CHAT_CHANNEL_ID`.
+     */
+    readonly preferredChatChannelId?: string | null;
 }
 
 /** Patch shape for {@link EventBus.update}. */
@@ -72,6 +100,7 @@ export interface EventPatch {
     readonly state?: EventState;
     readonly payload?: unknown;
     readonly priority?: number;
+    readonly preferredChatChannelId?: string | null;
 }
 
 /** Filter for {@link EventBus.waitForNext}. */

@@ -131,10 +131,9 @@ export class AgentRunBus {
         values.push(id);
         const idParam = `$${n}`;
 
-        await this.connection.getPool().query(
-            `UPDATE agentruns SET ${sets.join(", ")} WHERE id = ${idParam}`,
-            values,
-        );
+        await this.connection
+            .getPool()
+            .query(`UPDATE agentruns SET ${sets.join(", ")} WHERE id = ${idParam}`, values);
     }
 
     /**
@@ -201,10 +200,7 @@ export class AgentRunBus {
      *
      * @throws If aborted via `signal`.
      */
-    async waitForNext(
-        filter: AgentRunFilter = {},
-        signal?: AbortSignal,
-    ): Promise<AgentRunRow> {
+    async waitForNext(filter: AgentRunFilter = {}, signal?: AbortSignal): Promise<AgentRunRow> {
         await this.ensureListening();
 
         for (;;) {

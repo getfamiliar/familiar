@@ -1,8 +1,4 @@
-import {
-    AgentRunBus,
-    type AgentRunRow,
-    type PostgresConnection,
-} from "effective-assistant-shared";
+import { AgentRunBus, type AgentRunRow, type PostgresConnection } from "effective-assistant-shared";
 import { AgentRunner } from "./agent-runner/AgentRunner";
 
 /**

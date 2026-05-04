@@ -1,6 +1,10 @@
 import type { CommandDef } from "citty";
+import type { ChatFilter } from "./ChatMessage";
+import type { ChatHandler, ChatUnsubscribe } from "./ChatMessageBus";
 import type { NewEvent } from "./Event";
 import type { StepResultRow } from "./StepResult";
+
+export type { ChatHandler };
 
 /**
  * Citty's `CommandDef` is generic over its `ArgsDef`, and that
@@ -53,6 +57,21 @@ export interface HostContext {
             event: NewEvent,
             onStep?: (step: StepResultRow) => void | Promise<void>,
         ): Promise<string>;
+    };
+    /**
+     * Chat capabilities. Currently exposes only `subscribe` — user
+     * messages flow through the ordinary event pipeline (events with
+     * `isChat=true`) so there is intentionally no parallel send API.
+     *
+     * Delivery is at-least-once: when no listener returned `true`
+     * during a message's lifetime, a future subscriber matching the
+     * filter will receive it on registration via the bus's replay
+     * pass. Listeners must therefore tolerate being called for an
+     * already-displayed message; the typical pattern is to render and
+     * return `true` unconditionally.
+     */
+    readonly chat: {
+        subscribe(filter: ChatFilter, handler: ChatHandler): Promise<ChatUnsubscribe>;
     };
     /** Structured-ish log line. Future: scoped by plugin id, severity, etc. */
     readonly log: (message: string) => void;

@@ -1,9 +1,11 @@
-import { ToolLoopAgent, type ToolSet } from "ai";
+import { type ModelMessage, ToolLoopAgent, type ToolSet } from "ai";
 import {
     type AgentRunRow,
+    ChatMessageBus,
     type PostgresConnection,
     StepResultBus,
 } from "effective-assistant-shared";
+import { ChatManager } from "../chat/ChatManager";
 import { HandlerFile } from "../HandlerFile";
 import { ModelFactory } from "../models/ModelFactory";
 import { PromptBuilder } from "../PromptBuilder";
@@ -26,10 +28,12 @@ import { ToolsFactory } from "../tools/ToolsFactory";
 export class AgentRunner {
     private readonly row: AgentRunRow;
     private readonly steps: StepResultBus;
+    private readonly chat: ChatManager;
 
     constructor(row: AgentRunRow, connection: PostgresConnection) {
         this.row = row;
         this.steps = new StepResultBus(connection);
+        this.chat = new ChatManager(new ChatMessageBus(connection));
     }
 
     /**
@@ -51,7 +55,11 @@ export class AgentRunner {
     async run(signal?: AbortSignal): Promise<string> {
         const handler = HandlerFile.load(this.row.topic, this.row.handler);
         const model = ModelFactory.build(handler.header.model);
-        const tools = ToolsFactory.build(handler.header.allowedTools);
+        const tools = ToolsFactory.build({
+            chat: this.chat,
+            eventId: this.row.eventId,
+            allowed: handler.header.allowedTools,
+        });
         const toolNames = Object.keys(tools);
 
         const agent = new ToolLoopAgent<never, ToolSet>({
@@ -60,6 +68,31 @@ export class AgentRunner {
             instructions: PromptBuilder.buildSystem(handler.body, toolNames),
             temperature: handler.header.temperature,
         });
+
+        const history = await this.chat.fetchHistory(this.row.eventId);
+        const result = await this.invoke(agent, history, signal);
+        return result;
+    }
+
+    /**
+     * Run the agent loop. When chat history exists for this agentrun's
+     * channel, pass it as `messages` so the model has full conversational
+     * context. Otherwise fall back to the prompt-string path that wraps
+     * the agentrun's `prompt` and `payload` for non-chat handlers.
+     */
+    private async invoke(
+        agent: ToolLoopAgent<never, ToolSet>,
+        history: readonly ModelMessage[],
+        signal: AbortSignal | undefined,
+    ): Promise<string> {
+        if (history.length > 0) {
+            const result = await agent.generate({
+                messages: [...history],
+                abortSignal: signal,
+                onStepFinish: (step) => this.recordStep(step),
+            });
+            return result.text;
+        }
 
         const prompt = PromptBuilder.buildPrompt(this.row.prompt, this.row.payload);
         const result = await agent.generate({

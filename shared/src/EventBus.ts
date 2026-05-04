@@ -10,6 +10,8 @@ interface RawEventRow {
     state: string;
     payload: unknown;
     idempotency_key: string | null;
+    is_chat: boolean;
+    preferred_chat_channel_id: string | null;
     created_at: Date;
     updated_at: Date;
 }
@@ -63,23 +65,78 @@ export class EventBus {
     /**
      * Insert a new event and return the persisted row.
      *
-     * @throws If `idempotencyKey` collides with an existing event, or if
-     *   `topic` does not match `\w+(:\w+)?`.
+     * Transactional: when `event.isChat === true`, the matching
+     * `chatmessages` row (role `'user'`) is inserted in the same
+     * transaction. Both NOTIFY triggers fire post-COMMIT, so listeners
+     * always observe consistent state.
+     *
+     * @throws If `idempotencyKey` collides with an existing event, if
+     *   `topic` does not match `\w+(:\w+)?`, or if `isChat=true` but
+     *   `payload` is not an object containing a `text` string.
      */
     async add(event: NewEvent): Promise<EventRow> {
-        const result = await this.connection.getPool().query<RawEventRow>(
-            `INSERT INTO events (topic, payload, priority, state, idempotency_key)
-             VALUES ($1, $2::jsonb, $3, $4, $5)
-             RETURNING *`,
-            [
-                event.topic,
-                JSON.stringify(event.payload ?? {}),
-                event.priority ?? 50,
-                event.state ?? "pending",
-                event.idempotencyKey ?? null,
-            ],
-        );
-        return mapRow(result.rows[0]);
+        const isChat = event.isChat === true;
+        const userText = isChat ? extractChatText(event.payload) : null;
+        if (isChat && userText === null) {
+            throw new Error(
+                "EventBus.add: isChat=true requires payload to be an object with a string `text` field",
+            );
+        }
+
+        const client = await this.connection.getPool().connect();
+        try {
+            await client.query("BEGIN");
+            const result = await client.query<RawEventRow>(
+                `INSERT INTO events
+                   (topic, payload, priority, state, idempotency_key,
+                    is_chat, preferred_chat_channel_id)
+                 VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7)
+                 RETURNING *`,
+                [
+                    event.topic,
+                    JSON.stringify(event.payload ?? {}),
+                    event.priority ?? 50,
+                    event.state ?? "pending",
+                    event.idempotencyKey ?? null,
+                    isChat,
+                    event.preferredChatChannelId ?? null,
+                ],
+            );
+            const row = mapRow(result.rows[0]);
+
+            if (isChat && userText !== null) {
+                await client.query(
+                    `INSERT INTO chatmessages (event_id, role, text_content)
+                     VALUES ($1, 'user', $2)`,
+                    [row.id, userText],
+                );
+            }
+
+            await client.query("COMMIT");
+            return row;
+        } catch (err) {
+            try {
+                await client.query("ROLLBACK");
+            } catch {
+                // best-effort rollback; preserve original error
+            }
+            throw err;
+        } finally {
+            client.release();
+        }
+    }
+
+    /**
+     * Fetch one event by id. Returns `undefined` if not found. Mirrors
+     * {@link import("./StepResultBus").StepResultBus.getById} so
+     * notification consumers can promote a payload-only id into a full
+     * typed row without a hand-written query.
+     */
+    async getById(id: string): Promise<EventRow | undefined> {
+        const result = await this.connection
+            .getPool()
+            .query<RawEventRow>(`SELECT * FROM events WHERE id = $1`, [id]);
+        return result.rows.length > 0 ? mapRow(result.rows[0]) : undefined;
     }
 
     /**
@@ -103,14 +160,17 @@ export class EventBus {
             sets.push(`priority = $${n++}`);
             values.push(patch.priority);
         }
+        if (patch.preferredChatChannelId !== undefined) {
+            sets.push(`preferred_chat_channel_id = $${n++}`);
+            values.push(patch.preferredChatChannelId);
+        }
 
         values.push(id);
         const idParam = `$${n}`;
 
-        await this.connection.getPool().query(
-            `UPDATE events SET ${sets.join(", ")} WHERE id = ${idParam}`,
-            values,
-        );
+        await this.connection
+            .getPool()
+            .query(`UPDATE events SET ${sets.join(", ")} WHERE id = ${idParam}`, values);
     }
 
     /**
@@ -152,10 +212,7 @@ export class EventBus {
      * Returns `undefined` if no row is in `fromState`. Non-blocking — for
      * blocking semantics, use {@link waitAndClaim}.
      */
-    async claim(
-        fromState: EventState,
-        toState: EventState,
-    ): Promise<EventRow | undefined> {
+    async claim(fromState: EventState, toState: EventState): Promise<EventRow | undefined> {
         const result = await this.connection.getPool().query<RawEventRow>(
             `UPDATE events
              SET state = $1, updated_at = now()
@@ -270,7 +327,23 @@ function mapRow(raw: RawEventRow): EventRow {
         state: raw.state as EventState,
         payload: raw.payload,
         idempotencyKey: raw.idempotency_key,
+        isChat: raw.is_chat,
+        preferredChatChannelId: raw.preferred_chat_channel_id,
         createdAt: raw.created_at,
         updatedAt: raw.updated_at,
     };
+}
+
+/**
+ * Pull the user's chat text out of an event payload. Accepts only the
+ * documented `{ text: string, … }` shape; everything else (string
+ * payloads, missing field, non-string text) returns `null` so
+ * `EventBus.add` can throw with a clear error.
+ */
+function extractChatText(payload: unknown): string | null {
+    if (payload === null || typeof payload !== "object") {
+        return null;
+    }
+    const text = (payload as { text?: unknown }).text;
+    return typeof text === "string" ? text : null;
 }

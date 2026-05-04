@@ -1,10 +1,6 @@
 import { cpSync, existsSync } from "node:fs";
 import { defineCommand } from "citty";
-import {
-    type AnyCommandDef,
-    type HostContext,
-    type PostgresConnection,
-} from "effective-assistant-shared";
+import type { AnyCommandDef, HostContext, PostgresConnection } from "effective-assistant-shared";
 import type { Bootstrap } from "../Bootstrap";
 import { PostgresContainer } from "../db/PostgresContainer";
 import { HostContextImpl } from "./HostContextImpl";
@@ -111,6 +107,7 @@ export class PluginHost {
     private context(): HostContext {
         return new HostContextImpl({
             ensureConnection: () => this.ensureConnection(),
+            defaultChatChannelId: () => this.boot.requireEnv("DEFAULT_CHAT_CHANNEL_ID"),
             log: (message) => {
                 console.error(`[plugin] ${message}`);
             },

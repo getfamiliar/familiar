@@ -1,5 +1,3 @@
-export type { EventFilter, EventPatch, EventRow, EventState, NewEvent } from "./Event";
-export { EventBus } from "./EventBus";
 export type {
     AgentRunFilter,
     AgentRunPatch,
@@ -8,26 +6,10 @@ export type {
     NewAgentRun,
 } from "./AgentRun";
 export { AgentRunBus } from "./AgentRunBus";
-export {
-    POSTGRES_DB,
-    POSTGRES_HOST,
-    POSTGRES_PORT,
-    POSTGRES_USER,
-    PostgresConnection,
-    type PostgresConnectionConfig,
-    type NotificationHandler,
-} from "./PostgresConnection";
-export {
-    AGENTRUNS_CHANNEL,
-    EVENT_TERMINAL_UPDATE_SQL,
-    EVENTS_NEW_CHANNEL,
-    EVENTS_STATE_CHANNEL,
-    SCHEMA_SQL,
-    STEPRESULTS_NEW_CHANNEL,
-    TOPIC_PATTERN,
-} from "./Schema";
-export type { NewStepResult, StepResultRow } from "./StepResult";
-export { StepResultBus, type StepResultUnsubscribe } from "./StepResultBus";
+export type { ChatFilter, ChatMessage, ChatRole, NewChatMessage } from "./ChatMessage";
+export { type ChatHandler, ChatMessageBus, type ChatUnsubscribe } from "./ChatMessageBus";
+export type { EventFilter, EventPatch, EventRow, EventState, NewEvent } from "./Event";
+export { EventBus } from "./EventBus";
 export type {
     AnyCommandDef,
     HostContext,
@@ -37,3 +19,24 @@ export type {
     PluginManifest,
 } from "./Plugin";
 export { definePlugin } from "./Plugin";
+export {
+    type NotificationHandler,
+    POSTGRES_DB,
+    POSTGRES_HOST,
+    POSTGRES_PORT,
+    POSTGRES_USER,
+    PostgresConnection,
+    type PostgresConnectionConfig,
+} from "./PostgresConnection";
+export {
+    AGENTRUNS_CHANNEL,
+    CHATMESSAGES_NEW_CHANNEL,
+    EVENT_TERMINAL_UPDATE_SQL,
+    EVENTS_NEW_CHANNEL,
+    EVENTS_STATE_CHANNEL,
+    SCHEMA_SQL,
+    STEPRESULTS_NEW_CHANNEL,
+    TOPIC_PATTERN,
+} from "./Schema";
+export type { NewStepResult, StepResultRow } from "./StepResult";
+export { StepResultBus, type StepResultUnsubscribe } from "./StepResultBus";

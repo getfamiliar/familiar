@@ -1,5 +1,5 @@
-import type { PluginManifest } from "effective-assistant-shared";
 import cliChat from "cli-chat";
+import type { PluginManifest } from "effective-assistant-shared";
 
 /**
  * Static list of installed plugins. Each entry is the manifest

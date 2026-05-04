@@ -14,7 +14,7 @@
  *   agentrun for each new event; child agentruns are spawned by the
  *   queue-next tool inside a running handler.
  *
- * Three tables, four NOTIFY channels:
+ * Four tables, five NOTIFY channels:
  *
  * - `events_new` — fires on INSERT into `events`. Wakes the container's
  *   input-event watcher.
@@ -27,12 +27,18 @@
  *   per-step audit rows as the agent loop produces them. Payload format
  *   is `<event_id>:<agent_run_id>:<id>` so subscribers can route on
  *   event_id without a JOIN.
+ * - `chatmessages_new` — fires on INSERT into `chatmessages`. Lets
+ *   host-side channel plugins (cli-chat, telegram, …) stream assistant
+ *   replies. Payload format is `<channel_id>:<role>:<id>`; channel is
+ *   JOINed from `events.preferred_chat_channel_id` so subscribers can
+ *   filter on the prefix without a query roundtrip.
  */
 
 export const EVENTS_NEW_CHANNEL = "events_new";
 export const EVENTS_STATE_CHANNEL = "events_state";
 export const AGENTRUNS_CHANNEL = "agentruns_changed";
 export const STEPRESULTS_NEW_CHANNEL = "stepresults_new";
+export const CHATMESSAGES_NEW_CHANNEL = "chatmessages_new";
 
 /**
  * Topic regex used by the events check constraint and by the container
@@ -69,6 +75,14 @@ CREATE TABLE IF NOT EXISTS events (
 -- project; column drops are fine.
 ALTER TABLE events DROP COLUMN IF EXISTS supervisor_prompt;
 ALTER TABLE events DROP COLUMN IF EXISTS causation_chain;
+
+-- Chat-aware event metadata. \`is_chat\` opts into automatic user-message
+-- persistence in EventBus.add; \`preferred_chat_channel_id\` names the
+-- channel an assistant reply should reach the user on. The container is
+-- channel-blind — both fields are read host-side (for routing) or via
+-- JOIN inside the chatmessages NOTIFY trigger.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS is_chat boolean NOT NULL DEFAULT false;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS preferred_chat_channel_id text;
 
 CREATE INDEX IF NOT EXISTS events_state_priority_idx
   ON events (state, priority DESC, id ASC);
@@ -122,6 +136,34 @@ CREATE TABLE IF NOT EXISTS stepresults (
 CREATE INDEX IF NOT EXISTS stepresults_agent_run_id_idx ON stepresults (agent_run_id);
 CREATE INDEX IF NOT EXISTS stepresults_event_id_idx     ON stepresults (event_id);
 
+-- ───────── chatmessages ─────────
+--
+-- Persistent chat history across all channels. Each row links to the
+-- event whose lifecycle the message belongs to:
+--   * For role='user': the event the host plugin emitted with isChat=true.
+--   * For role='assistant': the event whose agentrun called send_chat.
+-- The channel is reachable via JOIN to events.preferred_chat_channel_id;
+-- there is intentionally no channel_id column here — channel routing is
+-- a host-side concern, the container never names a channel.
+--
+-- delivered_at is set when ANY listener returns true from its async
+-- handler. New subscribers replay all undelivered matching rows on
+-- registration so a message produced when nobody was listening is still
+-- delivered later.
+CREATE TABLE IF NOT EXISTS chatmessages (
+  id           bigserial PRIMARY KEY,
+  event_id     bigint NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  role         text NOT NULL CHECK (role IN ('user','assistant')),
+  text_content text NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  delivered_at timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS chatmessages_event_idx
+  ON chatmessages (event_id);
+CREATE INDEX IF NOT EXISTS chatmessages_undelivered_idx
+  ON chatmessages (created_at) WHERE delivered_at IS NULL;
+
 -- ───────── NOTIFY triggers ─────────
 
 CREATE OR REPLACE FUNCTION events_notify_new() RETURNS trigger AS $$
@@ -174,6 +216,28 @@ DROP TRIGGER IF EXISTS stepresults_new_trg ON stepresults;
 CREATE TRIGGER stepresults_new_trg
   AFTER INSERT ON stepresults
   FOR EACH ROW EXECUTE FUNCTION stepresults_notify_new();
+
+-- chatmessages NOTIFY: payload is "<channel_id>:<role>:<id>". Channel
+-- comes from the parent event's preferred_chat_channel_id, JOINed at
+-- trigger time. Empty channel becomes empty prefix — listeners will
+-- filter it out unless they explicitly subscribe to channelId="".
+CREATE OR REPLACE FUNCTION chatmessages_notify_new() RETURNS trigger AS $$
+DECLARE
+  channel text;
+BEGIN
+  SELECT preferred_chat_channel_id INTO channel FROM events WHERE id = NEW.event_id;
+  PERFORM pg_notify(
+    '${CHATMESSAGES_NEW_CHANNEL}',
+    COALESCE(channel, '') || ':' || NEW.role || ':' || NEW.id::text
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS chatmessages_new_trg ON chatmessages;
+CREATE TRIGGER chatmessages_new_trg
+  AFTER INSERT ON chatmessages
+  FOR EACH ROW EXECUTE FUNCTION chatmessages_notify_new();
 `;
 
 /**

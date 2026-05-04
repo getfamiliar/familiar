@@ -1,6 +1,10 @@
 import {
-    EventBus,
+    type ChatFilter,
+    type ChatHandler,
+    ChatMessageBus,
+    type ChatUnsubscribe,
     EVENTS_STATE_CHANNEL,
+    EventBus,
     type HostContext,
     type NewEvent,
     type NotificationHandler,
@@ -18,6 +22,12 @@ import {
 export interface HostContextImplDeps {
     /** Open (or return the already-open) shared postgres connection. */
     ensureConnection(): Promise<PostgresConnection>;
+    /**
+     * Default chat channel id, stamped onto events whose emitter did
+     * not specify a `preferredChatChannelId`. Resolved lazily so
+     * commands that never touch chat don't trigger env validation.
+     */
+    defaultChatChannelId(): string;
     /** Sink for `ctx.log(...)` calls from plugin code. */
     log(message: string): void;
 }
@@ -48,8 +58,29 @@ export class HostContextImpl implements HostContext {
         ): Promise<string> => this.emitAndAwait(event, onStep),
     };
 
+    readonly chat = {
+        subscribe: (filter: ChatFilter, handler: ChatHandler): Promise<ChatUnsubscribe> =>
+            this.subscribeChat(filter, handler),
+    };
+
     log(message: string): void {
         this.deps.log(message);
+    }
+
+    /**
+     * Open a {@link ChatMessageBus} subscription for the shared host
+     * connection and return its unsubscribe disposer. The bus replays
+     * undelivered matching messages on registration, so a plugin that
+     * comes online after an assistant message was produced still sees
+     * the message and can mark it delivered.
+     */
+    private async subscribeChat(
+        filter: ChatFilter,
+        handler: ChatHandler,
+    ): Promise<ChatUnsubscribe> {
+        const conn = await this.deps.ensureConnection();
+        const bus = new ChatMessageBus(conn);
+        return bus.subscribe(filter, handler);
     }
 
     /**
@@ -117,7 +148,11 @@ export class HostContextImpl implements HostContext {
             });
         }
         try {
-            const row = await bus.add(event);
+            const stamped: NewEvent =
+                event.preferredChatChannelId === undefined
+                    ? { ...event, preferredChatChannelId: this.deps.defaultChatChannelId() }
+                    : event;
+            const row = await bus.add(stamped);
             waitedFor = row.id;
 
             // Close the early-settle race: NOTIFY may have fired

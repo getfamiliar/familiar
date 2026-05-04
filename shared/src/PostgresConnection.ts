@@ -165,9 +165,7 @@ export class PostgresConnection {
                     }
                 });
                 client.on("error", (err) => {
-                    console.error(
-                        `PostgresConnection listen client error: ${err.message}`,
-                    );
+                    console.error(`PostgresConnection listen client error: ${err.message}`);
                 });
                 this.listenClient = client;
                 return client;
