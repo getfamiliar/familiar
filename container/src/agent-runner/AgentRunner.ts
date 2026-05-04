@@ -1,4 +1,4 @@
-import { type ModelMessage, ToolLoopAgent, type ToolSet } from "ai";
+import { type ModelMessage, stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import {
     type AgentRunRow,
     ChatMessageBus,
@@ -25,6 +25,14 @@ import { ToolsFactory } from "../tools/ToolsFactory";
  * Call site: {@link AgentrunWatcher.handle} does
  * `await new AgentRunner(row).run()` per claimed agentrun.
  */
+/**
+ * Hard cap on the number of steps the agent loop may take per agentrun.
+ * Prevents runaway tool-call loops with weak-tool-adherence models. The
+ * SDK's own default is 20; we lower it to 15 until per-handler control
+ * lands as a YAML frontmatter field.
+ */
+const MAX_STEPS_PER_RUN = 15;
+
 export class AgentRunner {
     private readonly row: AgentRunRow;
     private readonly steps: StepResultBus;
@@ -67,36 +75,38 @@ export class AgentRunner {
             tools,
             instructions: PromptBuilder.buildSystem(handler.body, toolNames),
             temperature: handler.header.temperature,
+            toolChoice: {
+                type: "tool",
+                toolName: "send_chat",
+            },
+            maxOutputTokens: handler.header.maxOutputTokens,
+            stopWhen: stepCountIs(MAX_STEPS_PER_RUN),
         });
 
         const history = await this.chat.fetchHistory(this.row.eventId);
-        const result = await this.invoke(agent, history, signal);
-        return result;
-    }
+        const taskBrief = PromptBuilder.buildPrompt(this.row.prompt, this.row.payload);
 
-    /**
-     * Run the agent loop. When chat history exists for this agentrun's
-     * channel, pass it as `messages` so the model has full conversational
-     * context. Otherwise fall back to the prompt-string path that wraps
-     * the agentrun's `prompt` and `payload` for non-chat handlers.
-     */
-    private async invoke(
-        agent: ToolLoopAgent<never, ToolSet>,
-        history: readonly ModelMessage[],
-        signal: AbortSignal | undefined,
-    ): Promise<string> {
-        if (history.length > 0) {
-            const result = await agent.generate({
-                messages: [...history],
-                abortSignal: signal,
-                onStepFinish: (step) => this.recordStep(step),
-            });
-            return result.text;
+        // One flow: always pass `messages`. The agent's `instructions`
+        // (system prompt — SOUL.md, CONTEXT.md, handler body, tool
+        // list) is already attached at construction time.
+        //
+        // `messages` carries everything that varies per-call:
+        //   - prior chat turns (empty for non-chat events)
+        //   - the current task brief (seed prompt + JSON payload),
+        //     appended as the trailing user message when non-empty.
+        //
+        // For chat events the trailing brief duplicates the payload
+        // text (which is also the latest history message); the model
+        // handles the small overlap fine. The previous split flow
+        // dropped the brief entirely whenever history existed, which
+        // also dropped the agentrun's seed prompt.
+        const messages: ModelMessage[] = [...history];
+        if (taskBrief.length > 0) {
+            messages.push({ role: "user", content: taskBrief });
         }
 
-        const prompt = PromptBuilder.buildPrompt(this.row.prompt, this.row.payload);
         const result = await agent.generate({
-            prompt,
+            messages,
             abortSignal: signal,
             onStepFinish: (step) => this.recordStep(step),
         });
