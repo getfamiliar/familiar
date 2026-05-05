@@ -97,8 +97,8 @@ export class PromptBuilder {
             sections.push(truncate(runPrompt, MAX_FILE_CHARS));
         }
 
-        const payloadJson = JSON.stringify(payload ?? {}, null, 2);
-        sections.push(`# Payload\n\n\`\`\`json\n${truncate(payloadJson, MAX_FILE_CHARS)}\n\`\`\``);
+        //const payloadJson = JSON.stringify(payload ?? {}, null, 2);
+        //sections.push(`# Payload\n\n\`\`\`json\n${truncate(payloadJson, MAX_FILE_CHARS)}\n\`\`\``);
 
         return truncate(sections.join("\n\n"), MAX_PROMPT_CHARS);
     }

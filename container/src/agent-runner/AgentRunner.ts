@@ -73,11 +73,12 @@ export class AgentRunner {
             allowed: handler.header.allowedTools,
         });
         const toolNames = Object.keys(tools);
+        const systemPrompt = PromptBuilder.buildSystem(handler.body, toolNames);
 
         const agent = new ToolLoopAgent<never, ToolSet>({
             model,
             tools,
-            instructions: PromptBuilder.buildSystem(handler.body, toolNames),
+            instructions: systemPrompt,
             temperature: handler.header.temperature,
             maxOutputTokens: handler.header.maxOutputTokens,
             stopWhen: stepCountIs(MAX_STEPS_PER_RUN),
@@ -122,6 +123,8 @@ export class AgentRunner {
                 model: handler.header.model,
                 temperature: handler.header.temperature,
                 maxOutputTokens: handler.header.maxOutputTokens,
+                systemPrompt: systemPrompt,
+                taskBrief: taskBrief,
                 tools: toolNames,
                 historyMessages: history.length,
                 taskBriefLength: taskBrief.length,
