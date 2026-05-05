@@ -41,16 +41,20 @@ export interface HandlerFileHeader {
      */
     readonly outputChat?: boolean;
     /**
-     * Controls how a sub-topic handler combines with its parent-topic
-     * fallback during {@link HandlerFile.load}. Only meaningful on the
-     * sub-topic file (e.g. `chat/telegram/analyze.md`).
+     * Controls how this file combines with its inheritance chain during
+     * {@link HandlerFile.load}. Topics can nest arbitrarily deep
+     * (`chat:telegram:group:reaction`); each `:`-segment maps to a
+     * folder, and every existing file in the chain layers into the
+     * merge by default.
      *
-     * - `merge` (default) — the parent file is loaded first; this
-     *   file's declared header fields override the parent's, and this
-     *   file's body is appended after the parent's with a blank line
-     *   between.
-     * - `replace` — the parent file is ignored; behaves like the
-     *   parent doesn't exist.
+     * - `merge` (default) — every ancestor file in the chain is loaded
+     *   and folded root-first; deeper files override declared header
+     *   fields and append their body. Missing intermediate levels are
+     *   skipped silently.
+     * - `replace` — declared on any file in the chain, this cuts off
+     *   the merge above that file: it becomes the new root, and every
+     *   higher-level ancestor is ignored. Useful for sub-topics that
+     *   want to fully override more general guidance.
      */
     readonly mergeMode?: "merge" | "replace";
 }
@@ -95,19 +99,25 @@ export class HandlerFile {
     /** Markdown body following the frontmatter (or the whole file if no frontmatter). */
     readonly body: string;
     /**
-     * If this file's body and header are the result of a sub-topic
-     * merge ({@link HandlerFileHeader.mergeMode} = `merge`), the
-     * workspace-relative path of the parent-topic file that was
-     * layered in. `undefined` when no merge happened.
+     * Workspace-relative paths of every ancestor file that contributed
+     * to this {@link HandlerFile}'s merged body and header, ordered
+     * nearest-ancestor first. Empty when no merge happened (only the
+     * leaf file existed, or the leaf opted out via `mergeMode: replace`).
+     *
+     * For topic `chat:telegram:group` with handler `index`, if all four
+     * candidate files exist with no `replace`, this is
+     * `["chat/telegram/index.md", "chat/index.md"]` and `relativePath`
+     * is the leaf `chat/telegram/group/index.md`. Reading the array
+     * directly yields the inheritance chain in human-readable order.
      */
-    readonly inheritsFrom?: string;
+    readonly inheritsFrom: readonly string[];
 
     private constructor(
         relativePath: string,
         absolutePath: string,
         header: HandlerFileHeader,
         body: string,
-        inheritsFrom?: string,
+        inheritsFrom: readonly string[] = [],
     ) {
         this.relativePath = relativePath;
         this.path = absolutePath;
@@ -142,70 +152,78 @@ export class HandlerFile {
 
     /**
      * Resolve a handler file for the given topic + basename and
-     * construct it. Resolution rules — for topic `chat:telegram` and
-     * basename `analyze`:
+     * construct it. Resolution rules — for topic `chat:telegram:group`
+     * and basename `index`:
      *
-     *   1. `<workspaceRoot>/chat/telegram/analyze.md` (sub-topic, "child")
-     *   2. `<workspaceRoot>/chat/analyze.md` (parent topic fallback)
+     *   1. `<workspaceRoot>/chat/telegram/group/index.md` (deepest)
+     *   2. `<workspaceRoot>/chat/telegram/index.md`
+     *   3. `<workspaceRoot>/chat/index.md` (root fallback)
      *
-     * If both exist, the child's `mergeMode` controls the outcome:
-     * `merge` (default) layers the child onto the parent — declared
-     * header fields override, bodies concatenate with `parent` first
-     * and a blank line between. `replace` ignores the parent. If only
-     * one of the two exists, that file is used as-is. Topics without a
-     * sub-topic resolve to a single candidate; `mergeMode` is moot.
+     * The deepest existing file is the **leaf** (its path becomes
+     * {@link relativePath}). Every ancestor that exists on disk layers
+     * into the merge — declared header fields override (leaf wins),
+     * bodies concatenate root-first with blank lines between. Missing
+     * intermediate levels are simply skipped.
      *
-     * @throws If neither candidate exists, or if a resolved file fails
-     *   the same parsing checks as {@link read}.
+     * `mergeMode: "replace"` declared on any file in the chain cuts
+     * off everything above it: that file becomes the new root of the
+     * merge. The cutoff is found by walking deepest-first; the first
+     * `replace` encountered terminates the upward walk.
+     *
+     * @throws If no candidate file exists on disk, or if any resolved
+     *   file fails the same parsing checks as {@link read}.
      */
     static load(topic: string, basename: string): HandlerFile {
-        const candidates = resolveCandidates(topic, basename);
-        const [childRel, parentRel] = candidates;
-        const childAbs = path.join(HandlerFile.workspaceRoot, childRel);
-        const parentAbs =
-            parentRel !== undefined ? path.join(HandlerFile.workspaceRoot, parentRel) : null;
+        // Deepest path first, root last.
+        const candidatesDeepestFirst = resolveCandidates(topic, basename);
 
-        const childExists = existsSync(childAbs);
-        const parentExists = parentAbs !== null && existsSync(parentAbs);
+        // Parse every candidate that exists on disk, preserving the
+        // deepest-first order so we can apply the `replace` cutoff
+        // before reversing for the merge fold.
+        const existingDeepestFirst: { rel: string; abs: string; declared: DeclaredFile }[] = [];
+        for (const rel of candidatesDeepestFirst) {
+            const abs = path.join(HandlerFile.workspaceRoot, rel);
+            if (existsSync(abs)) {
+                existingDeepestFirst.push({ rel, abs, declared: parseFile(abs) });
+            }
+        }
 
-        if (!childExists && !parentExists) {
+        if (existingDeepestFirst.length === 0) {
             throw new Error(
-                `Handler not found for topic="${topic}" basename="${basename}". Tried: ${candidates.join(", ")}`,
+                `Handler not found for topic="${topic}" basename="${basename}". Tried: ${candidatesDeepestFirst.join(", ")}`,
             );
         }
 
-        if (!childExists) {
-            // Only parent exists.
-            const declared = parseFile(parentAbs as string);
-            return new HandlerFile(
-                parentRel as string,
-                parentAbs as string,
-                mergeDefaults(declared.header, HandlerFile.headerDefaults),
-                declared.body,
-            );
+        // Apply `mergeMode: replace`: walking deepest-first, the first
+        // file that declares `replace` is the new root — it stays in
+        // the chain, everything above it is dropped. (`replace` on the
+        // leaf alone means "use only the leaf".)
+        const replaceAt = existingDeepestFirst.findIndex(
+            (entry) => entry.declared.header.mergeMode === "replace",
+        );
+        const chainDeepestFirst =
+            replaceAt >= 0 ? existingDeepestFirst.slice(0, replaceAt + 1) : existingDeepestFirst;
+
+        // Fold root-first so each subsequent (deeper) file overrides
+        // declared fields and appends body. The leaf is the deepest
+        // entry (chainDeepestFirst[0]); ancestors are everything else.
+        const chainRootFirst = [...chainDeepestFirst].reverse();
+        let mergedHeader: HandlerFileHeader = {};
+        let mergedBody = "";
+        for (const entry of chainRootFirst) {
+            mergedHeader = mergeDeclared(mergedHeader, entry.declared.header);
+            mergedBody = concatBodies(mergedBody, entry.declared.body);
         }
 
-        const child = parseFile(childAbs);
+        const leaf = chainDeepestFirst[0];
+        const ancestorsNearestFirst = chainDeepestFirst.slice(1).map((entry) => entry.rel);
 
-        if (!parentExists || child.header.mergeMode === "replace") {
-            return new HandlerFile(
-                childRel,
-                childAbs,
-                mergeDefaults(child.header, HandlerFile.headerDefaults),
-                child.body,
-            );
-        }
-
-        // Both exist and child opts in (or doesn't opt out) of merge.
-        const parent = parseFile(parentAbs as string);
-        const mergedDeclared = mergeDeclared(parent.header, child.header);
-        const mergedBody = concatBodies(parent.body, child.body);
         return new HandlerFile(
-            childRel,
-            childAbs,
-            mergeDefaults(mergedDeclared, HandlerFile.headerDefaults),
+            leaf.rel,
+            leaf.abs,
+            mergeDefaults(mergedHeader, HandlerFile.headerDefaults),
             mergedBody,
-            parentRel as string,
+            ancestorsNearestFirst,
         );
     }
 
@@ -242,16 +260,25 @@ export class HandlerFile {
 
 /**
  * Build the ordered list of candidate workspace-relative paths for a
- * topic / basename pair, most-specific first.
+ * topic / basename pair, deepest first. Each `:`-separated segment of
+ * the topic becomes a folder level; the basename gains a `.md` suffix.
+ *
+ * For topic `chat:telegram:group` and basename `index`:
+ *
+ *   1. `chat/telegram/group/index.md`  ← deepest (leaf candidate)
+ *   2. `chat/telegram/index.md`
+ *   3. `chat/index.md`                  ← root
+ *
+ * The caller treats this as a "from leaf walking up to root" sequence;
+ * intermediate levels that don't exist on disk are simply skipped.
  */
 function resolveCandidates(topic: string, basename: string): readonly string[] {
-    const colonIndex = topic.indexOf(":");
-    if (colonIndex < 0) {
-        return [path.join(topic, `${basename}.md`)];
+    const segments = topic.split(":");
+    const candidates: string[] = [];
+    for (let depth = segments.length; depth >= 1; depth--) {
+        candidates.push(path.join(...segments.slice(0, depth), `${basename}.md`));
     }
-    const parent = topic.slice(0, colonIndex);
-    const sub = topic.slice(colonIndex + 1);
-    return [path.join(parent, sub, `${basename}.md`), path.join(parent, `${basename}.md`)];
+    return candidates;
 }
 
 /**

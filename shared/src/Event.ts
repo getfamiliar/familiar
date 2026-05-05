@@ -28,8 +28,9 @@ export interface EventRow {
      */
     readonly id: string;
     /**
-     * Event topic, matching `\w+(:\w+)?` (e.g. `mail`, `chat:whatsapp`).
-     * Resolved to a handler file by the container at runtime.
+     * Event topic, matching `\w+(:\w+)*` (e.g. `mail`, `chat:whatsapp`,
+     * `chat:telegram:group:reaction`). Each `:`-separated segment maps
+     * to a folder when the container resolves the handler markdown.
      */
     readonly topic: string;
     /**

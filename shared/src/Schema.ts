@@ -42,10 +42,15 @@ export const CHATMESSAGES_NEW_CHANNEL = "chatmessages_new";
 
 /**
  * Topic regex used by the events check constraint and by the container
- * runtime when resolving handler files. One word, optionally followed by
- * `:` and a sub-topic word.
+ * runtime when resolving handler files. One word, optionally followed
+ * by any number of `:`-prefixed sub-topic words. Examples:
+ * `mail`, `chat:cli`, `chat:telegram:group:reaction`.
+ *
+ * The container resolves a handler for topic `a:b:c` by walking the
+ * chain `a/b/c/<basename>.md → a/b/<basename>.md → a/<basename>.md`
+ * deepest-first and merging every existing layer (see HandlerFile.load).
  */
-export const TOPIC_PATTERN = "^\\w+(:\\w+)?$";
+export const TOPIC_PATTERN = "^\\w+(:\\w+)*$";
 
 export const SCHEMA_SQL = `
 -- Drop legacy single-table artifacts from before the events/agentruns
@@ -109,6 +114,15 @@ CREATE TABLE IF NOT EXISTS agentruns (
 -- Forward-compat ALTER for databases created before result_text landed.
 -- Safe no-op on fresh databases where the column already exists.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS result_text text;
+
+-- Forward-compat: relax the topic CHECK constraint to allow arbitrarily
+-- deep \`a:b:c:…\` topics. CREATE TABLE IF NOT EXISTS above doesn't
+-- update existing constraints, so we drop+re-add unconditionally. The
+-- DROP IF EXISTS / ADD pair is idempotent.
+ALTER TABLE events DROP CONSTRAINT IF EXISTS events_topic_format;
+ALTER TABLE events ADD CONSTRAINT events_topic_format CHECK (topic ~ '${TOPIC_PATTERN}');
+ALTER TABLE agentruns DROP CONSTRAINT IF EXISTS agentruns_topic_format;
+ALTER TABLE agentruns ADD CONSTRAINT agentruns_topic_format CHECK (topic ~ '${TOPIC_PATTERN}');
 
 CREATE INDEX IF NOT EXISTS agentruns_state_priority_idx
   ON agentruns (state, priority DESC, id ASC);

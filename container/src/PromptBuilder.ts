@@ -84,15 +84,17 @@ export function buildSystemPrompt(
  * text reply into the chat history via `outputChat`.
  */
 function buildRuntimeSection(handler: HandlerFile, topic: string): string {
-    const handlerLine = handler.inheritsFrom
-        ? `Handler file: \`${handler.relativePath}\`, inheriting from \`${handler.inheritsFrom}\``
-        : `Handler file: \`${handler.relativePath}\``;
-    return [
+    const lines = [
         `- Current time: ${new Date().toISOString()}`,
         `- Event topic: \`${topic}\``,
-        `- ${handlerLine}`,
-        `- outputChat: ${handler.header.outputChat === true}`,
-    ].join("\n");
+        `- Handler file: \`${handler.relativePath}\``,
+    ];
+    if (handler.inheritsFrom.length > 0) {
+        const ancestors = handler.inheritsFrom.map((p) => `\`${p}\``).join(" ← ");
+        lines.push(`- Inheriting from: ${ancestors}`);
+    }
+    lines.push(`- outputChat: ${handler.header.outputChat === true}`);
+    return lines.join("\n");
 }
 
 /**

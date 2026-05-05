@@ -81,7 +81,7 @@ export class EventBus {
      * always observe consistent state.
      *
      * @throws If `idempotencyKey` collides with an existing event, if
-     *   `topic` does not match `\w+(:\w+)?`, or if `isChat=true` but
+     *   `topic` does not match `\w+(:\w+)*`, or if `isChat=true` but
      *   `payload` is not an object containing a `text` string.
      */
     async add(event: NewEvent): Promise<EventRow> {
