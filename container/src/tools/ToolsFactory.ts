@@ -1,6 +1,7 @@
 import type { ToolSet } from "ai";
 import type { AgentRunBus, AgentRunRow } from "effective-assistant-shared";
 import type { ChatManager } from "../chat/ChatManager.js";
+import { buildFsTools } from "./fs.js";
 import { buildGetWeatherTool } from "./getWeather.js";
 import { buildQueueRunTool } from "./queueRun.js";
 import { buildSendChatTool } from "./sendChat.js";
@@ -50,6 +51,14 @@ export class ToolsFactory {
         }
         if (context.bus && context.parent) {
             systemTools.queue_run = buildQueueRunTool(context.bus, context.parent);
+        }
+        if (context.parent) {
+            // Filesystem tools are always available; the writing tools
+            // (file_write / file_str_replace / file_append) consult
+            // `parent.privileged` internally to gate `.md` paths, so
+            // every agentrun can read but only privileged runs can
+            // modify markdown handlers / SOUL.md / people notes.
+            Object.assign(systemTools, buildFsTools(context.parent));
         }
 
         const handlerTools: ToolSet = {};
