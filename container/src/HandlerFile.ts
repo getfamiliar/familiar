@@ -9,8 +9,8 @@ import { parse as parseYaml } from "yaml";
  * Frontmatter that *is* present is still type-checked: a `model: 123`
  * is a malformed handler, not an unset one.
  *
- * Fields left undefined by a handler are filled at parse time from the
- * process-wide defaults registered via
+ * Fields left undefined by a handler are filled at finalize time from
+ * the process-wide defaults registered via
  * {@link HandlerFile.setHeaderDefaults}.
  */
 export interface HandlerFileHeader {
@@ -40,6 +40,25 @@ export interface HandlerFileHeader {
      * and the user sees duplicates. Choose one or the other per handler.
      */
     readonly outputChat?: boolean;
+    /**
+     * Controls how a sub-topic handler combines with its parent-topic
+     * fallback during {@link HandlerFile.load}. Only meaningful on the
+     * sub-topic file (e.g. `chat/telegram/analyze.md`).
+     *
+     * - `merge` (default) — the parent file is loaded first; this
+     *   file's declared header fields override the parent's, and this
+     *   file's body is appended after the parent's with a blank line
+     *   between.
+     * - `replace` — the parent file is ignored; behaves like the
+     *   parent doesn't exist.
+     */
+    readonly mergeMode?: "merge" | "replace";
+}
+
+/** Pair returned by the parser before defaults are applied. */
+interface DeclaredFile {
+    readonly header: HandlerFileHeader;
+    readonly body: string;
 }
 
 /**
@@ -47,11 +66,11 @@ export interface HandlerFileHeader {
  *
  * Two ways to construct:
  *
- * - `new HandlerFile(relativePath)` — read and parse any file under
- *   the configured workspace root.
- * - `HandlerFile.load(topic, basename)` — resolve the most-specific
- *   existing handler file for a topic / basename pair (sub-topic
- *   override falls back to parent topic) and parse it.
+ * - {@link HandlerFile.read} — read and parse one specific file under
+ *   the configured workspace root, no merge semantics.
+ * - {@link HandlerFile.load} — resolve a topic / basename pair to the
+ *   most-specific existing handler file, possibly layering it on top
+ *   of a parent-topic file (see {@link HandlerFileHeader.mergeMode}).
  *
  * Both paths are synchronous: handler files are small local-disk
  * markdown, so blocking the event loop briefly during construction is
@@ -64,7 +83,7 @@ export interface HandlerFileHeader {
 export class HandlerFile {
     /** Absolute mount path of the workspace. Default `/workspace`. */
     private static workspaceRoot: string = "/workspace";
-    /** Defaults applied per-field at parse time when the YAML omits a field. */
+    /** Defaults applied per-field at finalize time when the YAML omits a field. */
     private static headerDefaults: HandlerFileHeader = {};
 
     /** Workspace-relative path the file was loaded from (e.g. `chat/telegram/index.md`). */
@@ -75,6 +94,27 @@ export class HandlerFile {
     readonly header: HandlerFileHeader;
     /** Markdown body following the frontmatter (or the whole file if no frontmatter). */
     readonly body: string;
+    /**
+     * If this file's body and header are the result of a sub-topic
+     * merge ({@link HandlerFileHeader.mergeMode} = `merge`), the
+     * workspace-relative path of the parent-topic file that was
+     * layered in. `undefined` when no merge happened.
+     */
+    readonly inheritsFrom?: string;
+
+    private constructor(
+        relativePath: string,
+        absolutePath: string,
+        header: HandlerFileHeader,
+        body: string,
+        inheritsFrom?: string,
+    ) {
+        this.relativePath = relativePath;
+        this.path = absolutePath;
+        this.header = header;
+        this.body = body;
+        this.inheritsFrom = inheritsFrom;
+    }
 
     /**
      * Read and parse the file at `<workspaceRoot>/<relativePath>`.
@@ -88,16 +128,16 @@ export class HandlerFile {
      *   frontmatter (if present) is malformed or not a mapping, or any
      *   declared header field has the wrong type.
      */
-    constructor(relativePath: string) {
+    static read(relativePath: string): HandlerFile {
         const normalized = relativePath.replace(/^\/+/, "");
         const absolute = path.join(HandlerFile.workspaceRoot, normalized);
-        const source = readFileSync(absolute, "utf8");
-        const { header: declared, body } = parseHandler(absolute, source);
-
-        this.relativePath = normalized;
-        this.path = absolute;
-        this.header = mergeDefaults(declared, HandlerFile.headerDefaults);
-        this.body = body;
+        const declared = parseFile(absolute);
+        return new HandlerFile(
+            normalized,
+            absolute,
+            mergeDefaults(declared.header, HandlerFile.headerDefaults),
+            declared.body,
+        );
     }
 
     /**
@@ -105,24 +145,67 @@ export class HandlerFile {
      * construct it. Resolution rules — for topic `chat:telegram` and
      * basename `analyze`:
      *
-     *   1. `<workspaceRoot>/chat/telegram/analyze.md` (sub-topic override)
+     *   1. `<workspaceRoot>/chat/telegram/analyze.md` (sub-topic, "child")
      *   2. `<workspaceRoot>/chat/analyze.md` (parent topic fallback)
      *
-     * Topics without a sub-topic resolve to a single candidate.
+     * If both exist, the child's `mergeMode` controls the outcome:
+     * `merge` (default) layers the child onto the parent — declared
+     * header fields override, bodies concatenate with `parent` first
+     * and a blank line between. `replace` ignores the parent. If only
+     * one of the two exists, that file is used as-is. Topics without a
+     * sub-topic resolve to a single candidate; `mergeMode` is moot.
      *
-     * @throws If neither candidate path exists, or if the resolved
-     *   file fails the same parsing checks as the public constructor.
+     * @throws If neither candidate exists, or if a resolved file fails
+     *   the same parsing checks as {@link read}.
      */
     static load(topic: string, basename: string): HandlerFile {
         const candidates = resolveCandidates(topic, basename);
-        for (const candidate of candidates) {
-            const absolute = path.join(HandlerFile.workspaceRoot, candidate);
-            if (existsSync(absolute)) {
-                return new HandlerFile(candidate);
-            }
+        const [childRel, parentRel] = candidates;
+        const childAbs = path.join(HandlerFile.workspaceRoot, childRel);
+        const parentAbs =
+            parentRel !== undefined ? path.join(HandlerFile.workspaceRoot, parentRel) : null;
+
+        const childExists = existsSync(childAbs);
+        const parentExists = parentAbs !== null && existsSync(parentAbs);
+
+        if (!childExists && !parentExists) {
+            throw new Error(
+                `Handler not found for topic="${topic}" basename="${basename}". Tried: ${candidates.join(", ")}`,
+            );
         }
-        throw new Error(
-            `Handler not found for topic="${topic}" basename="${basename}". Tried: ${candidates.join(", ")}`,
+
+        if (!childExists) {
+            // Only parent exists.
+            const declared = parseFile(parentAbs as string);
+            return new HandlerFile(
+                parentRel as string,
+                parentAbs as string,
+                mergeDefaults(declared.header, HandlerFile.headerDefaults),
+                declared.body,
+            );
+        }
+
+        const child = parseFile(childAbs);
+
+        if (!parentExists || child.header.mergeMode === "replace") {
+            return new HandlerFile(
+                childRel,
+                childAbs,
+                mergeDefaults(child.header, HandlerFile.headerDefaults),
+                child.body,
+            );
+        }
+
+        // Both exist and child opts in (or doesn't opt out) of merge.
+        const parent = parseFile(parentAbs as string);
+        const mergedDeclared = mergeDeclared(parent.header, child.header);
+        const mergedBody = concatBodies(parent.body, child.body);
+        return new HandlerFile(
+            childRel,
+            childAbs,
+            mergeDefaults(mergedDeclared, HandlerFile.headerDefaults),
+            mergedBody,
+            parentRel as string,
         );
     }
 
@@ -147,7 +230,7 @@ export class HandlerFile {
     }
 
     /**
-     * Set defaults applied per-field at parse time when the YAML
+     * Set defaults applied per-field at finalize time when the YAML
      * header omits a field. Process-wide; the change is visible to
      * every subsequent {@link HandlerFile} construction. Pass `{}` to
      * clear.
@@ -172,6 +255,53 @@ function resolveCandidates(topic: string, basename: string): readonly string[] {
 }
 
 /**
+ * Read and parse a handler file at the given absolute path. Returns
+ * the *declared* header (only fields actually present in YAML) plus
+ * the body. Process-wide defaults are applied later, after any merge.
+ *
+ * @throws If the file is missing, the YAML is malformed, or any
+ *   declared field has the wrong type.
+ */
+function parseFile(absolute: string): DeclaredFile {
+    const source = readFileSync(absolute, "utf8");
+    return parseHandler(absolute, source);
+}
+
+/**
+ * Merge a child's declared header onto a parent's declared header.
+ * Each child field overrides the parent's iff the child declared it
+ * (i.e. non-undefined). This is the same `??` shape used by
+ * {@link mergeDefaults}, but operates on declared (pre-defaults)
+ * headers so a child silently omitting `model` doesn't clobber a
+ * parent's *declaration*.
+ */
+function mergeDeclared(parent: HandlerFileHeader, child: HandlerFileHeader): HandlerFileHeader {
+    return {
+        model: child.model ?? parent.model,
+        temperature: child.temperature ?? parent.temperature,
+        allowedTools: child.allowedTools ?? parent.allowedTools,
+        maxOutputTokens: child.maxOutputTokens ?? parent.maxOutputTokens,
+        outputChat: child.outputChat ?? parent.outputChat,
+        mergeMode: child.mergeMode ?? parent.mergeMode,
+    };
+}
+
+/**
+ * Concatenate parent and child bodies with a blank line between.
+ * Either side being empty short-circuits to the other so the result
+ * doesn't lead with whitespace.
+ */
+function concatBodies(parentBody: string, childBody: string): string {
+    if (parentBody.length === 0) {
+        return childBody;
+    }
+    if (childBody.length === 0) {
+        return parentBody;
+    }
+    return `${parentBody}\n\n${childBody}`;
+}
+
+/**
  * Split a handler file into YAML frontmatter (optional) and markdown
  * body, validating the header into a {@link HandlerFileHeader}. The
  * returned header reflects only what the YAML declared; defaults are
@@ -180,10 +310,7 @@ function resolveCandidates(topic: string, basename: string): readonly string[] {
  * @throws If the YAML block is present but malformed, or any declared
  *   field has the wrong type.
  */
-function parseHandler(
-    filePath: string,
-    source: string,
-): { header: HandlerFileHeader; body: string } {
+function parseHandler(filePath: string, source: string): DeclaredFile {
     const trimmed = source.trim();
     const match = trimmed.match(/^---\r?\n([\s\S]*?)\r?\n?---\r?\n?([\s\S]*)$/);
     if (!match) {
@@ -215,6 +342,7 @@ function parseHandler(
         allowedTools: optionalStringArray(filePath, raw, "allowedTools"),
         maxOutputTokens: optionalPositiveInteger(filePath, raw, "maxOutputTokens"),
         outputChat: optionalBoolean(filePath, raw, "outputChat"),
+        mergeMode: optionalEnum(filePath, raw, "mergeMode", ["merge", "replace"]),
     };
 
     return { header, body };
@@ -235,6 +363,7 @@ function mergeDefaults(
         allowedTools: declared.allowedTools ?? defaults.allowedTools,
         maxOutputTokens: declared.maxOutputTokens ?? defaults.maxOutputTokens,
         outputChat: declared.outputChat ?? defaults.outputChat,
+        mergeMode: declared.mergeMode ?? defaults.mergeMode,
     };
 }
 
@@ -311,4 +440,22 @@ function optionalStringArray(
         throw new Error(`${filePath}: header field "${field}" must be an array of strings`);
     }
     return value as string[];
+}
+
+function optionalEnum<T extends string>(
+    filePath: string,
+    raw: Record<string, unknown>,
+    field: string,
+    allowed: readonly T[],
+): T | undefined {
+    if (!(field in raw) || raw[field] === undefined) {
+        return undefined;
+    }
+    const value = raw[field];
+    if (typeof value !== "string" || !allowed.includes(value as T)) {
+        throw new Error(
+            `${filePath}: header field "${field}" must be one of ${allowed.map((v) => `"${v}"`).join(", ")}`,
+        );
+    }
+    return value as T;
 }

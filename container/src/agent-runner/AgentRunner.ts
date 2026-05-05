@@ -78,7 +78,7 @@ export class AgentRunner {
             parent: this.row,
         });
         const toolNames = Object.keys(tools);
-        const systemPrompt = buildSystemPrompt(handler.body, toolNames);
+        const systemPrompt = buildSystemPrompt(handler, toolNames);
 
         const agent = new ToolLoopAgent<never, ToolSet>({
             model,

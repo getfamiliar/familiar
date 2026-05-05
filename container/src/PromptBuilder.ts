@@ -31,14 +31,14 @@ const MAX_PROMPT_CHARS = 16000;
  * safety net. Truncated values get a `…[truncated, original N chars]`
  * marker so the model knows the value is incomplete.
  *
- * @param handlerBody The markdown body of the handler file (the
- *   per-handler policy). Empty string is allowed and yields no
- *   "Task" section.
+ * @param handler The resolved handler file. Body becomes the `# Task`
+ *   section; path / inheritance / `outputChat` feed the `# Runtime`
+ *   section at the end.
  * @param toolNames Ids of tools the agent is permitted to call for
  *   this run. Listed under "Available tools"; an empty array produces
  *   "(none)".
  */
-export function buildSystemPrompt(handlerBody: string, toolNames: readonly string[]): string {
+export function buildSystemPrompt(handler: HandlerFile, toolNames: readonly string[]): string {
     const sections: string[] = [];
 
     const soul = readWorkspaceFile("SOUL.md");
@@ -56,15 +56,35 @@ export function buildSystemPrompt(handlerBody: string, toolNames: readonly strin
         sections.push(`# Context\n\n${context}`);
     }
 
-    if (handlerBody.trim().length > 0) {
-        sections.push(`# Task\n\n${truncate(handlerBody, MAX_FILE_CHARS)}`);
+    if (handler.body.trim().length > 0) {
+        sections.push(`# Task\n\n${truncate(handler.body, MAX_FILE_CHARS)}`);
     }
 
     const toolList =
         toolNames.length > 0 ? toolNames.map((name) => `- ${name}`).join("\n") : "(none)";
     sections.push(`# Available tools\n\n${toolList}`);
 
+    sections.push(`# Runtime\n\n${buildRuntimeSection(handler)}`);
+
     return truncate(sections.join("\n\n"), MAX_SYSTEM_CHARS);
+}
+
+/**
+ * Build the bullet list of dynamic context that varies per call: the
+ * wall-clock time the prompt was assembled, the handler file in use
+ * (with the parent it inherits from, when merged), and whether the
+ * handler will mirror its final text reply into the chat history via
+ * `outputChat`.
+ */
+function buildRuntimeSection(handler: HandlerFile): string {
+    const handlerLine = handler.inheritsFrom
+        ? `Handler file: \`${handler.relativePath}\`, inheriting from \`${handler.inheritsFrom}\``
+        : `Handler file: \`${handler.relativePath}\``;
+    return [
+        `- Current time: ${new Date().toISOString()}`,
+        `- ${handlerLine}`,
+        `- outputChat: ${handler.header.outputChat === true}`,
+    ].join("\n");
 }
 
 /**
