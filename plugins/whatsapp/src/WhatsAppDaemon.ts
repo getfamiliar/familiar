@@ -1,6 +1,7 @@
 import { Boom } from "@hapi/boom";
 import makeWASocket, {
     DisconnectReason,
+    fetchLatestWaWebVersion,
     type GroupMetadata,
     type WAMessage,
     type WASocket,
@@ -20,6 +21,68 @@ const RECONNECT_BACKOFF_MAX_MS = 5 * 60 * 1000;
 const BROWSER_DESCRIPTION: [string, string, string] = ["effective-assistant", "Chrome", "1.0"];
 
 /**
+ * Build the {@link ILogger} we hand to baileys' `makeWASocket`. By
+ * default baileys instantiates its own pino at info level and writes
+ * raw JSON straight to stdout, which bypasses the host's pino-pretty
+ * pipeline and pollutes the operator's terminal with noise like the
+ * helloMsg / connection.update payloads on every reconnect. Routing
+ * baileys' output through `ctx.log` instead unifies it with every
+ * other plugin line and lets the host's logger own formatting,
+ * destinations, and rotation. We only forward warn+error — info /
+ * debug / trace are dropped because they're chatty and rarely
+ * actionable.
+ */
+export function buildBaileysLogger(ctx: HostContext): BaileysLogger {
+    const log = (level: "warn" | "error", obj: unknown, msg?: string): void => {
+        const detail = msg ?? renderLogObject(obj);
+        ctx.log(`whatsapp baileys ${level}: ${detail}`);
+    };
+    const logger: BaileysLogger = {
+        level: "warn",
+        trace: () => {},
+        debug: () => {},
+        info: () => {},
+        warn: (obj, msg) => log("warn", obj, msg),
+        error: (obj, msg) => log("error", obj, msg),
+        child: () => logger,
+    };
+    return logger;
+}
+
+/**
+ * Shape of the `logger` baileys' `makeWASocket` accepts. Inlined here
+ * (rather than imported from baileys) because the public type alias
+ * lives behind an internal path that's awkward to import; the surface
+ * is small and stable.
+ */
+interface BaileysLogger {
+    level: string;
+    child(obj: Record<string, unknown>): BaileysLogger;
+    trace(obj: unknown, msg?: string): void;
+    debug(obj: unknown, msg?: string): void;
+    info(obj: unknown, msg?: string): void;
+    warn(obj: unknown, msg?: string): void;
+    error(obj: unknown, msg?: string): void;
+}
+
+/**
+ * Best-effort stringifier for whatever baileys hands the logger as
+ * the first arg (pino convention: structured object first, message
+ * second). Skips circular structures so a logging call can never
+ * crash the daemon.
+ */
+function renderLogObject(obj: unknown): string {
+    if (typeof obj === "string") {
+        return obj;
+    }
+    try {
+        return JSON.stringify(obj);
+    } catch {
+        return "[unserializable]";
+    }
+}
+
+/**
  * Start the WhatsApp daemon. Mirrors the telegram pattern: validate
  * config, register handlers, kick off the long-running connection
  * loop without awaiting it.
@@ -34,6 +97,18 @@ export async function startWhatsAppDaemon(ctx: HostContext): Promise<void> {
     const auth = await loadAuth(ctx);
     if (!auth.hasExistingCreds) {
         ctx.log("whatsapp not linked yet; run `./cli.sh whatsapp link` to pair this device");
+        return;
+    }
+    // `creds.json` exists but `me` is only populated after a *complete*
+    // two-phase pair (QR scan + server-confirmed reconnect). Half-baked
+    // creds — e.g. left over from a link command that exited on the
+    // first 515 — would otherwise silently fall through to baileys'
+    // "register a new device" path, which loops on QR timeouts forever
+    // because no one is watching the daemon log to scan it.
+    if (!auth.state.creds.me?.id) {
+        ctx.log(
+            "whatsapp creds on disk are incomplete (no `me`); run `./cli.sh whatsapp logout` and re-link",
+        );
         return;
     }
     // Long-lived; never resolves under normal operation. Detach so the
@@ -82,10 +157,13 @@ async function runConnection(
     auth: WhatsAppAuth,
     allowlist: readonly string[] | null,
 ): Promise<"loggedOut" | string> {
+    const version = await resolveWaVersion(ctx);
     const sock = makeWASocket({
         auth: auth.state,
         printQRInTerminal: false,
         browser: BROWSER_DESCRIPTION,
+        version,
+        logger: buildBaileysLogger(ctx),
     });
     sock.ev.on("creds.update", auth.saveCreds);
 
@@ -180,7 +258,7 @@ async function handleIncomingMessage(
                     group_name: groupName,
                     from: {
                         jid: senderJid,
-                        push_name: msg.pushName ?? null,
+                        name: msg.pushName ?? null,
                         is_self: msg.key.fromMe === true,
                     },
                     timestamp_unix: timestamp,
@@ -329,6 +407,32 @@ function isDuplicateKeyError(err: unknown): boolean {
 
 function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fetch the current WhatsApp Web protocol version baileys should
+ * advertise to the server. Pinning to a stale version causes the
+ * server to reject the handshake with `statusCode=405`, which is the
+ * symptom we see when the bundled `Defaults` version drifts behind
+ * what WhatsApp's servers currently require.
+ *
+ * Falls back to `undefined` (= use baileys' bundled default) on
+ * lookup failure — better to attempt the connection with the stale
+ * version than to refuse to start at all when WhatsApp's version
+ * endpoint is unreachable.
+ */
+export async function resolveWaVersion(
+    ctx: HostContext,
+): Promise<[number, number, number] | undefined> {
+    try {
+        const result = await fetchLatestWaWebVersion({});
+        return result.version;
+    } catch (err) {
+        ctx.log(
+            `whatsapp version lookup failed, falling back to bundled default: ${formatError(err)}`,
+        );
+        return undefined;
+    }
 }
 
 /**

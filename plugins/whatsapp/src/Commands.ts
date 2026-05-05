@@ -4,6 +4,7 @@ import { type CommandDef, defineCommand } from "citty";
 import type { HostContext } from "effective-assistant-shared";
 import qrcodeTerminal from "qrcode-terminal";
 import { clearAuth, loadAuth } from "./Auth.js";
+import { buildBaileysLogger, resolveWaVersion } from "./WhatsAppDaemon.js";
 
 const BROWSER_DESCRIPTION: [string, string, string] = ["effective-assistant", "Chrome", "1.0"];
 
@@ -85,54 +86,51 @@ function linkCommand(ctx: HostContext) {
                 );
                 return;
             }
-            const sock: WASocket = makeWASocket({
-                auth: auth.state,
-                printQRInTerminal: false,
-                browser: BROWSER_DESCRIPTION,
-            });
-            sock.ev.on("creds.update", auth.saveCreds);
-            await new Promise<void>((resolve, reject) => {
-                sock.ev.on("connection.update", (update) => {
-                    if (update.qr) {
-                        process.stdout.write(
-                            "\nScan this QR with your phone (Settings → Linked devices → Link a device):\n\n",
-                        );
-                        qrcodeTerminal.generate(update.qr, { small: true }, (rendered) => {
-                            process.stdout.write(`${rendered}\n`);
-                        });
-                    }
-                    if (update.connection === "open") {
-                        process.stdout.write(
-                            `\nLinked successfully as ${sock.user?.id ?? "unknown"}.\n`,
-                        );
-                        resolve();
-                    }
-                    if (update.connection === "close") {
-                        const err = update.lastDisconnect?.error;
-                        const code = err instanceof Boom ? err.output?.statusCode : undefined;
-                        if (code === DisconnectReason.loggedOut) {
-                            // Treat user-cancelled scan as a hard stop;
-                            // a second `link` invocation starts fresh.
-                            reject(new Error("pairing cancelled or rejected by phone"));
-                            return;
-                        }
-                        // Other closes during pairing are non-recoverable
-                        // here — the daemon's reconnect loop is what
-                        // handles transient closes after pairing.
-                        reject(
-                            new Error(
-                                `connection closed before pairing completed (statusCode=${code ?? "unknown"})`,
-                            ),
-                        );
-                    }
-                });
-            });
-            // Give baileys a tick to flush the final `creds.update` to
-            // disk before we exit. `saveCreds` is fire-and-forget on
-            // the event listener side, so without this brief yield the
-            // process can exit mid-write.
-            await new Promise((r) => setTimeout(r, 250));
-            process.exit(0);
+            const version = await resolveWaVersion(ctx);
+            // Two-phase pairing per WhatsApp's protocol:
+            // 1. Open socket, render QR, user scans → server saves the
+            //    session and sends `restartRequired` (status 515).
+            // 2. Reconnect with the just-persisted creds → server replies
+            //    with `connection: open`, at which point WhatsApp's
+            //    mobile UI confirms the device under "Linked devices".
+            // If we exit after phase 1, the phone times out and shows
+            // "Pairing failed" even though baileys logged success.
+            let attempt = 0;
+            while (true) {
+                attempt += 1;
+                const isFirstAttempt = attempt === 1;
+                const result = await runLinkAttempt(
+                    ctx,
+                    auth,
+                    version,
+                    /*renderQR=*/ isFirstAttempt,
+                );
+                if (result === "open") {
+                    // Flush the latest in-memory creds (especially
+                    // `me`, set during phase 1) to disk before exiting.
+                    // Without this `process.exit(0)` can race the async
+                    // file write triggered by the last `creds.update`
+                    // event, leaving creds.json with the pre-pairing
+                    // snapshot and the daemon refusing to start.
+                    await auth.saveCreds();
+                    const me = auth.state.creds.me?.id ?? "unknown";
+                    process.stdout.write(
+                        `\nLinked successfully as ${me}. Run \`./cli.sh start\` to bring the daemon up.\n`,
+                    );
+                    process.exit(0);
+                }
+                if (result === "restartRequired") {
+                    // First-attempt close right after the QR scan; loop
+                    // back to the second attempt with the saved creds.
+                    process.stdout.write("Pairing handshake completed; finalizing session…\n");
+                    continue;
+                }
+                if (result === "loggedOut") {
+                    throw new Error("pairing cancelled or rejected by phone");
+                }
+                // Anything else is a non-recoverable error during link.
+                throw new Error(`connection closed before pairing completed (${result})`);
+            }
         },
     });
 }
@@ -155,5 +153,77 @@ function logoutCommand(ctx: HostContext) {
                 "Local WhatsApp credentials wiped. Don't forget to remove the device on your phone too (Settings → Linked devices).\n",
             );
         },
+    });
+}
+
+/**
+ * Outcome of one open-then-await-close cycle inside the pairing flow.
+ *
+ * - `open`: socket reached `connection: open`. For a fresh pair, this
+ *   only happens on the *second* attempt (after restartRequired); the
+ *   second `open` is what makes WhatsApp's mobile UI confirm the new
+ *   linked device. Returning early on the first 515 leaves the phone
+ *   waiting until it times out and shows "Pairing failed".
+ * - `restartRequired`: server told us to reconnect (status 515) right
+ *   after the QR scan. Creds were already persisted via `creds.update`,
+ *   so the caller should loop and start another attempt.
+ * - `loggedOut`: phone rejected/cancelled the pair (status 401). Hard
+ *   stop.
+ * - any other string: unexpected close; surfaced verbatim for logs.
+ */
+type LinkAttemptResult = "open" | "restartRequired" | "loggedOut" | string;
+
+/**
+ * Run one connection attempt during the pairing flow. On the first
+ * attempt the QR is rendered to stdout (`renderQR=true`); on the
+ * second attempt creds are already on disk so no QR is needed and we
+ * just wait for `connection: open`.
+ *
+ * Resolves with the outcome shape described in {@link LinkAttemptResult}
+ * — never rejects, so the caller can drive the retry loop with simple
+ * pattern matching.
+ */
+async function runLinkAttempt(
+    ctx: HostContext,
+    auth: Awaited<ReturnType<typeof loadAuth>>,
+    version: Awaited<ReturnType<typeof resolveWaVersion>>,
+    renderQR: boolean,
+): Promise<LinkAttemptResult> {
+    const sock: WASocket = makeWASocket({
+        auth: auth.state,
+        printQRInTerminal: false,
+        browser: BROWSER_DESCRIPTION,
+        version,
+        logger: buildBaileysLogger(ctx),
+    });
+    sock.ev.on("creds.update", auth.saveCreds);
+    return await new Promise<LinkAttemptResult>((resolve) => {
+        sock.ev.on("connection.update", (update) => {
+            if (renderQR && update.qr) {
+                process.stdout.write(
+                    "\nScan this QR with your phone (Settings → Linked devices → Link a device):\n\n",
+                );
+                qrcodeTerminal.generate(update.qr, { small: true }, (rendered) => {
+                    process.stdout.write(`${rendered}\n`);
+                });
+            }
+            if (update.connection === "open") {
+                resolve("open");
+                return;
+            }
+            if (update.connection === "close") {
+                const err = update.lastDisconnect?.error;
+                const code = err instanceof Boom ? err.output?.statusCode : undefined;
+                if (code === DisconnectReason.restartRequired) {
+                    resolve("restartRequired");
+                    return;
+                }
+                if (code === DisconnectReason.loggedOut) {
+                    resolve("loggedOut");
+                    return;
+                }
+                resolve(`statusCode=${code ?? "unknown"}`);
+            }
+        });
     });
 }
