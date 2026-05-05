@@ -21,8 +21,8 @@ import { runRepl } from "./Repl.js";
  *   agentrun.
  *
  * Both use the same chat-persistence pipeline (`isChat=true`,
- * `payload.text`, channel `"cli"`); the difference is purely the
- * shell of the CLI command.
+ * `prompt` carries the user's text, channel `"cli"`); the difference
+ * is purely the shell of the CLI command.
  */
 export default definePlugin({
     id: "cli-chat",
@@ -81,7 +81,7 @@ function sendCommand(ctx: HostContext) {
                     topic: "chat:cli",
                     isChat: true,
                     preferredChatChannelId: CLI_CHANNEL,
-                    payload: { text: args.message },
+                    prompt: args.message,
                 });
                 await handle.settled;
             } finally {

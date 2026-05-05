@@ -243,6 +243,11 @@ async function handleIncomingMessage(
         : (msg.key.participant ?? msg.participant ?? null);
     const timestamp = normalizeTimestamp(msg.messageTimestamp);
     const replyTo = msg.message?.extendedTextMessage?.contextInfo?.stanzaId ?? null;
+    const senderLabel = msg.pushName ?? senderJid ?? "an unknown sender";
+    const groupLabel = groupName ?? remoteJid;
+    const prompt = msg.key.fromMe
+        ? `You sent a message in WhatsApp group "${groupLabel}": ${text}`
+        : `A new WhatsApp group message from ${senderLabel} in "${groupLabel}" arrived: ${text}`;
 
     try {
         await ctx.events.emit({
@@ -250,6 +255,7 @@ async function handleIncomingMessage(
             isChat: false,
             preferredChatChannelId: null,
             idempotencyKey: `whatsapp:${messageId}`,
+            prompt,
             payload: {
                 text,
                 whatsapp: {

@@ -13,6 +13,7 @@ interface RawEventRow {
     idempotency_key: string | null;
     is_chat: boolean;
     preferred_chat_channel_id: string | null;
+    prompt: string | null;
     created_at: Date;
     updated_at: Date;
 }
@@ -75,23 +76,28 @@ export class EventBus {
     /**
      * Insert a new event and return the persisted row.
      *
-     * Transactional: when `event.isChat === true`, the matching
-     * `chatmessages` row (role `'user'`) is inserted in the same
-     * transaction. Both NOTIFY triggers fire post-COMMIT, so listeners
-     * always observe consistent state.
+     * Transactional: when `event.isChat === true`, a `chatmessages`
+     * row (role `'user'`) carrying the same `prompt` text is inserted
+     * in the same transaction. Both NOTIFY triggers fire post-COMMIT,
+     * so listeners always observe consistent state.
      *
-     * @throws If `idempotencyKey` collides with an existing event, if
-     *   `topic` does not match `\w+(:\w+)*`, or if `isChat=true` but
-     *   `payload` is not an object containing a `text` string.
+     * Validation: `prompt` must be a non-empty string after trimming —
+     * for any event, chat or not. The single check exists at this
+     * boundary so plugins that bypass the type system (untyped JS,
+     * unsafe casts) still surface the bug at emit time instead of
+     * leaving the AgentRunner with an empty messages array.
+     *
+     * @throws If `idempotencyKey` collides, if `topic` does not match
+     *   `\w+(:\w+)*`, or if `prompt` is missing or whitespace-only.
      */
     async add(event: NewEvent): Promise<EventRow> {
-        const isChat = event.isChat === true;
-        const userText = isChat ? extractChatText(event.payload) : null;
-        if (isChat && userText === null) {
+        if (typeof event.prompt !== "string" || event.prompt.trim().length === 0) {
             throw new Error(
-                "EventBus.add: isChat=true requires payload to be an object with a string `text` field",
+                "EventBus.add: every event requires a non-empty `prompt` (the agent-visible text)",
             );
         }
+        const isChat = event.isChat === true;
+        const prompt = event.prompt;
 
         const client = await this.connection.getPool().connect();
         try {
@@ -99,8 +105,8 @@ export class EventBus {
             const result = await client.query<RawEventRow>(
                 `INSERT INTO events
                    (topic, payload, priority, state, idempotency_key,
-                    is_chat, preferred_chat_channel_id)
-                 VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7)
+                    is_chat, preferred_chat_channel_id, prompt)
+                 VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8)
                  RETURNING *`,
                 [
                     event.topic,
@@ -110,15 +116,16 @@ export class EventBus {
                     event.idempotencyKey ?? null,
                     isChat,
                     event.preferredChatChannelId ?? null,
+                    prompt,
                 ],
             );
             const row = mapRow(result.rows[0]);
 
-            if (isChat && userText !== null) {
+            if (isChat) {
                 await client.query(
                     `INSERT INTO chatmessages (event_id, role, text_content)
                      VALUES ($1, 'user', $2)`,
-                    [row.id, userText],
+                    [row.id, prompt],
                 );
             }
 
@@ -339,21 +346,8 @@ function mapRow(raw: RawEventRow): EventRow {
         idempotencyKey: raw.idempotency_key,
         isChat: raw.is_chat,
         preferredChatChannelId: raw.preferred_chat_channel_id,
+        prompt: raw.prompt ?? "",
         createdAt: raw.created_at,
         updatedAt: raw.updated_at,
     };
-}
-
-/**
- * Pull the user's chat text out of an event payload. Accepts only the
- * documented `{ text: string, … }` shape; everything else (string
- * payloads, missing field, non-string text) returns `null` so
- * `EventBus.add` can throw with a clear error.
- */
-function extractChatText(payload: unknown): string | null {
-    if (payload === null || typeof payload !== "object") {
-        return null;
-    }
-    const text = (payload as { text?: unknown }).text;
-    return typeof text === "string" ? text : null;
 }

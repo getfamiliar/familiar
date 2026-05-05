@@ -88,6 +88,14 @@ ALTER TABLE events DROP COLUMN IF EXISTS causation_chain;
 -- JOIN inside the chatmessages NOTIFY trigger.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS is_chat boolean NOT NULL DEFAULT false;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS preferred_chat_channel_id text;
+-- Required for non-chat events (validated at \`EventBus.add\` time and at
+-- the type level via \`NewEvent\`'s discriminated union); always null for
+-- chat events because the user's text in \`chatmessages\` already serves
+-- as the agent-visible "what happened" message. The EventWatcher copies
+-- this verbatim into the root \`agentruns.prompt\` so the agent sees the
+-- emitter's framing without the EventWatcher having to reach into the
+-- payload schema.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS prompt text;
 
 CREATE INDEX IF NOT EXISTS events_state_priority_idx
   ON events (state, priority DESC, id ASC);

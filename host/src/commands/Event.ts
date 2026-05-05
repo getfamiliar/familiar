@@ -31,6 +31,11 @@ export const eventCommand = defineCommand({
             type: "string",
             description: "Priority (higher = processed first; default 50).",
         },
+        prompt: {
+            type: "string",
+            description:
+                "Human-readable description of what happened; consumed as the agent's user message. Defaults to a generic line mentioning the topic.",
+        },
     },
     async run({ args }) {
         const boot = bootstrap();
@@ -38,6 +43,7 @@ export const eventCommand = defineCommand({
 
         const priority = parsePriority(args.priority);
         const payload = parsePayload(args.payload);
+        const prompt = args.prompt ?? `Manually injected event of topic \`${args.topic}\`.`;
 
         const postgres = new PostgresContainer({
             dataPath: boot.dataDir,
@@ -52,6 +58,7 @@ export const eventCommand = defineCommand({
                 topic: args.topic,
                 payload,
                 priority,
+                prompt,
             });
             process.stdout.write(`${JSON.stringify(row, null, 2)}\n`);
         } finally {

@@ -307,8 +307,9 @@ function createTypingTracker(
  * Centralizes the boilerplate every per-message-type handler shares:
  * topic, channel, idempotency key derived from `update_id`, and the
  * standard `payload.telegram` envelope (`update_id`, `message_id`,
- * `from`). Per-type handlers pass the agent-visible `text` plus an
- * optional `telegramExtras` map whose entries are merged into
+ * `from`). Per-type handlers pass the agent-visible `text` (which
+ * becomes the event's `prompt` and is mirrored into `chatmessages`)
+ * plus an optional `telegramExtras` map whose entries are merged into
  * `payload.telegram` (e.g. `{ sticker: { emoji, set_name, … } }`).
  *
  * Designed for fire-and-forget at the call site: callers `void` the
@@ -340,8 +341,8 @@ async function emitChatEvent(
             isChat: true,
             preferredChatChannelId: TELEGRAM_CHANNEL,
             idempotencyKey: `telegram:${updateId}`,
+            prompt: text,
             payload: {
-                text,
                 telegram: {
                     update_id: updateId,
                     message_id: message.message_id,

@@ -113,15 +113,6 @@ export class AgentRunner {
         if (taskBrief.length > 0) {
             messages.push({ role: "user", content: taskBrief });
         }
-        // Non-chat events arrive with no history (isChat=false) and no
-        // seed prompt (the EventWatcher doesn't synthesize one). Fall
-        // back to the event payload so the agent always has something
-        // concrete to react to — and so models like the OpenAI/Mistral
-        // family don't reject the call with "messages must not be
-        // empty". The handler's system prompt already names the topic.
-        if (messages.length === 0) {
-            messages.push({ role: "user", content: renderEventPayload(this.row.payload) });
-        }
 
         const runStartedAt = Date.now();
         this.log.debug(
@@ -218,26 +209,6 @@ export class AgentRunner {
  * provider/internal fields so the debug line is readable. Returns the
  * raw value if it isn't an array (defensive — shouldn't happen).
  */
-/**
- * Render an agentrun's event payload for use as a synthetic user
- * message. JSON-stringifies objects so the agent can read them as
- * structured data; passes strings through unchanged; falls back to a
- * hint string for `null`/`undefined` so the message is never empty.
- */
-function renderEventPayload(payload: unknown): string {
-    if (payload === null || payload === undefined) {
-        return "(no payload was attached to this event)";
-    }
-    if (typeof payload === "string") {
-        return payload;
-    }
-    try {
-        return `Event payload:\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``;
-    } catch {
-        return String(payload);
-    }
-}
-
 function summarizeToolCalls(toolCalls: unknown): unknown {
     if (!Array.isArray(toolCalls)) {
         return toolCalls;

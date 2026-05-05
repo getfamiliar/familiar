@@ -81,12 +81,19 @@ export class EventWatcher {
      */
     private async handle(event: EventRow): Promise<void> {
         try {
+            // Only forward `prompt` for non-chat events. For chat
+            // events the same text was mirrored into `chatmessages` at
+            // emit time, and the AgentRunner consumes it via chat
+            // history; setting `agentrun.prompt` too would duplicate
+            // the trailing user turn.
+            const promptForAgentrun = event.isChat ? null : event.prompt;
             const root = await this.agentruns.add({
                 eventId: event.id,
                 topic: event.topic,
                 handler: "index",
                 priority: event.priority,
                 payload: event.payload,
+                prompt: promptForAgentrun,
             });
             this.log.info(
                 { eventId: event.id, topic: event.topic, rootAgentrunId: root.id },

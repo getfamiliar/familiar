@@ -52,8 +52,10 @@ export interface EventRow {
     readonly idempotencyKey: string | null;
     /**
      * Whether this event is a chat message from the user. When `true`,
-     * `EventBus.add` persists `payload.text` into `chatmessages` (role
-     * `'user'`) in the same transaction as the event INSERT.
+     * `EventBus.add` mirrors `prompt` into `chatmessages` (role
+     * `'user'`) in the same transaction as the event INSERT, so the
+     * agent picks the message up via chat history rather than via the
+     * agentrun's `prompt` field.
      */
     readonly isChat: boolean;
     /**
@@ -65,15 +67,56 @@ export interface EventRow {
      * plugin didn't set a default routing target.
      */
     readonly preferredChatChannelId: string | null;
+    /**
+     * The event's primary user-visible text, written by the emitter.
+     * Always populated:
+     *
+     * - For chat events (`isChat=true`): the user's chat message. Also
+     *   mirrored into `chatmessages.text_content` (role `'user'`) by
+     *   `EventBus.add`, which is the channel the AgentRunner consumes.
+     * - For non-chat events: a first-person framing of what happened
+     *   ("A new mail from Anna arrived: …"). The EventWatcher copies
+     *   it into the root agentrun's `prompt` so the AgentRunner can
+     *   append it as the trailing user message.
+     */
+    readonly prompt: string;
     /** Insert timestamp — postgres `now()` at INSERT. */
     readonly createdAt: Date;
     /** Last `update()` timestamp — bumped to `now()` on every update. */
     readonly updatedAt: Date;
 }
 
-/** Input shape for {@link EventBus.add}. */
+/**
+ * Input shape for {@link EventBus.add}.
+ *
+ * `prompt` carries the event's primary user-visible text — for chat
+ * events it's the user's message; for everything else it's a
+ * first-person framing of what happened ("A new mail from Anna
+ * arrived: …"). `EventBus.add` validates that the value is non-empty
+ * after trimming, so plugins that bypass the type system still surface
+ * the bug at emit time instead of leaving the AgentRunner with an
+ * empty messages array.
+ *
+ * `payload` is optional structured supplementary data (Telegram
+ * `update_id`, WhatsApp `group_jid`, etc.) — it never carries the
+ * agent-visible text directly any more.
+ *
+ * `isChat` is just a flag. When `true`, `EventBus.add` mirrors
+ * `prompt` into the `chatmessages` table so the AgentRunner picks the
+ * message up via chat history; the agentrun's own `prompt` field
+ * stays null for chat events to avoid double-counting the trailing
+ * turn. The flag does not change the input shape — both arms have
+ * identical fields — so this stays a single interface rather than a
+ * discriminated union.
+ */
 export interface NewEvent {
     readonly topic: string;
+    /**
+     * Primary user-visible text. Required, non-empty after trimming.
+     * See {@link NewEvent} for how it's persisted on each arm.
+     */
+    readonly prompt: string;
+    /** Optional structured supplementary data; arbitrary JSON. */
     readonly payload?: unknown;
     /** Higher = processed first; default 50. */
     readonly priority?: number;
@@ -82,10 +125,8 @@ export interface NewEvent {
     /** Globally unique key for dedup; null = no dedup. */
     readonly idempotencyKey?: string;
     /**
-     * Mark this event as a chat message from the user. When `true`,
-     * `payload` MUST be an object with a `text: string` field;
-     * `EventBus.add` will persist that text to `chatmessages` (role
-     * `'user'`) in the same transaction. Default `false`.
+     * Whether this event is a chat message from the user. Default
+     * `false`. See {@link NewEvent} for the persistence consequences.
      */
     readonly isChat?: boolean;
     /**

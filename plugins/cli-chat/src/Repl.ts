@@ -75,7 +75,7 @@ export async function runRepl(ctx: HostContext): Promise<void> {
                         topic: "chat:cli",
                         isChat: true,
                         preferredChatChannelId: CLI_CHANNEL,
-                        payload: { text: line },
+                        prompt: line,
                     },
                     {
                         onStep: (step) => {
