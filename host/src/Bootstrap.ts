@@ -14,6 +14,13 @@ export interface Bootstrap {
     readonly pidFile: string;
     readonly postgresPortFile: string;
     readonly workspaceDir: string;
+    /**
+     * Absolute host path of `data/workspace-template/`. Copied into
+     * {@link workspaceDir} on daemon start (before plugin templates so
+     * that the global defaults win on overlaps). Versioned with the
+     * repo; users edit it directly to seed their workspace.
+     */
+    readonly workspaceTemplateDir: string;
     readonly postgresDataDir: string;
     /**
      * Directory under `dataDir` that pino-roll writes daily-rotated
@@ -54,6 +61,7 @@ export function bootstrap(): Bootstrap {
         pidFile: `${dataDir}/.daemon.pid`,
         postgresPortFile: `${dataDir}/.postgres-port`,
         workspaceDir: `${dataDir}/workspace`,
+        workspaceTemplateDir: `${dataDir}/workspace-template`,
         postgresDataDir: `${dataDir}/postgres`,
         logsDir: `${dataDir}/logs`,
         logRetentionDays: parseRetention(process.env.LOG_RETENTION_DAYS),

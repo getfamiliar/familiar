@@ -59,15 +59,29 @@ export class PluginHost {
     }
 
     /**
-     * Copy any workspace-template files contributed by plugins into
-     * the workspace directory, skipping files that already exist.
-     * Idempotent and safe to call on every daemon start.
+     * Seed the workspace from templates. Two layers, copied in this
+     * order so the first writer wins on overlaps (`force: false`):
      *
-     * Diff/merge on plugin updates (when a plugin ships a newer
-     * default than the user's local copy) is the open question
-     * already in CLAUDE.md and is not handled here.
+     *   1. Global template at `data/workspace-template/` — versioned
+     *      with the repo, authored by the user. Authoritative for
+     *      anything it ships (e.g. `SOUL.md`, `CONTEXT.md`).
+     *   2. Plugin templates contributed via `plugin.workspaceTemplate`
+     *      — fill in topic-specific defaults the global template
+     *      didn't already cover.
+     *
+     * Idempotent and safe to call on every daemon start. Diff/merge on
+     * plugin updates (when a plugin ships a newer default than the
+     * user's local copy) is the open question already in CLAUDE.md and
+     * is not handled here.
      */
     installWorkspaceTemplates(): void {
+        if (existsSync(this.boot.workspaceTemplateDir)) {
+            cpSync(this.boot.workspaceTemplateDir, this.boot.workspaceDir, {
+                recursive: true,
+                force: false,
+                errorOnExist: false,
+            });
+        }
         for (const plugin of plugins) {
             if (!plugin.workspaceTemplate) {
                 continue;
