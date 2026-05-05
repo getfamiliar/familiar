@@ -2,6 +2,7 @@ import {
     AgentRunBus,
     EventBus,
     type EventRow,
+    type Logger,
     type PostgresConnection,
 } from "effective-assistant-shared";
 
@@ -27,15 +28,17 @@ import {
 export class EventWatcher {
     private readonly events: EventBus;
     private readonly agentruns: AgentRunBus;
+    private readonly log: Logger;
 
-    constructor(connection: PostgresConnection) {
-        this.events = new EventBus(connection);
+    constructor(connection: PostgresConnection, log: Logger) {
+        this.log = log.child({ component: "event-watcher" });
+        this.events = new EventBus(connection, this.log);
         this.agentruns = new AgentRunBus(connection);
     }
 
     /** Run the claim-and-spawn loop until `signal` aborts. */
     async run(signal: AbortSignal): Promise<void> {
-        console.error("Event watcher watching state=pending");
+        this.log.info("event watcher watching state=pending");
         for (;;) {
             const event = await this.claimNext(signal);
             if (event === null) {
@@ -43,7 +46,7 @@ export class EventWatcher {
             }
             await this.handle(event);
         }
-        console.error("Event watcher stopped");
+        this.log.info("event watcher stopped");
     }
 
     /**
@@ -85,17 +88,22 @@ export class EventWatcher {
                 priority: event.priority,
                 payload: event.payload,
             });
-            console.log(
-                `[event] id=${event.id} topic=${event.topic} → root agentrun id=${root.id}`,
+            this.log.info(
+                { eventId: event.id, topic: event.topic, rootAgentrunId: root.id },
+                "event claimed",
             );
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            console.error(`Event handling failed for id=${event.id}: ${message}`);
+            this.log.error({ eventId: event.id, err: message }, "event handling failed");
             try {
                 await this.events.update(event.id, { state: "failed" });
             } catch (markErr) {
-                console.error(
-                    `Also failed to mark event id=${event.id} failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`,
+                this.log.error(
+                    {
+                        eventId: event.id,
+                        err: markErr instanceof Error ? markErr.message : String(markErr),
+                    },
+                    "failed to mark event failed",
                 );
             }
         }

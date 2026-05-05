@@ -2,6 +2,7 @@ import { type ModelMessage, stepCountIs, ToolLoopAgent, type ToolSet } from "ai"
 import {
     type AgentRunRow,
     ChatMessageBus,
+    type Logger,
     type PostgresConnection,
     StepResultBus,
 } from "effective-assistant-shared";
@@ -37,11 +38,14 @@ export class AgentRunner {
     private readonly row: AgentRunRow;
     private readonly steps: StepResultBus;
     private readonly chat: ChatManager;
+    private readonly log: Logger;
+    private stepStartedAt = 0;
 
-    constructor(row: AgentRunRow, connection: PostgresConnection) {
+    constructor(row: AgentRunRow, connection: PostgresConnection, log: Logger) {
         this.row = row;
         this.steps = new StepResultBus(connection);
         this.chat = new ChatManager(new ChatMessageBus(connection));
+        this.log = log;
     }
 
     /**
@@ -77,6 +81,17 @@ export class AgentRunner {
             temperature: handler.header.temperature,
             maxOutputTokens: handler.header.maxOutputTokens,
             stopWhen: stepCountIs(MAX_STEPS_PER_RUN),
+            prepareStep: ({ stepNumber, messages }) => {
+                this.stepStartedAt = Date.now();
+                this.log.debug(
+                    {
+                        stepNumber,
+                        messageCount: messages.length,
+                    },
+                    "step starting",
+                );
+                return {};
+            },
         });
 
         const history = await this.chat.fetchHistory(this.row.eventId);
@@ -101,11 +116,36 @@ export class AgentRunner {
             messages.push({ role: "user", content: taskBrief });
         }
 
+        const runStartedAt = Date.now();
+        this.log.debug(
+            {
+                model: handler.header.model,
+                temperature: handler.header.temperature,
+                maxOutputTokens: handler.header.maxOutputTokens,
+                tools: toolNames,
+                historyMessages: history.length,
+                taskBriefLength: taskBrief.length,
+            },
+            "agent starting",
+        );
+
         const result = await agent.generate({
             messages,
             abortSignal: signal,
             onStepFinish: (step) => this.recordStep(step),
         });
+
+        this.log.debug(
+            {
+                durationMs: Date.now() - runStartedAt,
+                steps: result.steps.length,
+                finishReason: result.finishReason,
+                inputTokens: result.usage?.inputTokens,
+                outputTokens: result.usage?.outputTokens,
+                resultTextLength: result.text.length,
+            },
+            "agent done",
+        );
 
         // outputChat: handlers can opt to surface the model's plain
         // text reply as an assistant chat message — useful for models
@@ -132,6 +172,21 @@ export class AgentRunner {
         readonly toolCalls: unknown;
         readonly toolResults: unknown;
     }): Promise<void> {
+        const durationMs = this.stepStartedAt > 0 ? Date.now() - this.stepStartedAt : null;
+        this.log.debug(
+            {
+                stepNumber: step.stepNumber,
+                durationMs,
+                finishReason: step.finishReason,
+                inputTokens: step.usage.inputTokens ?? null,
+                outputTokens: step.usage.outputTokens ?? null,
+                reasoning: step.reasoningText ?? null,
+                text: step.text || null,
+                toolCalls: summarizeToolCalls(step.toolCalls),
+                toolResults: step.toolResults,
+            },
+            "step finished",
+        );
         await this.steps.add({
             agentRunId: this.row.id,
             eventId: this.row.eventId,
@@ -145,4 +200,20 @@ export class AgentRunner {
             toolResults: step.toolResults,
         });
     }
+}
+
+/**
+ * Reduce a step's `toolCalls` to a compact `{name, input}` array for
+ * logging. The SDK shape is `{ toolName, input, ... }`; we strip
+ * provider/internal fields so the debug line is readable. Returns the
+ * raw value if it isn't an array (defensive — shouldn't happen).
+ */
+function summarizeToolCalls(toolCalls: unknown): unknown {
+    if (!Array.isArray(toolCalls)) {
+        return toolCalls;
+    }
+    return toolCalls.map((call) => {
+        const c = call as { toolName?: unknown; input?: unknown };
+        return { name: c.toolName, input: c.input };
+    });
 }

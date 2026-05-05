@@ -1,4 +1,9 @@
-import { AgentRunBus, type AgentRunRow, type PostgresConnection } from "effective-assistant-shared";
+import {
+    AgentRunBus,
+    type AgentRunRow,
+    type Logger,
+    type PostgresConnection,
+} from "effective-assistant-shared";
 import { AgentRunner } from "./agent-runner/AgentRunner";
 
 /**
@@ -18,15 +23,17 @@ import { AgentRunner } from "./agent-runner/AgentRunner";
 export class AgentrunWatcher {
     private readonly bus: AgentRunBus;
     private readonly connection: PostgresConnection;
+    private readonly log: Logger;
 
-    constructor(connection: PostgresConnection) {
-        this.bus = new AgentRunBus(connection);
+    constructor(connection: PostgresConnection, log: Logger) {
+        this.log = log.child({ component: "agentrun-watcher" });
+        this.bus = new AgentRunBus(connection, this.log);
         this.connection = connection;
     }
 
     /** Run the claim-and-execute loop until `signal` aborts. */
     async run(signal: AbortSignal): Promise<void> {
-        console.error("Agentrun watcher watching state=pending");
+        this.log.info("agentrun watcher watching state=pending");
         for (;;) {
             const row = await this.claimNext(signal);
             if (row === null) {
@@ -34,7 +41,7 @@ export class AgentrunWatcher {
             }
             await this.handle(row, signal);
         }
-        console.error("Agentrun watcher stopped");
+        this.log.info("agentrun watcher stopped");
     }
 
     /**
@@ -66,19 +73,41 @@ export class AgentrunWatcher {
      * `error`; success stores the agent's text in `result_text`.
      */
     private async handle(row: AgentRunRow, signal: AbortSignal): Promise<void> {
-        console.log(`[agentrun] id=${row.id} topic=${row.topic} handler=${row.handler}`);
+        const start = Date.now();
+        this.log.info(
+            {
+                agentrunId: row.id,
+                topic: row.topic,
+                handler: row.handler,
+                parentAgentrunId: row.parentAgentrunId ?? null,
+            },
+            "agentrun started",
+        );
         try {
-            const text = await new AgentRunner(row, this.connection).run(signal);
+            const runnerLog = this.log.child({
+                component: "agent-runner",
+                agentrunId: row.id,
+                topic: row.topic,
+                handler: row.handler,
+            });
+            const text = await new AgentRunner(row, this.connection, runnerLog).run(signal);
             await this.bus.settle(row.id, "done", { resultText: text });
-            console.log(`[agentrun] id=${row.id} done`);
+            this.log.info({ agentrunId: row.id, durationMs: Date.now() - start }, "agentrun done");
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            console.error(`Agentrun id=${row.id} failed: ${message}`);
+            this.log.error(
+                { agentrunId: row.id, durationMs: Date.now() - start, err: message },
+                "agentrun failed",
+            );
             try {
                 await this.bus.settle(row.id, "failed", { error: message });
             } catch (settleErr) {
-                console.error(
-                    `Also failed to settle agentrun id=${row.id}: ${settleErr instanceof Error ? settleErr.message : String(settleErr)}`,
+                this.log.error(
+                    {
+                        agentrunId: row.id,
+                        err: settleErr instanceof Error ? settleErr.message : String(settleErr),
+                    },
+                    "failed to settle agentrun",
                 );
             }
         }

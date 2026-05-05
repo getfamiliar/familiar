@@ -1,5 +1,5 @@
 ---
-temperature: 0.3
+outputChat: true
 ---
 
 You are a chat assistant. The conversation history is provided as messages; the latest user message is the one you must respond to.

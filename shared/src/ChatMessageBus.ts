@@ -1,4 +1,5 @@
 import type { ChatFilter, ChatMessage, ChatRole, NewChatMessage } from "./ChatMessage";
+import type { Logger } from "./logging/Logger";
 import type { NotificationHandler, PostgresConnection } from "./PostgresConnection";
 import { CHATMESSAGES_NEW_CHANNEL } from "./Schema";
 
@@ -52,9 +53,11 @@ export type ChatHandler = (message: ChatMessage) => Promise<boolean>;
  */
 export class ChatMessageBus {
     private readonly connection: PostgresConnection;
+    private readonly log: Logger | undefined;
 
-    constructor(connection: PostgresConnection) {
+    constructor(connection: PostgresConnection, log?: Logger) {
         this.connection = connection;
+        this.log = log;
     }
 
     /**
@@ -171,6 +174,10 @@ export class ChatMessageBus {
         };
 
         const listenHandler: NotificationHandler = (payload) => {
+            this.log?.debug(
+                { channel: CHATMESSAGES_NEW_CHANNEL, payload },
+                "NOTIFY chatmessages_new",
+            );
             void this.dispatchNotification(payload, filter, seenLive, dispatch);
         };
 

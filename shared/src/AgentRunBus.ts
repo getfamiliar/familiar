@@ -5,6 +5,7 @@ import type {
     AgentRunState,
     NewAgentRun,
 } from "./AgentRun";
+import type { Logger } from "./logging/Logger";
 import type { NotificationHandler, PostgresConnection } from "./PostgresConnection";
 import { AGENTRUNS_CHANNEL, EVENT_TERMINAL_UPDATE_SQL, SCHEMA_SQL } from "./Schema";
 
@@ -44,17 +45,20 @@ interface RawAgentRunRow {
  */
 export class AgentRunBus {
     private readonly connection: PostgresConnection;
+    private readonly log: Logger | undefined;
     private notifyWaiters: Array<() => void> = [];
     private listenInstalled = false;
-    private readonly listenHandler: NotificationHandler = () => {
+    private readonly listenHandler: NotificationHandler = (payload) => {
+        this.log?.debug({ channel: AGENTRUNS_CHANNEL, payload }, "NOTIFY agentruns_changed");
         const waiters = this.notifyWaiters.splice(0);
         for (const wake of waiters) {
             wake();
         }
     };
 
-    constructor(connection: PostgresConnection) {
+    constructor(connection: PostgresConnection, log?: Logger) {
         this.connection = connection;
+        this.log = log;
     }
 
     /**

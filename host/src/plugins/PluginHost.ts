@@ -1,6 +1,11 @@
 import { cpSync, existsSync } from "node:fs";
 import { defineCommand } from "citty";
-import type { AnyCommandDef, HostContext, PostgresConnection } from "effective-assistant-shared";
+import type {
+    AnyCommandDef,
+    HostContext,
+    Logger,
+    PostgresConnection,
+} from "effective-assistant-shared";
 import type { Bootstrap } from "../Bootstrap";
 import { PostgresContainer } from "../db/PostgresContainer";
 import { HostContextImpl } from "./HostContextImpl";
@@ -19,10 +24,12 @@ import { plugins } from "./Registry";
  */
 export class PluginHost {
     private readonly boot: Bootstrap;
+    private readonly log: Logger;
     private connection: PostgresConnection | undefined;
 
-    constructor(boot: Bootstrap) {
+    constructor(boot: Bootstrap, log: Logger) {
         this.boot = boot;
+        this.log = log;
     }
 
     /**
@@ -34,7 +41,6 @@ export class PluginHost {
      *   command is missing `meta.name`.
      */
     buildSubCommands(): Record<string, AnyCommandDef> {
-        const ctx = this.context();
         const map: Record<string, AnyCommandDef> = {};
         for (const plugin of plugins) {
             if (map[plugin.id]) {
@@ -44,6 +50,7 @@ export class PluginHost {
             if (!host?.commands && !host?.main) {
                 continue;
             }
+            const ctx = this.context(plugin.id);
             const subCmds = host.commands?.(ctx).map((cmd) => this.wrapForExit(cmd)) ?? [];
             const main = host.main ? this.wrapForExit(host.main(ctx)) : undefined;
             map[plugin.id] = pluginRoot(plugin.id, subCmds, main);
@@ -82,12 +89,11 @@ export class PluginHost {
      * refuses to start if any plugin daemon fails to initialize.
      */
     async startDaemons(): Promise<void> {
-        const ctx = this.context();
         for (const plugin of plugins) {
             if (!plugin.host?.start) {
                 continue;
             }
-            await plugin.host.start(ctx);
+            await plugin.host.start(this.context(plugin.id));
         }
     }
 
@@ -106,13 +112,11 @@ export class PluginHost {
      * method receives. The contract — what plugins are allowed to do
      * — lives in {@link HostContextImpl}, not in this class.
      */
-    private context(): HostContext {
+    private context(pluginId: string): HostContext {
         return new HostContextImpl({
             ensureConnection: () => this.ensureConnection(),
             defaultChatChannelId: () => this.boot.requireEnv("DEFAULT_CHAT_CHANNEL_ID"),
-            log: (message) => {
-                console.error(`[plugin] ${message}`);
-            },
+            log: this.log.child({ component: `plugin:${pluginId}` }),
         });
     }
 

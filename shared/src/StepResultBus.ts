@@ -1,3 +1,4 @@
+import type { Logger } from "./logging/Logger";
 import type { NotificationHandler, PostgresConnection } from "./PostgresConnection";
 import { STEPRESULTS_NEW_CHANNEL } from "./Schema";
 import type { NewStepResult, StepResultRow } from "./StepResult";
@@ -38,9 +39,11 @@ export type StepResultUnsubscribe = () => Promise<void>;
  */
 export class StepResultBus {
     private readonly connection: PostgresConnection;
+    private readonly log: Logger | undefined;
 
-    constructor(connection: PostgresConnection) {
+    constructor(connection: PostgresConnection, log?: Logger) {
         this.connection = connection;
+        this.log = log;
     }
 
     /**
@@ -98,6 +101,10 @@ export class StepResultBus {
         handler: (row: StepResultRow) => void | Promise<void>,
     ): Promise<StepResultUnsubscribe> {
         const wrapper: NotificationHandler = (payload) => {
+            this.log?.debug(
+                { channel: STEPRESULTS_NEW_CHANNEL, payload },
+                "NOTIFY stepresults_new",
+            );
             void this.dispatchNotification(payload, handler);
         };
         await this.connection.listen(STEPRESULTS_NEW_CHANNEL, wrapper);

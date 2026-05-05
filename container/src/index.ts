@@ -1,4 +1,7 @@
 import {
+    createLogger,
+    jsonStdoutStream,
+    type LogLevel,
     POSTGRES_DB,
     POSTGRES_HOST,
     POSTGRES_PORT,
@@ -28,6 +31,12 @@ const HEADER_DEFAULTS = {
  * top-level `Promise.all` resolves.
  */
 async function main(): Promise<void> {
+    const log = createLogger({
+        component: "container",
+        level: parseLevel(process.env.EA_LOG_LEVEL),
+        streams: [jsonStdoutStream()],
+    });
+
     const postgresPassword = process.env.POSTGRES_PASSWORD;
     if (!postgresPassword) {
         throw new Error(
@@ -46,12 +55,12 @@ async function main(): Promise<void> {
         database: POSTGRES_DB,
     });
 
-    const eventWatcher = new EventWatcher(connection);
-    const agentWatcher = new AgentrunWatcher(connection);
+    const eventWatcher = new EventWatcher(connection, log);
+    const agentWatcher = new AgentrunWatcher(connection, log);
 
     const abortController = new AbortController();
     const shutdown = (signal: string) => {
-        console.error(`Received ${signal}, draining…`);
+        log.info({ signal }, "draining");
         abortController.abort();
     };
     process.on("SIGTERM", () => shutdown("SIGTERM"));
@@ -64,11 +73,21 @@ async function main(): Promise<void> {
         ]);
     } finally {
         await connection.close();
-        console.error("Agent container exiting cleanly");
+        log.info("agent container exiting cleanly");
     }
 }
 
+/** Coerce `EA_LOG_LEVEL` to a {@link LogLevel}, defaulting to `info`. */
+function parseLevel(raw: string | undefined): LogLevel {
+    if (raw === "debug" || raw === "info" || raw === "warn" || raw === "error") {
+        return raw;
+    }
+    return "info";
+}
+
 main().catch((err) => {
+    // Fall back to stderr for the very first crash since the logger
+    // itself may not have been built yet.
     console.error("Fatal:", err);
     process.exit(1);
 });

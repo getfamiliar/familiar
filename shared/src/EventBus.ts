@@ -1,4 +1,5 @@
 import type { EventFilter, EventPatch, EventRow, EventState, NewEvent } from "./Event";
+import type { Logger } from "./logging/Logger";
 import type { NotificationHandler, PostgresConnection } from "./PostgresConnection";
 import { EVENTS_NEW_CHANNEL, SCHEMA_SQL } from "./Schema";
 
@@ -40,17 +41,26 @@ interface RawEventRow {
  */
 export class EventBus {
     private readonly connection: PostgresConnection;
+    private readonly log: Logger | undefined;
     private notifyWaiters: Array<() => void> = [];
     private listenInstalled = false;
-    private readonly listenHandler: NotificationHandler = () => {
+    private readonly listenHandler: NotificationHandler = (payload) => {
+        this.log?.debug({ channel: EVENTS_NEW_CHANNEL, payload }, "NOTIFY events_new");
         const waiters = this.notifyWaiters.splice(0);
         for (const wake of waiters) {
             wake();
         }
     };
 
-    constructor(connection: PostgresConnection) {
+    /**
+     * @param connection - Shared pg pool / LISTEN handle.
+     * @param log - Optional logger; when set, NOTIFY arrivals are
+     *   debug-logged. Omitted on the host-side bus that runs inside
+     *   one-shot CLI commands so they stay quiet by default.
+     */
+    constructor(connection: PostgresConnection, log?: Logger) {
         this.connection = connection;
+        this.log = log;
     }
 
     /**

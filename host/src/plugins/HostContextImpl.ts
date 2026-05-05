@@ -6,6 +6,7 @@ import {
     EVENTS_STATE_CHANNEL,
     EventBus,
     type HostContext,
+    type Logger,
     type NewEvent,
     type NotificationHandler,
     type PostgresConnection,
@@ -28,8 +29,12 @@ export interface HostContextImplDeps {
      * commands that never touch chat don't trigger env validation.
      */
     defaultChatChannelId(): string;
-    /** Sink for `ctx.log(...)` calls from plugin code. */
-    log(message: string): void;
+    /**
+     * Per-plugin logger used by `ctx.log(...)`. The owner is expected
+     * to scope this to the plugin (e.g. via `Logger.child`) before
+     * handing it off so records carry a stable component tag.
+     */
+    log: Logger;
 }
 
 /**
@@ -64,7 +69,7 @@ export class HostContextImpl implements HostContext {
     };
 
     log(message: string): void {
-        this.deps.log(message);
+        this.deps.log.info(message);
     }
 
     /**
@@ -141,8 +146,12 @@ export class HostContextImpl implements HostContext {
                 try {
                     await onStep(step);
                 } catch (err) {
-                    this.deps.log(
-                        `events.emit onStep callback error for step id=${step.id}: ${err instanceof Error ? err.message : String(err)}`,
+                    this.deps.log.error(
+                        {
+                            stepId: step.id,
+                            err: err instanceof Error ? err.message : String(err),
+                        },
+                        "events.emit onStep callback error",
                     );
                 }
             });

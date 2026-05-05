@@ -1,4 +1,5 @@
 import { defineCommand, runMain } from "citty";
+import { createLogger, prettyStdoutStream } from "effective-assistant-shared";
 import { bootstrap } from "./Bootstrap";
 import { eventCommand } from "./commands/Event";
 import { startCommand } from "./commands/Start";
@@ -17,7 +18,15 @@ import { PluginHost } from "./plugins/PluginHost";
  * lazily on first `ctx.events.emit` and closed after the plugin
  * command's `run()` returns.
  */
-const pluginHost = new PluginHost(bootstrap());
+// One-shot CLI commands (anything other than `start`) get a simple
+// pretty-stdout logger. The `start` daemon builds its own logger
+// inside its `run()` handler so it can include the rolling file sink.
+const cliLogger = createLogger({
+    component: "cli",
+    level: "info",
+    streams: [prettyStdoutStream()],
+});
+const pluginHost = new PluginHost(bootstrap(), cliLogger);
 
 runMain(
     defineCommand({

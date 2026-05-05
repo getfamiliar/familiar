@@ -1,12 +1,23 @@
+import { type ChildProcess, spawn } from "node:child_process";
 import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { defineCommand } from "citty";
-import { EventBus } from "effective-assistant-shared";
+import {
+    createLogger,
+    EventBus,
+    jsonStdoutStream,
+    type Logger,
+    type LogStream,
+    prettyStdoutStream,
+} from "effective-assistant-shared";
+import type { Bootstrap } from "../Bootstrap";
 import { bootstrap } from "../Bootstrap";
 import { AgentContainer } from "../container-runner/AgentContainer";
 import { ReverseProxyContainer } from "../container-runner/ReverseProxyContainer";
 import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools";
 import { PostgresContainer } from "../db/PostgresContainer";
 import { PluginHost } from "../plugins/PluginHost";
+import { rollingFileStream } from "../tools/LogRetentionTools";
 
 const FEATHERLESS_UPSTREAM_BASE = "https://api.featherless.ai";
 const FEATHERLESS_BASE_URL_FOR_AGENT = "http://ea-reverse-proxy:8788/v1";
@@ -23,8 +34,20 @@ export const startCommand = defineCommand({
         name: "start",
         description: "Start the host daemon (foreground; manages all containers).",
     },
-    async run() {
+    args: {
+        verbose: {
+            type: "boolean",
+            alias: "v",
+            description:
+                "Enable debug-level logging (every NOTIFY, listener fire, step result, tool call).",
+            default: false,
+        },
+    },
+    async run({ args }) {
         const boot = bootstrap();
+        const verbose = Boolean(args.verbose);
+        const log = await buildDaemonLogger(boot, verbose);
+
         const postgresPassword = boot.requireEnv("POSTGRES_PASSWORD");
         const featherlessApiKey = boot.requireEnv("FEATHERLESS_API_KEY");
         // Validated at startup so the daemon fails fast; the actual
@@ -35,9 +58,9 @@ export const startCommand = defineCommand({
         ensureDirs(boot);
         writePidFile(boot.pidFile);
 
-        const pluginHost = new PluginHost(boot);
+        const pluginHost = new PluginHost(boot, log);
         pluginHost.installWorkspaceTemplates();
-        console.error("plugin workspace templates installed");
+        log.info("plugin workspace templates installed");
 
         const postgres = new PostgresContainer({
             dataPath: boot.dataDir,
@@ -55,33 +78,40 @@ export const startCommand = defineCommand({
             containerSrcPath: boot.containerSrcDir,
             postgresPassword,
             featherlessBaseUrl: FEATHERLESS_BASE_URL_FOR_AGENT,
+            verbose,
         });
 
         await ensureNetwork(SHARED_NETWORK_NAME);
-        console.error(`ensured network ${SHARED_NETWORK_NAME}`);
+        log.info({ network: SHARED_NETWORK_NAME }, "ensured network");
 
         const postgresPort = await postgres.start();
-        console.error(`postgres ready on 127.0.0.1:${postgresPort}`);
+        log.info({ host: "127.0.0.1", port: postgresPort }, "postgres ready");
 
         const schemaConnection = postgres.getConnection();
         try {
             const bus = new EventBus(schemaConnection);
             await bus.installSchema();
-            console.error("bus-state schema installed");
+            log.info("bus-state schema installed");
         } finally {
             await schemaConnection.close();
         }
 
         await reverseProxy.start();
-        console.error(
-            `reverse proxy started: ${reverseProxy.isRunning ? "ea-reverse-proxy" : "(failed)"}`,
+        log.info(
+            { running: reverseProxy.isRunning, container: "ea-reverse-proxy" },
+            "reverse proxy started",
         );
 
         await container.start();
-        console.error(`agent container started: ${container.isRunning ? "ea-agent" : "(failed)"}`);
+        log.info(
+            { running: container.isRunning, container: "ea-agent" },
+            "agent container started",
+        );
+
+        const containerLogStream = streamContainerLogs(log, "ea-agent");
 
         await pluginHost.startDaemons();
-        console.error("plugin daemons started");
+        log.info("plugin daemons started");
 
         let shuttingDown = false;
         const shutdown = async (signal: string) => {
@@ -89,12 +119,13 @@ export const startCommand = defineCommand({
                 return;
             }
             shuttingDown = true;
-            console.error(`Received ${signal}, draining…`);
+            log.info({ signal }, "draining");
 
-            await safeStop("plugin host", () => pluginHost.close());
-            await safeStop("agent container", () => container.stop());
-            await safeStop("reverse proxy", () => reverseProxy.stop());
-            await safeStop("postgres", () => postgres.stop());
+            await safeStop(log, "plugin host", () => pluginHost.close());
+            await safeStop(log, "agent container", () => container.stop());
+            await safeStop(log, "reverse proxy", () => reverseProxy.stop());
+            await safeStop(log, "postgres", () => postgres.stop());
+            stopContainerLogStream(containerLogStream);
 
             removePidFile(boot.pidFile);
             process.exit(0);
@@ -107,7 +138,7 @@ export const startCommand = defineCommand({
             void shutdown("SIGINT");
         });
 
-        console.error(`daemon pid ${process.pid} ready`);
+        log.info({ pid: process.pid }, "daemon ready");
 
         // Keep the event loop alive until a signal arrives. A no-op interval
         // is the simplest portable handle; signal handlers alone don't pin
@@ -119,20 +150,115 @@ export const startCommand = defineCommand({
 });
 
 /**
+ * Build the daemon's root logger. Stdout is pretty-printed when
+ * attached to a TTY, raw JSON otherwise. A second stream rolls
+ * `data/logs/ea.YYYYMMDD.<n>.log` daily with the configured retention.
+ */
+async function buildDaemonLogger(boot: Bootstrap, verbose: boolean): Promise<Logger> {
+    mkdirSync(boot.logsDir, { recursive: true });
+    const streams: LogStream[] = [
+        process.stdout.isTTY ? prettyStdoutStream() : jsonStdoutStream(),
+        await rollingFileStream(boot.logsDir, boot.logRetentionDays),
+    ];
+    return createLogger({
+        component: "host",
+        level: verbose ? "debug" : "info",
+        streams,
+    });
+}
+
+/**
+ * Spawn `docker logs -f --tail 0` against the agent container and
+ * funnel each stdout line back into the host logger. JSON lines (the
+ * container's pino output) are reconstructed as structured records
+ * with the `source: 'container'` tag so they merge naturally with
+ * host records. Non-JSON lines (tsx-watch banner, runtime warnings)
+ * pass through as plain `info` messages.
+ */
+function streamContainerLogs(log: Logger, container: string): ChildProcess {
+    const proc = spawn("docker", ["logs", "-f", "--tail", "0", container], {
+        stdio: ["ignore", "pipe", "pipe"],
+    });
+    const containerLog = log.child({ source: "container" });
+    const handleLine = (line: string): void => {
+        const trimmed = line.trim();
+        if (trimmed.length === 0) {
+            return;
+        }
+        if (trimmed.startsWith("{")) {
+            try {
+                forwardJson(containerLog, JSON.parse(trimmed));
+                return;
+            } catch {
+                // Fall through to plain-text path on malformed JSON.
+            }
+        }
+        containerLog.info(trimmed);
+    };
+    if (proc.stdout) {
+        createInterface({ input: proc.stdout }).on("line", handleLine);
+    }
+    if (proc.stderr) {
+        createInterface({ input: proc.stderr }).on("line", handleLine);
+    }
+    proc.on("error", (err) => {
+        log.error({ container, err: err.message }, "docker logs stream error");
+    });
+    return proc;
+}
+
+/**
+ * Re-emit a parsed pino record from the container through the host
+ * logger. Strips fields the host adds itself (`time`, `pid`,
+ * `hostname`) and maps the numeric pino level back to a method name.
+ */
+function forwardJson(log: Logger, record: Record<string, unknown>): void {
+    const { level, msg, time, pid, hostname, ...rest } = record;
+    const methodName = pinoLevelToMethod(typeof level === "number" ? level : 30);
+    void time;
+    void pid;
+    void hostname;
+    const message = typeof msg === "string" ? msg : "";
+    log[methodName](rest, message);
+}
+
+/** Convert a pino numeric level (10/20/30/40/50) to our Logger method. */
+function pinoLevelToMethod(level: number): "debug" | "info" | "warn" | "error" {
+    if (level >= 50) {
+        return "error";
+    }
+    if (level >= 40) {
+        return "warn";
+    }
+    if (level >= 30) {
+        return "info";
+    }
+    return "debug";
+}
+
+/** Best-effort kill of the docker-logs follower during shutdown. */
+function stopContainerLogStream(proc: ChildProcess): void {
+    if (proc.exitCode === null && !proc.killed) {
+        proc.kill("SIGTERM");
+    }
+}
+
+/**
  * Run a stop step and log any error without aborting the rest of the
  * shutdown sequence. We want every component to get a chance to clean up.
  */
-async function safeStop(label: string, stop: () => Promise<void>): Promise<void> {
+async function safeStop(log: Logger, label: string, stop: () => Promise<void>): Promise<void> {
     try {
         await stop();
     } catch (err) {
-        console.error(`${label} stop error: ${err instanceof Error ? err.message : String(err)}`);
+        log.error({ label, err: err instanceof Error ? err.message : String(err) }, "stop error");
     }
 }
 
 /** Ensure all directories the daemon and agent container expect are present. */
 function ensureDirs(boot: ReturnType<typeof bootstrap>): void {
     mkdirSync(boot.workspaceDir, { recursive: true });
+    mkdirSync(boot.logsDir, { recursive: true });
 }
 
 /** Write the current pid into the well-known pidfile for the stop command. */

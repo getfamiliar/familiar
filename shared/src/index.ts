@@ -10,6 +10,15 @@ export type { ChatFilter, ChatMessage, ChatRole, NewChatMessage } from "./ChatMe
 export { type ChatHandler, ChatMessageBus, type ChatUnsubscribe } from "./ChatMessageBus";
 export type { EventFilter, EventPatch, EventRow, EventState, NewEvent } from "./Event";
 export { EventBus } from "./EventBus";
+export {
+    type CreateLoggerOptions,
+    createLogger,
+    jsonStdoutStream,
+    type Logger,
+    type LogLevel,
+    type LogStream,
+    prettyStdoutStream,
+} from "./logging/Logger";
 export type {
     AnyCommandDef,
     HostContext,

@@ -31,6 +31,12 @@ export interface AgentContainerConfig {
      * network; the agent never reaches the real provider directly.
      */
     readonly featherlessBaseUrl: string;
+    /**
+     * When true, the agent container runs at debug log level
+     * (`EA_LOG_LEVEL=debug`). Mirrors the daemon's `--verbose` flag so
+     * a single switch turns up detail across both processes.
+     */
+    readonly verbose: boolean;
 }
 
 /**
@@ -79,6 +85,8 @@ export class AgentContainer {
             `FEATHERLESS_BASE_URL=${this.config.featherlessBaseUrl}`,
             "-e",
             `FEATHERLESS_API_KEY=${PLACEHOLDER_API_KEY}`,
+            "-e",
+            `EA_LOG_LEVEL=${this.config.verbose ? "debug" : "info"}`,
             "-v",
             `${workspaceDir}:/workspace`,
             "-v",
