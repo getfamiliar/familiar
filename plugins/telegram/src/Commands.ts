@@ -1,7 +1,7 @@
 import { type CommandDef, defineCommand } from "citty";
 import type { HostContext } from "effective-assistant-shared";
 import { Bot, GrammyError } from "grammy";
-import { readTelegramConfig, splitForTelegram } from "./TelegramDaemon";
+import { readTelegramConfig, sendWithMarkdownFallback, splitForTelegram } from "./TelegramDaemon";
 
 /**
  * Build the citty subcommands exposed under `./cli.sh telegram`.
@@ -96,7 +96,9 @@ function sendCommand(_ctx: HostContext) {
             const bot = new Bot(config.token);
             try {
                 for (const chunk of splitForTelegram(args.text)) {
-                    await bot.api.sendMessage(config.authorizedUserId, chunk);
+                    await sendWithMarkdownFallback(bot, config.authorizedUserId, chunk, (m) =>
+                        process.stderr.write(`${m}\n`),
+                    );
                 }
                 process.stdout.write("sent\n");
             } catch (err) {

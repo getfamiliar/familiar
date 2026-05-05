@@ -1,5 +1,5 @@
 import type { HostContext } from "effective-assistant-shared";
-import { Bot, GrammyError, HttpError } from "grammy";
+import { Bot, type Context, GrammyError, HttpError } from "grammy";
 
 const TELEGRAM_CHANNEL = "telegram";
 const TELEGRAM_MESSAGE_LIMIT = 4096;
@@ -93,68 +93,39 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
     }
 
     bot.on("message:text", async (gctx) => {
-        if (gctx.chat.type !== "private") {
+        if (!(await isChatAllowed(gctx, authorizedUserId))) {
             return;
         }
-        const senderId = gctx.from?.id;
-        if (senderId === undefined) {
-            return;
-        }
+        emitChatEvent(ctx, gctx, gctx.message.text);
+    });
 
-        if (authorizedUserId === null) {
+    bot.on("message:sticker", async (gctx) => {
+        if (!(await isChatAllowed(gctx, authorizedUserId))) {
+            return;
+        }
+        const sticker = gctx.message.sticker;
+        const emoji = sticker.emoji;
+        if (emoji === undefined) {
             await gctx.reply(
-                `Not authorized. Your user id is ${senderId}. Add TELEGRAM_AUTHORIZED_USER_ID=${senderId} to .env and restart.`,
+                "I can't read this sticker — it has no associated emoji to fall back to.",
             );
             return;
         }
-        if (senderId !== authorizedUserId) {
-            await gctx.reply(`Won't talk to you, user with id ${senderId}.`);
-            return;
-        }
-
-        const updateId = gctx.update.update_id;
-        // Fire-and-forget. ctx.events.emit blocks until the agentrun
-        // settles, which can take many seconds; we must not gate
-        // grammy's polling loop on that.
-        ctx.events
-            .emit({
-                topic: "chat:telegram",
-                isChat: true,
-                preferredChatChannelId: TELEGRAM_CHANNEL,
-                idempotencyKey: `telegram:${updateId}`,
-                payload: {
-                    text: gctx.message.text,
-                    telegram: {
-                        update_id: updateId,
-                        message_id: gctx.message.message_id,
-                        from: { id: senderId, username: gctx.from.username },
-                    },
-                },
-            })
-            .catch((err) => {
-                ctx.log(`telegram emit failed (update ${updateId}): ${formatError(err)}`);
-            });
+        emitChatEvent(ctx, gctx, emoji, {
+            sticker: {
+                emoji,
+                set_name: sticker.set_name,
+                is_animated: sticker.is_animated,
+                is_video: sticker.is_video,
+            },
+        });
     });
 
     bot.on("message", async (gctx) => {
-        if (gctx.chat.type !== "private") {
+        if (!(await isChatAllowed(gctx, authorizedUserId))) {
             return;
         }
-        const senderId = gctx.from?.id;
-        if (senderId === undefined) {
-            return;
-        }
-        if (authorizedUserId === null) {
-            await gctx.reply(
-                `Not authorized. Your user id is ${senderId}. Add TELEGRAM_AUTHORIZED_USER_ID=${senderId} to .env and restart.`,
-            );
-            return;
-        }
-        if (senderId !== authorizedUserId) {
-            await gctx.reply(`Won't talk to you, user with id ${senderId}.`);
-            return;
-        }
-        await gctx.reply("Only text messages are supported right now.");
+        await gctx.reply("Only text and sticker messages are supported right now.");
     });
 
     await ctx.chat.subscribe({ channelId: TELEGRAM_CHANNEL, role: "assistant" }, async (m) => {
@@ -164,7 +135,7 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
         }
         try {
             for (const chunk of splitForTelegram(m.textContent)) {
-                await bot.api.sendMessage(authorizedUserId, chunk);
+                await sendWithMarkdownFallback(bot, authorizedUserId, chunk, (msg) => ctx.log(msg));
             }
         } catch (err) {
             // Ack anyway: returning false would replay forever on
@@ -210,6 +181,141 @@ export function splitForTelegram(text: string): string[] {
         chunks.push(remaining);
     }
     return chunks;
+}
+
+/**
+ * Emit a `chat:telegram` event for the given Telegram update.
+ *
+ * Centralizes the boilerplate every per-message-type handler shares:
+ * topic, channel, idempotency key derived from `update_id`, and the
+ * standard `payload.telegram` envelope (`update_id`, `message_id`,
+ * `from`). Per-type handlers pass the agent-visible `text` plus an
+ * optional `telegramExtras` map whose entries are merged into
+ * `payload.telegram` (e.g. `{ sticker: { emoji, set_name, … } }`).
+ *
+ * Fire-and-forget: `ctx.events.emit` blocks until the agentrun
+ * settles, which we must not couple to grammy's polling loop.
+ * Failures are logged via `ctx.log`.
+ *
+ * Callers must invoke this only after `isChatAllowed` has returned
+ * `true` — that's what guarantees `gctx.message` and `gctx.from` are
+ * present. The defensive guard inside is a TypeScript belt-and-braces.
+ */
+function emitChatEvent(
+    ctx: HostContext,
+    gctx: Context,
+    text: string,
+    telegramExtras?: Record<string, unknown>,
+): void {
+    const message = gctx.message;
+    const from = gctx.from;
+    if (message === undefined || from === undefined) {
+        return;
+    }
+    const updateId = gctx.update.update_id;
+    ctx.events
+        .emit({
+            topic: "chat:telegram",
+            isChat: true,
+            preferredChatChannelId: TELEGRAM_CHANNEL,
+            idempotencyKey: `telegram:${updateId}`,
+            payload: {
+                text,
+                telegram: {
+                    update_id: updateId,
+                    message_id: message.message_id,
+                    from: { id: from.id, username: from.username },
+                    ...telegramExtras,
+                },
+            },
+        })
+        .catch((err) => {
+            ctx.log(`telegram emit failed (update ${updateId}): ${formatError(err)}`);
+        });
+}
+
+/**
+ * Decide whether a Telegram update should be processed by the
+ * authorized-user pipeline. Centralizes the gate shared by every
+ * `bot.on(...)` handler so each handler only declares what it does
+ * with allowed messages.
+ *
+ * Outcomes:
+ * - **Silently rejects** non-private chats and updates with no
+ *   identifiable sender. No reply — those cases shouldn't reveal
+ *   the bot's behavior to scanners or to group chats it was added to.
+ * - **Replies and rejects** when the bot is configured but no
+ *   `TELEGRAM_AUTHORIZED_USER_ID` is set: tells the sender their
+ *   numeric id so the operator can paste it into `.env`.
+ * - **Replies and rejects** when the sender is not the authorized
+ *   user.
+ * - **Allows** when the sender matches `authorizedUserId`.
+ *
+ * @returns `true` when the handler should continue processing,
+ *   `false` when it must early-return. Side-effecting replies are
+ *   sent before `false` is returned, so callers don't need to.
+ */
+async function isChatAllowed(gctx: Context, authorizedUserId: number | null): Promise<boolean> {
+    if (gctx.chat?.type !== "private") {
+        return false;
+    }
+    const senderId = gctx.from?.id;
+    if (senderId === undefined) {
+        return false;
+    }
+    if (authorizedUserId === null) {
+        await gctx.reply(
+            `Not authorized. Your user id is ${senderId}. Add TELEGRAM_AUTHORIZED_USER_ID=${senderId} to .env and restart.`,
+        );
+        return false;
+    }
+    if (senderId !== authorizedUserId) {
+        await gctx.reply(`Won't talk to you, user with id ${senderId}.`);
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Send `text` as a Telegram message, attempting MarkdownV2 first and
+ * silently falling back to plain text if Telegram rejects the entity
+ * parse. The fallback path covers the realistic case where the agent
+ * emits markdown that almost-but-not-quite conforms to MarkdownV2's
+ * escaping rules (a bare `.`, an unmatched `_`, etc.) — better to
+ * deliver an unformatted message than swallow it.
+ *
+ * Other error classes (network, 401, blocked-by-user) are re-thrown
+ * so the caller's broader `try/catch` handles them uniformly.
+ */
+export async function sendWithMarkdownFallback(
+    bot: Bot,
+    chatId: number,
+    text: string,
+    log: (message: string) => void,
+): Promise<void> {
+    try {
+        await bot.api.sendMessage(chatId, text, { parse_mode: "MarkdownV2" });
+    } catch (err) {
+        if (!isMarkdownParseError(err)) {
+            throw err;
+        }
+        log(`telegram MarkdownV2 parse failed; resending as plain text: ${formatError(err)}`);
+        await bot.api.sendMessage(chatId, text);
+    }
+}
+
+/**
+ * Detect Telegram's "can't parse entities" 400 response, which is
+ * what `sendMessage` returns when MarkdownV2 syntax is malformed.
+ * Distinct from other 400s (e.g. "message is too long") which should
+ * propagate.
+ */
+function isMarkdownParseError(err: unknown): boolean {
+    return (
+        err instanceof GrammyError &&
+        err.error_code === 400 &&
+        err.description.includes("can't parse entities")
+    );
 }
 
 /**

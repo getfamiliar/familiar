@@ -1,3 +1,4 @@
+import path from "node:path";
 import { definePlugin } from "effective-assistant-shared";
 import { buildCommands } from "./Commands";
 import { startTelegramDaemon } from "./TelegramDaemon";
@@ -27,6 +28,7 @@ import { startTelegramDaemon } from "./TelegramDaemon";
  */
 export default definePlugin({
     id: "telegram",
+    workspaceTemplate: path.join(__dirname, "..", "workspace-template"),
     host: {
         start: (ctx) => startTelegramDaemon(ctx),
         commands: (ctx) => buildCommands(ctx),
