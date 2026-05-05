@@ -80,6 +80,17 @@ export interface EventRow {
      *   append it as the trailing user message.
      */
     readonly prompt: string;
+    /**
+     * `true` when this event was emitted by a trusted user-input source
+     * (the operator at the local terminal via cli-chat, the operator on
+     * Telegram). Stamped at emit time, never mutated. Propagated verbatim
+     * to the root agentrun and to every child agentrun spawned via
+     * `queue_run`, so future system tools can gate risky reads / writes
+     * (editing SOUL.md, etc.) on whether the run descends from a trusted
+     * input. `false` for everything else (mail, webhooks, cron-driven
+     * workflows).
+     */
+    readonly privileged: boolean;
     /** Insert timestamp — postgres `now()` at INSERT. */
     readonly createdAt: Date;
     /** Last `update()` timestamp — bumped to `now()` on every update. */
@@ -135,6 +146,12 @@ export interface NewEvent {
      * host's `HostContextImpl.emit` stamps `DEFAULT_CHAT_CHANNEL_ID`.
      */
     readonly preferredChatChannelId?: string | null;
+    /**
+     * Whether this event originates from a trusted user-input source.
+     * Default `false` — the SQL column default covers omission. See
+     * {@link EventRow.privileged} for the trust-model rationale.
+     */
+    readonly privileged?: boolean;
 }
 
 /** Patch shape for {@link EventBus.update}. */

@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS events (
   state           text NOT NULL DEFAULT 'pending',
   payload         jsonb NOT NULL DEFAULT '{}'::jsonb,
   idempotency_key text UNIQUE,
+  privileged      boolean NOT NULL DEFAULT false,
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT events_topic_format CHECK (topic ~ '${TOPIC_PATTERN}')
@@ -96,6 +97,14 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS preferred_chat_channel_id text;
 -- emitter's framing without the EventWatcher having to reach into the
 -- payload schema.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS prompt text;
+-- Privileged events originate from a trusted user-input source (operator
+-- at the local terminal via cli-chat, operator on Telegram). The flag
+-- propagates verbatim to the root agentrun and to every child agentrun
+-- spawned via queue_run, so future system tools can gate risky reads /
+-- writes (editing SOUL.md etc.) on whether the run descends from a
+-- trusted input. Default false: any plugin that doesn't explicitly opt
+-- in produces non-privileged events.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS privileged boolean NOT NULL DEFAULT false;
 
 CREATE INDEX IF NOT EXISTS events_state_priority_idx
   ON events (state, priority DESC, id ASC);
@@ -114,6 +123,7 @@ CREATE TABLE IF NOT EXISTS agentruns (
   result             jsonb,
   result_text        text,
   error              text,
+  privileged         boolean NOT NULL DEFAULT false,
   created_at         timestamptz NOT NULL DEFAULT now(),
   updated_at         timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT agentruns_topic_format CHECK (topic ~ '${TOPIC_PATTERN}')
@@ -122,6 +132,10 @@ CREATE TABLE IF NOT EXISTS agentruns (
 -- Forward-compat ALTER for databases created before result_text landed.
 -- Safe no-op on fresh databases where the column already exists.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS result_text text;
+-- Inherited from the originating event (root agentrun) or parent
+-- agentrun (children spawned via queue_run). See the matching ALTER on
+-- the events table for the trust-model rationale.
+ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS privileged boolean NOT NULL DEFAULT false;
 
 -- Forward-compat: relax the topic CHECK constraint to allow arbitrarily
 -- deep \`a:b:c:…\` topics. CREATE TABLE IF NOT EXISTS above doesn't

@@ -40,11 +40,15 @@ const MAX_PROMPT_CHARS = 16000;
  * @param topic The event topic this agentrun is processing (e.g.
  *   `chat:telegram`). Surfaced in the `# Runtime` section so the agent
  *   can reason about which channel/source produced the event.
+ * @param privileged Whether the agentrun descends from a trusted
+ *   user-input source. Surfaced in the `# Runtime` section so the
+ *   agent knows which trust-gated tools are available to it.
  */
 export function buildSystemPrompt(
     handler: HandlerFile,
     toolNames: readonly string[],
     topic: string,
+    privileged: boolean,
 ): string {
     const sections: string[] = [];
 
@@ -71,7 +75,7 @@ export function buildSystemPrompt(
         toolNames.length > 0 ? toolNames.map((name) => `- ${name}`).join("\n") : "(none)";
     sections.push(`# Available tools\n\n${toolList}`);
 
-    sections.push(`# Runtime\n\n${buildRuntimeSection(handler, topic)}`);
+    sections.push(`# Runtime\n\n${buildRuntimeSection(handler, topic, privileged)}`);
 
     return truncate(sections.join("\n\n"), MAX_SYSTEM_CHARS);
 }
@@ -83,7 +87,7 @@ export function buildSystemPrompt(
  * from, when merged), and whether the handler will mirror its final
  * text reply into the chat history via `outputChat`.
  */
-function buildRuntimeSection(handler: HandlerFile, topic: string): string {
+function buildRuntimeSection(handler: HandlerFile, topic: string, privileged: boolean): string {
     const lines = [
         `- Current time: ${new Date().toISOString()}`,
         `- Event topic: \`${topic}\``,
@@ -94,6 +98,12 @@ function buildRuntimeSection(handler: HandlerFile, topic: string): string {
         lines.push(`- Inheriting from: ${ancestors}`);
     }
     lines.push(`- outputChat: ${handler.header.outputChat === true}`);
+    // Privileged runs descend from a trusted user-input source (the
+    // operator at the local terminal or on Telegram). Tools that gate
+    // risky reads / writes on this flag will refuse non-privileged
+    // calls, so the agent should know up front whether they're
+    // available rather than discovering it via a tool error.
+    lines.push(`- privileged: ${privileged}`);
     return lines.join("\n");
 }
 

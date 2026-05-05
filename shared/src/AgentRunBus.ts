@@ -23,6 +23,7 @@ interface RawAgentRunRow {
     result: unknown;
     result_text: string | null;
     error: string | null;
+    privileged: boolean;
     created_at: Date;
     updated_at: Date;
 }
@@ -79,8 +80,8 @@ export class AgentRunBus {
     async add(run: NewAgentRun): Promise<AgentRunRow> {
         const result = await this.connection.getPool().query<RawAgentRunRow>(
             `INSERT INTO agentruns
-                (event_id, parent_agentrun_id, topic, handler, priority, state, prompt, payload)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+                (event_id, parent_agentrun_id, topic, handler, priority, state, prompt, payload, privileged)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
              RETURNING *`,
             [
                 run.eventId,
@@ -91,6 +92,7 @@ export class AgentRunBus {
                 run.state ?? "pending",
                 run.prompt ?? null,
                 JSON.stringify(run.payload ?? {}),
+                run.privileged ?? false,
             ],
         );
         return mapRow(result.rows[0]);
@@ -353,6 +355,7 @@ function mapRow(raw: RawAgentRunRow): AgentRunRow {
         result: raw.result,
         resultText: raw.result_text,
         error: raw.error,
+        privileged: raw.privileged,
         createdAt: raw.created_at,
         updatedAt: raw.updated_at,
     };

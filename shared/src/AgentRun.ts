@@ -63,6 +63,14 @@ export interface AgentRunRow {
     readonly resultText: string | null;
     /** Error message when state is `failed`. */
     readonly error: string | null;
+    /**
+     * Inherited from the originating event (root agentrun) or the parent
+     * agentrun (children spawned via `queue_run`). `true` when the run
+     * descends from a trusted user-input source; `false` otherwise. Tools
+     * that gate risky behavior on the call site's trust level read this
+     * flag rather than rummaging through the event payload.
+     */
+    readonly privileged: boolean;
     /** Insert timestamp — postgres `now()` at INSERT. */
     readonly createdAt: Date;
     /** Last update timestamp — bumped to `now()` on every update. */
@@ -87,6 +95,12 @@ export interface NewAgentRun {
     readonly prompt?: string | null;
     /** Optional spawn-time payload. */
     readonly payload?: unknown;
+    /**
+     * Trust flag. Default `false` — the SQL column default covers
+     * omission. Callers usually copy the value from the originating
+     * event (root agentrun) or parent agentrun (children).
+     */
+    readonly privileged?: boolean;
 }
 
 /** Patch shape for {@link AgentRunBus.update}. */

@@ -82,6 +82,9 @@ function sendCommand(ctx: HostContext) {
                     isChat: true,
                     preferredChatChannelId: CLI_CHANNEL,
                     prompt: args.message,
+                    // One-shot send from the operator's local terminal;
+                    // same trust model as the REPL.
+                    privileged: true,
                 });
                 await handle.settled;
             } finally {

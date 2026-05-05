@@ -14,6 +14,7 @@ interface RawEventRow {
     is_chat: boolean;
     preferred_chat_channel_id: string | null;
     prompt: string | null;
+    privileged: boolean;
     created_at: Date;
     updated_at: Date;
 }
@@ -105,8 +106,8 @@ export class EventBus {
             const result = await client.query<RawEventRow>(
                 `INSERT INTO events
                    (topic, payload, priority, state, idempotency_key,
-                    is_chat, preferred_chat_channel_id, prompt)
-                 VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8)
+                    is_chat, preferred_chat_channel_id, prompt, privileged)
+                 VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9)
                  RETURNING *`,
                 [
                     event.topic,
@@ -117,6 +118,7 @@ export class EventBus {
                     isChat,
                     event.preferredChatChannelId ?? null,
                     prompt,
+                    event.privileged ?? false,
                 ],
             );
             const row = mapRow(result.rows[0]);
@@ -347,6 +349,7 @@ function mapRow(raw: RawEventRow): EventRow {
         isChat: raw.is_chat,
         preferredChatChannelId: raw.preferred_chat_channel_id,
         prompt: raw.prompt ?? "",
+        privileged: raw.privileged,
         createdAt: raw.created_at,
         updatedAt: raw.updated_at,
     };

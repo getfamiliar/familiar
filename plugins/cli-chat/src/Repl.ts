@@ -76,6 +76,10 @@ export async function runRepl(ctx: HostContext): Promise<void> {
                         isChat: true,
                         preferredChatChannelId: CLI_CHANNEL,
                         prompt: line,
+                        // The REPL only runs at the operator's local
+                        // terminal, so chat:cli messages are trusted
+                        // user input.
+                        privileged: true,
                     },
                     {
                         onStep: (step) => {

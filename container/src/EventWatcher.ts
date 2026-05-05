@@ -94,6 +94,7 @@ export class EventWatcher {
                 priority: event.priority,
                 payload: event.payload,
                 prompt: promptForAgentrun,
+                privileged: event.privileged,
             });
             this.log.info(
                 { eventId: event.id, topic: event.topic, rootAgentrunId: root.id },

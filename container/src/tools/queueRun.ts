@@ -100,6 +100,7 @@ export function buildQueueRunTool(
                 priority: parent.priority,
                 prompt: prompt ?? null,
                 payload: payload ?? {},
+                privileged: parent.privileged,
             });
             return { ok: true, agentrunId: row.id };
         },

@@ -342,6 +342,10 @@ async function emitChatEvent(
             preferredChatChannelId: TELEGRAM_CHANNEL,
             idempotencyKey: `telegram:${updateId}`,
             prompt: text,
+            // Reaches here only after isChatAllowed has cleared the
+            // sender against the operator allowlist, so the resulting
+            // agentrun tree may use privileged-only system tools.
+            privileged: true,
             payload: {
                 telegram: {
                     update_id: updateId,
