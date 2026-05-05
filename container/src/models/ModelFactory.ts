@@ -3,11 +3,9 @@ import type { LanguageModel } from "ai";
 
 /**
  * Fallback model id used when a handler file does not declare one in
- * its YAML header. Llama 3.1 8B Instruct is small, fast, and
- * tool-call-capable on Featherless's catalog — fine for handlers that
- * don't care.
+ * its YAML header.
  */
-const DEFAULT_MODEL_ID = "meta-llama/Meta-Llama-3.1-8B-Instruct";
+const DEFAULT_MODEL_ID = "zai-org/GLM-5.1";
 
 /**
  * Builds the {@link LanguageModel} object the {@link AgentRunner} hands
