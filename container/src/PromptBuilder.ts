@@ -37,8 +37,15 @@ const MAX_PROMPT_CHARS = 16000;
  * @param toolNames Ids of tools the agent is permitted to call for
  *   this run. Listed under "Available tools"; an empty array produces
  *   "(none)".
+ * @param topic The event topic this agentrun is processing (e.g.
+ *   `chat:telegram`). Surfaced in the `# Runtime` section so the agent
+ *   can reason about which channel/source produced the event.
  */
-export function buildSystemPrompt(handler: HandlerFile, toolNames: readonly string[]): string {
+export function buildSystemPrompt(
+    handler: HandlerFile,
+    toolNames: readonly string[],
+    topic: string,
+): string {
     const sections: string[] = [];
 
     const soul = readWorkspaceFile("SOUL.md");
@@ -64,24 +71,25 @@ export function buildSystemPrompt(handler: HandlerFile, toolNames: readonly stri
         toolNames.length > 0 ? toolNames.map((name) => `- ${name}`).join("\n") : "(none)";
     sections.push(`# Available tools\n\n${toolList}`);
 
-    sections.push(`# Runtime\n\n${buildRuntimeSection(handler)}`);
+    sections.push(`# Runtime\n\n${buildRuntimeSection(handler, topic)}`);
 
     return truncate(sections.join("\n\n"), MAX_SYSTEM_CHARS);
 }
 
 /**
  * Build the bullet list of dynamic context that varies per call: the
- * wall-clock time the prompt was assembled, the handler file in use
- * (with the parent it inherits from, when merged), and whether the
- * handler will mirror its final text reply into the chat history via
- * `outputChat`.
+ * wall-clock time the prompt was assembled, the event topic being
+ * processed, the handler file in use (with the parent it inherits
+ * from, when merged), and whether the handler will mirror its final
+ * text reply into the chat history via `outputChat`.
  */
-function buildRuntimeSection(handler: HandlerFile): string {
+function buildRuntimeSection(handler: HandlerFile, topic: string): string {
     const handlerLine = handler.inheritsFrom
         ? `Handler file: \`${handler.relativePath}\`, inheriting from \`${handler.inheritsFrom}\``
         : `Handler file: \`${handler.relativePath}\``;
     return [
         `- Current time: ${new Date().toISOString()}`,
+        `- Event topic: \`${topic}\``,
         `- ${handlerLine}`,
         `- outputChat: ${handler.header.outputChat === true}`,
     ].join("\n");

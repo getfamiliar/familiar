@@ -1,5 +1,6 @@
 import cliChat from "cli-chat";
 import type { PluginManifest } from "effective-assistant-shared";
+import telegram from "telegram";
 
 /**
  * Static list of installed plugins. Each entry is the manifest
@@ -11,4 +12,4 @@ import type { PluginManifest } from "effective-assistant-shared";
  * here become annoying. That trades compile-time safety on the
  * plugin contract for runtime flexibility.
  */
-export const plugins: readonly PluginManifest[] = [cliChat];
+export const plugins: readonly PluginManifest[] = [cliChat, telegram];

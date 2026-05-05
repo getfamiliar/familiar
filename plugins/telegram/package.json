@@ -1,0 +1,26 @@
+{
+    "name": "telegram",
+    "version": "0.0.1",
+    "private": true,
+    "description": "Telegram host-side plugin: bridges a Telegram bot to the chat:telegram event/chatmessage pipeline.",
+    "main": "build/index.js",
+    "types": "build/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "format": "biome format --write --config-path ../.. src/",
+        "format:check": "biome format --config-path ../.. src/",
+        "lint": "biome lint --config-path ../.. src/",
+        "check": "biome check --config-path ../.. src/"
+    },
+    "license": "MIT",
+    "dependencies": {
+        "citty": "^0.1.6",
+        "effective-assistant-shared": "*",
+        "grammy": "^1.30.0"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "^2.4.12",
+        "@types/node": "^25.6.0",
+        "typescript": "^6.0.3"
+    }
+}
