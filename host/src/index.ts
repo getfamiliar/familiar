@@ -1,10 +1,10 @@
 import { defineCommand, runMain } from "citty";
 import { createLogger, prettyStdoutStream } from "effective-assistant-shared";
-import { bootstrap } from "./Bootstrap";
-import { eventCommand } from "./commands/Event";
-import { startCommand } from "./commands/Start";
-import { stopCommand } from "./commands/Stop";
-import { PluginHost } from "./plugins/PluginHost";
+import { bootstrap } from "./Bootstrap.js";
+import { eventCommand } from "./commands/Event.js";
+import { startCommand } from "./commands/Start.js";
+import { stopCommand } from "./commands/Stop.js";
+import { PluginHost } from "./plugins/PluginHost.js";
 
 /**
  * Single host CLI entry. Citty parses argv, dispatches to one of the

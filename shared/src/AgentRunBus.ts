@@ -4,10 +4,10 @@ import type {
     AgentRunRow,
     AgentRunState,
     NewAgentRun,
-} from "./AgentRun";
-import type { Logger } from "./logging/Logger";
-import type { NotificationHandler, PostgresConnection } from "./PostgresConnection";
-import { AGENTRUNS_CHANNEL, EVENT_TERMINAL_UPDATE_SQL, SCHEMA_SQL } from "./Schema";
+} from "./AgentRun.js";
+import type { Logger } from "./logging/Logger.js";
+import type { NotificationHandler, PostgresConnection } from "./PostgresConnection.js";
+import { AGENTRUNS_CHANNEL, EVENT_TERMINAL_UPDATE_SQL, SCHEMA_SQL } from "./Schema.js";
 
 /** Raw row shape returned by the SELECT. `pg` returns bigints as strings. */
 interface RawAgentRunRow {

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { defineCommand } from "citty";
-import { bootstrap } from "../Bootstrap";
+import { bootstrap } from "../Bootstrap.js";
 
 const POLL_INTERVAL_MS = 100;
 const POLL_TICKS = 100; // 100 × 100 ms = 10 s grace period before SIGKILL.

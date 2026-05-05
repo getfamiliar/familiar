@@ -6,10 +6,10 @@ import type {
     Logger,
     PostgresConnection,
 } from "effective-assistant-shared";
-import type { Bootstrap } from "../Bootstrap";
-import { PostgresContainer } from "../db/PostgresContainer";
-import { HostContextImpl } from "./HostContextImpl";
-import { plugins } from "./Registry";
+import type { Bootstrap } from "../Bootstrap.js";
+import { PostgresContainer } from "../db/PostgresContainer.js";
+import { HostContextImpl } from "./HostContextImpl.js";
+import { plugins } from "./Registry.js";
 
 /**
  * Loader and lifecycle owner for plugins inside the host process.

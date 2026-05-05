@@ -1,9 +1,9 @@
 import { Boom } from "@hapi/boom";
-import { DisconnectReason, default as makeWASocket, type WASocket } from "@whiskeysockets/baileys";
+import makeWASocket, { DisconnectReason, type WASocket } from "@whiskeysockets/baileys";
 import { type CommandDef, defineCommand } from "citty";
 import type { HostContext } from "effective-assistant-shared";
 import qrcodeTerminal from "qrcode-terminal";
-import { clearAuth, loadAuth } from "./Auth";
+import { clearAuth, loadAuth } from "./Auth.js";
 
 const BROWSER_DESCRIPTION: [string, string, string] = ["effective-assistant", "Chrome", "1.0"];
 

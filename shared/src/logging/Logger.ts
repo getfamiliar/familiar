@@ -1,9 +1,19 @@
+import { createRequire } from "node:module";
 import pino, {
     type DestinationStream,
     type LoggerOptions,
     multistream,
     type Logger as PinoLogger,
 } from "pino";
+
+/**
+ * `require` shim for the ESM build. {@link prettyStdoutStream} pulls
+ * in `pino-pretty` lazily at call time so consumers (notably the
+ * container) that never use pretty output don't have to ship the dep,
+ * and `pino-pretty` is published as CommonJS — both reasons make a
+ * dynamic ESM `import()` overkill compared with `createRequire`.
+ */
+const require = createRequire(import.meta.url);
 
 /**
  * Structured logger used by both host and container.

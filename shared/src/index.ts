@@ -4,12 +4,12 @@ export type {
     AgentRunRow,
     AgentRunState,
     NewAgentRun,
-} from "./AgentRun";
-export { AgentRunBus } from "./AgentRunBus";
-export type { ChatFilter, ChatMessage, ChatRole, NewChatMessage } from "./ChatMessage";
-export { type ChatHandler, ChatMessageBus, type ChatUnsubscribe } from "./ChatMessageBus";
-export type { EventFilter, EventPatch, EventRow, EventState, NewEvent } from "./Event";
-export { EventBus } from "./EventBus";
+} from "./AgentRun.js";
+export { AgentRunBus } from "./AgentRunBus.js";
+export type { ChatFilter, ChatMessage, ChatRole, NewChatMessage } from "./ChatMessage.js";
+export { type ChatHandler, ChatMessageBus, type ChatUnsubscribe } from "./ChatMessageBus.js";
+export type { EventFilter, EventPatch, EventRow, EventState, NewEvent } from "./Event.js";
+export { EventBus } from "./EventBus.js";
 export {
     type CreateLoggerOptions,
     createLogger,
@@ -18,7 +18,7 @@ export {
     type LogLevel,
     type LogStream,
     prettyStdoutStream,
-} from "./logging/Logger";
+} from "./logging/Logger.js";
 export type {
     AnyCommandDef,
     EmitHandle,
@@ -28,8 +28,8 @@ export type {
     PluginCronjob,
     PluginHostManifest,
     PluginManifest,
-} from "./Plugin";
-export { definePlugin } from "./Plugin";
+} from "./Plugin.js";
+export { definePlugin } from "./Plugin.js";
 export {
     type NotificationHandler,
     POSTGRES_DB,
@@ -38,7 +38,7 @@ export {
     POSTGRES_USER,
     PostgresConnection,
     type PostgresConnectionConfig,
-} from "./PostgresConnection";
+} from "./PostgresConnection.js";
 export {
     AGENTRUNS_CHANNEL,
     CHATMESSAGES_NEW_CHANNEL,
@@ -48,6 +48,6 @@ export {
     SCHEMA_SQL,
     STEPRESULTS_NEW_CHANNEL,
     TOPIC_PATTERN,
-} from "./Schema";
-export type { NewStepResult, StepResultRow } from "./StepResult";
-export { StepResultBus, type StepResultUnsubscribe } from "./StepResultBus";
+} from "./Schema.js";
+export type { NewStepResult, StepResultRow } from "./StepResult.js";
+export { StepResultBus, type StepResultUnsubscribe } from "./StepResultBus.js";

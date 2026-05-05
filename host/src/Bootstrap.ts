@@ -51,11 +51,11 @@ export interface Bootstrap {
  * Build the singleton {@link Bootstrap} object. The data directory is
  * resolved relative to the compiled JS location: `host/build/Bootstrap.js`
  * lives two levels under the project root, so `data/` is at
- * `__dirname/../../data`.
+ * `import.meta.dirname/../../data`.
  */
 export function bootstrap(): Bootstrap {
-    const dataDir = resolve(__dirname, "../../data");
-    const containerSrcDir = resolve(__dirname, "../../container/src");
+    const dataDir = resolve(import.meta.dirname, "../../data");
+    const containerSrcDir = resolve(import.meta.dirname, "../../container/src");
     return Object.freeze({
         dataDir,
         pidFile: `${dataDir}/.daemon.pid`,

@@ -1,5 +1,6 @@
 {
   "name": "effective-assistant-runner",
+  "type": "module",
   "version": "0.0.1",
   "description": "Long-running agent container that consumes events from the bus-state postgres.",
   "main": "index.js",

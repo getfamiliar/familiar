@@ -1,7 +1,7 @@
-import type { ChatFilter, ChatMessage, ChatRole, NewChatMessage } from "./ChatMessage";
-import type { Logger } from "./logging/Logger";
-import type { NotificationHandler, PostgresConnection } from "./PostgresConnection";
-import { CHATMESSAGES_NEW_CHANNEL } from "./Schema";
+import type { ChatFilter, ChatMessage, ChatRole, NewChatMessage } from "./ChatMessage.js";
+import type { Logger } from "./logging/Logger.js";
+import type { NotificationHandler, PostgresConnection } from "./PostgresConnection.js";
+import { CHATMESSAGES_NEW_CHANNEL } from "./Schema.js";
 
 /** Raw row shape returned by SELECTs against `chatmessages`. */
 interface RawChatMessageRow {

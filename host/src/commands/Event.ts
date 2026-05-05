@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { EventBus } from "effective-assistant-shared";
-import { bootstrap } from "../Bootstrap";
-import { PostgresContainer } from "../db/PostgresContainer";
+import { bootstrap } from "../Bootstrap.js";
+import { PostgresContainer } from "../db/PostgresContainer.js";
 
 /**
  * `ea event <topic> [payload] [--priority N]` — insert one event into

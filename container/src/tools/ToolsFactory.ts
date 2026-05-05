@@ -1,9 +1,9 @@
 import type { ToolSet } from "ai";
 import type { AgentRunBus, AgentRunRow } from "effective-assistant-shared";
-import type { ChatManager } from "../chat/ChatManager";
-import { buildGetWeatherTool } from "./getWeather";
-import { buildQueueRunTool } from "./queueRun";
-import { buildSendChatTool } from "./sendChat";
+import type { ChatManager } from "../chat/ChatManager.js";
+import { buildGetWeatherTool } from "./getWeather.js";
+import { buildQueueRunTool } from "./queueRun.js";
+import { buildSendChatTool } from "./sendChat.js";
 
 /** Inputs the {@link AgentRunner} threads into the factory per agentrun. */
 export interface ToolsFactoryContext {

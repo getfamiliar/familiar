@@ -8,9 +8,9 @@ import {
     POSTGRES_USER,
     PostgresConnection,
 } from "effective-assistant-shared";
-import { AgentrunWatcher } from "./AgentrunWatcher";
-import { EventWatcher } from "./EventWatcher";
-import { HandlerFile } from "./HandlerFile";
+import { AgentrunWatcher } from "./AgentrunWatcher.js";
+import { EventWatcher } from "./EventWatcher.js";
+import { HandlerFile } from "./HandlerFile.js";
 
 /**
  * Process-wide handler-header defaults. A handler can override any of

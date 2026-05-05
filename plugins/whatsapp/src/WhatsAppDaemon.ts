@@ -1,13 +1,12 @@
 import { Boom } from "@hapi/boom";
-import {
+import makeWASocket, {
     DisconnectReason,
     type GroupMetadata,
-    default as makeWASocket,
     type WAMessage,
     type WASocket,
 } from "@whiskeysockets/baileys";
 import type { HostContext } from "effective-assistant-shared";
-import { clearAuth, loadAuth, type WhatsAppAuth } from "./Auth";
+import { clearAuth, loadAuth, type WhatsAppAuth } from "./Auth.js";
 
 const TOPIC = "chat:whatsapp:group";
 const GROUP_JID_SUFFIX = "@g.us";

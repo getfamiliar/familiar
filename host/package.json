@@ -1,5 +1,6 @@
 {
   "name": "effective-assistant-host",
+  "type": "module",
   "version": "0.0.1",
   "description": "Host application for the effective assistant.",
   "main": "build/index.js",

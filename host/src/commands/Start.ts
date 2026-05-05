@@ -10,14 +10,14 @@ import {
     type LogStream,
     prettyStdoutStream,
 } from "effective-assistant-shared";
-import type { Bootstrap } from "../Bootstrap";
-import { bootstrap } from "../Bootstrap";
-import { AgentContainer } from "../container-runner/AgentContainer";
-import { ReverseProxyContainer } from "../container-runner/ReverseProxyContainer";
-import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools";
-import { PostgresContainer } from "../db/PostgresContainer";
-import { PluginHost } from "../plugins/PluginHost";
-import { rollingFileStream } from "../tools/LogRetentionTools";
+import type { Bootstrap } from "../Bootstrap.js";
+import { bootstrap } from "../Bootstrap.js";
+import { AgentContainer } from "../container-runner/AgentContainer.js";
+import { ReverseProxyContainer } from "../container-runner/ReverseProxyContainer.js";
+import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools.js";
+import { PostgresContainer } from "../db/PostgresContainer.js";
+import { PluginHost } from "../plugins/PluginHost.js";
+import { rollingFileStream } from "../tools/LogRetentionTools.js";
 
 const FEATHERLESS_UPSTREAM_BASE = "https://api.featherless.ai";
 const FEATHERLESS_BASE_URL_FOR_AGENT = "http://ea-reverse-proxy:8788/v1";

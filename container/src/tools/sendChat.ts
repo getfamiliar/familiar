@@ -1,6 +1,6 @@
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
-import type { ChatManager } from "../chat/ChatManager";
+import type { ChatManager } from "../chat/ChatManager.js";
 
 /** Schema validated by the AI SDK before `execute` is called. */
 interface SendChatInput {

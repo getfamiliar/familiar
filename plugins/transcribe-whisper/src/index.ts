@@ -1,5 +1,5 @@
 import { definePlugin } from "effective-assistant-shared";
-import { buildCommands } from "./Commands";
+import { buildCommands } from "./Commands.js";
 
 /**
  * Re-export the plugin's public library API. Sibling plugins
@@ -10,7 +10,7 @@ import { buildCommands } from "./Commands";
  * `"transcribe-whisper": "*"` to its `dependencies`, and npm's
  * workspace resolution does the rest.
  */
-export { transcribeAudio } from "./Whisper";
+export { transcribeAudio } from "./Whisper.js";
 
 /**
  * `transcribe-whisper` plugin manifest.

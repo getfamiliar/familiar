@@ -1,5 +1,6 @@
 {
     "name": "transcribe-whisper",
+    "type": "module",
     "version": "0.0.1",
     "private": true,
     "description": "Audio transcription utility plugin: transcribeAudio() backed by OpenAI's Whisper API.",

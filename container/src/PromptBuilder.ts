@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { HandlerFile } from "./HandlerFile";
+import { HandlerFile } from "./HandlerFile.js";
 
 /**
  * Hard cap on the character length of each individually-included

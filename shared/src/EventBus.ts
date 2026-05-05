@@ -1,7 +1,7 @@
-import type { EventFilter, EventPatch, EventRow, EventState, NewEvent } from "./Event";
-import type { Logger } from "./logging/Logger";
-import type { NotificationHandler, PostgresConnection } from "./PostgresConnection";
-import { EVENTS_NEW_CHANNEL, SCHEMA_SQL } from "./Schema";
+import type { EventFilter, EventPatch, EventRow, EventState, NewEvent } from "./Event.js";
+import type { Logger } from "./logging/Logger.js";
+import type { NotificationHandler, PostgresConnection } from "./PostgresConnection.js";
+import { EVENTS_NEW_CHANNEL, SCHEMA_SQL } from "./Schema.js";
 
 /** Raw row shape returned by the SELECT. `pg` returns bigints as strings. */
 interface RawEventRow {

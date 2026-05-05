@@ -1,4 +1,4 @@
-import { ReverseProxy } from "./ReverseProxy";
+import { ReverseProxy } from "./ReverseProxy.js";
 
 /**
  * Reverse-proxy entry point. Owns the singleton {@link ReverseProxy}, wires it

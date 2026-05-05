@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { type CommandDef, defineCommand } from "citty";
 import type { HostContext } from "effective-assistant-shared";
-import { transcribeAudio } from "./Whisper";
+import { transcribeAudio } from "./Whisper.js";
 
 /**
  * Build the citty subcommands exposed under

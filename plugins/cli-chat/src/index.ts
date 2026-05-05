@@ -1,7 +1,7 @@
 import path from "node:path";
 import { defineCommand } from "citty";
 import { definePlugin, type HostContext } from "effective-assistant-shared";
-import { runRepl } from "./Repl";
+import { runRepl } from "./Repl.js";
 
 /**
  * cli-chat plugin.
@@ -26,7 +26,7 @@ import { runRepl } from "./Repl";
  */
 export default definePlugin({
     id: "cli-chat",
-    workspaceTemplate: path.join(__dirname, "..", "workspace-template"),
+    workspaceTemplate: path.join(import.meta.dirname, "..", "workspace-template"),
     host: {
         main: (ctx) => replCommand(ctx),
         commands: (ctx) => [sendCommand(ctx)],

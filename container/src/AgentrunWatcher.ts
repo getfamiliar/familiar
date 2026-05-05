@@ -4,7 +4,7 @@ import {
     type Logger,
     type PostgresConnection,
 } from "effective-assistant-shared";
-import { AgentRunner } from "./agent-runner/AgentRunner";
+import { AgentRunner } from "./agent-runner/AgentRunner.js";
 
 /**
  * Agentrun watcher. Claims `pending` agentruns into `running`, runs

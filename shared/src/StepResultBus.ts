@@ -1,7 +1,7 @@
-import type { Logger } from "./logging/Logger";
-import type { NotificationHandler, PostgresConnection } from "./PostgresConnection";
-import { STEPRESULTS_NEW_CHANNEL } from "./Schema";
-import type { NewStepResult, StepResultRow } from "./StepResult";
+import type { Logger } from "./logging/Logger.js";
+import type { NotificationHandler, PostgresConnection } from "./PostgresConnection.js";
+import { STEPRESULTS_NEW_CHANNEL } from "./Schema.js";
+import type { NewStepResult, StepResultRow } from "./StepResult.js";
 
 /** Raw row shape returned by the SELECT. `pg` returns bigints as strings. */
 interface RawStepResultRow {

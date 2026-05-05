@@ -1,4 +1,4 @@
-import { dockerExec, removeContainer, SHARED_NETWORK_NAME, stopContainer } from "../DockerTools";
+import { dockerExec, removeContainer, SHARED_NETWORK_NAME, stopContainer } from "../DockerTools.js";
 
 const CONTAINER_NAME = "ea-agent";
 

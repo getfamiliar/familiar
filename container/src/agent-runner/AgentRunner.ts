@@ -7,11 +7,11 @@ import {
     type PostgresConnection,
     StepResultBus,
 } from "effective-assistant-shared";
-import { ChatManager } from "../chat/ChatManager";
-import { HandlerFile } from "../HandlerFile";
-import { ModelFactory } from "../models/ModelFactory";
-import { buildPrompt, buildSystemPrompt } from "../PromptBuilder";
-import { ToolsFactory } from "../tools/ToolsFactory";
+import { ChatManager } from "../chat/ChatManager.js";
+import { HandlerFile } from "../HandlerFile.js";
+import { ModelFactory } from "../models/ModelFactory.js";
+import { buildPrompt, buildSystemPrompt } from "../PromptBuilder.js";
+import { ToolsFactory } from "../tools/ToolsFactory.js";
 
 /**
  * One-shot runner for a single agentrun row.

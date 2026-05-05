@@ -1,5 +1,6 @@
 {
     "name": "effective-assistant-reverse-proxy",
+    "type": "module",
     "version": "0.0.1",
     "description": "Host-managed reverse proxy that injects credentials into outbound traffic so the agent container never sees raw API keys.",
     "main": "build/index.js",

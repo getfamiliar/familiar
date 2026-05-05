@@ -1,5 +1,6 @@
 {
     "name": "telegram",
+    "type": "module",
     "version": "0.0.1",
     "private": true,
     "description": "Telegram host-side plugin: bridges a Telegram bot to the chat:telegram event/chatmessage pipeline.",

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { definePlugin } from "effective-assistant-shared";
-import { buildCommands } from "./Commands";
-import { startWhatsAppDaemon } from "./WhatsAppDaemon";
+import { buildCommands } from "./Commands.js";
+import { startWhatsAppDaemon } from "./WhatsAppDaemon.js";
 
 /**
  * WhatsApp host-side plugin.
@@ -24,7 +24,7 @@ import { startWhatsAppDaemon } from "./WhatsAppDaemon";
  */
 export default definePlugin({
     id: "whatsapp",
-    workspaceTemplate: path.join(__dirname, "..", "workspace-template"),
+    workspaceTemplate: path.join(import.meta.dirname, "..", "workspace-template"),
     host: {
         start: (ctx) => startWhatsAppDaemon(ctx),
         commands: (ctx) => buildCommands(ctx),

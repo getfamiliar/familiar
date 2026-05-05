@@ -1,7 +1,7 @@
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
 import type { AgentRunBus, AgentRunRow } from "effective-assistant-shared";
-import { HandlerFile } from "../HandlerFile";
+import { HandlerFile } from "../HandlerFile.js";
 
 interface QueueRunInput {
     readonly handler: string;

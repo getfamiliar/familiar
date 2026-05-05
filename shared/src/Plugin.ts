@@ -1,8 +1,8 @@
 import type { CommandDef } from "citty";
-import type { ChatFilter } from "./ChatMessage";
-import type { ChatHandler, ChatUnsubscribe } from "./ChatMessageBus";
-import type { NewEvent } from "./Event";
-import type { StepResultRow } from "./StepResult";
+import type { ChatFilter } from "./ChatMessage.js";
+import type { ChatHandler, ChatUnsubscribe } from "./ChatMessageBus.js";
+import type { NewEvent } from "./Event.js";
+import type { StepResultRow } from "./StepResult.js";
 
 export type { ChatHandler };
 

@@ -1,5 +1,6 @@
 {
     "name": "cli-chat",
+    "type": "module",
     "version": "0.0.1",
     "private": true,
     "description": "First plugin: emits chat:cli events from the command line.",
