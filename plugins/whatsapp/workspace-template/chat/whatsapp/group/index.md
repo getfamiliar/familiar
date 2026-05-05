@@ -1,0 +1,1 @@
+A WhatsApp group message has arrived. The full payload is in the event — sender, group, timestamp, text. For now there is nothing to do with it: just acknowledge the event by ending your turn. A future iteration of this handler will append the message to a per-group log and feed digest workflows. Reply with a single short word like "noted" so the agentrun settles cleanly.

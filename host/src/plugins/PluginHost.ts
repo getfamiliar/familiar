@@ -131,6 +131,7 @@ export class PluginHost {
             ensureConnection: () => this.ensureConnection(),
             defaultChatChannelId: () => this.boot.requireEnv("DEFAULT_CHAT_CHANNEL_ID"),
             log: this.log.child({ component: `plugin:${pluginId}` }),
+            dataDir: this.boot.dataDir,
         });
     }
 

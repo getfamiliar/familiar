@@ -2,6 +2,7 @@ import cliChat from "cli-chat";
 import type { PluginManifest } from "effective-assistant-shared";
 import telegram from "telegram";
 import transcribeWhisper from "transcribe-whisper";
+import whatsapp from "whatsapp";
 
 /**
  * Static list of installed plugins. Each entry is the manifest
@@ -13,4 +14,4 @@ import transcribeWhisper from "transcribe-whisper";
  * here become annoying. That trades compile-time safety on the
  * plugin contract for runtime flexibility.
  */
-export const plugins: readonly PluginManifest[] = [cliChat, telegram, transcribeWhisper];
+export const plugins: readonly PluginManifest[] = [cliChat, telegram, transcribeWhisper, whatsapp];

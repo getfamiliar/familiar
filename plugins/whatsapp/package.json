@@ -1,0 +1,28 @@
+{
+    "name": "whatsapp",
+    "version": "0.0.1",
+    "private": true,
+    "description": "WhatsApp host-side plugin: read-only group observer that pairs the user's account as a linked device and emits chat:whatsapp:group events.",
+    "main": "build/index.js",
+    "types": "build/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "format": "biome format --write --config-path ../.. src/",
+        "format:check": "biome format --config-path ../.. src/",
+        "lint": "biome lint --config-path ../.. src/",
+        "check": "biome check --config-path ../.. src/"
+    },
+    "license": "MIT",
+    "dependencies": {
+        "@whiskeysockets/baileys": "6.7.18",
+        "citty": "^0.1.6",
+        "effective-assistant-shared": "*",
+        "qrcode-terminal": "^0.12.0"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "^2.4.12",
+        "@types/node": "^25.6.0",
+        "@types/qrcode-terminal": "^0.12.2",
+        "typescript": "^6.0.3"
+    }
+}

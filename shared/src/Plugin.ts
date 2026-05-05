@@ -103,6 +103,17 @@ export interface HostContext {
     };
     /** Structured-ish log line. Future: scoped by plugin id, severity, etc. */
     readonly log: (message: string) => void;
+    /**
+     * Absolute host path of the project's `data/` directory.
+     *
+     * Plugins that need to persist host-side state (auth tokens that
+     * must not cross into the container, on-disk caches, etc.) should
+     * scope their files under `<dataDir>/<plugin-id>/...` to avoid
+     * collisions. Anything that needs to be visible to the agent or to
+     * other plugins should go through the bus or workspace instead —
+     * `dataDir` is for plugin-private host-only state.
+     */
+    readonly dataDir: string;
 }
 
 /**

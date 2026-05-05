@@ -36,6 +36,13 @@ export interface HostContextImplDeps {
      * handing it off so records carry a stable component tag.
      */
     log: Logger;
+    /**
+     * Absolute host path of the project's `data/` directory, surfaced
+     * as `ctx.dataDir` to plugins. Sourced from the host {@link
+     * Bootstrap} so there is one source of truth rather than a parallel
+     * env var to drift out of sync.
+     */
+    dataDir: string;
 }
 
 /**
@@ -69,6 +76,10 @@ export class HostContextImpl implements HostContext {
 
     log(message: string): void {
         this.deps.log.info(message);
+    }
+
+    get dataDir(): string {
+        return this.deps.dataDir;
     }
 
     /**
