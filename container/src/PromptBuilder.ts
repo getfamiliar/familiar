@@ -4,8 +4,8 @@ import { HandlerFile } from "./HandlerFile";
 
 /**
  * Hard cap on the character length of each individually-included
- * section (a workspace file, the handler body, the payload JSON, the
- * run prompt). Per-section truncation happens before assembly.
+ * section (a workspace file, the handler body, the run prompt).
+ * Per-section truncation happens before assembly.
  */
 const MAX_FILE_CHARS = 8000;
 
@@ -17,91 +17,67 @@ const MAX_FILE_CHARS = 8000;
  */
 const MAX_SYSTEM_CHARS = 32000;
 
-/**
- * Hard cap on the assembled user prompt. Mostly relevant for large
- * payloads; the handler body is in the system prompt instead.
- */
+/** Hard cap on the assembled user prompt. */
 const MAX_PROMPT_CHARS = 16000;
 
 /**
- * Builds the two prompts an {@link AgentRunner} hands to its
- * {@link import("ai").ToolLoopAgent}: the system instructions and the
- * per-call user message.
+ * Compose the system prompt the {@link AgentRunner} hands to its
+ * {@link import("ai").ToolLoopAgent}.
  *
- * The split is fixed:
+ * SOUL.md, ENVIRONMENT.md, and CONTEXT.md are read from the workspace
+ * root (using {@link HandlerFile.getWorkspaceRoot}); missing files are
+ * skipped without erroring. Per-section truncation is enforced as
+ * content is gathered; an overall cap is applied after assembly as a
+ * safety net. Truncated values get a `…[truncated, original N chars]`
+ * marker so the model knows the value is incomplete.
  *
- * - **System** = SOUL.md + CONTEXT.md from the workspace root
- *   (skipped silently if missing) + the handler body + the list of
- *   tools the agent is allowed to call.
- * - **User** = the agentrun's seed prompt (if any) + a JSON dump of
- *   the agentrun's payload.
- *
- * Per-section truncation is enforced as content is gathered; an
- * overall cap is applied after assembly as a safety net. Both forms
- * append a `…[truncated, original N chars]` marker so the model
- * knows the value is incomplete.
+ * @param handlerBody The markdown body of the handler file (the
+ *   per-handler policy). Empty string is allowed and yields no
+ *   "Task" section.
+ * @param toolNames Ids of tools the agent is permitted to call for
+ *   this run. Listed under "Available tools"; an empty array produces
+ *   "(none)".
  */
-export class PromptBuilder {
-    /**
-     * Compose the system prompt. SOUL.md and CONTEXT.md are read from
-     * the workspace root (using {@link HandlerFile.getWorkspaceRoot});
-     * missing files are skipped without erroring.
-     *
-     * @param handlerBody The markdown body of the handler file (the
-     *   per-handler policy). Empty string is allowed and yields no
-     *   "Task" section.
-     * @param toolNames Ids of tools the agent is permitted to call
-     *   for this run. Listed under "Available tools"; an empty array
-     *   produces "(none)".
-     */
-    static buildSystem(handlerBody: string, toolNames: readonly string[]): string {
-        const sections: string[] = [];
+export function buildSystemPrompt(handlerBody: string, toolNames: readonly string[]): string {
+    const sections: string[] = [];
 
-        const soul = readWorkspaceFile("SOUL.md");
-        if (soul !== null) {
-            sections.push(`# Identity\n\n${soul}`);
-        }
-
-        const context = readWorkspaceFile("CONTEXT.md");
-        if (context !== null) {
-            sections.push(`# Context\n\n${context}`);
-        }
-
-        if (handlerBody.trim().length > 0) {
-            sections.push(`# Task\n\n${truncate(handlerBody, MAX_FILE_CHARS)}`);
-        }
-
-        const toolList =
-            toolNames.length > 0 ? toolNames.map((name) => `- ${name}`).join("\n") : "(none)";
-        sections.push(`# Available tools\n\n${toolList}`);
-
-        return truncate(sections.join("\n\n"), MAX_SYSTEM_CHARS);
+    const soul = readWorkspaceFile("SOUL.md");
+    if (soul !== null) {
+        sections.push(`# Identity\n\n${soul}`);
     }
 
-    /**
-     * Compose the per-call user prompt: the seed prompt (if any) and a
-     * pretty-printed JSON dump of the payload under a `# Payload`
-     * heading.
-     *
-     * @param runPrompt The agentrun's optional seed prompt (the
-     *   `prompt` column on the row). `null` or empty string emits no
-     *   prompt section.
-     * @param payload Arbitrary JSON-serializable value from the row's
-     *   payload column. `null` / `undefined` are coerced to `{}` so
-     *   the section always renders something.
-     */
-    static buildPrompt(runPrompt: string | null, payload: unknown): string {
-        const sections: string[] = [];
-
-        if (runPrompt && runPrompt.trim().length > 0) {
-            sections.push(truncate(runPrompt, MAX_FILE_CHARS));
-        }
-
-        //const payloadJson = JSON.stringify(payload ?? {}, null, 2);
-        //sections.push(`# Payload\n\n\`\`\`json\n${truncate(payloadJson, MAX_FILE_CHARS)}\n\`\`\``);
-
-        return truncate(sections.join("\n\n"), MAX_PROMPT_CHARS);
+    const environment = readWorkspaceFile("ENVIRONMENT.md");
+    if (environment !== null) {
+        sections.push(`# Environment\n\n${environment}`);
     }
+
+    const context = readWorkspaceFile("CONTEXT.md");
+    if (context !== null) {
+        sections.push(`# Context\n\n${context}`);
+    }
+
+    if (handlerBody.trim().length > 0) {
+        sections.push(`# Task\n\n${truncate(handlerBody, MAX_FILE_CHARS)}`);
+    }
+
+    const toolList =
+        toolNames.length > 0 ? toolNames.map((name) => `- ${name}`).join("\n") : "(none)";
+    sections.push(`# Available tools\n\n${toolList}`);
+
+    return truncate(sections.join("\n\n"), MAX_SYSTEM_CHARS);
+}
+
+/**
+ * Compose the per-call user prompt from the agentrun's seed prompt.
+ *
+ * @param runPrompt The agentrun's optional seed prompt (the `prompt`
+ *   column on the row). `null` or empty string yields an empty result.
+ */
+export function buildPrompt(runPrompt: string | null): string {
+    if (!runPrompt || runPrompt.trim().length === 0) {
+        return "";
+    }
+    return truncate(truncate(runPrompt, MAX_FILE_CHARS), MAX_PROMPT_CHARS);
 }
 
 /**

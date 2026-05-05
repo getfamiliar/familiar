@@ -10,7 +10,7 @@ import {
 import { ChatManager } from "../chat/ChatManager";
 import { HandlerFile } from "../HandlerFile";
 import { ModelFactory } from "../models/ModelFactory";
-import { PromptBuilder } from "../PromptBuilder";
+import { buildPrompt, buildSystemPrompt } from "../PromptBuilder";
 import { ToolsFactory } from "../tools/ToolsFactory";
 
 /**
@@ -78,7 +78,7 @@ export class AgentRunner {
             parent: this.row,
         });
         const toolNames = Object.keys(tools);
-        const systemPrompt = PromptBuilder.buildSystem(handler.body, toolNames);
+        const systemPrompt = buildSystemPrompt(handler.body, toolNames);
 
         const agent = new ToolLoopAgent<never, ToolSet>({
             model,
@@ -101,22 +101,14 @@ export class AgentRunner {
         });
 
         const history = await this.chat.fetchHistory(this.row.eventId);
-        const taskBrief = PromptBuilder.buildPrompt(this.row.prompt, this.row.payload);
+        const taskBrief = buildPrompt(this.row.prompt);
 
-        // One flow: always pass `messages`. The agent's `instructions`
-        // (system prompt — SOUL.md, CONTEXT.md, handler body, tool
-        // list) is already attached at construction time.
-        //
-        // `messages` carries everything that varies per-call:
-        //   - prior chat turns (empty for non-chat events)
-        //   - the current task brief (seed prompt + JSON payload),
-        //     appended as the trailing user message when non-empty.
-        //
-        // For chat events the trailing brief duplicates the payload
-        // text (which is also the latest history message); the model
-        // handles the small overlap fine. The previous split flow
-        // dropped the brief entirely whenever history existed, which
-        // also dropped the agentrun's seed prompt.
+        // The agent's `instructions` (system prompt — SOUL.md,
+        // ENVIRONMENT.md, CONTEXT.md, handler body, tool list) is
+        // attached at construction time. `messages` carries everything
+        // that varies per-call: prior chat turns (empty for non-chat
+        // events) plus the current task brief (the agentrun's seed
+        // prompt) appended as the trailing user message when non-empty.
         const messages: ModelMessage[] = [...history];
         if (taskBrief.length > 0) {
             messages.push({ role: "user", content: taskBrief });

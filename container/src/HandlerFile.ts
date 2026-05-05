@@ -138,7 +138,7 @@ export class HandlerFile {
 
     /**
      * Read the currently configured workspace root. Other workspace-
-     * aware modules (e.g. `PromptBuilder` reading `SOUL.md` /
+     * aware modules (e.g. `buildSystemPrompt` reading `SOUL.md` /
      * `CONTEXT.md`) use this so the workspace location has a single
      * source of truth.
      */
