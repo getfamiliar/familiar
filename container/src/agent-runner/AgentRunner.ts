@@ -122,6 +122,7 @@ export class AgentRunner {
                 maxOutputTokens: handler.header.maxOutputTokens,
                 systemPrompt: systemPrompt,
                 taskBrief: taskBrief,
+                prompt: this.row.prompt,
                 tools: toolNames,
                 historyMessages: history.length,
                 taskBriefLength: taskBrief.length,

@@ -1,5 +1,6 @@
 import type { HostContext } from "effective-assistant-shared";
 import { Bot, type Context, GrammyError, HttpError } from "grammy";
+import { transcribeAudio } from "transcribe-whisper";
 
 const TELEGRAM_CHANNEL = "telegram";
 const TELEGRAM_MESSAGE_LIMIT = 4096;
@@ -121,11 +122,41 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
         });
     });
 
+    bot.on("message:voice", async (gctx) => {
+        if (!(await isChatAllowed(gctx, authorizedUserId))) {
+            return;
+        }
+        const voice = gctx.message.voice;
+        let transcript: string;
+        try {
+            const audio = await downloadTelegramFile(bot, token, voice.file_id);
+            transcript = (await transcribeAudio(audio, "voice.ogg")).trim();
+        } catch (err) {
+            ctx.log(`telegram voice transcription failed: ${formatError(err)}`);
+            await gctx.reply(
+                "Sorry, I couldn't transcribe your voice message — please try again or send text.",
+            );
+            return;
+        }
+        if (transcript.length === 0) {
+            await gctx.reply("Your voice message transcribed to nothing — was it silent?");
+            return;
+        }
+        emitChatEvent(ctx, gctx, `[Transcribed voice message]\n${transcript}`, {
+            voice: {
+                duration: voice.duration,
+                file_id: voice.file_id,
+                mime_type: voice.mime_type,
+                transcript,
+            },
+        });
+    });
+
     bot.on("message", async (gctx) => {
         if (!(await isChatAllowed(gctx, authorizedUserId))) {
             return;
         }
-        await gctx.reply("Only text and sticker messages are supported right now.");
+        await gctx.reply("Only text, sticker, and voice messages are supported right now.");
     });
 
     await ctx.chat.subscribe({ channelId: TELEGRAM_CHANNEL, role: "assistant" }, async (m) => {
@@ -274,6 +305,38 @@ async function isChatAllowed(gctx: Context, authorizedUserId: number | null): Pr
         return false;
     }
     return true;
+}
+
+/**
+ * Resolve a Telegram `file_id` to its CDN URL via `getFile`, then
+ * download the bytes into a Buffer. Used to fetch voice notes (and
+ * any future audio/video/document) for in-process processing such
+ * as transcription.
+ *
+ * Telegram's getFile-then-download dance is required because the
+ * Bot API only hands out a `file_path` plus the implicit URL pattern
+ * `https://api.telegram.org/file/bot<token>/<file_path>`. The token
+ * embedded in the URL must be kept on the host — that's why this
+ * helper lives in the plugin (which already has the token in scope)
+ * rather than in `transcribe-whisper`.
+ *
+ * @throws If the `getFile` call fails, the file has no `file_path`
+ *   (rare; happens for very large files), or the HTTP download
+ *   returns a non-2xx status.
+ */
+async function downloadTelegramFile(bot: Bot, token: string, fileId: string): Promise<Buffer> {
+    const file = await bot.api.getFile(fileId);
+    if (!file.file_path) {
+        throw new Error(`Telegram getFile returned no file_path for id ${fileId}`);
+    }
+    const url = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(
+            `Telegram file download failed: HTTP ${response.status} ${response.statusText}`,
+        );
+    }
+    return Buffer.from(await response.arrayBuffer());
 }
 
 /**
