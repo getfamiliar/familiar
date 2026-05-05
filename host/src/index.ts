@@ -2,6 +2,7 @@ import { defineCommand, runMain } from "citty";
 import { createLogger, prettyStdoutStream } from "effective-assistant-shared";
 import { bootstrap } from "./Bootstrap.js";
 import { eventCommand } from "./commands/Event.js";
+import { psqlCommand } from "./commands/Psql.js";
 import { startCommand } from "./commands/Start.js";
 import { stopCommand } from "./commands/Stop.js";
 import { PluginHost } from "./plugins/PluginHost.js";
@@ -38,6 +39,7 @@ runMain(
             start: startCommand,
             stop: stopCommand,
             event: eventCommand,
+            psql: psqlCommand,
             ...pluginHost.buildSubCommands(),
         },
     }),
