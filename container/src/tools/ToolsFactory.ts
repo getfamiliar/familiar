@@ -1,6 +1,8 @@
 import type { ToolSet } from "ai";
+import type { AgentRunBus, AgentRunRow } from "effective-assistant-shared";
 import type { ChatManager } from "../chat/ChatManager";
 import { buildGetWeatherTool } from "./getWeather";
+import { buildQueueRunTool } from "./queueRun";
 import { buildSendChatTool } from "./sendChat";
 
 /** Inputs the {@link AgentRunner} threads into the factory per agentrun. */
@@ -11,6 +13,10 @@ export interface ToolsFactoryContext {
     readonly eventId?: string;
     /** Tool ids the handler is permitted to call (from its YAML header). */
     readonly allowed?: readonly string[];
+    /** Agentrun bus; required to register `queue_run`. */
+    readonly bus?: AgentRunBus;
+    /** The currently-running agentrun row; closed over by `queue_run`. */
+    readonly parent?: AgentRunRow;
 }
 
 /**
@@ -41,6 +47,9 @@ export class ToolsFactory {
         };
         if (context.chat && context.eventId) {
             systemTools.send_chat = buildSendChatTool(context.chat, context.eventId);
+        }
+        if (context.bus && context.parent) {
+            systemTools.queue_run = buildQueueRunTool(context.bus, context.parent);
         }
 
         const handlerTools: ToolSet = {};

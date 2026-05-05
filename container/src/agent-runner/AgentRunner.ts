@@ -1,5 +1,6 @@
 import { type ModelMessage, stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import {
+    AgentRunBus,
     type AgentRunRow,
     ChatMessageBus,
     type Logger,
@@ -38,6 +39,7 @@ export class AgentRunner {
     private readonly row: AgentRunRow;
     private readonly steps: StepResultBus;
     private readonly chat: ChatManager;
+    private readonly bus: AgentRunBus;
     private readonly log: Logger;
     private stepStartedAt = 0;
 
@@ -45,6 +47,7 @@ export class AgentRunner {
         this.row = row;
         this.steps = new StepResultBus(connection);
         this.chat = new ChatManager(new ChatMessageBus(connection));
+        this.bus = new AgentRunBus(connection, log);
         this.log = log;
     }
 
@@ -71,6 +74,8 @@ export class AgentRunner {
             chat: this.chat,
             eventId: this.row.eventId,
             allowed: handler.header.allowedTools,
+            bus: this.bus,
+            parent: this.row,
         });
         const toolNames = Object.keys(tools);
         const systemPrompt = PromptBuilder.buildSystem(handler.body, toolNames);
