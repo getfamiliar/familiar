@@ -16,9 +16,9 @@ import { runRepl } from "./Repl";
  *   Ctrl-C, or Ctrl-D exit the loop. See {@link runRepl} for details.
  *
  * - `./cli.sh cli-chat send "<msg>"` is a one-shot for non-TTY
- *   scripting and CI smoke tests. Emits one event, prints any
+ *   scripting and CI smoke tests. Emits one event and prints any
  *   assistant replies that arrive on the cli channel during the
- *   agentrun, plus the agentrun's terminal `result_text`.
+ *   agentrun.
  *
  * Both use the same chat-persistence pipeline (`isChat=true`,
  * `payload.text`, channel `"cli"`); the difference is purely the
@@ -75,13 +75,14 @@ function sendCommand(ctx: HostContext) {
                 },
             );
             try {
-                const resultText = await ctx.events.emit({
+                // The reply prints via the chat subscription above;
+                // no need to also print the agentrun's result_text.
+                await ctx.events.emit({
                     topic: "chat:cli",
                     isChat: true,
                     preferredChatChannelId: CLI_CHANNEL,
                     payload: { text: args.message },
                 });
-                process.stdout.write(`[result_text] ${resultText}\n`);
             } finally {
                 await unsubscribe();
             }

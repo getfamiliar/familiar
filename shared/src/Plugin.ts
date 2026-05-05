@@ -51,11 +51,17 @@ export interface HostContext {
      *   Errors thrown by the callback are caught and logged so a bad
      *   subscriber can't break the emit. When omitted, no
      *   `stepresults_new` LISTEN is registered (zero overhead).
+     * @param onEventInserted Optional callback fired exactly once,
+     *   with the event id, immediately after the row is INSERTed and
+     *   before the wait for terminal state begins. Lets callers show
+     *   "sent event #id" feedback before the agent starts producing
+     *   step results.
      */
     readonly events: {
         emit(
             event: NewEvent,
             onStep?: (step: StepResultRow) => void | Promise<void>,
+            onEventInserted?: (eventId: string) => void,
         ): Promise<string>;
     };
     /**

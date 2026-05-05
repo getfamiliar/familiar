@@ -6,6 +6,7 @@ const PROMPT = "> ";
 const DRAIN_TIMEOUT_MS = 30_000;
 const ANSI_GREY = "\x1b[90m";
 const ANSI_RED = "\x1b[31m";
+const ANSI_CYAN = "\x1b[36m";
 const ANSI_RESET = "\x1b[0m";
 const ANSI_CLEAR_LINE = "\r\x1b[2K";
 const ANSI_CURSOR_UP = "\x1b[1A";
@@ -51,15 +52,22 @@ export async function runRepl(ctx: HostContext): Promise<void> {
     const inFlight = new Set<Promise<unknown>>();
     let rlClosed = false;
 
+    if (isTty) {
+        process.stdout.write(
+            `${ANSI_GREY}Welcome to the assistant chat. Type "exit", "/exit", or press Ctrl+C to end the chat.${ANSI_RESET}\n\n`,
+        );
+    }
+
     const submit = (rawLine: string): void => {
         const line = rawLine.trim();
         if (line.length === 0) {
             return;
         }
-        if (line === "/exit") {
+        if (line === "/exit" || line === "exit") {
             rl.close();
             return;
         }
+        renderer.setThinking("Sending event…");
         const promise = ctx.events
             .emit(
                 {
@@ -71,13 +79,16 @@ export async function runRepl(ctx: HostContext): Promise<void> {
                 (step) => {
                     renderer.setThinking(formatStepLine(step));
                 },
+                (eventId) => {
+                    renderer.setThinking(`Sent event #${eventId}, preparing to think…`);
+                },
             )
             .then(
-                (resultText) => {
+                () => {
+                    // Drop result_text: the reply is delivered as a chat
+                    // message via subscribe, so printing result_text here
+                    // would just duplicate it.
                     renderer.clearThinking();
-                    if (resultText && resultText.trim().length > 0) {
-                        renderer.printAbove(`[result_text] ${resultText}`);
-                    }
                 },
                 (err) => {
                     renderer.clearThinking();
@@ -92,6 +103,7 @@ export async function runRepl(ctx: HostContext): Promise<void> {
 
     const userExit = new Promise<void>((resolve) => {
         rl.on("line", (line) => {
+            renderer.recolorJustEntered(line);
             submit(line);
             if (!rlClosed) {
                 rl.prompt();
@@ -109,7 +121,9 @@ export async function runRepl(ctx: HostContext): Promise<void> {
     const unsubscribe = await ctx.chat.subscribe(
         { channelId: CLI_CHANNEL, role: "assistant" },
         async (m) => {
-            renderer.printAbove(m.textContent);
+            // Trailing newline turns into a blank visual separator
+            // below the assistant message (printAbove appends \n).
+            renderer.printAbove(`${m.textContent}\n`);
             return true;
         },
     );
@@ -185,6 +199,28 @@ export class LineRenderer {
         this.redrawPromptArea();
     }
 
+    /**
+     * Re-render the line readline just echoed (`> message`) in cyan,
+     * followed by a blank visual separator. Called from the readline
+     * `line` handler — at that point cursor is on the line below the
+     * just-typed input, so we step up, clear, and rewrite.
+     *
+     * If a thinking line was on screen before the user pressed enter
+     * its position is now stale (we just inserted a blank below it
+     * without erasing it). We invalidate the on-screen flag so the
+     * next `setThinking` redraws cleanly rather than erasing the
+     * blank separator. The stale grey line stays in scrollback —
+     * acceptable noise.
+     */
+    recolorJustEntered(line: string): void {
+        if (!this.isTty || this.rlClosed) {
+            return;
+        }
+        process.stdout.write(`${ANSI_CURSOR_UP}${ANSI_CLEAR_LINE}`);
+        process.stdout.write(`${ANSI_CYAN}${PROMPT}${line}${ANSI_RESET}\n\n`);
+        this.thinkingOnScreen = false;
+    }
+
     /** Print an error in red above the prompt. */
     printError(text: string): void {
         if (!this.isTty || this.rlClosed) {
@@ -255,28 +291,32 @@ export class LineRenderer {
  * Render a {@link StepResultRow} as a one-line "thinking" summary.
  * Pure function — no IO, no readline — so it's unit-coverable.
  *
- * Branches in priority order:
- *   1. Tool calls — list the tool names. `send_chat`'s text is hidden
- *      because it arrives separately via the chat subscription; double-
- *      rendering would be confusing.
- *   2. Reasoning text — chain-of-thought from extended-thinking models.
- *   3. Plain assistant text generated this step.
- *   4. Fallback to the SDK's finishReason.
+ * Reasoning text (chain-of-thought from extended-thinking models) is
+ * surfaced whenever it's present, even alongside tool calls or text —
+ * it tends to be the most useful per-step signal. Tool names or the
+ * step's plain text follow as a secondary segment, joined with `·`.
+ * `send_chat`'s text is intentionally not echoed because it arrives
+ * separately via the chat subscription.
  */
 export function formatStepLine(step: StepResultRow): string {
     const prefix = `↻ step ${step.stepNumber + 1}`;
     const toolNames = extractToolNames(step.toolCalls);
+    const reasoning = step.reasoningText?.trim();
+    const text = step.resultText?.trim();
 
+    const parts: string[] = [];
+    if (reasoning && reasoning.length > 0) {
+        parts.push(truncate(reasoning, 100));
+    }
     if (toolNames.length > 0) {
-        return `${prefix} • ${toolNames.join(", ")}`;
+        parts.push(`tools: ${toolNames.join(", ")}`);
+    } else if (text && text.length > 0) {
+        parts.push(`"${truncate(text, 80)}"`);
     }
-    if (step.reasoningText && step.reasoningText.trim().length > 0) {
-        return `${prefix} • ${truncate(step.reasoningText, 80)}`;
+    if (parts.length === 0) {
+        parts.push(step.finishReason);
     }
-    if (step.resultText && step.resultText.trim().length > 0) {
-        return `${prefix} • "${truncate(step.resultText, 80)}"`;
-    }
-    return `${prefix} • ${step.finishReason}`;
+    return `${prefix} • ${parts.join(" · ")}`;
 }
 
 /**

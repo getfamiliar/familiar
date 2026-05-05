@@ -60,7 +60,8 @@ export class HostContextImpl implements HostContext {
         emit: (
             event: NewEvent,
             onStep?: (step: StepResultRow) => void | Promise<void>,
-        ): Promise<string> => this.emitAndAwait(event, onStep),
+            onEventInserted?: (eventId: string) => void,
+        ): Promise<string> => this.emitAndAwait(event, onStep, onEventInserted),
     };
 
     readonly chat = {
@@ -109,6 +110,7 @@ export class HostContextImpl implements HostContext {
     private async emitAndAwait(
         event: NewEvent,
         onStep?: (step: StepResultRow) => void | Promise<void>,
+        onEventInserted?: (eventId: string) => void,
     ): Promise<string> {
         const conn = await this.deps.ensureConnection();
         const bus = new EventBus(conn);
@@ -163,6 +165,19 @@ export class HostContextImpl implements HostContext {
                     : event;
             const row = await bus.add(stamped);
             waitedFor = row.id;
+            if (onEventInserted) {
+                try {
+                    onEventInserted(row.id);
+                } catch (err) {
+                    this.deps.log.error(
+                        {
+                            eventId: row.id,
+                            err: err instanceof Error ? err.message : String(err),
+                        },
+                        "events.emit onEventInserted callback error",
+                    );
+                }
+            }
 
             // Close the early-settle race: NOTIFY may have fired
             // between the INSERT and our setting `waitedFor`.
