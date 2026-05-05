@@ -184,7 +184,7 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
         }
         try {
             for (const chunk of splitForTelegram(m.textContent)) {
-                await sendWithMarkdownFallback(bot, authorizedUserId, chunk, (msg) => ctx.log(msg));
+                await bot.api.sendMessage(authorizedUserId, chunk);
             }
         } catch (err) {
             // Ack anyway: returning false would replay forever on
@@ -438,48 +438,6 @@ async function downloadTelegramFile(bot: Bot, token: string, fileId: string): Pr
         );
     }
     return Buffer.from(await response.arrayBuffer());
-}
-
-/**
- * Send `text` as a Telegram message, attempting MarkdownV2 first and
- * silently falling back to plain text if Telegram rejects the entity
- * parse. The fallback path covers the realistic case where the agent
- * emits markdown that almost-but-not-quite conforms to MarkdownV2's
- * escaping rules (a bare `.`, an unmatched `_`, etc.) — better to
- * deliver an unformatted message than swallow it.
- *
- * Other error classes (network, 401, blocked-by-user) are re-thrown
- * so the caller's broader `try/catch` handles them uniformly.
- */
-export async function sendWithMarkdownFallback(
-    bot: Bot,
-    chatId: number,
-    text: string,
-    log: (message: string) => void,
-): Promise<void> {
-    try {
-        await bot.api.sendMessage(chatId, text, { parse_mode: "MarkdownV2" });
-    } catch (err) {
-        if (!isMarkdownParseError(err)) {
-            throw err;
-        }
-        log(`telegram MarkdownV2 parse failed; resending as plain text: ${formatError(err)}`);
-        await bot.api.sendMessage(chatId, text);
-    }
-}
-
-/**
- * Detect Telegram's "can't parse entities" 400 response, which is
- * what `sendMessage` returns when MarkdownV2 syntax is malformed.
- * Distinct from other 400s (e.g. "message is too long") which should
- * propagate.
- */
-function isMarkdownParseError(err: unknown): boolean {
-    return (
-        err instanceof GrammyError &&
-        err.error_code === 400 &&
-        err.description.includes("can't parse entities")
-    );
 }
 
 /**
