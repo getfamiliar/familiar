@@ -77,12 +77,13 @@ function sendCommand(ctx: HostContext) {
             try {
                 // The reply prints via the chat subscription above;
                 // no need to also print the agentrun's result_text.
-                await ctx.events.emit({
+                const handle = await ctx.events.emit({
                     topic: "chat:cli",
                     isChat: true,
                     preferredChatChannelId: CLI_CHANNEL,
                     payload: { text: args.message },
                 });
+                await handle.settled;
             } finally {
                 await unsubscribe();
             }

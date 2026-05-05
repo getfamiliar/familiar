@@ -21,6 +21,8 @@ export {
 } from "./logging/Logger";
 export type {
     AnyCommandDef,
+    EmitHandle,
+    EmitOptions,
     HostContext,
     PluginContainerManifest,
     PluginCronjob,

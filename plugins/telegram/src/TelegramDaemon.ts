@@ -1,9 +1,15 @@
-import type { HostContext } from "effective-assistant-shared";
+import type { EmitHandle, HostContext } from "effective-assistant-shared";
 import { Bot, type Context, GrammyError, HttpError } from "grammy";
 import { transcribeAudio } from "transcribe-whisper";
 
 const TELEGRAM_CHANNEL = "telegram";
 const TELEGRAM_MESSAGE_LIMIT = 4096;
+/**
+ * How often to re-send the `typing` chat action while at least one
+ * event is still settling. Telegram clears the indicator after about
+ * 5 seconds, so we refresh slightly under that interval.
+ */
+const TYPING_REFRESH_MS = 4000;
 
 /**
  * Resolved telegram configuration. `authorizedUserId === null` means
@@ -93,15 +99,27 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
         ctx.log(`telegram authorized user id: ${authorizedUserId}`);
     }
 
+    // Built only when an authorized user is configured. In discovery
+    // mode no events are emitted, so the typing indicator is unused.
+    const em: EmitContext | undefined =
+        authorizedUserId !== null
+            ? {
+                  ctx,
+                  bot,
+                  authorizedUserId,
+                  typing: createTypingTracker(bot, authorizedUserId, (msg) => ctx.log(msg)),
+              }
+            : undefined;
+
     bot.on("message:text", async (gctx) => {
-        if (!(await isChatAllowed(gctx, authorizedUserId))) {
+        if (!(await isChatAllowed(gctx, authorizedUserId)) || em === undefined) {
             return;
         }
-        emitChatEvent(ctx, gctx, gctx.message.text);
+        void emitChatEvent(em, gctx, gctx.message.text);
     });
 
     bot.on("message:sticker", async (gctx) => {
-        if (!(await isChatAllowed(gctx, authorizedUserId))) {
+        if (!(await isChatAllowed(gctx, authorizedUserId)) || em === undefined) {
             return;
         }
         const sticker = gctx.message.sticker;
@@ -112,7 +130,7 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
             );
             return;
         }
-        emitChatEvent(ctx, gctx, emoji, {
+        void emitChatEvent(em, gctx, emoji, {
             sticker: {
                 emoji,
                 set_name: sticker.set_name,
@@ -123,7 +141,7 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
     });
 
     bot.on("message:voice", async (gctx) => {
-        if (!(await isChatAllowed(gctx, authorizedUserId))) {
+        if (!(await isChatAllowed(gctx, authorizedUserId)) || em === undefined) {
             return;
         }
         const voice = gctx.message.voice;
@@ -142,7 +160,7 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
             await gctx.reply("Your voice message transcribed to nothing — was it silent?");
             return;
         }
-        emitChatEvent(ctx, gctx, `[Transcribed voice message]\n${transcript}`, {
+        void emitChatEvent(em, gctx, `[Transcribed voice message]\n${transcript}`, {
             voice: {
                 duration: voice.duration,
                 file_id: voice.file_id,
@@ -215,7 +233,76 @@ export function splitForTelegram(text: string): string[] {
 }
 
 /**
- * Emit a `chat:telegram` event for the given Telegram update.
+ * Emission context bundling everything per-message-type handlers need
+ * to insert a `chat:telegram` event AND drive the typing indicator
+ * for the duration of the resulting agentrun. Built once at daemon
+ * start (only when `authorizedUserId` is configured) and shared by
+ * every handler.
+ */
+interface EmitContext {
+    readonly ctx: HostContext;
+    readonly bot: Bot;
+    readonly authorizedUserId: number;
+    readonly typing: TypingTracker;
+}
+
+/**
+ * Tracks event ids whose agentruns are still in flight, and keeps a
+ * Telegram `typing` chat action alive for as long as the set is
+ * non-empty. Telegram's typing indicator auto-clears after ~5 s, so
+ * a refresh interval keeps it visible across multi-second agent runs.
+ */
+interface TypingTracker {
+    /**
+     * Start (or extend) the typing indicator for `eventId`. Sends an
+     * immediate `sendChatAction` ping so the user sees feedback before
+     * the next refresh tick fires.
+     */
+    track(eventId: string): void;
+    /**
+     * Stop tracking `eventId`. The interval ticker stops issuing
+     * `sendChatAction` calls once the in-flight set drains, and
+     * Telegram clears the indicator a few seconds later.
+     */
+    untrack(eventId: string): void;
+}
+
+/**
+ * Build a {@link TypingTracker} bound to the given chat. The refresh
+ * interval is started here and runs for the daemon's lifetime; it
+ * issues no API calls when the in-flight set is empty, so the cost
+ * while idle is one timer tick every {@link TYPING_REFRESH_MS}.
+ */
+function createTypingTracker(
+    bot: Bot,
+    chatId: number,
+    log: (message: string) => void,
+): TypingTracker {
+    const inFlight = new Set<string>();
+    const ping = (): void => {
+        bot.api.sendChatAction(chatId, "typing").catch((err) => {
+            log(`telegram typing action failed: ${formatError(err)}`);
+        });
+    };
+    setInterval(() => {
+        if (inFlight.size > 0) {
+            ping();
+        }
+    }, TYPING_REFRESH_MS);
+    return {
+        track(eventId: string): void {
+            inFlight.add(eventId);
+            ping();
+        },
+        untrack(eventId: string): void {
+            inFlight.delete(eventId);
+        },
+    };
+}
+
+/**
+ * Emit a `chat:telegram` event for the given Telegram update and keep
+ * the typing indicator alive until the resulting agentrun settles.
  *
  * Centralizes the boilerplate every per-message-type handler shares:
  * topic, channel, idempotency key derived from `update_id`, and the
@@ -224,28 +311,31 @@ export function splitForTelegram(text: string): string[] {
  * optional `telegramExtras` map whose entries are merged into
  * `payload.telegram` (e.g. `{ sticker: { emoji, set_name, … } }`).
  *
- * Fire-and-forget: `ctx.events.emit` blocks until the agentrun
- * settles, which we must not couple to grammy's polling loop.
- * Failures are logged via `ctx.log`.
+ * Designed for fire-and-forget at the call site: callers `void` the
+ * returned promise so grammy's polling loop isn't coupled to multi-
+ * second agent runs. Tracking the event id in the typing tracker
+ * happens internally — handlers don't need to thread that lifecycle.
  *
  * Callers must invoke this only after `isChatAllowed` has returned
  * `true` — that's what guarantees `gctx.message` and `gctx.from` are
  * present. The defensive guard inside is a TypeScript belt-and-braces.
  */
-function emitChatEvent(
-    ctx: HostContext,
+async function emitChatEvent(
+    em: EmitContext,
     gctx: Context,
     text: string,
     telegramExtras?: Record<string, unknown>,
-): void {
+): Promise<void> {
     const message = gctx.message;
     const from = gctx.from;
     if (message === undefined || from === undefined) {
         return;
     }
     const updateId = gctx.update.update_id;
-    ctx.events
-        .emit({
+
+    let handle: EmitHandle;
+    try {
+        handle = await em.ctx.events.emit({
             topic: "chat:telegram",
             isChat: true,
             preferredChatChannelId: TELEGRAM_CHANNEL,
@@ -259,10 +349,20 @@ function emitChatEvent(
                     ...telegramExtras,
                 },
             },
-        })
-        .catch((err) => {
-            ctx.log(`telegram emit failed (update ${updateId}): ${formatError(err)}`);
         });
+    } catch (err) {
+        em.ctx.log(`telegram emit failed (update ${updateId}): ${formatError(err)}`);
+        return;
+    }
+
+    em.typing.track(handle.id);
+    try {
+        await handle.settled;
+    } catch (err) {
+        em.ctx.log(`telegram event ${handle.id} failed: ${formatError(err)}`);
+    } finally {
+        em.typing.untrack(handle.id);
+    }
 }
 
 /**

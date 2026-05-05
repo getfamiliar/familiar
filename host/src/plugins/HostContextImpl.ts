@@ -3,6 +3,8 @@ import {
     type ChatHandler,
     ChatMessageBus,
     type ChatUnsubscribe,
+    type EmitHandle,
+    type EmitOptions,
     EVENTS_STATE_CHANNEL,
     EventBus,
     type HostContext,
@@ -11,7 +13,6 @@ import {
     type NotificationHandler,
     type PostgresConnection,
     StepResultBus,
-    type StepResultRow,
     type StepResultUnsubscribe,
 } from "effective-assistant-shared";
 
@@ -57,11 +58,8 @@ export class HostContextImpl implements HostContext {
     }
 
     readonly events = {
-        emit: (
-            event: NewEvent,
-            onStep?: (step: StepResultRow) => void | Promise<void>,
-            onEventInserted?: (eventId: string) => void,
-        ): Promise<string> => this.emitAndAwait(event, onStep, onEventInserted),
+        emit: (event: NewEvent, options?: EmitOptions): Promise<EmitHandle> =>
+            this.emitAndAwait(event, options),
     };
 
     readonly chat = {
@@ -90,28 +88,29 @@ export class HostContextImpl implements HostContext {
     }
 
     /**
-     * Insert the event, then block until the row reaches `done` or
-     * `failed`. Returns the last-settled agentrun's `result_text` on
-     * success; throws on failure.
+     * Insert the event and return an {@link EmitHandle} as soon as the
+     * row id is known. The handle's `settled` promise resolves on
+     * `done` (with the final agentrun's `result_text`) or rejects on
+     * `failed`.
      *
-     * The listener is installed *before* the INSERT to close the race
-     * where the agent could process the event between the insert
+     * The state listener is installed *before* the INSERT to close the
+     * race where the agent could process the event between the insert
      * returning and us subscribing. After insert, a one-shot SELECT
      * covers the (rarer) race where the event terminated before we
      * even saw the NOTIFY.
      *
-     * When `onStep` is provided, a second LISTEN on
+     * When `options.onStep` is provided, a second LISTEN on
      * `stepresults_new` is installed (also before the INSERT) and the
-     * callback is invoked for every step row whose `event_id`
-     * matches. Errors thrown inside `onStep` are caught and logged so
-     * a buggy subscriber can't break the emit. When `onStep` is
-     * omitted, no step listener is registered.
+     * callback is invoked for every step row whose `event_id` matches.
+     * Errors thrown inside the callback are caught and logged so a
+     * buggy subscriber can't break the emit.
+     *
+     * If the INSERT itself fails, both listeners are torn down and the
+     * outer promise rejects. Once the handle is returned, the caller
+     * owns awaiting `settled` (or attaching a `.catch`); listener
+     * teardown is anchored on `settled` resolving or rejecting.
      */
-    private async emitAndAwait(
-        event: NewEvent,
-        onStep?: (step: StepResultRow) => void | Promise<void>,
-        onEventInserted?: (eventId: string) => void,
-    ): Promise<string> {
+    private async emitAndAwait(event: NewEvent, options?: EmitOptions): Promise<EmitHandle> {
         const conn = await this.deps.ensureConnection();
         const bus = new EventBus(conn);
 
@@ -139,6 +138,7 @@ export class HostContextImpl implements HostContext {
 
         await conn.listen(EVENTS_STATE_CHANNEL, handler);
         let stepUnsubscribe: StepResultUnsubscribe | undefined;
+        const onStep = options?.onStep;
         if (onStep) {
             const stepBus = new StepResultBus(conn);
             stepUnsubscribe = await stepBus.listen(async (step) => {
@@ -158,53 +158,56 @@ export class HostContextImpl implements HostContext {
                 }
             });
         }
+
+        let row: Awaited<ReturnType<EventBus["add"]>>;
         try {
             const stamped: NewEvent =
                 event.preferredChatChannelId === undefined
                     ? { ...event, preferredChatChannelId: this.deps.defaultChatChannelId() }
                     : event;
-            const row = await bus.add(stamped);
+            row = await bus.add(stamped);
             waitedFor = row.id;
-            if (onEventInserted) {
-                try {
-                    onEventInserted(row.id);
-                } catch (err) {
-                    this.deps.log.error(
-                        {
-                            eventId: row.id,
-                            err: err instanceof Error ? err.message : String(err),
-                        },
-                        "events.emit onEventInserted callback error",
-                    );
-                }
-            }
-
-            // Close the early-settle race: NOTIFY may have fired
-            // between the INSERT and our setting `waitedFor`.
-            const current = await fetchEventState(conn, row.id);
-            if (current === "done" || current === "failed") {
-                terminalState = current;
-            }
-
-            while (!terminalState) {
-                await new Promise<void>((resolve) => {
-                    wakers.push(resolve);
-                });
-            }
-
-            if (terminalState === "failed") {
-                const err = await fetchFailureError(conn, row.id);
-                throw new Error(
-                    `Event ${row.id} (${event.topic}) failed: ${err ?? "(no error message)"}`,
-                );
-            }
-            return (await fetchFinalResultText(conn, row.id)) ?? "";
-        } finally {
+        } catch (err) {
+            // INSERT failed before we got an id — tear down listeners
+            // and propagate.
             if (stepUnsubscribe) {
                 await stepUnsubscribe();
             }
             await conn.unlisten(EVENTS_STATE_CHANNEL, handler);
+            throw err;
         }
+
+        const settled: Promise<string> = (async () => {
+            try {
+                // Close the early-settle race: NOTIFY may have fired
+                // between the INSERT and our setting `waitedFor`.
+                const current = await fetchEventState(conn, row.id);
+                if (current === "done" || current === "failed") {
+                    terminalState = current;
+                }
+
+                while (!terminalState) {
+                    await new Promise<void>((resolve) => {
+                        wakers.push(resolve);
+                    });
+                }
+
+                if (terminalState === "failed") {
+                    const err = await fetchFailureError(conn, row.id);
+                    throw new Error(
+                        `Event ${row.id} (${event.topic}) failed: ${err ?? "(no error message)"}`,
+                    );
+                }
+                return (await fetchFinalResultText(conn, row.id)) ?? "";
+            } finally {
+                if (stepUnsubscribe) {
+                    await stepUnsubscribe();
+                }
+                await conn.unlisten(EVENTS_STATE_CHANNEL, handler);
+            }
+        })();
+
+        return { id: row.id, settled };
     }
 }
 

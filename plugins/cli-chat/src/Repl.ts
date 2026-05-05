@@ -68,36 +68,34 @@ export async function runRepl(ctx: HostContext): Promise<void> {
             return;
         }
         renderer.setThinking("Sending event…");
-        const promise = ctx.events
-            .emit(
-                {
-                    topic: "chat:cli",
-                    isChat: true,
-                    preferredChatChannelId: CLI_CHANNEL,
-                    payload: { text: line },
-                },
-                (step) => {
-                    renderer.setThinking(formatStepLine(step));
-                },
-                (eventId) => {
-                    renderer.setThinking(`Sent event #${eventId}, preparing to think…`);
-                },
-            )
-            .then(
-                () => {
-                    // Drop result_text: the reply is delivered as a chat
-                    // message via subscribe, so printing result_text here
-                    // would just duplicate it.
-                    renderer.clearThinking();
-                },
-                (err) => {
-                    renderer.clearThinking();
-                    renderer.printError(err instanceof Error ? err.message : String(err));
-                },
-            )
-            .finally(() => {
-                inFlight.delete(promise);
-            });
+        const promise = (async () => {
+            try {
+                const handle = await ctx.events.emit(
+                    {
+                        topic: "chat:cli",
+                        isChat: true,
+                        preferredChatChannelId: CLI_CHANNEL,
+                        payload: { text: line },
+                    },
+                    {
+                        onStep: (step) => {
+                            renderer.setThinking(formatStepLine(step));
+                        },
+                    },
+                );
+                renderer.setThinking(`Sent event #${handle.id}, preparing to think…`);
+                // Drop result_text: the reply is delivered as a chat
+                // message via subscribe, so printing result_text here
+                // would just duplicate it.
+                await handle.settled;
+                renderer.clearThinking();
+            } catch (err) {
+                renderer.clearThinking();
+                renderer.printError(err instanceof Error ? err.message : String(err));
+            }
+        })().finally(() => {
+            inFlight.delete(promise);
+        });
         inFlight.add(promise);
     };
 

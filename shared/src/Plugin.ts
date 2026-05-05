@@ -34,35 +34,57 @@ export type AnyCommandDef = CommandDef<any>;
  * plugin (cli-chat) needs. New capabilities are added on demand as
  * plugins surface them.
  */
+/**
+ * Optional callbacks passed alongside `ctx.events.emit`. Bundled into
+ * an options object so additional per-emit hooks (e.g. cancellation,
+ * progress) can be added without breaking the call signature.
+ */
+export interface EmitOptions {
+    /**
+     * Fired for every step row inserted into `stepresults` for this
+     * event, in INSERT order. Errors thrown by the callback are caught
+     * and logged so a buggy subscriber can't break the emit. When
+     * omitted, no `stepresults_new` LISTEN is registered (zero
+     * overhead).
+     */
+    readonly onStep?: (step: StepResultRow) => void | Promise<void>;
+}
+
+/**
+ * Handle returned by `ctx.events.emit` once the event row has been
+ * persisted. The two halves let callers act on the assigned id
+ * immediately (e.g. registering it in an in-flight tracker) without
+ * blocking on agent execution.
+ */
+export interface EmitHandle {
+    /** Database id of the inserted event row, available immediately. */
+    readonly id: string;
+    /**
+     * Resolves with the `result_text` of the last-settled agentrun
+     * for the event (empty string if the handler produced no text).
+     * Rejects with an `Error` carrying the failed agentrun's `error`
+     * message when the event terminates in `failed`.
+     *
+     * Consumers MUST attach a `.then`/`.catch` (or `await`) to this
+     * promise — otherwise a `failed` event surfaces as an unhandled
+     * rejection.
+     */
+    readonly settled: Promise<string>;
+}
+
 export interface HostContext {
     /**
-     * Emit an event into the bus and **wait** for it to settle.
+     * Emit an event into the bus. The returned outer promise resolves
+     * once the row has been inserted (so the assigned id is known); the
+     * `settled` field on the resolved handle reaches its terminal
+     * state when the event finishes processing.
      *
-     * On `done`: returns the `result_text` of the last-settled
-     * agentrun for the event (empty string if the handler wrote no
-     * text). On `failed`: throws an `Error` carrying that agentrun's
-     * `error` message.
-     *
-     * Implementation subscribes to `events_state` before inserting
-     * to avoid missing the terminal NOTIFY on a fast-processed event.
-     *
-     * @param onStep Optional callback fired for every step row
-     *   inserted into `stepresults` for this event, in INSERT order.
-     *   Errors thrown by the callback are caught and logged so a bad
-     *   subscriber can't break the emit. When omitted, no
-     *   `stepresults_new` LISTEN is registered (zero overhead).
-     * @param onEventInserted Optional callback fired exactly once,
-     *   with the event id, immediately after the row is INSERTed and
-     *   before the wait for terminal state begins. Lets callers show
-     *   "sent event #id" feedback before the agent starts producing
-     *   step results.
+     * Implementation subscribes to `events_state` before inserting to
+     * avoid missing the terminal NOTIFY on a fast-processed event, and
+     * tears the subscription down when `settled` resolves or rejects.
      */
     readonly events: {
-        emit(
-            event: NewEvent,
-            onStep?: (step: StepResultRow) => void | Promise<void>,
-            onEventInserted?: (eventId: string) => void,
-        ): Promise<string>;
+        emit(event: NewEvent, options?: EmitOptions): Promise<EmitHandle>;
     };
     /**
      * Chat capabilities. Currently exposes only `subscribe` — user
