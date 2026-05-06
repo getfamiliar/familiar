@@ -1,25 +1,20 @@
 #!/bin/bash
 # Effective Assistant CLI — single entry point.
-# Loads .env, builds the host package if stale, and dispatches to the
-# citty-based subcommand router in host/src/index.ts.
+# Verifies config/config.yml exists, builds the host package if stale,
+# and dispatches to the citty-based subcommand router in
+# host/src/index.ts.
 
 set -e
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOST="${ROOT}/host"
-ENV_FILE="${ROOT}/.env"
+CONFIG_FILE="${ROOT}/config/config.yml"
 
-if [ ! -f "${ENV_FILE}" ]; then
-  echo "Error: ${ENV_FILE} not found. Copy .env.example to .env and fill it in." >&2
+if [ ! -f "${CONFIG_FILE}" ]; then
+  echo "Error: ${CONFIG_FILE} not found." >&2
+  echo "Copy config/config.example.yml to config/config.yml and fill it in." >&2
   exit 1
 fi
-
-# Load .env into the environment for the Node process.
-# (Node 20.6+ has --env-file natively; we shell-source for portability with older nodes.)
-set -a
-# shellcheck disable=SC1090
-source "${ENV_FILE}"
-set +a
 
 if [ ! -f "${HOST}/build/index.js" ] \
    || [ "${HOST}/src/index.ts" -nt "${HOST}/build/index.js" ]; then

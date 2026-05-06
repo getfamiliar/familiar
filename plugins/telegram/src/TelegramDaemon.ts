@@ -22,40 +22,27 @@ export interface TelegramConfig {
 }
 
 /**
- * Read `TELEGRAM_BOT_TOKEN` and `TELEGRAM_AUTHORIZED_USER_ID` from
- * `process.env`. Returns `null` when the token is missing — the plugin
- * self-disables in that case rather than bringing the host down.
+ * Read the plugin's configuration from `ctx.config`. Returns `null`
+ * when `telegram.botToken` is absent so the plugin self-disables
+ * rather than bringing the host down.
  *
- * The user id is optional: if absent or unparseable, returns
- * `authorizedUserId: null`, putting the bot into discovery mode.
+ * The user id is optional and tolerates malformed input by falling
+ * back to discovery mode (`authorizedUserId: null`), matching the
+ * pre-config-service env-parsing behavior.
  *
  * @returns Config object, or `null` when the bot should not start.
  */
-export function readTelegramConfig(): TelegramConfig | null {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
+export function readTelegramConfig(ctx: HostContext): TelegramConfig | null {
+    const token = ctx.config.getString("telegram.botToken", null);
     if (!token) {
         return null;
     }
-    return {
-        token,
-        authorizedUserId: parseAuthorizedUserId(process.env.TELEGRAM_AUTHORIZED_USER_ID),
-    };
-}
-
-/**
- * Parse a positive integer from the env value. Returns `null` for
- * unset, empty, non-numeric, or non-positive values. Callers treat
- * `null` as "discovery mode".
- */
-function parseAuthorizedUserId(raw: string | undefined): number | null {
-    if (!raw) {
-        return null;
-    }
-    const n = Number.parseInt(raw, 10);
-    if (!Number.isFinite(n) || n <= 0) {
-        return null;
-    }
-    return n;
+    const userIdRaw = ctx.config.getNumber("telegram.authorizedUserId", null);
+    const authorizedUserId =
+        typeof userIdRaw === "number" && Number.isInteger(userIdRaw) && userIdRaw > 0
+            ? userIdRaw
+            : null;
+    return { token, authorizedUserId };
 }
 
 /**
@@ -69,13 +56,13 @@ function parseAuthorizedUserId(raw: string | undefined): number | null {
  * and logged; the host stays up regardless.
  *
  * Self-disables (returns early after a log line) when
- * `TELEGRAM_BOT_TOKEN` is unset, so users without telegram configured
- * see no impact.
+ * `telegram.botToken` is unset in `config/config.yml`, so users
+ * without telegram configured see no impact.
  */
 export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
-    const config = readTelegramConfig();
+    const config = readTelegramConfig(ctx);
     if (!config) {
-        ctx.log("telegram disabled: TELEGRAM_BOT_TOKEN not set");
+        ctx.log("telegram disabled: telegram.botToken not set in config/config.yml");
         return;
     }
     const { token, authorizedUserId } = config;
@@ -93,7 +80,7 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
 
     if (authorizedUserId === null) {
         ctx.log(
-            `telegram running in discovery mode (no TELEGRAM_AUTHORIZED_USER_ID set); message @${me.username} to learn your id`,
+            `telegram running in discovery mode (no telegram.authorizedUserId set); message @${me.username} to learn your id`,
         );
     } else {
         ctx.log(`telegram authorized user id: ${authorizedUserId}`);
@@ -179,7 +166,7 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
 
     await ctx.chat.subscribe({ channelId: TELEGRAM_CHANNEL, role: "assistant" }, async (m) => {
         if (authorizedUserId === null) {
-            ctx.log("dropping telegram assistant msg: no TELEGRAM_AUTHORIZED_USER_ID");
+            ctx.log("dropping telegram assistant msg: no telegram.authorizedUserId");
             return true;
         }
         try {
@@ -381,8 +368,8 @@ async function emitChatEvent(
  *   identifiable sender. No reply — those cases shouldn't reveal
  *   the bot's behavior to scanners or to group chats it was added to.
  * - **Replies and rejects** when the bot is configured but no
- *   `TELEGRAM_AUTHORIZED_USER_ID` is set: tells the sender their
- *   numeric id so the operator can paste it into `.env`.
+ *   `telegram.authorizedUserId` is set: tells the sender their
+ *   numeric id so the operator can paste it into `config/config.yml`.
  * - **Replies and rejects** when the sender is not the authorized
  *   user.
  * - **Allows** when the sender matches `authorizedUserId`.
@@ -401,7 +388,7 @@ async function isChatAllowed(gctx: Context, authorizedUserId: number | null): Pr
     }
     if (authorizedUserId === null) {
         await gctx.reply(
-            `Not authorized. Your user id is ${senderId}. Add TELEGRAM_AUTHORIZED_USER_ID=${senderId} to .env and restart.`,
+            `Not authorized. Your user id is ${senderId}. Set telegram.authorizedUserId: ${senderId} in config/config.yml and restart.`,
         );
         return false;
     }

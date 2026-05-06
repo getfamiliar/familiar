@@ -6,10 +6,10 @@ import { readTelegramConfig, splitForTelegram } from "./TelegramDaemon.js";
 /**
  * Build the citty subcommands exposed under `./cli.sh telegram`.
  *
- * Each subcommand re-reads env on invocation rather than capturing a
- * snapshot from the daemon — invoking the CLI typically happens in a
- * separate process from the running daemon, so config must come from
- * `.env` either way.
+ * Each subcommand re-reads `ctx.config` on invocation rather than
+ * capturing a snapshot from the daemon — invoking the CLI typically
+ * happens in a separate process from the running daemon, so config
+ * must come from disk either way.
  */
 // biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
 export function buildCommands(ctx: HostContext): readonly CommandDef<any>[] {
@@ -19,18 +19,20 @@ export function buildCommands(ctx: HostContext): readonly CommandDef<any>[] {
 /**
  * `./cli.sh telegram status` — print token presence, bot identity (via
  * a live `getMe` when the token is set), authorization state, and a
- * pointer to `DEFAULT_CHAT_CHANNEL_ID`. Read-only; no side effects.
+ * pointer to `core.defaultChatChannel`. Read-only; no side effects.
  */
-function statusCommand(_ctx: HostContext) {
+function statusCommand(ctx: HostContext) {
     return defineCommand({
         meta: {
             name: "status",
             description: "Show Telegram plugin configuration and bot identity.",
         },
         async run() {
-            const config = readTelegramConfig();
+            const config = readTelegramConfig(ctx);
             if (!config) {
-                process.stdout.write("Telegram disabled: TELEGRAM_BOT_TOKEN not set.\n");
+                process.stdout.write(
+                    "Telegram disabled: telegram.botToken not set in config/config.yml.\n",
+                );
                 return;
             }
             const tokenSummary = `${config.token.slice(0, 6)}…${config.token.slice(-4)}`;
@@ -53,8 +55,8 @@ function statusCommand(_ctx: HostContext) {
                 process.stdout.write(`Authorized user id: ${config.authorizedUserId}\n`);
             }
             process.stdout.write(
-                "\nTip: set DEFAULT_CHAT_CHANNEL_ID=telegram in .env so workflow-triggered\n" +
-                    "proactive messages route to Telegram by default.\n",
+                "\nTip: set core.defaultChatChannel: telegram in config/config.yml so\n" +
+                    "workflow-triggered proactive messages route to Telegram by default.\n",
             );
         },
     });
@@ -66,7 +68,7 @@ function statusCommand(_ctx: HostContext) {
  * combination is wired up. Bypasses the chatmessages pipeline, so
  * messages sent this way do NOT appear in the agent's chat history.
  */
-function sendCommand(_ctx: HostContext) {
+function sendCommand(ctx: HostContext) {
     return defineCommand({
         meta: {
             name: "send",
@@ -81,15 +83,17 @@ function sendCommand(_ctx: HostContext) {
             },
         },
         async run({ args }) {
-            const config = readTelegramConfig();
+            const config = readTelegramConfig(ctx);
             if (!config) {
-                process.stderr.write("Telegram disabled: TELEGRAM_BOT_TOKEN not set in .env.\n");
+                process.stderr.write(
+                    "Telegram disabled: telegram.botToken not set in config/config.yml.\n",
+                );
                 process.exit(1);
             }
             if (config.authorizedUserId === null) {
                 process.stderr.write(
-                    "Cannot send: TELEGRAM_AUTHORIZED_USER_ID is not set. " +
-                        "Set it in .env (run `./cli.sh telegram status` for guidance).\n",
+                    "Cannot send: telegram.authorizedUserId is not set. " +
+                        "Set it in config/config.yml (run `./cli.sh telegram status` for guidance).\n",
                 );
                 process.exit(1);
             }

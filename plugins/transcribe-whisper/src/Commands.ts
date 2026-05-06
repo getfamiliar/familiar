@@ -18,15 +18,20 @@ export function buildCommands(_ctx: HostContext): readonly CommandDef<any>[] {
 /**
  * `./cli.sh transcribe-whisper test <path>` — read a local audio
  * file, send it through {@link transcribeAudio}, and print the
- * transcript. The operator's smoke test for "is OPENAI_API_KEY set
- * up correctly?" without needing a live channel plugin.
+ * transcript. The operator's smoke test for
+ * "is `inference.apiKeys.openai` set up correctly?" without needing
+ * a live channel plugin.
+ *
+ * No explicit init call here — the host wraps every plugin command's
+ * `run` so `prepare(ctx)` has already fired by the time we land in
+ * the body, populating the module-level API key.
  */
 function testCommand() {
     return defineCommand({
         meta: {
             name: "test",
             description:
-                "Transcribe a local audio file with Whisper and print the result. Useful for verifying OPENAI_API_KEY.",
+                "Transcribe a local audio file with Whisper and print the result. Useful for verifying inference.apiKeys.openai.",
         },
         args: {
             path: {

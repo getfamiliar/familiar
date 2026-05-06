@@ -147,10 +147,47 @@ workspace/
 
 Files are plain markdown. Handlers read and write them through the file-system MCP. The workspace can be backed by a git repo for free versioning.
 
-### 3. Plugin configuration and secrets (host, encrypted)
+### 3. Configuration and secrets (host, YAML)
 
-* There's a global config file in `config/config.yml` for all non-sensitive settings.
-* Credentials are stored in the project root `.env` file.
+All configuration — sensitive and non-sensitive — lives in
+`config/config.yml` (gitignored; `config/config.example.yml` is the
+tracked sample). The host accesses it via two services:
+
+- **`ConfigService`** (interface in `shared/src/Config.ts`,
+  implementation in `host/src/config/ConfigService.ts`) is the runtime
+  read/write surface. Plugin-agnostic; exposes
+  `getString(key)` / `getNumber(key)` / `getArray(key)` keyed by
+  dotted paths (e.g. `"core.postgresPassword"`,
+  `"telegram.botToken"`), with optional defaults that widen the
+  return type to include the default when omitted-vs-throws is the
+  difference between "throw on missing" and "return null". Plugins
+  reach it via `ctx.config`. **No plugin-specific types in `shared/`.**
+- **`ConfigLinter`** (`host/src/config/ConfigLinter.ts`) validates
+  the file at boot: file readable, parses as a YAML mapping, contains
+  the platform-level minimum (`core.postgresPassword`,
+  `core.defaultChatChannel`, `inference.provider`,
+  `inference.defaultModel`, `inference.apiKeys.<provider>`). Unknown
+  top-level groups are ignored — plugins own their own keys, the
+  platform doesn't enumerate them.
+
+Top-level groups in `config/config.yml`:
+
+- `core` — `postgresPassword`, `defaultChatChannel`, optional
+  `logRetentionDays`. Required.
+- `inference` — `provider`, `defaultModel`, `apiKeys.<provider>` map.
+  Required.
+- per-plugin (`telegram`, `whatsapp`, …) — owned by the plugin;
+  plugin parses its own subtree and self-disables when absent.
+
+Container-side env stays explicit: `Start.ts` reads from the config
+service and hand-picks which values become container env vars.
+**Proxy-placeholder API keys** (e.g. `FEATHERLESS_API_KEY=via-proxy`
+inside `ea-agent`) are hardcoded in the container launcher
+(`AgentContainer.ts`); the real upstream key only flows from config →
+`ReverseProxyContainer.upstreamApiKey`.
+
+CLI: `./cli.sh config lint` validates the file. `./cli.sh start`
+runs the linter implicitly before bringing the daemon up.
 
 ## Plugins
 
@@ -306,7 +343,7 @@ The `data/` folder is the persistent host-side storage. Layout:
 ## Architecture
 
 - **shared/**: TypeScript package (`effective-assistant-shared`) used by both host and container. Both sides depend on it via `"file:../shared"` in their package.json. Contains the `EventBus` / `AgentRunBus` / `PostgresConnection` clients, the events + agentruns schema (with `EVENT_TERMINAL_UPDATE_SQL` helper), and the related types. Must be built (`npm run build`) before host or container can compile. The Docker build handles this automatically.
-- **host/**: Single Node.js CLI entry at `host/src/index.ts` using [citty](https://github.com/unjs/citty) for subcommand dispatch. Subcommands live in `host/src/commands/` (`Start`, `Stop`, `Event`); shared paths and env access live in `host/src/Bootstrap.ts`. Invoked through one root wrapper, `./cli.sh <subcommand>`, which loads `.env` and rebuilds the host package if stale. The `start` subcommand runs as a long-running daemon that manages two singleton Docker containers: the bus-state postgres `ea-postgres` and the agent runtime `ea-agent`. Both join the shared bridge network `ea-net`. Postgres is published on `127.0.0.1:<port>:5432` only (port chosen at startup; written to `data/.postgres-port`). All host↔container communication flows through the postgres `events` and `agentruns` tables — there is no file-based IPC.
+- **host/**: Single Node.js CLI entry at `host/src/index.ts` using [citty](https://github.com/unjs/citty) for subcommand dispatch. Subcommands live in `host/src/commands/` (`Start`, `Stop`, `Event`, `Config`); shared paths live in `host/src/Bootstrap.ts`; the YAML-backed `ConfigService` and `ConfigLinter` live in `host/src/config/`. Invoked through one root wrapper, `./cli.sh <subcommand>`, which verifies `config/config.yml` exists and rebuilds the host package if stale. The `start` subcommand runs as a long-running daemon that manages two singleton Docker containers: the bus-state postgres `ea-postgres` and the agent runtime `ea-agent`. Both join the shared bridge network `ea-net`. Postgres is published on `127.0.0.1:<port>:5432` only (port chosen at startup; written to `data/.postgres-port`). All host↔container communication flows through the postgres `events` and `agentruns` tables — there is no file-based IPC.
 - **host/src/db/**: Postgres lifecycle. `PostgresContainer` runs `postgres:16-alpine`, picks a free loopback port, joins `ea-net`, and waits for `pg_isready`. Hardcoded dev credentials: `POSTGRES_USER=ea`, `POSTGRES_PASSWORD=ea`, `POSTGRES_DB=ea`. Container code reaches the DB at `ea-postgres:5432`; host code at `127.0.0.1:<port>` (port from `data/.postgres-port`).
 - **container/**: Docker container definition for the agent runtime. Long-running; built once, started by the host daemon and reused across all tasks.
   - Base image: `node:24-slim`. Currently no LLM SDK is installed — Featherless integration is the next step.

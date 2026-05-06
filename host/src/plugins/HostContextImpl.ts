@@ -3,6 +3,7 @@ import {
     type ChatHandler,
     ChatMessageBus,
     type ChatUnsubscribe,
+    type ConfigService,
     type EmitHandle,
     type EmitOptions,
     EVENTS_STATE_CHANNEL,
@@ -25,11 +26,13 @@ export interface HostContextImplDeps {
     /** Open (or return the already-open) shared postgres connection. */
     ensureConnection(): Promise<PostgresConnection>;
     /**
-     * Default chat channel id, stamped onto events whose emitter did
-     * not specify a `preferredChatChannelId`. Resolved lazily so
-     * commands that never touch chat don't trigger env validation.
+     * Shared host {@link ConfigService}, exposed to plugins as
+     * `ctx.config`. Also used internally by `emit` to stamp the
+     * default chat channel — kept on the same instance the plugins
+     * see so a runtime `set()` from one consumer is observed by the
+     * others.
      */
-    defaultChatChannelId(): string;
+    config: ConfigService;
     /**
      * Per-plugin logger used by `ctx.log(...)`. The owner is expected
      * to scope this to the plugin (e.g. via `Logger.child`) before
@@ -80,6 +83,10 @@ export class HostContextImpl implements HostContext {
 
     get dataDir(): string {
         return this.deps.dataDir;
+    }
+
+    get config(): ConfigService {
+        return this.deps.config;
     }
 
     /**
@@ -174,7 +181,11 @@ export class HostContextImpl implements HostContext {
         try {
             const stamped: NewEvent =
                 event.preferredChatChannelId === undefined
-                    ? { ...event, preferredChatChannelId: this.deps.defaultChatChannelId() }
+                    ? {
+                          ...event,
+                          preferredChatChannelId:
+                              this.deps.config.getString("core.defaultChatChannel"),
+                      }
                     : event;
             row = await bus.add(stamped);
             waitedFor = row.id;

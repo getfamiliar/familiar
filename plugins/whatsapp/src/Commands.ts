@@ -46,9 +46,11 @@ function statusCommand(ctx: HostContext) {
                     `Not linked. Run \`./cli.sh whatsapp link\` to pair this device.\nAuth dir (will be created on link): ${auth.authDir}\n`,
                 );
             }
-            const allowlist = process.env.WHATSAPP_GROUP_ALLOWLIST?.trim();
-            if (allowlist) {
-                process.stdout.write(`Group allowlist: ${allowlist}\n`);
+            const allowlist = ctx.config
+                .getArray("whatsapp.groupAllowlist", [])
+                .filter((s): s is string => typeof s === "string" && s.trim().length > 0);
+            if (allowlist.length > 0) {
+                process.stdout.write(`Group allowlist: ${allowlist.join(", ")}\n`);
             } else {
                 process.stdout.write(
                     "Group allowlist: (unset — all groups the linked account is in are observed)\n",

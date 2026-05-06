@@ -3,6 +3,7 @@ import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { defineCommand } from "citty";
 import {
+    type ConfigService,
     createLogger,
     EventBus,
     jsonStdoutStream,
@@ -12,6 +13,8 @@ import {
 } from "effective-assistant-shared";
 import type { Bootstrap } from "../Bootstrap.js";
 import { bootstrap } from "../Bootstrap.js";
+import { lintOrThrow } from "../config/ConfigLinter.js";
+import { HostConfigService } from "../config/ConfigService.js";
 import { AgentContainer } from "../container-runner/AgentContainer.js";
 import { ReverseProxyContainer } from "../container-runner/ReverseProxyContainer.js";
 import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools.js";
@@ -46,21 +49,40 @@ export const startCommand = defineCommand({
     async run({ args }) {
         const boot = bootstrap();
         const verbose = Boolean(args.verbose);
-        const log = await buildDaemonLogger(boot, verbose);
 
-        const postgresPassword = boot.requireEnv("POSTGRES_PASSWORD");
-        const featherlessApiKey = boot.requireEnv("FEATHERLESS_API_KEY");
-        // Validated at startup so the daemon fails fast; the actual
-        // value is read lazily via `boot.requireEnv` from inside
-        // `HostContextImpl` when chat events are stamped.
-        boot.requireEnv("DEFAULT_CHAT_CHANNEL_ID");
+        // Lint first so a malformed config.yml fails with one clear
+        // diagnostic instead of cascading per-call failures further
+        // down the startup path. The bootstrap logger handles this
+        // pre-config-load failure path; the daemon logger (with rolling
+        // file sink) is built once we know logRetentionDays.
+        const bootLog = createLogger({
+            component: "host",
+            level: verbose ? "debug" : "info",
+            streams: [process.stdout.isTTY ? prettyStdoutStream() : jsonStdoutStream()],
+        });
+        lintOrThrow(boot.configFile, bootLog);
+        const config = new HostConfigService(boot.configFile);
+
+        const postgresPassword = config.getString("core.postgresPassword");
+        const provider = config.getString("inference.provider");
+        const upstreamInferenceKey = config.getString(`inference.apiKeys.${provider}`);
+        // Touch the chat-channel default so a missing value fails the
+        // daemon now rather than at first chat event.
+        config.getString("core.defaultChatChannel");
+
+        const log = await buildDaemonLogger(boot, config, verbose);
 
         ensureDirs(boot);
         writePidFile(boot.pidFile);
 
-        const pluginHost = new PluginHost(boot, log);
+        const pluginHost = new PluginHost(boot, log, config);
         pluginHost.installWorkspaceTemplates();
         log.info("plugin workspace templates installed");
+
+        // Sync plugin init runs before any `start(ctx)` so cross-
+        // plugin module state (e.g. transcribe-whisper's API key) is
+        // visible to siblings the moment they begin serving.
+        pluginHost.prepareAll();
 
         const postgres = new PostgresContainer({
             dataPath: boot.dataDir,
@@ -70,7 +92,7 @@ export const startCommand = defineCommand({
         const reverseProxy = new ReverseProxyContainer({
             imageName: "ea-reverse-proxy",
             upstreamBase: FEATHERLESS_UPSTREAM_BASE,
-            upstreamApiKey: featherlessApiKey,
+            upstreamApiKey: upstreamInferenceKey,
         });
         const container = new AgentContainer({
             imageName: "effective-agent",
@@ -152,13 +174,19 @@ export const startCommand = defineCommand({
 /**
  * Build the daemon's root logger. Stdout is pretty-printed when
  * attached to a TTY, raw JSON otherwise. A second stream rolls
- * `data/logs/ea.YYYYMMDD.<n>.log` daily with the configured retention.
+ * `data/logs/ea.YYYYMMDD.<n>.log` daily; retention is read from
+ * `core.logRetentionDays` and falls back to 7 when absent.
  */
-async function buildDaemonLogger(boot: Bootstrap, verbose: boolean): Promise<Logger> {
+async function buildDaemonLogger(
+    boot: Bootstrap,
+    config: ConfigService,
+    verbose: boolean,
+): Promise<Logger> {
     mkdirSync(boot.logsDir, { recursive: true });
+    const retention = config.getNumber("core.logRetentionDays", 7);
     const streams: LogStream[] = [
         process.stdout.isTTY ? prettyStdoutStream() : jsonStdoutStream(),
-        await rollingFileStream(boot.logsDir, boot.logRetentionDays),
+        await rollingFileStream(boot.logsDir, retention),
     ];
     return createLogger({
         component: "host",

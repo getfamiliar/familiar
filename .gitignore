@@ -3,5 +3,6 @@ build/
 *.tsbuildinfo
 /tmp/
 .env
+config/config.yml
 data/*
 !data/workspace-template/

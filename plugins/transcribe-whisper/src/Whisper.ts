@@ -1,6 +1,35 @@
 import OpenAI, { toFile } from "openai";
 
 /**
+ * Module-private OpenAI key. Populated once when the plugin is
+ * initialized (see {@link setApiKey} and the `start(ctx)` hook in
+ * `index.ts`); read on every {@link transcribeAudio} call.
+ *
+ * Module-level rather than parameter-passed so callers in other
+ * plugins don't have to know about — or read — Whisper's
+ * authentication: `transcribeAudio(audio, name)` is the entire
+ * surface they see.
+ */
+let apiKey: string | undefined;
+
+/**
+ * Install the OpenAI API key. Called once by the plugin manifest's
+ * `start(ctx)` hook with `ctx.config.getString("inference.apiKeys.openai")`,
+ * and from the plugin's own CLI commands before they run (because
+ * one-shot CLI invocations don't go through `startDaemons`).
+ *
+ * Idempotent — safe to call multiple times. Empty strings are
+ * rejected so a misconfigured field surfaces here instead of as an
+ * opaque OpenAI auth failure on the next transcription.
+ */
+export function setApiKey(key: string): void {
+    if (!key) {
+        throw new Error("setApiKey requires a non-empty key.");
+    }
+    apiKey = key;
+}
+
+/**
  * Transcribe a buffered audio file using OpenAI's Whisper API
  * (model `whisper-1`).
  *
@@ -18,29 +47,20 @@ import OpenAI, { toFile } from "openai";
  * @param audio The raw audio bytes.
  * @param filename The original filename (only the extension matters).
  * @returns The transcribed text.
- * @throws If `OPENAI_API_KEY` is unset or the API call fails.
+ * @throws If the plugin has not been initialized via {@link setApiKey}
+ *   or the API call fails.
  */
 export async function transcribeAudio(audio: Buffer, filename: string): Promise<string> {
-    const client = new OpenAI({ apiKey: readApiKey() });
+    if (!apiKey) {
+        throw new Error(
+            "transcribe-whisper is not initialized: call setApiKey, or run inside the host daemon so the plugin's start(ctx) hook fires.",
+        );
+    }
+    const client = new OpenAI({ apiKey });
     const file = await toFile(audio, filename);
     const result = await client.audio.transcriptions.create({
         file,
         model: "whisper-1",
     });
     return result.text;
-}
-
-/**
- * Read `OPENAI_API_KEY` from the environment, throwing a clear
- * actionable error if it's missing. Read on every call rather than
- * cached at module load: the daemon is long-running, and `.env`
- * edits should take effect on the next transcription without a
- * restart.
- */
-function readApiKey(): string {
-    const key = process.env.OPENAI_API_KEY;
-    if (!key) {
-        throw new Error("OPENAI_API_KEY is not set. Add it to .env at the repo root.");
-    }
-    return key;
 }

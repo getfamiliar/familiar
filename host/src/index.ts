@@ -1,6 +1,7 @@
 import { defineCommand, runMain } from "citty";
 import { createLogger, prettyStdoutStream } from "effective-assistant-shared";
 import { bootstrap } from "./Bootstrap.js";
+import { configCommand } from "./commands/Config.js";
 import { eventCommand } from "./commands/Event.js";
 import { psqlCommand } from "./commands/Psql.js";
 import { startCommand } from "./commands/Start.js";
@@ -40,6 +41,7 @@ runMain(
             stop: stopCommand,
             event: eventCommand,
             psql: psqlCommand,
+            config: configCommand,
             ...pluginHost.buildSubCommands(),
         },
     }),

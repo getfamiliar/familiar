@@ -1,6 +1,7 @@
 import { defineCommand } from "citty";
 import { EventBus } from "effective-assistant-shared";
 import { bootstrap } from "../Bootstrap.js";
+import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 
 /**
@@ -39,7 +40,8 @@ export const eventCommand = defineCommand({
     },
     async run({ args }) {
         const boot = bootstrap();
-        const password = boot.requireEnv("POSTGRES_PASSWORD");
+        const config = new HostConfigService(boot.configFile);
+        const password = config.getString("core.postgresPassword");
 
         const priority = parsePriority(args.priority);
         const payload = parsePayload(args.payload);

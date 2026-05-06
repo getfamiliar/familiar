@@ -1,0 +1,56 @@
+# Effective Assistant — sample config.
+# Copy this file to config/config.yml (gitignored) and fill in the
+# real values. The platform reads it at daemon boot via the linter
+# (`./cli.sh config lint`) and at runtime via the host ConfigService.
+
+core:
+  # Password for the bus-state postgres (`ea-postgres`). Used by the
+  # host daemon to start the container, by the agent container (passed
+  # in via -e), and by host-side CLIs (event, etc.). Database name and
+  # user are hardcoded as `ea`.
+  postgresPassword: ea
+
+  # Chat channel the user prefers to be contacted on. Set to a
+  # messenger plugin like "whatsapp" or "telegram" once you've set up
+  # such an integration. Defaults to "cli" so you can chat from the
+  # terminal without any plugin configured.
+  defaultChatChannel: cli
+
+  # Number of rolled-over log files kept beyond the active one.
+  # Optional; falls back to 7 when omitted.
+  logRetentionDays: 7
+
+inference:
+  # Inference provider id. The matching key under `inference.apiKeys`
+  # is used to authenticate the host's reverse proxy upstream.
+  provider: featherless
+
+  # Default model handlers run under unless they declare otherwise in
+  # their handler markdown frontmatter.
+  defaultModel: zai-org/GLM-5.1
+
+  # Provider id → API key. Add an entry for every provider you want to
+  # reach. The key for `inference.provider` is required at boot; other
+  # entries (e.g. `openai` for transcribe-whisper) are read on demand.
+  apiKeys:
+    featherless: REPLACE_ME
+    # openai: REPLACE_ME           # required by transcribe-whisper
+
+# --- Plugin-owned subtrees below. Each plugin parses + validates its
+# --- own keys; the platform linter does not police them.
+
+# Telegram plugin. botToken comes from BotFather (/newbot). Leave the
+# user id null on first boot — the bot enters discovery mode and
+# replies with the numeric id of any sender, which you paste back
+# here and restart.
+# telegram:
+#   botToken: ""
+#   authorizedUserId: null
+
+# WhatsApp plugin group allowlist. Empty / omitted means every group
+# the linked account is in is observed. Each entry is matched against
+# the message's remoteJid via endsWith, so users can write either the
+# full JID or just the numeric id.
+# whatsapp:
+#   groupAllowlist:
+#     - "1203....@g.us"

@@ -123,7 +123,7 @@ export async function startWhatsAppDaemon(ctx: HostContext): Promise<void> {
  * the device before another connection makes sense.
  */
 async function runConnectionLoop(ctx: HostContext, auth: WhatsAppAuth): Promise<void> {
-    const allowlist = parseGroupAllowlist(process.env.WHATSAPP_GROUP_ALLOWLIST);
+    const allowlist = parseGroupAllowlist(ctx.config.getArray("whatsapp.groupAllowlist", null));
     if (allowlist) {
         ctx.log(`whatsapp group allowlist: ${allowlist.join(", ")}`);
     }
@@ -334,17 +334,22 @@ async function resolveGroupName(
 }
 
 /**
- * Parse `WHATSAPP_GROUP_ALLOWLIST` (comma-separated). Empty / unset
- * returns `null` meaning "all groups allowed". Each entry is matched
- * against the message's `remoteJid` via `endsWith` so users can write
- * either the full JID (`12345-67890@g.us`) or just the numeric id.
+ * Coerce the raw `whatsapp.groupAllowlist` config value to a list of
+ * non-empty string entries. `null` / missing returns `null`, meaning
+ * "all groups allowed". Each entry is matched against the message's
+ * `remoteJid` via `endsWith` so users can write either the full JID
+ * (`12345-67890@g.us`) or just the numeric id.
+ *
+ * Non-string elements are filtered out (loud-but-not-fatal). The
+ * config service hands back `unknown[]`, so the plugin owns shape
+ * checking.
  */
-function parseGroupAllowlist(raw: string | undefined): readonly string[] | null {
-    if (!raw) {
+function parseGroupAllowlist(raw: readonly unknown[] | null): readonly string[] | null {
+    if (raw === null) {
         return null;
     }
     const entries = raw
-        .split(",")
+        .filter((s): s is string => typeof s === "string")
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
     if (entries.length === 0) {

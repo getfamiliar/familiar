@@ -2,11 +2,13 @@ import { cpSync, existsSync } from "node:fs";
 import { defineCommand } from "citty";
 import type {
     AnyCommandDef,
+    ConfigService,
     HostContext,
     Logger,
     PostgresConnection,
 } from "effective-assistant-shared";
 import type { Bootstrap } from "../Bootstrap.js";
+import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { HostContextImpl } from "./HostContextImpl.js";
 import { plugins } from "./Registry.js";
@@ -25,11 +27,14 @@ import { plugins } from "./Registry.js";
 export class PluginHost {
     private readonly boot: Bootstrap;
     private readonly log: Logger;
+    private readonly config: ConfigService;
     private connection: PostgresConnection | undefined;
+    private prepared = false;
 
-    constructor(boot: Bootstrap, log: Logger) {
+    constructor(boot: Bootstrap, log: Logger, config?: ConfigService) {
         this.boot = boot;
         this.log = log;
+        this.config = config ?? new HostConfigService(boot.configFile);
     }
 
     /**
@@ -98,9 +103,42 @@ export class PluginHost {
     }
 
     /**
+     * Run every plugin's synchronous `prepare(ctx)` hook once per
+     * process. Idempotent — repeated calls are no-ops, so individual
+     * command entry points can call this without coordinating.
+     *
+     * Called automatically before any plugin one-shot command's
+     * `run` (see {@link wrapForExit}) and explicitly by the daemon
+     * `start` command before {@link startDaemons}. Not invoked from
+     * introspective paths (`--help`, `config lint`) so a broken
+     * config still lets the user inspect / lint.
+     *
+     * Plugin failures here propagate — `prepare` is supposed to be
+     * trivial setup, so a throw means the plugin is misconfigured
+     * and refusing to proceed is the right behavior.
+     */
+    prepareAll(): void {
+        if (this.prepared) {
+            return;
+        }
+        for (const plugin of plugins) {
+            if (!plugin.host?.prepare) {
+                continue;
+            }
+            plugin.host.prepare(this.context(plugin.id));
+        }
+        this.prepared = true;
+    }
+
+    /**
      * Await each plugin's `start(ctx)` hook in registration order.
      * Used during daemon boot. Failures bubble up — the daemon
      * refuses to start if any plugin daemon fails to initialize.
+     *
+     * Callers must invoke {@link prepareAll} first; daemon `start`
+     * does this explicitly so cross-plugin module state populated in
+     * `prepare` is reliably visible by the time any `start` body
+     * runs.
      */
     async startDaemons(): Promise<void> {
         for (const plugin of plugins) {
@@ -129,7 +167,7 @@ export class PluginHost {
     private context(pluginId: string): HostContext {
         return new HostContextImpl({
             ensureConnection: () => this.ensureConnection(),
-            defaultChatChannelId: () => this.boot.requireEnv("DEFAULT_CHAT_CHANNEL_ID"),
+            config: this.config,
             log: this.log.child({ component: `plugin:${pluginId}` }),
             dataDir: this.boot.dataDir,
         });
@@ -137,14 +175,15 @@ export class PluginHost {
 
     /**
      * Open the postgres connection on demand. Reads
-     * `POSTGRES_PASSWORD` only when first called, so commands that
-     * don't touch the bus don't trigger env validation.
+     * `core.postgresPassword` from the config service only when first
+     * called, so commands that don't touch the bus don't trigger
+     * config validation.
      */
     private async ensureConnection(): Promise<PostgresConnection> {
         if (this.connection) {
             return this.connection;
         }
-        const password = this.boot.requireEnv("POSTGRES_PASSWORD");
+        const password = this.config.getString("core.postgresPassword");
         const postgres = new PostgresContainer({
             dataPath: this.boot.dataDir,
             portFilePath: this.boot.postgresPortFile,
@@ -155,9 +194,14 @@ export class PluginHost {
     }
 
     /**
-     * Wrap a plugin command's `run` so the host's connection is
-     * closed after the command returns. Without this the postgres
-     * pool keeps the event loop alive and the CLI process hangs.
+     * Wrap a plugin command's `run` so:
+     *  - every plugin's `prepare(ctx)` fires once before the command
+     *    body runs (matches the daemon-start invariant: any plugin
+     *    can call into any other plugin's library without depending
+     *    on `start` order);
+     *  - the host's postgres connection is closed after the command
+     *    returns. Without the close, the pool keeps the event loop
+     *    alive and the CLI process hangs.
      */
     private wrapForExit(cmd: AnyCommandDef): AnyCommandDef {
         const original = cmd.run;
@@ -167,6 +211,7 @@ export class PluginHost {
         return defineCommand({
             ...cmd,
             run: async (ctx) => {
+                this.prepareAll();
                 try {
                     return await (original as (c: typeof ctx) => unknown)(ctx);
                 } finally {

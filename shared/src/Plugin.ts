@@ -1,6 +1,7 @@
 import type { CommandDef } from "citty";
 import type { ChatFilter } from "./ChatMessage.js";
 import type { ChatHandler, ChatUnsubscribe } from "./ChatMessageBus.js";
+import type { ConfigService } from "./Config.js";
 import type { NewEvent } from "./Event.js";
 import type { StepResultRow } from "./StepResult.js";
 
@@ -114,6 +115,16 @@ export interface HostContext {
      * `dataDir` is for plugin-private host-only state.
      */
     readonly dataDir: string;
+    /**
+     * Read/write access to the host's YAML config (`config/config.yml`).
+     *
+     * Plugins read their own subtree (e.g. `telegram.botToken`) via
+     * `ctx.config.getString(...)` rather than touching `process.env`
+     * or parsing the file themselves. Required-vs-optional is decided
+     * per call: omit the default to throw on missing, or pass `null`
+     * to get a `string | null` back and self-disable on absence.
+     */
+    readonly config: ConfigService;
 }
 
 /**
@@ -142,9 +153,28 @@ export interface PluginCronjob {
  */
 export interface PluginHostManifest {
     /**
+     * Synchronous, side-effect-light setup. Runs once per process,
+     * **before any plugin's `start`** and before any plugin one-shot
+     * CLI command's `run`. Use this for module-level state that other
+     * plugins consume — e.g. populating an API-key constant the
+     * plugin's library exports — so the order in which siblings call
+     * each other doesn't depend on `start` finishing first.
+     *
+     * Hard rules: no async, no network, no DB, no daemons, no
+     * subscriptions. If you need any of those, do them in `start`.
+     *
+     * Skipped for introspective paths (`--help`, `config lint`) so a
+     * misconfigured file still lets the user inspect / lint.
+     */
+    prepare?(ctx: HostContext): void;
+    /**
      * Long-running daemon (sockets, listeners, etc.). Awaited at host
      * startup; should resolve once setup is done. Long-lived work
      * lives on background promises the daemon owns.
+     *
+     * Runs after every plugin's {@link prepare} has completed, so
+     * cross-plugin module state populated in `prepare` is reliably
+     * visible by the time any `start` body runs.
      */
     start?(ctx: HostContext): Promise<void>;
     /**
