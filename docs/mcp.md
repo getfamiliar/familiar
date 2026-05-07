@@ -116,34 +116,122 @@ that npm/pypi/external entries use the same shape.
 Each MCP tool is registered with the AI SDK as `${id}_${toolName}` —
 the id (the YAML key in `mcp.yml`) and the tool's own name joined by
 a single underscore. Our id regex bans underscores so the delimiter
-is unambiguous. Examples for the `mcp/fetch` registry image (which
-exposes a single `fetch` tool):
+is unambiguous. Examples:
 
 ```
-fetch_fetch          # call: fetch a URL and return its contents
+fetch_fetch                        # mcp/fetch's only tool
+atlassian_jira_create_issue        # one of mcp/atlassian's many
+atlassian-personal_confluence_get_page
 ```
-
-Handlers can call these tools the same way they call built-in ones
-(`send_chat`, `queue_run`, …). To restrict a handler to a subset,
-list the namespaced tool names in its YAML header's `allowedTools`:
-
-```markdown
----
-model: zai-org/GLM-5.1
-allowedTools: [fetch_fetch, send_chat]
----
-```
-
-Without `allowedTools`, every declared MCP's tools are visible. The
-filter narrows handler-controlled tools (MCP + future plugin tools);
-system tools (`send_chat`, `queue_run`, filesystem) are always
-present.
 
 The agent boots the pool eagerly: every declared MCP gets its
 `tools/list` fetched once at startup. Cold-spawn cost shows up here
 (one docker child per MCP, briefly). That's fine for small catalogs;
 when it isn't, the bastion will gain a tool-list cache that survives
 child idle-reaps so this stays cheap.
+
+## Filtering tools per handler
+
+Handlers declare which MCP tools they want via a `tools:` expression
+in their YAML header. **Omitted means none**: every handler opts in
+explicitly, so a new MCP doesn't silently expand existing handlers'
+surfaces. System tools (`send_chat`, `queue_run`, filesystem,
+`get_weather`) are always present regardless.
+
+### Expression grammar
+
+```
+expr     := or
+or       := and ('||' and)*
+and      := unary ('&&' unary)*
+unary    := '!' unary | atom
+atom     := group | path | '(' expr ')'
+group    := IDENT                        e.g.  read-operations | all
+path     := '/' SEGMENT ('/' SEGMENT)?   e.g.  /atlassian | /fetch/fetch
+                                                /atlassian/jira_*
+```
+
+- Precedence: `!` > `&&` > `||`. Whitespace insignificant.
+- `IDENT` is `[a-z][a-z0-9-]*` — group names.
+- `SEGMENT` is `[a-zA-Z0-9_*-]+` — path segments. `*` is a glob
+  wildcard inside a segment.
+- `/<id>` ≡ `/<id>/*` — every tool on that MCP.
+- The path's id must match the `mcp.yml` key **literally**: `/atlassian`
+  matches the `atlassian` MCP only, not `atlassian-personal`.
+
+### Built-in groups
+
+- **`all`** — every MCP tool currently in the pool. The escape hatch
+  for handlers that genuinely want everything: `tools: all`.
+
+A `workspace/toolgroups/all.txt` is rejected; `all` is reserved.
+
+### User groups
+
+Plain-text files at `workspace/toolgroups/<name>.txt`, one entry per
+line. Each line is either another group name (an `IDENT`) or a path
+(starting with `/`). Lines are unioned; the group's tool set is the
+collected matches.
+
+```
+# workspace/toolgroups/read-operations.txt
+# Tools that fetch context without changing anything user-visible.
+
+/atlassian/jira_get_*
+/atlassian/jira_search
+/atlassian/confluence_get_*
+/fetch/fetch
+```
+
+`#` to end of line is a comment. Blank lines are ignored. The group
+name comes from the filename stem and must match `IDENT`. Operators
+(`&&`, `||`, `!`) inside group files are **not** allowed — composition
+lives at the handler-expression level, where it's needed.
+
+The whole `workspace/toolgroups/` directory is gated as
+**privileged-write** regardless of file extension: handlers that
+aren't descended from trusted user input (the cli-chat REPL or
+operator chat) cannot create or modify group definitions.
+
+### Worked examples
+
+```yaml
+---
+tools: all                          # every MCP tool
+---
+
+---
+tools: /fetch/fetch                 # one specific tool
+---
+
+---
+tools: /atlassian/jira_*            # all Jira tools on the cloud Atlassian MCP
+---
+
+---
+tools: read-operations              # a user-defined group
+---
+
+---
+tools: read-operations || /atlassian/jira_create_issue
+---
+# union: every read tool, plus this one write tool
+
+---
+tools: read-operations && /atlassian
+---
+# intersection: read tools, narrowed to the atlassian MCP only
+
+---
+tools: all && !/atlassian-personal && !/atlassian/jira_delete_*
+---
+# everything, except the personal Atlassian instance and Jira delete tools
+```
+
+Resolution failures fail the agentrun loud, before the model is
+invoked: an unknown group, a cycle in group references, or a syntax
+error in the expression all surface as `agentrun failed` with the
+underlying message in the row's `error` column.
 
 ## Operations
 
@@ -169,8 +257,12 @@ child idle-reaps so this stays cheap.
 
 - A CLI helper that fetches a `server.yaml` URL from the Docker MCP
   registry and writes a translated entry into `mcp.yml`.
-- Per-handler MCP visibility filtering on the bastion (today every
-  handler sees every declared MCP).
+- AI-assisted toolgroup authoring: a meta-handler that introspects
+  the catalog and proposes groups (`read-operations`,
+  `safe-jira-edits`, …) for the user to approve and write.
+- Bastion-side filtering: today the gateway serves every tool to the
+  agent and the container filters per handler. Pushing the filter to
+  the gateway only matters once we don't fully trust the agent.
 - Resources / prompts / elicitation surfaces from `@ai-sdk/mcp`
   (currently the pool only exposes `tools()`).
 - SSE-streamed responses from the bastion for long-running tool

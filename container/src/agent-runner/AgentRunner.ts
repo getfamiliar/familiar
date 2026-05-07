@@ -12,6 +12,7 @@ import { HandlerFile } from "../HandlerFile.js";
 import type { McpClientPool } from "../mcp/McpClientPool.js";
 import { ModelFactory } from "../models/ModelFactory.js";
 import { buildPrompt, buildSystemPrompt } from "../PromptBuilder.js";
+import { loadGroups } from "../tools/ToolGroupLoader.js";
 import { ToolsFactory } from "../tools/ToolsFactory.js";
 
 /**
@@ -78,15 +79,22 @@ export class AgentRunner {
     async run(signal?: AbortSignal): Promise<string> {
         const handler = HandlerFile.load(this.row.topic, this.row.handler);
         const model = ModelFactory.build(handler.header.model);
+        const groups = loadGroups();
         const tools = ToolsFactory.build({
             chat: this.chat,
             eventId: this.row.eventId,
-            allowed: handler.header.allowedTools,
+            toolsExpression: handler.header.tools,
+            groups,
             bus: this.bus,
             parent: this.row,
             mcpTools: this.mcpPool.tools(),
+            log: this.log,
         });
         const toolNames = Object.keys(tools);
+        this.log.info(
+            { tools: toolNames, toolsExpression: handler.header.tools ?? null },
+            "agentrun toolset resolved",
+        );
         const systemPrompt = buildSystemPrompt(
             handler,
             toolNames,

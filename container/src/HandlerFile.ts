@@ -18,8 +18,17 @@ export interface HandlerFileHeader {
     readonly model?: string;
     /** Sampling temperature passed to the model. */
     readonly temperature?: number;
-    /** Tool ids the agent is permitted to call during this handler's run. */
-    readonly allowedTools?: readonly string[];
+    /**
+     * Tool-filter expression. Controls which MCP tools are exposed to
+     * this handler's agent loop. See `tools/ToolFilter.ts` for the full
+     * grammar (groups, paths with `*` globs, `&&` / `||` / `!`). When
+     * omitted, **no MCP tools** are exposed — system tools (`send_chat`,
+     * `queue_run`, filesystem) are always present regardless.
+     *
+     * The built-in group `all` is the escape hatch for handlers that
+     * genuinely want every declared MCP's tools (`tools: all`).
+     */
+    readonly tools?: string;
     /**
      * Maximum number of tokens the model is allowed to generate in any
      * single step of the tool-loop. Bounds worst-case latency and the
@@ -306,7 +315,7 @@ function mergeDeclared(parent: HandlerFileHeader, child: HandlerFileHeader): Han
     return {
         model: child.model ?? parent.model,
         temperature: child.temperature ?? parent.temperature,
-        allowedTools: child.allowedTools ?? parent.allowedTools,
+        tools: child.tools ?? parent.tools,
         maxOutputTokens: child.maxOutputTokens ?? parent.maxOutputTokens,
         outputChat: child.outputChat ?? parent.outputChat,
         mergeMode: child.mergeMode ?? parent.mergeMode,
@@ -366,7 +375,7 @@ function parseHandler(filePath: string, source: string): DeclaredFile {
     const header: HandlerFileHeader = {
         model: optionalString(filePath, raw, "model"),
         temperature: optionalNumber(filePath, raw, "temperature"),
-        allowedTools: optionalStringArray(filePath, raw, "allowedTools"),
+        tools: optionalString(filePath, raw, "tools"),
         maxOutputTokens: optionalPositiveInteger(filePath, raw, "maxOutputTokens"),
         outputChat: optionalBoolean(filePath, raw, "outputChat"),
         mergeMode: optionalEnum(filePath, raw, "mergeMode", ["merge", "replace"]),
@@ -387,7 +396,7 @@ function mergeDefaults(
     return {
         model: declared.model ?? defaults.model,
         temperature: declared.temperature ?? defaults.temperature,
-        allowedTools: declared.allowedTools ?? defaults.allowedTools,
+        tools: declared.tools ?? defaults.tools,
         maxOutputTokens: declared.maxOutputTokens ?? defaults.maxOutputTokens,
         outputChat: declared.outputChat ?? defaults.outputChat,
         mergeMode: declared.mergeMode ?? defaults.mergeMode,
@@ -452,21 +461,6 @@ function optionalPositiveInteger(
         throw new Error(`${filePath}: header field "${field}" must be a positive integer`);
     }
     return value;
-}
-
-function optionalStringArray(
-    filePath: string,
-    raw: Record<string, unknown>,
-    field: string,
-): readonly string[] | undefined {
-    if (!(field in raw) || raw[field] === undefined) {
-        return undefined;
-    }
-    const value = raw[field];
-    if (!Array.isArray(value) || !value.every((v) => typeof v === "string")) {
-        throw new Error(`${filePath}: header field "${field}" must be an array of strings`);
-    }
-    return value as string[];
 }
 
 function optionalEnum<T extends string>(

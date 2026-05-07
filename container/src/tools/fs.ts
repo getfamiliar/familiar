@@ -56,26 +56,48 @@ function resolveWorkspacePath(input: string): string {
     return resolved;
 }
 
-/** True if the given path's extension is `.md` (case-insensitive). */
-function isMarkdown(p: string): boolean {
-    return p.toLowerCase().endsWith(".md");
+/** Workspace-relative directory whose contents are gated regardless of extension. */
+const TOOLGROUPS_DIR = "toolgroups";
+
+/**
+ * True when writing this absolute path requires a privileged
+ * agentrun. Two cases:
+ *
+ * - `.md` anywhere — handlers, SOUL.md, people notes, etc.
+ * - Anything (any extension) under `workspace/toolgroups/` — those
+ *   files declare which MCP tools handlers may use, so widening
+ *   them is privilege escalation in spirit.
+ */
+function requiresPrivilegedWrite(absolute: string): boolean {
+    if (absolute.toLowerCase().endsWith(".md")) {
+        return true;
+    }
+    const root = HandlerFile.getWorkspaceRoot();
+    const rel = path.relative(root, absolute);
+    if (rel === TOOLGROUPS_DIR) {
+        return true;
+    }
+    if (rel.startsWith(`${TOOLGROUPS_DIR}${path.sep}`)) {
+        return true;
+    }
+    return false;
 }
 
 /**
  * Standard refusal returned by writing tools when the agentrun is
- * non-privileged and the target is a markdown file. The text spells
- * out *why* so the model can decide what to do (give up, ask the user,
- * write a non-markdown file instead) instead of looping retries.
+ * non-privileged and the target is a gated path. The text spells out
+ * *why* so the model can decide what to do (give up, ask the user,
+ * write a different file) instead of looping retries.
  */
 function privilegeRefusal(): { readonly ok: false; readonly error: string } {
     return {
         ok: false,
         error:
-            "Only privileged agentruns may write to .md files. " +
-            "This run is non-privileged. Markdown files (handlers, SOUL.md, " +
-            "people/*, etc.) can only be modified by runs descending from " +
-            "trusted user input (cli-chat REPL or the operator on Telegram). " +
-            "Reads are still allowed.",
+            "Only privileged agentruns may write to .md files or anything under " +
+            "workspace/toolgroups/. This run is non-privileged. Those files " +
+            "(handlers, SOUL.md, people/*, toolgroup definitions) can only be " +
+            "modified by runs descending from trusted user input (cli-chat REPL " +
+            "or the operator on Telegram). Reads are still allowed.",
     };
 }
 
@@ -181,7 +203,7 @@ function buildFileWriteTool(parent: AgentRunRow): Tool<FileWriteInput, FileWrite
             } catch (err) {
                 return { ok: false, error: err instanceof Error ? err.message : String(err) };
             }
-            if (isMarkdown(absolute) && !parent.privileged) {
+            if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
                 return privilegeRefusal();
             }
             try {
@@ -245,7 +267,7 @@ function buildFileStrReplaceTool(
             } catch (err) {
                 return { ok: false, error: err instanceof Error ? err.message : String(err) };
             }
-            if (isMarkdown(absolute) && !parent.privileged) {
+            if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
                 return privilegeRefusal();
             }
             if (typeof old_string !== "string" || old_string.length === 0) {
@@ -334,7 +356,7 @@ function buildFileAppendTool(parent: AgentRunRow): Tool<FileAppendInput, FileApp
             } catch (err) {
                 return { ok: false, error: err instanceof Error ? err.message : String(err) };
             }
-            if (isMarkdown(absolute) && !parent.privileged) {
+            if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
                 return privilegeRefusal();
             }
             try {
