@@ -24,6 +24,8 @@ export class ExternalFactory implements McpServerFactory {
         }
         return new HttpMcpTransport({
             id: entry.id,
+            title: entry.title,
+            description: entry.description,
             upstreamUrl: entry.url,
             log: this.log.child({ mcp: entry.id }),
         });

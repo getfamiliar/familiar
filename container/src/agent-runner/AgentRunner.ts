@@ -9,6 +9,7 @@ import {
 } from "effective-assistant-shared";
 import { ChatManager } from "../chat/ChatManager.js";
 import { HandlerFile } from "../HandlerFile.js";
+import type { McpClientPool } from "../mcp/McpClientPool.js";
 import { ModelFactory } from "../models/ModelFactory.js";
 import { buildPrompt, buildSystemPrompt } from "../PromptBuilder.js";
 import { ToolsFactory } from "../tools/ToolsFactory.js";
@@ -41,14 +42,21 @@ export class AgentRunner {
     private readonly chat: ChatManager;
     private readonly bus: AgentRunBus;
     private readonly log: Logger;
+    private readonly mcpPool: McpClientPool;
     private stepStartedAt = 0;
 
-    constructor(row: AgentRunRow, connection: PostgresConnection, log: Logger) {
+    constructor(
+        row: AgentRunRow,
+        connection: PostgresConnection,
+        log: Logger,
+        mcpPool: McpClientPool,
+    ) {
         this.row = row;
         this.steps = new StepResultBus(connection);
         this.chat = new ChatManager(new ChatMessageBus(connection));
         this.bus = new AgentRunBus(connection, log);
         this.log = log;
+        this.mcpPool = mcpPool;
     }
 
     /**
@@ -76,6 +84,7 @@ export class AgentRunner {
             allowed: handler.header.allowedTools,
             bus: this.bus,
             parent: this.row,
+            mcpTools: this.mcpPool.tools(),
         });
         const toolNames = Object.keys(tools);
         const systemPrompt = buildSystemPrompt(

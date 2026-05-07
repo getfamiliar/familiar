@@ -19,6 +19,8 @@ function containerNameFor(id: string): string {
  */
 export interface StdioMcpTransportConfig {
     readonly id: string;
+    readonly title: string;
+    readonly description: string;
     /**
      * Argv vector to pass to `docker` (without the leading "docker").
      * Must be a foreground-style invocation: `run -i --rm --name
@@ -55,6 +57,8 @@ export interface StdioMcpTransportConfig {
  */
 export class StdioMcpTransport implements McpTransport {
     readonly id: string;
+    readonly title: string;
+    readonly description: string;
     private readonly dockerArgs: readonly string[];
     private readonly idleTimeoutMs: number;
     private readonly log: Logger;
@@ -67,6 +71,8 @@ export class StdioMcpTransport implements McpTransport {
 
     constructor(config: StdioMcpTransportConfig) {
         this.id = config.id;
+        this.title = config.title;
+        this.description = config.description;
         this.dockerArgs = config.dockerArgs;
         this.idleTimeoutMs = config.idleTimeoutSeconds * 1000;
         this.log = config.log;
@@ -90,8 +96,30 @@ export class StdioMcpTransport implements McpTransport {
             return;
         }
 
-        // Per-child serialization: chain onto the queue so requests
-        // wait their turn.
+        // Notifications (JSON-RPC frames without an `id`) elicit no
+        // server response per the spec. Forward them to the child for
+        // ordering, but reply 202 immediately — never park a pending
+        // resolver, which would hang waiting for stdout that won't
+        // come.
+        if (isJsonRpcNotification(trimmed)) {
+            const notifyTurn = this.requestQueue.then(() => this.notify(trimmed));
+            this.requestQueue = notifyTurn.then(
+                () => undefined,
+                () => undefined,
+            );
+            try {
+                await notifyTurn;
+                res.writeHead(202).end();
+            } catch (err) {
+                replyError(
+                    res,
+                    502,
+                    `mcp child error: ${err instanceof Error ? err.message : String(err)}`,
+                );
+            }
+            return;
+        }
+
         const turn = this.requestQueue.then(() => this.exchange(trimmed));
         // Keep the queue moving even if this turn rejects.
         this.requestQueue = turn.then(
@@ -110,6 +138,21 @@ export class StdioMcpTransport implements McpTransport {
                 `mcp child error: ${err instanceof Error ? err.message : String(err)}`,
             );
         }
+    }
+
+    /**
+     * Forward a JSON-RPC notification to the child. Spawns the child
+     * if needed, writes the line, resets the idle timer, and resolves
+     * without waiting for any response — by spec there isn't one.
+     */
+    private async notify(payload: string): Promise<void> {
+        await this.ensureSpawned();
+        const child = this.child;
+        if (child === null) {
+            throw new Error("child process not running after spawn");
+        }
+        child.stdin.write(`${payload}\n`);
+        this.resetIdleTimer();
     }
 
     async stop(): Promise<void> {
@@ -280,4 +323,24 @@ function replyError(res: ServerResponse, status: number, message: string): void 
         res.writeHead(status, { "content-type": "text/plain" });
     }
     res.end(message);
+}
+
+/**
+ * Tell whether a body is a JSON-RPC 2.0 notification: a single
+ * object lacking the `id` field. Anything that isn't valid JSON, or
+ * is an array (batch) or an object with `id`, falls through to the
+ * request path. Batches with notifications mixed in aren't supported
+ * yet — we'd need a richer correlator before that's worth doing.
+ */
+function isJsonRpcNotification(payload: string): boolean {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(payload);
+    } catch {
+        return false;
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return false;
+    }
+    return !Object.hasOwn(parsed, "id");
 }

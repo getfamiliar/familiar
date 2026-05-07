@@ -15,6 +15,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@ai-sdk/mcp": "^1.0.40",
     "@ai-sdk/openai-compatible": "^2.0.45",
     "ai": "^6.0.174",
     "effective-assistant-shared": "file:../shared",

@@ -76,7 +76,8 @@ export class McpGateway implements BastionModule {
 
     /**
      * Parse `<id>/<rest>` from the trailing path and call the right
-     * transport. Replies 404 for unknown ids, 400 for malformed paths.
+     * transport. When the id is empty (the request hit `/mcp/` with
+     * nothing after), reply with the catalog. 404 on unknown ids.
      */
     private async dispatch(
         req: IncomingMessage,
@@ -88,7 +89,7 @@ export class McpGateway implements BastionModule {
         const id = slashIdx === -1 ? trimmed : trimmed.slice(0, slashIdx);
         const tail = slashIdx === -1 ? "/" : trimmed.slice(slashIdx);
         if (id.length === 0) {
-            replyError(res, 400, "expected /mcp/<id>/<rest>");
+            this.replyCatalog(req, res);
             return;
         }
         const transport = this.transports.get(id);
@@ -97,6 +98,29 @@ export class McpGateway implements BastionModule {
             return;
         }
         await transport.handle(req, res, tail);
+    }
+
+    /**
+     * Reply with the catalog of declared MCPs as a JSON array of
+     * `{ id, title, description }`. Used by the agent's
+     * `McpClientPool` at boot to discover what to instantiate.
+     * Only `GET` is supported; other methods get 405.
+     */
+    private replyCatalog(req: IncomingMessage, res: ServerResponse): void {
+        if (req.method !== "GET") {
+            replyError(res, 405, "GET /mcp/ only");
+            return;
+        }
+        const catalog: Array<{ id: string; title: string; description: string }> = [];
+        for (const transport of this.transports.values()) {
+            catalog.push({
+                id: transport.id,
+                title: transport.title,
+                description: transport.description,
+            });
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(catalog));
     }
 
     /** Resolve the source's factory and build a transport from the entry. */

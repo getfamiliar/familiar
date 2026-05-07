@@ -7,6 +7,8 @@ import type { McpTransport } from "./McpTransport.js";
 /** Configuration for an `HttpMcpTransport`. */
 export interface HttpMcpTransportConfig {
     readonly id: string;
+    readonly title: string;
+    readonly description: string;
     /** Upstream MCP base URL, no trailing slash. */
     readonly upstreamUrl: string;
     /**
@@ -29,12 +31,16 @@ export interface HttpMcpTransportConfig {
  */
 export class HttpMcpTransport implements McpTransport {
     readonly id: string;
+    readonly title: string;
+    readonly description: string;
     private readonly upstreamUrl: URL;
     private readonly authorization: string | undefined;
     private readonly log: Logger;
 
     constructor(config: HttpMcpTransportConfig) {
         this.id = config.id;
+        this.title = config.title;
+        this.description = config.description;
         this.upstreamUrl = new URL(config.upstreamUrl);
         this.authorization = config.authorization;
         this.log = config.log;

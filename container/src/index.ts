@@ -11,6 +11,7 @@ import {
 import { AgentrunWatcher } from "./AgentrunWatcher.js";
 import { EventWatcher } from "./EventWatcher.js";
 import { HandlerFile } from "./HandlerFile.js";
+import { McpClientPool } from "./mcp/McpClientPool.js";
 
 /**
  * Process-wide handler-header defaults. A handler can override any of
@@ -44,6 +45,13 @@ async function main(): Promise<void> {
                 "The host daemon should have passed it in via -e POSTGRES_PASSWORD=...",
         );
     }
+    const bastionUrl = process.env.BASTION_URL;
+    if (!bastionUrl) {
+        throw new Error(
+            "BASTION_URL is not set in the agent container env. " +
+                "The host daemon should have passed it in via -e BASTION_URL=...",
+        );
+    }
 
     HandlerFile.setHeaderDefaults(HEADER_DEFAULTS);
 
@@ -55,8 +63,14 @@ async function main(): Promise<void> {
         database: POSTGRES_DB,
     });
 
+    const mcpPool = new McpClientPool({
+        bastionUrl,
+        log: log.child({ component: "mcp-client-pool" }),
+    });
+    await mcpPool.start();
+
     const eventWatcher = new EventWatcher(connection, log);
-    const agentWatcher = new AgentrunWatcher(connection, log);
+    const agentWatcher = new AgentrunWatcher(connection, log, mcpPool);
 
     const abortController = new AbortController();
     const shutdown = (signal: string) => {
@@ -72,6 +86,7 @@ async function main(): Promise<void> {
             agentWatcher.run(abortController.signal),
         ]);
     } finally {
+        await mcpPool.close();
         await connection.close();
         log.info("agent container exiting cleanly");
     }

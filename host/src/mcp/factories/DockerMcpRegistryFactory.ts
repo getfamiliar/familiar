@@ -67,6 +67,8 @@ export class DockerMcpRegistryFactory implements McpServerFactory {
     create(entry: McpEntry): McpTransport {
         return new StdioMcpTransport({
             id: entry.id,
+            title: entry.title,
+            description: entry.description,
             dockerArgs: dockerArgsForEntry(entry),
             idleTimeoutSeconds: entry.idleTimeoutSeconds,
             log: this.log.child({ mcp: entry.id }),

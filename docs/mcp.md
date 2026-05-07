@@ -4,11 +4,11 @@ This document covers how the effective-assistant runtime brings up
 [Model Context Protocol](https://modelcontextprotocol.io) servers as
 docker containers and how to configure them via `config/mcp.yml`.
 
-> **Status.** The host-side **bastion** brings stdio MCPs up on demand
-> as docker children and forwards external HTTP MCPs. The agent does
-> **not** yet talk to them — wiring MCP tools into the agent loop is
-> the follow-up step. This page describes the infrastructure in place
-> today.
+> **Status.** End-to-end working. The host-side **bastion** brings
+> stdio MCPs up on demand and forwards external HTTP MCPs. The agent
+> consumes them through `@ai-sdk/mcp`: it fetches the bastion's
+> catalog at boot, opens one client per declared MCP, and exposes
+> their tools to handlers as `${id}_${toolName}`.
 
 ## What an MCP is, and how we run it
 
@@ -111,6 +111,40 @@ that npm/pypi/external entries use the same shape.
 > that this also makes the container unreachable from the agent;
 > useful for stdio-only MCPs only.
 
+## How handlers use MCP tools
+
+Each MCP tool is registered with the AI SDK as `${id}_${toolName}` —
+the id (the YAML key in `mcp.yml`) and the tool's own name joined by
+a single underscore. Our id regex bans underscores so the delimiter
+is unambiguous. Examples for the `mcp/fetch` registry image (which
+exposes a single `fetch` tool):
+
+```
+fetch_fetch          # call: fetch a URL and return its contents
+```
+
+Handlers can call these tools the same way they call built-in ones
+(`send_chat`, `queue_run`, …). To restrict a handler to a subset,
+list the namespaced tool names in its YAML header's `allowedTools`:
+
+```markdown
+---
+model: zai-org/GLM-5.1
+allowedTools: [fetch_fetch, send_chat]
+---
+```
+
+Without `allowedTools`, every declared MCP's tools are visible. The
+filter narrows handler-controlled tools (MCP + future plugin tools);
+system tools (`send_chat`, `queue_run`, filesystem) are always
+present.
+
+The agent boots the pool eagerly: every declared MCP gets its
+`tools/list` fetched once at startup. Cold-spawn cost shows up here
+(one docker child per MCP, briefly). That's fine for small catalogs;
+when it isn't, the bastion will gain a tool-list cache that survives
+child idle-reaps so this stays cheap.
+
 ## Operations
 
 - **Lint.** `./cli.sh mcp lint` validates `config/mcp.yml`. A
@@ -135,9 +169,14 @@ that npm/pypi/external entries use the same shape.
 
 - A CLI helper that fetches a `server.yaml` URL from the Docker MCP
   registry and writes a translated entry into `mcp.yml`.
-- Wiring MCPs into the agent's tool loop.
-- Streamable HTTP / SSE transport for stdio MCPs that need
-  long-running sessions or server-initiated notifications.
+- Per-handler MCP visibility filtering on the bastion (today every
+  handler sees every declared MCP).
+- Resources / prompts / elicitation surfaces from `@ai-sdk/mcp`
+  (currently the pool only exposes `tools()`).
+- SSE-streamed responses from the bastion for long-running tool
+  calls (today plain JSON request/response is enough).
+- Tool-list caching in the bastion that survives child idle-reaps,
+  so agent boot stays cheap as the catalog grows.
 - Auth injection through the bastion on outbound calls *from* MCP
   children (e.g. fetch hitting example.com).
 - `allowHosts` enforcement via an egress proxy.

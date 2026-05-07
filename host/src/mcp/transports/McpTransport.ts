@@ -16,6 +16,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 export interface McpTransport {
     /** Stable id from `mcp.yml`, used for logging and (de)duplication. */
     readonly id: string;
+    /** Short human-facing title from `mcp.yml`, surfaced in the catalog. */
+    readonly title: string;
+    /** Longer human-facing description from `mcp.yml`, surfaced in the catalog. */
+    readonly description: string;
     /**
      * Handle one inbound request whose path matched the gateway's
      * `/mcp/<id>/` prefix. `restPath` is the part after `/<id>` (still

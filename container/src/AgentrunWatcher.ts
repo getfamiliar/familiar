@@ -5,6 +5,7 @@ import {
     type PostgresConnection,
 } from "effective-assistant-shared";
 import { AgentRunner } from "./agent-runner/AgentRunner.js";
+import type { McpClientPool } from "./mcp/McpClientPool.js";
 
 /**
  * Agentrun watcher. Claims `pending` agentruns into `running`, runs
@@ -24,11 +25,13 @@ export class AgentrunWatcher {
     private readonly bus: AgentRunBus;
     private readonly connection: PostgresConnection;
     private readonly log: Logger;
+    private readonly mcpPool: McpClientPool;
 
-    constructor(connection: PostgresConnection, log: Logger) {
+    constructor(connection: PostgresConnection, log: Logger, mcpPool: McpClientPool) {
         this.log = log.child({ component: "agentrun-watcher" });
         this.bus = new AgentRunBus(connection, this.log);
         this.connection = connection;
+        this.mcpPool = mcpPool;
     }
 
     /** Run the claim-and-execute loop until `signal` aborts. */
@@ -90,7 +93,9 @@ export class AgentrunWatcher {
                 topic: row.topic,
                 handler: row.handler,
             });
-            const text = await new AgentRunner(row, this.connection, runnerLog).run(signal);
+            const text = await new AgentRunner(row, this.connection, runnerLog, this.mcpPool).run(
+                signal,
+            );
             await this.bus.settle(row.id, "done", { resultText: text });
             this.log.info({ agentrunId: row.id, durationMs: Date.now() - start }, "agentrun done");
         } catch (err) {

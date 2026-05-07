@@ -18,6 +18,12 @@ export interface ToolsFactoryContext {
     readonly bus?: AgentRunBus;
     /** The currently-running agentrun row; closed over by `queue_run`. */
     readonly parent?: AgentRunRow;
+    /**
+     * MCP-derived tools, namespaced as `${id}_${toolName}` by the
+     * {@link McpClientPool}. Treated like handler tools: filtered by
+     * `allowed` when set, included unconditionally otherwise.
+     */
+    readonly mcpTools?: ToolSet;
 }
 
 /**
@@ -61,8 +67,8 @@ export class ToolsFactory {
             Object.assign(systemTools, buildFsTools(context.parent));
         }
 
-        const handlerTools: ToolSet = {};
-        // (No handler-controlled tools registered yet.)
+        const handlerTools: ToolSet = { ...(context.mcpTools ?? {}) };
+        // (No other handler-controlled tools registered yet.)
 
         if (!context.allowed || context.allowed.length === 0) {
             return { ...handlerTools, ...systemTools };
