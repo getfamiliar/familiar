@@ -323,15 +323,24 @@ type FileAppendOutput =
 /**
  * Build the `file_append` tool. Appends `content` to the file at
  * `path`, creating the file (and parent directories) if missing.
- * Refuses `.md` writes for non-privileged runs.
+ *
+ * If the existing file is non-empty and doesn't end with a newline,
+ * a `\n` is inserted before the appended content. Models reliably
+ * call `file_append` thinking of it as "add a new line" rather than
+ * "concatenate bytes", so this matches the natural mental model and
+ * avoids accidentally gluing two records onto the same line. Files
+ * that already end with `\n` are left alone (no double newlines).
+ *
+ * Refuses `.md` and `toolgroups/*` writes for non-privileged runs.
  */
 function buildFileAppendTool(parent: AgentRunRow): Tool<FileAppendInput, FileAppendOutput> {
     return tool<FileAppendInput, FileAppendOutput>({
         description:
             "Append content to the end of a file. Creates the file (and any " +
-            "missing parent directories) if it does not exist. Useful for " +
-            "JSONL tables: each call adds one line. Markdown (.md) appends " +
-            "require a privileged run.",
+            "missing parent directories) if it does not exist. If the existing " +
+            "file is non-empty and doesn't already end with a newline, one is " +
+            "inserted before your content — so each call adds a new line. " +
+            "Markdown (.md) appends require a privileged run.",
         inputSchema: jsonSchema<FileAppendInput>({
             type: "object",
             additionalProperties: false,
@@ -344,8 +353,9 @@ function buildFileAppendTool(parent: AgentRunRow): Tool<FileAppendInput, FileApp
                 content: {
                     type: "string",
                     description:
-                        "Text to append verbatim. Include your own trailing newline " +
-                        "for line-oriented files (e.g. JSONL).",
+                        "Text to append. A leading newline is added automatically " +
+                        "when the existing file is non-empty and doesn't end with " +
+                        "one, so you don't need to pad your content yourself.",
                 },
             },
         }),
@@ -361,13 +371,45 @@ function buildFileAppendTool(parent: AgentRunRow): Tool<FileAppendInput, FileApp
             }
             try {
                 await fs.mkdir(path.dirname(absolute), { recursive: true });
-                await fs.appendFile(absolute, content, "utf8");
-                return { ok: true, bytes: Buffer.byteLength(content, "utf8") };
+                const prefix = (await needsLeadingNewline(absolute)) ? "\n" : "";
+                const toWrite = prefix + content;
+                await fs.appendFile(absolute, toWrite, "utf8");
+                return { ok: true, bytes: Buffer.byteLength(toWrite, "utf8") };
             } catch (err) {
                 return { ok: false, error: err instanceof Error ? err.message : String(err) };
             }
         },
     });
+}
+
+/**
+ * Decide whether `file_append` should prepend a `\n` before its
+ * payload. True only when the file already exists, has at least one
+ * byte, and its last byte isn't `\n`. Missing-file is the common
+ * case (creates fresh) and needs no prefix.
+ */
+async function needsLeadingNewline(absolute: string): Promise<boolean> {
+    let stat: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+        stat = await fs.stat(absolute);
+    } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") {
+            return false;
+        }
+        throw err;
+    }
+    if (stat.size === 0) {
+        return false;
+    }
+    const fh = await fs.open(absolute, "r");
+    try {
+        const buf = Buffer.alloc(1);
+        await fh.read(buf, 0, 1, stat.size - 1);
+        return buf[0] !== 0x0a;
+    } finally {
+        await fh.close();
+    }
 }
 
 interface LsInput {
