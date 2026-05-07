@@ -1,0 +1,44 @@
+# Effective Assistant — MCP servers.
+#
+# Copy this file to config/mcp.yml (gitignored) and add the MCPs you
+# want to run. The host daemon brings each one up as a docker
+# container on the shared `ea-net` network. Container names follow
+# the `ea-mcp-<id>` pattern.
+#
+# This file is OPTIONAL — when missing, the daemon simply runs no
+# MCPs. Run `./cli.sh mcp lint` to validate after editing.
+#
+# Each top-level key is an MCP id. Ids must be lowercase alphanumeric
+# (with dashes), starting with an alphanumeric.
+#
+# Currently only `source: docker-mcp-registry` is implemented.
+# Entries with `source: npm`, `pypi`, or `external` parse and lint,
+# but the runner refuses to start them until those factories land.
+
+fetch:
+  title: "Fetch"
+  description: "Fetches a URL from the internet and extracts its contents as markdown."
+  source: docker-mcp-registry
+  image: mcp/fetch
+  # `env`, `volumes`, `args`, `command`, `network` are all optional.
+  # See docs/mcp.md for the full reference.
+  env: []
+  volumes: []
+  args: []
+  network:
+    disable: false
+    allowHosts: []
+
+# Example of an env-driven MCP. Uncomment and fill in to use.
+#
+# github:
+#   title: "GitHub"
+#   description: "Read and write GitHub issues, PRs, and code search."
+#   source: docker-mcp-registry
+#   image: mcp/github
+#   env:
+#     - name: GITHUB_TOKEN
+#       value: REPLACE_ME
+#       is_secret: true
+#       example: "ghp_..."
+#       description: "Personal access token with repo + read:org scopes."

@@ -19,6 +19,7 @@ import { AgentContainer } from "../container-runner/AgentContainer.js";
 import { ReverseProxyContainer } from "../container-runner/ReverseProxyContainer.js";
 import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
+import { McpRunner } from "../mcp/McpRunner.js";
 import { PluginHost } from "../plugins/PluginHost.js";
 import { rollingFileStream } from "../tools/LogRetentionTools.js";
 
@@ -29,8 +30,8 @@ const FEATHERLESS_BASE_URL_FOR_AGENT = "http://ea-reverse-proxy:8788/v1";
  * `ea start` — bring up the daemon: postgres, schema, agent container,
  * then idle waiting for SIGTERM/SIGINT to drain everything cleanly.
  *
- * Start order:   ea-net → postgres → schema → agent
- * Stop order:    agent  → postgres
+ * Start order:   ea-net → postgres → schema → reverse-proxy → mcps → agent
+ * Stop order:    plugin host → agent → mcps → reverse-proxy → postgres
  */
 export const startCommand = defineCommand({
     meta: {
@@ -102,6 +103,10 @@ export const startCommand = defineCommand({
             featherlessBaseUrl: FEATHERLESS_BASE_URL_FOR_AGENT,
             verbose,
         });
+        const mcps = new McpRunner({
+            configFile: boot.mcpConfigFile,
+            log: log.child({ component: "mcp-runner" }),
+        });
 
         await ensureNetwork(SHARED_NETWORK_NAME);
         log.info({ network: SHARED_NETWORK_NAME }, "ensured network");
@@ -124,6 +129,8 @@ export const startCommand = defineCommand({
             "reverse proxy started",
         );
 
+        await mcps.start();
+
         await container.start();
         log.info(
             { running: container.isRunning, container: "ea-agent" },
@@ -145,6 +152,7 @@ export const startCommand = defineCommand({
 
             await safeStop(log, "plugin host", () => pluginHost.close());
             await safeStop(log, "agent container", () => container.stop());
+            await safeStop(log, "mcp runner", () => mcps.stop());
             await safeStop(log, "reverse proxy", () => reverseProxy.stop());
             await safeStop(log, "postgres", () => postgres.stop());
             stopContainerLogStream(containerLogStream);

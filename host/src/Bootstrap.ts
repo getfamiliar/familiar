@@ -44,6 +44,14 @@ export interface Bootstrap {
      * `lintConfigFile` from any command that needs configured values.
      */
     readonly configFile: string;
+    /**
+     * Absolute host path of the MCP-servers YAML file
+     * (`config/mcp.yml`). Optional at runtime — when absent, no MCPs
+     * run. The file is gitignored; `config/mcp.example.yml` is the
+     * tracked sample. Read by the `McpRunner` and the `mcp lint`
+     * subcommand.
+     */
+    readonly mcpConfigFile: string;
 }
 
 /**
@@ -66,5 +74,6 @@ export function bootstrap(): Bootstrap {
         logsDir: `${dataDir}/logs`,
         containerSrcDir,
         configFile: `${projectRoot}/config/config.yml`,
+        mcpConfigFile: `${projectRoot}/config/mcp.yml`,
     });
 }
