@@ -8,5 +8,11 @@
         "host",
         "container",
         "plugins/*"
-    ]
+    ],
+    "scripts": {
+        "test": "npm test --workspaces --if-present"
+    },
+    "devDependencies": {
+        "tsx": "^4.20.4"
+    }
 }

@@ -11,7 +11,8 @@
         "format": "biome format --write --config-path ../.. src/",
         "format:check": "biome format --config-path ../.. src/",
         "lint": "biome lint --config-path ../.. src/",
-        "check": "biome check --config-path ../.. src/"
+        "check": "biome check --config-path ../.. src/",
+        "test": "tsx --test 'src/**/*.test.ts'"
     },
     "license": "MIT",
     "dependencies": {
