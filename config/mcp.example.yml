@@ -1,9 +1,11 @@
 # Effective Assistant — MCP servers.
 #
 # Copy this file to config/mcp.yml (gitignored) and add the MCPs you
-# want to run. The host daemon brings each one up as a docker
-# container on the shared `ea-net` network. Container names follow
-# the `ea-mcp-<id>` pattern.
+# want to run. The host-side bastion brings stdio MCPs up on demand
+# as docker children when the agent calls them; container names
+# follow the `ea-mcp-<id>` pattern. After `idleTimeoutSeconds`
+# (default 1800 s) of inactivity the child is reaped; the next
+# request cold-spawns it again.
 #
 # This file is OPTIONAL — when missing, the daemon simply runs no
 # MCPs. Run `./cli.sh mcp lint` to validate after editing.
@@ -11,23 +13,25 @@
 # Each top-level key is an MCP id. Ids must be lowercase alphanumeric
 # (with dashes), starting with an alphanumeric.
 #
-# Currently only `source: docker-mcp-registry` is implemented.
-# Entries with `source: npm`, `pypi`, or `external` parse and lint,
-# but the runner refuses to start them until those factories land.
+# Sources implemented today: `docker-mcp-registry` (stdio), `external`
+# (HTTP forward). `npm` and `pypi` parse and lint, but the bastion
+# refuses to start them until those factories land.
 
 fetch:
   title: "Fetch"
   description: "Fetches a URL from the internet and extracts its contents as markdown."
   source: docker-mcp-registry
   image: mcp/fetch
-  # `env`, `volumes`, `args`, `command`, `network` are all optional.
-  # See docs/mcp.md for the full reference.
+  # All fields below are optional. See docs/mcp.md for the full
+  # reference. `idleTimeoutSeconds` defaults to 1800 (30 min) and
+  # only affects stdio-transport (docker-mcp-registry) MCPs.
   env: []
   volumes: []
   args: []
   network:
     disable: false
     allowHosts: []
+  # idleTimeoutSeconds: 1800
 
 # Example of an env-driven MCP. Uncomment and fill in to use.
 #

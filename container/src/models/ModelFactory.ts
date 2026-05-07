@@ -18,24 +18,30 @@ const DEFAULT_MODEL_ID = "zai-org/GLM-5.1";
 // biome-ignore lint/complexity/noStaticOnlyClass: Reserved as a growth point for per-id caching.
 export class ModelFactory {
     /**
-     * Build a chat language-model object for the requested provider id.
-     * Reads `FEATHERLESS_BASE_URL` and `FEATHERLESS_API_KEY` from the
-     * container env (injected by the host daemon; the API key is a
-     * placeholder and the real key only lives in the reverse proxy).
+     * Build a chat language-model object for the requested model id.
+     *
+     * Reads `BASTION_URL`, `INFERENCE_PROVIDER`, and `INFERENCE_API_KEY`
+     * from the container env (injected by the host daemon). The base
+     * URL is composed as `${BASTION_URL}/llm/${INFERENCE_PROVIDER}/v1`
+     * so the host-side bastion's `/llm/<provider>/v1/*` route handles
+     * the request and injects the real upstream key. The api key in
+     * the container is a placeholder — the bastion strips it.
      *
      * @param modelId Provider-specific model id from the handler's YAML
      *   header. Falls back to {@link DEFAULT_MODEL_ID} when undefined.
-     * @throws If either env var is unset.
+     * @throws If any of the three env vars is unset.
      */
     static build(modelId?: string): LanguageModel {
-        const baseURL = requireEnv("FEATHERLESS_BASE_URL");
-        const apiKey = requireEnv("FEATHERLESS_API_KEY");
-        const provider = createOpenAICompatible({
-            name: "featherless",
+        const bastionUrl = requireEnv("BASTION_URL");
+        const provider = requireEnv("INFERENCE_PROVIDER");
+        const apiKey = requireEnv("INFERENCE_API_KEY");
+        const baseURL = `${bastionUrl.replace(/\/$/, "")}/llm/${provider}/v1`;
+        const compat = createOpenAICompatible({
+            name: provider,
             baseURL,
             apiKey,
         });
-        return provider.chatModel(modelId ?? DEFAULT_MODEL_ID);
+        return compat.chatModel(modelId ?? DEFAULT_MODEL_ID);
     }
 }
 

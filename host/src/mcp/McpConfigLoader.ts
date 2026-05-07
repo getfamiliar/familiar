@@ -1,7 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Logger } from "effective-assistant-shared";
 import { parse, YAMLParseError } from "yaml";
-import type { McpEntries, McpEntry, McpEnvVar, McpNetwork, McpSource } from "./McpEntry.js";
+import {
+    DEFAULT_IDLE_TIMEOUT_SECONDS,
+    type McpEntries,
+    type McpEntry,
+    type McpEnvVar,
+    type McpNetwork,
+    type McpSource,
+} from "./McpEntry.js";
 
 /**
  * Result of an `mcp.yml` lint pass. Mirrors the shape of
@@ -154,6 +161,18 @@ function validateEntry(id: string, value: unknown, errors: string[], warnings: s
     if (e.command !== undefined && e.command !== null && typeof e.command !== "string") {
         errors.push(`mcp.yml entry "${id}": command must be a string or null.`);
     }
+
+    if (e.idleTimeoutSeconds !== undefined) {
+        if (
+            typeof e.idleTimeoutSeconds !== "number" ||
+            !Number.isInteger(e.idleTimeoutSeconds) ||
+            e.idleTimeoutSeconds <= 0
+        ) {
+            errors.push(
+                `mcp.yml entry "${id}": idleTimeoutSeconds must be a positive integer (got ${describe(e.idleTimeoutSeconds)}).`,
+            );
+        }
+    }
 }
 
 /**
@@ -304,6 +323,10 @@ function materializeEntry(id: string, raw: Record<string, unknown>): McpEntry {
         package: typeof raw.package === "string" ? raw.package : undefined,
         version: typeof raw.version === "string" ? raw.version : undefined,
         url: typeof raw.url === "string" ? raw.url : undefined,
+        idleTimeoutSeconds:
+            typeof raw.idleTimeoutSeconds === "number"
+                ? raw.idleTimeoutSeconds
+                : DEFAULT_IDLE_TIMEOUT_SECONDS,
     };
 }
 

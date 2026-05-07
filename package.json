@@ -2,12 +2,11 @@
     "name": "effective-assistant",
     "version": "0.0.1",
     "private": true,
-    "description": "Effective-assistant root workspace. The actual code lives in shared/, host/, container/, reverse-proxy/, and plugins/<name>/.",
+    "description": "Effective-assistant root workspace. The actual code lives in shared/, host/, container/, and plugins/<name>/. The host-side bastion (LLM proxy + MCP gateway) lives under host/src/bastion/.",
     "workspaces": [
         "shared",
         "host",
         "container",
-        "reverse-proxy",
         "plugins/*"
     ]
 }

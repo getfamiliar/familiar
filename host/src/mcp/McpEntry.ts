@@ -66,7 +66,22 @@ export interface McpEntry {
     readonly version?: string;
     /** Required when `source === "external"`. Endpoint URL. */
     readonly url?: string;
+    /**
+     * Seconds of inactivity after which a stdio-transport MCP child is
+     * stopped and reaped. The next request cold-spawns it again.
+     * Materialized to {@link DEFAULT_IDLE_TIMEOUT_SECONDS} when omitted
+     * from `mcp.yml`. Has no effect on HTTP/external transports.
+     */
+    readonly idleTimeoutSeconds: number;
 }
+
+/**
+ * Default idle timeout for stdio MCP children when an entry does not set
+ * `idleTimeoutSeconds`. Thirty minutes is long enough that a working
+ * conversation keeps the child warm; short enough that idle catalogs
+ * don't tie up a docker container per declared MCP indefinitely.
+ */
+export const DEFAULT_IDLE_TIMEOUT_SECONDS = 1800;
 
 /** Map of mcp id → entry. The YAML key is the id. */
 export type McpEntries = ReadonlyMap<string, McpEntry>;

@@ -4,19 +4,23 @@ This document covers how the effective-assistant runtime brings up
 [Model Context Protocol](https://modelcontextprotocol.io) servers as
 docker containers and how to configure them via `config/mcp.yml`.
 
-> **Status.** The runtime spins MCP containers up and down. The
-> agent does **not** yet talk to them — wiring MCP tools into the
-> agent loop is the follow-up step. This page describes the
-> infrastructure that's in place today.
+> **Status.** The host-side **bastion** brings stdio MCPs up on demand
+> as docker children and forwards external HTTP MCPs. The agent does
+> **not** yet talk to them — wiring MCP tools into the agent loop is
+> the follow-up step. This page describes the infrastructure in place
+> today.
 
-## What an MCP is, and why we run it as a container
+## What an MCP is, and how we run it
 
 An MCP server exposes tools (functions the model can call: search
-GitHub, fetch a URL, read mail, etc.) over a standard protocol. We
-run each MCP as a separate docker container on the shared `ea-net`
-network so it can be added or removed without rebuilding the agent
-image, and so per-MCP filesystem and network restrictions can be
-applied at the container boundary.
+GitHub, fetch a URL, read mail, etc.) over a standard protocol. The
+**bastion** — a host-side HTTP service the agent dials at
+`${BASTION_URL}/mcp/<id>/...` — owns MCP lifecycle. For stdio-transport
+MCPs the bastion spawns a foreground `docker run -i` child on first
+request, multiplexes JSON-RPC over its stdin/stdout, and reaps the
+child after the entry's `idleTimeoutSeconds` of inactivity. For HTTP /
+external MCPs the bastion forwards the request to the upstream URL.
+The agent never gains docker access or outbound internet.
 
 ## The four sources
 
@@ -25,10 +29,10 @@ selects which factory builds the container.
 
 | `source` | What it is | Status |
 | --- | --- | --- |
-| `docker-mcp-registry` | Image from the [Docker MCP registry](https://github.com/docker/mcp-registry) (e.g. `mcp/fetch`). The image is pulled and run as-is. | **Implemented.** |
-| `npm` | npm package run inside a generic node container. Intended for MCPs distributed via npm without an official docker image. | Stub — declaring this source today fails fast at boot. |
+| `docker-mcp-registry` | Image from the [Docker MCP registry](https://github.com/docker/mcp-registry) (e.g. `mcp/fetch`). The bastion spawns a foreground `docker run -i` child on demand. | **Implemented (stdio transport).** |
+| `npm` | npm package run inside a generic node container. Intended for MCPs distributed via npm without an official docker image. | Stub — declaring this source today fails fast at gateway start. |
 | `pypi` | pypi package run inside a generic python container. Same idea as `npm`. | Stub. |
-| `external` | Remote MCP reachable over HTTP. No container is started; the runner only stores the URL for the (future) agent tool layer to dial. | Stub — parses, but nothing yet consumes the URL. |
+| `external` | Remote MCP reachable over HTTP. No container is started; the bastion forwards the request to the configured URL. | **Implemented (HTTP forward).** |
 
 ## Adding an MCP by hand: `fetch` walkthrough
 
@@ -74,6 +78,7 @@ must match `^[a-z0-9][a-z0-9-]*$` and is used as the container suffix
 | `args` | array of strings | no | `[]` | CLI args appended after the image's `CMD`. |
 | `command` | string \| null | no | `null` | When set, overrides the image's `ENTRYPOINT`. |
 | `network` | mapping | no | see below | Network constraints. |
+| `idleTimeoutSeconds` | positive integer | no | `1800` | Seconds of stdio inactivity after which the child is closed and reaped. Next request cold-spawns. Has no effect on HTTP / external transports. |
 
 ### `env` entries
 
@@ -111,21 +116,29 @@ that npm/pypi/external entries use the same shape.
 - **Lint.** `./cli.sh mcp lint` validates `config/mcp.yml`. A
   missing file is treated as "no MCPs" and is not an error.
 - **Listing live MCPs.** `docker ps --filter name=ea-mcp-` shows
-  every running MCP container.
-- **Logs.** The daemon does not yet stream individual MCP container
-  logs into the host log file (only the agent's are streamed).
-  Inspect them directly with `docker logs ea-mcp-<id>` for now.
+  every currently-spawned MCP child. Containers are **ephemeral**:
+  they only exist while the bastion holds them open, and disappear
+  after `idleTimeoutSeconds`.
+- **Logs.** The bastion logs every spawn / idle-reap / crash event in
+  the host log stream. To see an MCP child's own stdout/stderr while
+  it is alive: `docker logs ea-mcp-<id>`.
 - **Container naming.** Every MCP runs as `ea-mcp-<id>`. Ids must
   match `^[a-z0-9][a-z0-9-]*$`.
+- **Multi-provider LLM URLs.** The bastion also handles
+  `${BASTION_URL}/llm/<provider>/v1/*` for inference. Add more
+  providers by adding their key under `inference.apiKeys.<provider>`
+  in `config.yml`; common providers (featherless, groq, openai,
+  anthropic, deepseek) ship with a built-in upstream URL, others
+  need an `inference.baseUrls.<provider>` override.
 
 ## Future
 
 - A CLI helper that fetches a `server.yaml` URL from the Docker MCP
   registry and writes a translated entry into `mcp.yml`.
-- Wiring MCPs into the agent's tool loop (transport selection: stdio
-  via `docker exec`, or HTTP for sources that support it).
-- Auth injection through the reverse proxy on outbound calls from
-  MCP containers, so credentials never live in the container.
+- Wiring MCPs into the agent's tool loop.
+- Streamable HTTP / SSE transport for stdio MCPs that need
+  long-running sessions or server-initiated notifications.
+- Auth injection through the bastion on outbound calls *from* MCP
+  children (e.g. fetch hitting example.com).
 - `allowHosts` enforcement via an egress proxy.
-- Real `npm`, `pypi`, and `external` factories.
-- Streaming MCP container logs into the central host log stream.
+- Real `npm` and `pypi` factories.

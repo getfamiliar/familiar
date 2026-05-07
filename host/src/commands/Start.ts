@@ -13,25 +13,23 @@ import {
 } from "effective-assistant-shared";
 import type { Bootstrap } from "../Bootstrap.js";
 import { bootstrap } from "../Bootstrap.js";
+import { Bastion } from "../bastion/Bastion.js";
+import { buildProviders, ReverseProxy } from "../bastion/ReverseProxy.js";
 import { lintOrThrow } from "../config/ConfigLinter.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { AgentContainer } from "../container-runner/AgentContainer.js";
-import { ReverseProxyContainer } from "../container-runner/ReverseProxyContainer.js";
 import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
-import { McpRunner } from "../mcp/McpRunner.js";
+import { McpGateway } from "../mcp/McpGateway.js";
 import { PluginHost } from "../plugins/PluginHost.js";
 import { rollingFileStream } from "../tools/LogRetentionTools.js";
-
-const FEATHERLESS_UPSTREAM_BASE = "https://api.featherless.ai";
-const FEATHERLESS_BASE_URL_FOR_AGENT = "http://ea-reverse-proxy:8788/v1";
 
 /**
  * `ea start` — bring up the daemon: postgres, schema, agent container,
  * then idle waiting for SIGTERM/SIGINT to drain everything cleanly.
  *
- * Start order:   ea-net → postgres → schema → reverse-proxy → mcps → agent
- * Stop order:    plugin host → agent → mcps → reverse-proxy → postgres
+ * Start order:   ea-net → postgres → schema → bastion (LLM proxy + MCP gateway) → agent
+ * Stop order:    plugin host → agent → bastion → postgres
  */
 export const startCommand = defineCommand({
     meta: {
@@ -65,11 +63,19 @@ export const startCommand = defineCommand({
         const config = new HostConfigService(boot.configFile);
 
         const postgresPassword = config.getString("core.postgresPassword");
-        const provider = config.getString("inference.provider");
-        const upstreamInferenceKey = config.getString(`inference.apiKeys.${provider}`);
+        const inferenceProvider = config.getString("inference.provider");
+        // Touch the matching api key so a missing value fails the daemon
+        // now rather than at first inference call.
+        config.getString(`inference.apiKeys.${inferenceProvider}`);
         // Touch the chat-channel default so a missing value fails the
         // daemon now rather than at first chat event.
         config.getString("core.defaultChatChannel");
+        // Build the providers map for the bastion's reverse-proxy module.
+        // Every key under `inference.apiKeys` becomes a `/llm/<id>/v1`
+        // route; unknown providers without a baseUrls override fail loudly.
+        const apiKeys = config.getMapping("inference.apiKeys");
+        const baseUrlOverrides = config.getMapping("inference.baseUrls", {});
+        const providers = buildProviders(apiKeys, baseUrlOverrides);
 
         const log = await buildDaemonLogger(boot, config, verbose);
 
@@ -90,22 +96,17 @@ export const startCommand = defineCommand({
             portFilePath: boot.postgresPortFile,
             password: postgresPassword,
         });
-        const reverseProxy = new ReverseProxyContainer({
-            imageName: "ea-reverse-proxy",
-            upstreamBase: FEATHERLESS_UPSTREAM_BASE,
-            upstreamApiKey: upstreamInferenceKey,
+        const reverseProxy = new ReverseProxy({
+            providers,
+            log: log.child({ component: "reverse-proxy" }),
         });
-        const container = new AgentContainer({
-            imageName: "effective-agent",
-            dataPath: boot.dataDir,
-            containerSrcPath: boot.containerSrcDir,
-            postgresPassword,
-            featherlessBaseUrl: FEATHERLESS_BASE_URL_FOR_AGENT,
-            verbose,
+        const mcpGateway = new McpGateway({
+            mcpConfigFile: boot.mcpConfigFile,
+            log: log.child({ component: "mcp-gateway" }),
         });
-        const mcps = new McpRunner({
-            configFile: boot.mcpConfigFile,
-            log: log.child({ component: "mcp-runner" }),
+        const bastion = new Bastion({
+            log: log.child({ component: "bastion" }),
+            modules: [reverseProxy, mcpGateway],
         });
 
         await ensureNetwork(SHARED_NETWORK_NAME);
@@ -123,13 +124,18 @@ export const startCommand = defineCommand({
             await schemaConnection.close();
         }
 
-        await reverseProxy.start();
-        log.info(
-            { running: reverseProxy.isRunning, container: "ea-reverse-proxy" },
-            "reverse proxy started",
-        );
+        await bastion.start();
+        log.info({ url: bastion.url }, "bastion started");
 
-        await mcps.start();
+        const container = new AgentContainer({
+            imageName: "effective-agent",
+            dataPath: boot.dataDir,
+            containerSrcPath: boot.containerSrcDir,
+            postgresPassword,
+            bastionUrl: bastion.url,
+            inferenceProvider,
+            verbose,
+        });
 
         await container.start();
         log.info(
@@ -152,8 +158,7 @@ export const startCommand = defineCommand({
 
             await safeStop(log, "plugin host", () => pluginHost.close());
             await safeStop(log, "agent container", () => container.stop());
-            await safeStop(log, "mcp runner", () => mcps.stop());
-            await safeStop(log, "reverse proxy", () => reverseProxy.stop());
+            await safeStop(log, "bastion", () => bastion.stop());
             await safeStop(log, "postgres", () => postgres.stop());
             stopContainerLogStream(containerLogStream);
 

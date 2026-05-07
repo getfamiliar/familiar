@@ -1,40 +1,75 @@
+import type { Logger } from "effective-assistant-shared";
+import { SHARED_NETWORK_NAME } from "../../DockerTools.js";
 import type { McpEntry } from "../McpEntry.js";
-import { McpServer } from "../McpServer.js";
 import type { McpServerFactory } from "../McpServerFactory.js";
+import type { McpTransport } from "../transports/McpTransport.js";
+import { StdioMcpTransport } from "../transports/StdioMcpTransport.js";
 
 /**
- * `McpServer` subclass that runs an image pulled from the Docker MCP
- * registry. The image reference is the registry's `image` field
- * (e.g. `mcp/fetch`), copied verbatim into `mcp.yml` for now; a
- * future CLI helper will fetch and translate the registry's
- * `server.yaml` automatically.
+ * Build the `docker run` argv vector for a foreground stdio MCP child.
+ *
+ * Layout:
+ *   run -i --rm --name ea-mcp-<id> --network <net>
+ *     [--entrypoint <command>]
+ *     [-e KEY=VAL ...]
+ *     [-v HOST:CONTAINER[:ro] ...]
+ *     <image> [args...]
+ *
+ * `-i` keeps stdin attached so the MCP can read JSON-RPC frames; no
+ * `-d` (this is a foreground child of the bastion); `--rm` reaps the
+ * container when the process exits.
  */
-class DockerRegistryMcpServer extends McpServer {
-    private readonly imageRef: string;
+function dockerArgsForEntry(entry: McpEntry): string[] {
+    if (entry.image === undefined) {
+        throw new Error(`MCP "${entry.id}": docker-mcp-registry source requires an "image" field.`);
+    }
+    const args: string[] = ["run", "-i", "--rm", "--name", `ea-mcp-${entry.id}`];
 
-    constructor(entry: McpEntry) {
-        super(entry);
-        if (entry.image === undefined) {
-            throw new Error(
-                `MCP "${entry.id}": docker-mcp-registry source requires an "image" field.`,
-            );
-        }
-        this.imageRef = entry.image;
+    if (entry.network.disable) {
+        args.push("--network", "none");
+    } else {
+        args.push("--network", SHARED_NETWORK_NAME);
     }
 
-    protected override get image(): string {
-        return this.imageRef;
+    if (entry.command !== null) {
+        args.push("--entrypoint", entry.command);
     }
+
+    for (const env of entry.env) {
+        args.push("-e", `${env.name}=${env.value}`);
+    }
+    for (const volume of entry.volumes) {
+        args.push("-v", volume);
+    }
+
+    args.push(entry.image);
+
+    for (const a of entry.args) {
+        args.push(a);
+    }
+
+    return args;
 }
 
 /**
- * Factory for `source: docker-mcp-registry`. Each entry produces a
- * {@link DockerRegistryMcpServer}. No registry-side lookup happens
- * here — `mcp.yml` is the source of truth at runtime; the registry
- * URL is only consulted by the (future) "add MCP" CLI helper.
+ * Factory for `source: docker-mcp-registry`. Produces an
+ * {@link StdioMcpTransport} configured with a foreground `docker run -i`
+ * argv vector synthesized from the entry. The image is pulled lazily
+ * by docker on first spawn.
  */
 export class DockerMcpRegistryFactory implements McpServerFactory {
-    create(entry: McpEntry): McpServer {
-        return new DockerRegistryMcpServer(entry);
+    private readonly log: Logger;
+
+    constructor(log: Logger) {
+        this.log = log;
+    }
+
+    create(entry: McpEntry): McpTransport {
+        return new StdioMcpTransport({
+            id: entry.id,
+            dockerArgs: dockerArgsForEntry(entry),
+            idleTimeoutSeconds: entry.idleTimeoutSeconds,
+            log: this.log.child({ mcp: entry.id }),
+        });
     }
 }

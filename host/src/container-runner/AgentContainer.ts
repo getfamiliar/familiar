@@ -1,15 +1,22 @@
-import { dockerExec, removeContainer, SHARED_NETWORK_NAME, stopContainer } from "../DockerTools.js";
+import {
+    dockerExec,
+    hostGatewayArgs,
+    removeContainer,
+    SHARED_NETWORK_NAME,
+    stopContainer,
+} from "../DockerTools.js";
 
 const CONTAINER_NAME = "ea-agent";
 
 /**
- * Placeholder API key handed to the agent container. The real Featherless
- * key lives only in the reverse proxy; the OpenAI-compatible client in the
- * container needs *some* string to send as `Authorization`, but the proxy
- * strips it and substitutes the real key. This value being readable from
- * inside the container is intentional — it grants no upstream access.
+ * Placeholder API key handed to the agent container. The real LLM
+ * provider keys live only on the host (in the bastion's ReverseProxy
+ * module); the OpenAI-compatible client in the container needs *some*
+ * string to send as `Authorization`, but the bastion strips it and
+ * substitutes the real key. This value being readable from inside the
+ * container is intentional — it grants no upstream access.
  */
-const PLACEHOLDER_API_KEY = "via-proxy";
+const PLACEHOLDER_API_KEY = "via-bastion";
 
 /** Configuration for the single long-running agent container. */
 export interface AgentContainerConfig {
@@ -26,11 +33,18 @@ export interface AgentContainerConfig {
     /** Postgres password forwarded to the agent as `POSTGRES_PASSWORD`. */
     readonly postgresPassword: string;
     /**
-     * Base URL the agent's LLM client should hit, e.g.
-     * `http://ea-reverse-proxy:8788/v1`. Resolved on the shared Docker
-     * network; the agent never reaches the real provider directly.
+     * Base URL the agent should dial for everything privileged
+     * (LLM proxying, MCP gateway). Resolved at daemon start as
+     * `http://<ea-net-gateway-ip>:<port>`. The agent appends
+     * `/llm/<provider>/v1` for inference and `/mcp/<id>` for tools.
      */
-    readonly featherlessBaseUrl: string;
+    readonly bastionUrl: string;
+    /**
+     * Provider id the agent uses by default for inference (e.g.
+     * `featherless`). Combined with `bastionUrl` to form the LLM
+     * client's base URL.
+     */
+    readonly inferenceProvider: string;
     /**
      * When true, the agent container runs at debug log level
      * (`EA_LOG_LEVEL=debug`). Mirrors the daemon's `--verbose` flag so
@@ -79,12 +93,17 @@ export class AgentContainer {
             CONTAINER_NAME,
             "--network",
             SHARED_NETWORK_NAME,
+            // On Linux, `host.docker.internal` isn't built-in; map it to
+            // the host gateway so the agent can reach the bastion.
+            ...hostGatewayArgs(),
             "-e",
             `POSTGRES_PASSWORD=${this.config.postgresPassword}`,
             "-e",
-            `FEATHERLESS_BASE_URL=${this.config.featherlessBaseUrl}`,
+            `BASTION_URL=${this.config.bastionUrl}`,
             "-e",
-            `FEATHERLESS_API_KEY=${PLACEHOLDER_API_KEY}`,
+            `INFERENCE_PROVIDER=${this.config.inferenceProvider}`,
+            "-e",
+            `INFERENCE_API_KEY=${PLACEHOLDER_API_KEY}`,
             "-e",
             `EA_LOG_LEVEL=${this.config.verbose ? "debug" : "info"}`,
             "-v",

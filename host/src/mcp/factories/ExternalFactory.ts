@@ -1,20 +1,31 @@
-import { ExternalMcpServer } from "../ExternalMcpServer.js";
+import type { Logger } from "effective-assistant-shared";
 import type { McpEntry } from "../McpEntry.js";
-import type { McpServer } from "../McpServer.js";
 import type { McpServerFactory } from "../McpServerFactory.js";
+import { HttpMcpTransport } from "../transports/HttpMcpTransport.js";
+import type { McpTransport } from "../transports/McpTransport.js";
 
 /**
- * Factory for `source: external`. The MCP runs somewhere outside our
- * docker network and is reached over HTTP — no container is started.
- *
- * The factory itself is implemented (it returns a real
- * {@link ExternalMcpServer}), but the surrounding wiring is not:
- * nothing in the agent yet knows how to dial an MCP, with or without
- * the reverse proxy injecting auth. The instance produced here is
- * inert until that wiring lands.
+ * Factory for `source: external`. Produces an {@link HttpMcpTransport}
+ * pointing at the entry's `url`. The transport is real and works
+ * today, but nothing in the agent yet dials `${BASTION_URL}/mcp/<id>`,
+ * so external MCPs are reachable through the gateway but not yet
+ * consumed by handlers.
  */
 export class ExternalFactory implements McpServerFactory {
-    create(entry: McpEntry): McpServer {
-        return new ExternalMcpServer(entry);
+    private readonly log: Logger;
+
+    constructor(log: Logger) {
+        this.log = log;
+    }
+
+    create(entry: McpEntry): McpTransport {
+        if (entry.url === undefined) {
+            throw new Error(`MCP "${entry.id}": external source requires a "url" field.`);
+        }
+        return new HttpMcpTransport({
+            id: entry.id,
+            upstreamUrl: entry.url,
+            log: this.log.child({ mcp: entry.id }),
+        });
     }
 }

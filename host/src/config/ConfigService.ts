@@ -77,6 +77,37 @@ export class HostConfigService implements ConfigService {
     }
 
     /**
+     * Read a YAML mapping under a dotted path. Returns the raw record
+     * so callers can enumerate keys (e.g. listing every configured
+     * provider under `inference.apiKeys.*`). Values are untyped — the
+     * caller validates each one.
+     *
+     * Host-only on purpose: plugins reach config via the shared
+     * `ConfigService` interface, which deliberately omits this. If a
+     * plugin needs sub-tree enumeration we widen the interface.
+     */
+    getMapping(key: string): Readonly<Record<string, unknown>>;
+    getMapping<T>(key: string, defaultValue: T): Readonly<Record<string, unknown>> | T;
+    getMapping<T>(
+        key: string,
+        ...rest: [] | [defaultValue: T]
+    ): Readonly<Record<string, unknown>> | T {
+        const value = readPath(this.ensureLoaded(), key);
+        if (
+            value !== null &&
+            value !== undefined &&
+            typeof value === "object" &&
+            !Array.isArray(value)
+        ) {
+            return value as Record<string, unknown>;
+        }
+        if (rest.length > 0) {
+            return rest[0] as T;
+        }
+        throw missingError(key, "mapping", value);
+    }
+
+    /**
      * Set a single dotted-path key and persist atomically. Re-reads
      * from disk first so that concurrent hand-edits aren't silently
      * overwritten on the unmodified portion of the file.
