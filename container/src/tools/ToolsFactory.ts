@@ -2,7 +2,6 @@ import type { ToolSet } from "ai";
 import type { AgentRunBus, AgentRunRow, Logger } from "effective-assistant-shared";
 import type { ChatManager } from "../chat/ChatManager.js";
 import { buildFsTools } from "./fs.js";
-import { buildGetWeatherTool } from "./getWeather.js";
 import { buildQueueRunTool } from "./queueRun.js";
 import { buildSendChatTool } from "./sendChat.js";
 import {
@@ -57,10 +56,10 @@ export interface ToolsFactoryContext {
  * hands to the Vercel AI SDK's tool-loop agent.
  *
  * **One pool, one filter.** System tools (`send_chat`, `queue_run`,
- * `get_weather`, `file_*`, `fs_*`) and MCP tools (`${id}_${name}`)
- * are merged into a single available set. The handler's `tools:`
- * expression — or, when omitted, the implicit `system` default —
- * decides what survives.
+ * `file_*`, `fs_*`) and MCP tools (`${id}_${name}`) are merged into
+ * a single available set. The handler's `tools:` expression — or,
+ * when omitted, the implicit `system` default — decides what
+ * survives.
  *
  * Built-in groups visible from any expression:
  *
@@ -81,9 +80,7 @@ export class ToolsFactory {
      * unified system+MCP pool and returns the projected `ToolSet`.
      */
     static build(context: ToolsFactoryContext = {}): ToolSet {
-        const systemTools: ToolSet = {
-            get_weather: buildGetWeatherTool(),
-        };
+        const systemTools: ToolSet = {};
         if (context.chat && context.eventId) {
             systemTools.send_chat = buildSendChatTool(context.chat, context.eventId);
         }

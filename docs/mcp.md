@@ -134,8 +134,8 @@ child idle-reaps so this stays cheap.
 
 Handlers declare which tools they want via a `tools:` expression in
 their YAML header. The expression filters across **all** registered
-tools — system tools (`send_chat`, `queue_run`, `get_weather`,
-`file_*`, `fs_*`) and namespaced MCP tools share one available pool.
+tools — system tools (`send_chat`, `queue_run`, `file_*`, `fs_*`)
+and namespaced MCP tools share one available pool.
 
 **Omitted ⇒ implicit `system`.** A handler with no `tools:` line
 gets every system tool registered for the agentrun and no MCP
