@@ -33,8 +33,31 @@
  * built-in always wins.
  */
 
-/** Built-in group name; resolves to every available namespaced tool. */
+/**
+ * Built-in group names handled by the evaluator before any user
+ * lookup. They cannot be redefined in `workspace/toolgroups/*.txt` —
+ * the resolver short-circuits them, so a same-named user file is
+ * silently shadowed.
+ *
+ * - `all`   — every key in the available pool (system ∪ MCP).
+ * - `system` — only system-tool keys, as supplied by the caller via
+ *   the `builtins` map.
+ * - `mcp`   — only MCP-tool keys, ditto.
+ * - `none`  — empty set; lets a child handler override its parent's
+ *   `tools:` to nothing under the replace-merge rule.
+ */
 export const ALL_GROUP_NAME = "all";
+export const SYSTEM_GROUP_NAME = "system";
+export const MCP_GROUP_NAME = "mcp";
+export const NONE_GROUP_NAME = "none";
+
+/** All reserved built-in group names. Used by the loader for sanity checks. */
+export const RESERVED_GROUP_NAMES: ReadonlySet<string> = new Set([
+    ALL_GROUP_NAME,
+    SYSTEM_GROUP_NAME,
+    MCP_GROUP_NAME,
+    NONE_GROUP_NAME,
+]);
 
 /** Pattern an identifier (group name) must match. */
 export const IDENT_PATTERN = /^[a-z][a-z0-9-]*$/;
@@ -59,6 +82,18 @@ export type GroupLineEntry = ToolEntry | GroupEntry;
 
 /** A `GroupDef` is the ordered list of entries declared in a group's `.txt` file. */
 export type GroupDef = readonly GroupLineEntry[];
+
+/**
+ * Lazy lookup for user-defined groups. Returns the group's parsed
+ * entries, or `undefined` if no `<name>.txt` file exists. Throws
+ * (with file + line number) if the file exists but is malformed.
+ *
+ * The evaluator never calls the lookup for a reserved built-in
+ * (`all` / `system` / `mcp` / `none`); those are resolved
+ * internally so a malformed file in the workspace can't poison
+ * built-in resolution.
+ */
+export type GroupLookup = (name: string) => GroupDef | undefined;
 
 /** AST node returned by {@link parseExpression} and consumed by {@link evaluate}. */
 export type FilterAst =
@@ -101,21 +136,28 @@ export function parseGroupLine(line: string): GroupLineEntry | null {
 
 /**
  * Evaluate a parsed expression against a snapshot of available tool
- * keys plus the loaded group definitions. Returns the filtered set.
+ * keys plus a lazy group lookup. Returns the filtered set.
  *
  * @param ast Parsed expression tree from {@link parseExpression}.
- * @param available Every namespaced tool key the pool currently
- *   exposes (`${id}_${name}` form).
- * @param groups Map of group name → ordered entries; built by
- *   {@link ToolGroupLoader.loadGroups}.
- * @throws On unknown groups or cycles in the group reference chain.
+ * @param available Every tool key the agentrun currently exposes —
+ *   system tools plus namespaced MCP-tool keys, unioned.
+ * @param lookup Lazy lookup for user-defined groups under
+ *   `workspace/toolgroups/`. Only invoked for non-reserved names.
+ * @param builtins Per-call values for the named built-in groups
+ *   `system` and `mcp`. `all` and `none` are computed from
+ *   `available` directly and don't need entries here. Pass an empty
+ *   map (or omit) when the caller doesn't carry that distinction
+ *   (e.g. unit tests that don't exercise `system` / `mcp`).
+ * @throws On unknown groups, cycles in the group chain, or a
+ *   malformed group file reached by the lookup.
  */
 export function evaluate(
     ast: FilterAst,
     available: ReadonlySet<string>,
-    groups: ReadonlyMap<string, GroupDef>,
+    lookup: GroupLookup,
+    builtins: ReadonlyMap<string, ReadonlySet<string>> = new Map(),
 ): Set<string> {
-    return evalNode(ast, available, groups, new Set());
+    return evalNode(ast, available, lookup, builtins, new Set());
 }
 
 /**
@@ -289,20 +331,21 @@ class Parser {
 function evalNode(
     node: FilterAst,
     available: ReadonlySet<string>,
-    groups: ReadonlyMap<string, GroupDef>,
+    lookup: GroupLookup,
+    builtins: ReadonlyMap<string, ReadonlySet<string>>,
     visiting: Set<string>,
 ): Set<string> {
     if (node.type === "or") {
-        const left = evalNode(node.left, available, groups, visiting);
-        const right = evalNode(node.right, available, groups, visiting);
+        const left = evalNode(node.left, available, lookup, builtins, visiting);
+        const right = evalNode(node.right, available, lookup, builtins, visiting);
         for (const k of right) {
             left.add(k);
         }
         return left;
     }
     if (node.type === "and") {
-        const left = evalNode(node.left, available, groups, visiting);
-        const right = evalNode(node.right, available, groups, visiting);
+        const left = evalNode(node.left, available, lookup, builtins, visiting);
+        const right = evalNode(node.right, available, lookup, builtins, visiting);
         const out = new Set<string>();
         for (const k of left) {
             if (right.has(k)) {
@@ -312,7 +355,7 @@ function evalNode(
         return out;
     }
     if (node.type === "not") {
-        const inner = evalNode(node.child, available, groups, visiting);
+        const inner = evalNode(node.child, available, lookup, builtins, visiting);
         const out = new Set<string>();
         for (const k of available) {
             if (!inner.has(k)) {
@@ -322,26 +365,38 @@ function evalNode(
         return out;
     }
     if (node.type === "group") {
-        return resolveGroup(node.name, available, groups, visiting);
+        return resolveGroup(node.name, available, lookup, builtins, visiting);
     }
     return matchTools(node.pattern, available);
 }
 
-/** Resolve a group reference, recursively unioning its entries. */
+/**
+ * Resolve a group reference. Built-ins (`all`, `system`, `mcp`,
+ * `none`) are short-circuited before any user lookup; user-defined
+ * groups are loaded lazily through `lookup`.
+ */
 function resolveGroup(
     name: string,
     available: ReadonlySet<string>,
-    groups: ReadonlyMap<string, GroupDef>,
+    lookup: GroupLookup,
+    builtins: ReadonlyMap<string, ReadonlySet<string>>,
     visiting: Set<string>,
 ): Set<string> {
     if (name === ALL_GROUP_NAME) {
         return new Set(available);
     }
+    if (name === NONE_GROUP_NAME) {
+        return new Set();
+    }
+    const builtin = builtins.get(name);
+    if (builtin !== undefined) {
+        return new Set(builtin);
+    }
     if (visiting.has(name)) {
         const chain = [...visiting, name].join(" -> ");
         throw new Error(`cycle in group references: ${chain}`);
     }
-    const def = groups.get(name);
+    const def = lookup(name);
     if (def === undefined) {
         throw new Error(`unknown group: ${name}`);
     }
@@ -350,7 +405,7 @@ function resolveGroup(
         const out = new Set<string>();
         for (const entry of def) {
             if (entry.kind === "group") {
-                for (const k of resolveGroup(entry.name, available, groups, visiting)) {
+                for (const k of resolveGroup(entry.name, available, lookup, builtins, visiting)) {
                     out.add(k);
                 }
             } else {

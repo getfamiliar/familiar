@@ -1,62 +1,69 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { HandlerFile } from "../HandlerFile.js";
-import { ALL_GROUP_NAME, type GroupDef, IDENT_PATTERN, parseGroupLine } from "./ToolFilter.js";
+import {
+    type GroupDef,
+    type GroupLookup,
+    IDENT_PATTERN,
+    parseGroupLine,
+    RESERVED_GROUP_NAMES,
+} from "./ToolFilter.js";
 
 /**
  * Workspace-relative directory holding group definitions. Resolved
- * against the workspace root at load time. Files in this directory
- * are also gated as privileged-write by the fs tool layer.
+ * against the workspace root at lookup time. Files in this
+ * directory are also gated as privileged-write by the fs tool layer.
  */
 const TOOLGROUPS_DIR = "toolgroups";
 
 /**
- * Read every `.txt` file under `workspace/toolgroups/`, parse each
- * line into a {@link GroupLineEntry}, and return a map of group name
- * → ordered entry list.
+ * Build a lazy {@link GroupLookup} for `workspace/toolgroups/`. Each
+ * call returns a fresh closure with its own parse cache; callers
+ * (one per agentrun, today) get the latest snapshot of each file
+ * without re-parsing groups they've already touched in the same
+ * run.
  *
- * The directory not existing is fine: empty map. A file whose stem
- * doesn't match {@link IDENT_PATTERN} is rejected — the stem is the
- * group's name and must obey identifier rules so handlers can refer
- * to it. A file named `all.txt` is rejected too: `all` is reserved
- * for the built-in "every available tool" group.
+ * Files are only opened on first reference. A non-existent file
+ * returns `undefined` (the resolver translates that to
+ * `unknown group: <name>`); a malformed file throws on access with
+ * the file path and line number — unrelated handlers are unaffected.
  *
- * Failures throw — the agentrun fails loud rather than running with
- * surprise behaviour. Each error names the offending file (and line
- * number when applicable).
+ * Reserved built-in names (`all`, `system`, `mcp`, `none`) are
+ * short-circuited inside the resolver and never reach this lookup.
+ * As a defensive sanity check, the closure also rejects them so a
+ * future caller can't accidentally bypass the resolver.
  */
-export function loadGroups(): Map<string, GroupDef> {
-    const dir = path.join(HandlerFile.getWorkspaceRoot(), TOOLGROUPS_DIR);
-    if (!existsSync(dir)) {
-        return new Map();
-    }
-    const groups = new Map<string, GroupDef>();
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        if (!entry.isFile() || !entry.name.endsWith(".txt")) {
-            continue;
-        }
-        const stem = entry.name.slice(0, -".txt".length);
-        if (stem === ALL_GROUP_NAME) {
+export function createGroupLookup(): GroupLookup {
+    const cache = new Map<string, GroupDef | undefined>();
+    return (name: string): GroupDef | undefined => {
+        if (RESERVED_GROUP_NAMES.has(name)) {
             throw new Error(
-                `${path.join(TOOLGROUPS_DIR, entry.name)}: "${ALL_GROUP_NAME}" is a reserved built-in group name`,
+                `group name "${name}" is reserved as a built-in and must not be looked up`,
             );
         }
-        if (!IDENT_PATTERN.test(stem)) {
-            throw new Error(
-                `${path.join(TOOLGROUPS_DIR, entry.name)}: filename stem must match ${IDENT_PATTERN}`,
-            );
+        if (cache.has(name)) {
+            return cache.get(name);
         }
-        const filePath = path.join(dir, entry.name);
-        groups.set(stem, parseGroupFile(filePath, entry.name));
-    }
-    return groups;
+        if (!IDENT_PATTERN.test(name)) {
+            throw new Error(`group name "${name}" is not a valid identifier`);
+        }
+        const dir = path.join(HandlerFile.getWorkspaceRoot(), TOOLGROUPS_DIR);
+        const filePath = path.join(dir, `${name}.txt`);
+        if (!existsSync(filePath)) {
+            cache.set(name, undefined);
+            return undefined;
+        }
+        const def = parseGroupFile(filePath, `${name}.txt`);
+        cache.set(name, def);
+        return def;
+    };
 }
 
 /** Parse one `.txt` group file's contents into a `GroupDef`. */
 function parseGroupFile(absolute: string, displayName: string): GroupDef {
     const raw = readFileSync(absolute, "utf-8");
     const lines = raw.split(/\r?\n/);
-    const out: GroupDef extends ReadonlyArray<infer T> ? T[] : never = [];
+    const out: Array<NonNullable<ReturnType<typeof parseGroupLine>>> = [];
     for (let i = 0; i < lines.length; i++) {
         try {
             const entry = parseGroupLine(lines[i]);

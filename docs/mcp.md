@@ -132,11 +132,15 @@ child idle-reaps so this stays cheap.
 
 ## Filtering tools per handler
 
-Handlers declare which MCP tools they want via a `tools:` expression
-in their YAML header. **Omitted means none**: every handler opts in
-explicitly, so a new MCP doesn't silently expand existing handlers'
-surfaces. System tools (`send_chat`, `queue_run`, filesystem,
-`get_weather`) are always present regardless.
+Handlers declare which tools they want via a `tools:` expression in
+their YAML header. The expression filters across **all** registered
+tools — system tools (`send_chat`, `queue_run`, `get_weather`,
+`file_*`, `fs_*`) and namespaced MCP tools share one available pool.
+
+**Omitted ⇒ implicit `system`.** A handler with no `tools:` line
+gets every system tool registered for the agentrun and no MCP
+tools, matching pre-filter behavior. Override with `tools: all`,
+`tools: none`, or anything more specific.
 
 ### Expression grammar
 
@@ -169,10 +173,19 @@ order to remember.
 
 ### Built-in groups
 
-- **`all`** — every MCP tool currently in the pool. The escape
-  hatch for handlers that genuinely want everything: `tools: all`.
+Four reserved names are resolved by the evaluator before any user
+lookup:
 
-A `workspace/toolgroups/all.txt` is rejected; `all` is reserved.
+| Name | Resolves to |
+| --- | --- |
+| `all` | Every key in the available pool — system tools + MCP tools. |
+| `system` | Just the system tools registered for *this* agentrun. Conditional ones (`send_chat` only when chat context is present, `queue_run` only when bus + parent are present) are reflected automatically. **The implicit default** when `tools:` is omitted. |
+| `mcp` | Just the namespaced MCP-tool keys. Useful for `mcp && !atlassian-personal_*` style scopes. |
+| `none` | Empty set. Lets a child handler override its parent's `tools:` to nothing under the replace-merge inheritance rule. |
+
+These four names are **reserved**. A `workspace/toolgroups/all.txt`
+(or `system.txt`, `mcp.txt`, `none.txt`) is silently shadowed by
+the built-in — the resolver never reads those files.
 
 ### User groups
 
@@ -202,11 +215,36 @@ The whole `workspace/toolgroups/` directory is gated as
 aren't descended from trusted user input (the cli-chat REPL or
 operator chat) cannot create or modify group definitions.
 
+**Group files are loaded lazily.** A given `<name>.txt` is only
+opened when an agentrun's expression actually references that
+group; a malformed line in `workspace/toolgroups/foo.txt` only
+fails the handlers that say `tools: foo`. Unrelated handlers run
+clean.
+
 ### Worked examples
 
 ```yaml
 ---
-tools: all                                  # every MCP tool
+# (no `tools:` line)                        # implicit `system` — every system
+---                                         # tool, no MCP tools
+
+---
+tools: all                                  # every system + MCP tool
+---
+
+---
+tools: none                                 # nothing at all (used by a child
+---                                         # to override its parent's surface)
+
+---
+tools: system && !file_write                # system tools, but read-only —
+---                                         # no file_write, file_str_replace, etc.
+                                            # (also drop file_str_replace and
+                                            #  file_append for true read-only;
+                                            #  use a group for ergonomics)
+
+---
+tools: mcp                                  # all MCP tools, no system tools
 ---
 
 ---
@@ -227,19 +265,16 @@ tools: read-operations                      # a user-defined group
 ---
 
 ---
-tools: read-operations || atlassian_jira_create_issue
+tools: system || read-operations            # system tools + user-defined reads
 ---
-# union: every read tool, plus this one write tool
 
 ---
-tools: read-operations && atlassian_*
+tools: mcp && !atlassian-personal_*         # all MCP tools, no personal-Atlassian
 ---
-# intersection: read tools, narrowed to the atlassian MCP only
 
 ---
-tools: all && !atlassian-personal_* && !atlassian_jira_delete_*
+tools: all && !atlassian_jira_delete_*      # everything except Jira delete tools
 ---
-# everything, except the personal Atlassian instance and Jira delete tools
 ```
 
 Resolution failures fail the agentrun loud, before the model is

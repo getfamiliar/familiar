@@ -5,7 +5,13 @@ import { buildFsTools } from "./fs.js";
 import { buildGetWeatherTool } from "./getWeather.js";
 import { buildQueueRunTool } from "./queueRun.js";
 import { buildSendChatTool } from "./sendChat.js";
-import { evaluate, type GroupDef, parseExpression } from "./ToolFilter.js";
+import {
+    evaluate,
+    type GroupLookup,
+    MCP_GROUP_NAME,
+    parseExpression,
+    SYSTEM_GROUP_NAME,
+} from "./ToolFilter.js";
 
 /** Inputs the {@link AgentRunner} threads into the factory per agentrun. */
 export interface ToolsFactoryContext {
@@ -14,31 +20,34 @@ export interface ToolsFactoryContext {
     /** Parent event id for the running agentrun; closed over by chat-aware tools. */
     readonly eventId?: string;
     /**
-     * Tool-filter expression from the handler's `tools:` header. When
-     * `undefined`, **no MCP tools** are exposed (system tools still
-     * present). See `tools/ToolFilter.ts` for grammar.
+     * Tool-filter expression from the handler's `tools:` header.
+     * When `undefined`, the implicit default `system` is used (every
+     * registered system tool, no MCP tools). See `tools/ToolFilter.ts`
+     * for the full grammar and built-in groups.
      */
     readonly toolsExpression?: string;
     /**
-     * Loaded group definitions (one per `workspace/toolgroups/*.txt`).
-     * Empty map is fine; the built-in `all` group is resolved by the
-     * evaluator regardless of map contents.
+     * Lazy lookup for user-defined groups in
+     * `workspace/toolgroups/`. Built by `createGroupLookup()`. May
+     * be omitted in tests; the resolver only invokes it for
+     * non-built-in names, so simple expressions like `tools: all`
+     * work without it.
      */
-    readonly groups?: ReadonlyMap<string, GroupDef>;
+    readonly groups?: GroupLookup;
     /** Agentrun bus; required to register `queue_run`. */
     readonly bus?: AgentRunBus;
     /** The currently-running agentrun row; closed over by `queue_run`. */
     readonly parent?: AgentRunRow;
     /**
      * MCP-derived tools, namespaced as `${id}_${toolName}` by the
-     * {@link McpClientPool}. Filtered by the handler's `tools:`
-     * expression before being merged with system tools.
+     * {@link McpClientPool}. Filtered through the same expression
+     * as system tools — they share one available pool.
      */
     readonly mcpTools?: ToolSet;
     /**
-     * Logger child for filter diagnostics (unknown paths, empty
-     * matches). Resolution errors throw so the agentrun fails loud;
-     * warnings stay non-fatal.
+     * Logger child for filter diagnostics. Resolution errors throw
+     * so the agentrun fails loud; warnings are not currently
+     * emitted (kept for future use).
      */
     readonly log?: Logger;
 }
@@ -47,24 +56,29 @@ export interface ToolsFactoryContext {
  * Builds the tool set the {@link import("../agent-runner/AgentRunner").AgentRunner}
  * hands to the Vercel AI SDK's tool-loop agent.
  *
- * Two categories of tools:
+ * **One pool, one filter.** System tools (`send_chat`, `queue_run`,
+ * `get_weather`, `file_*`, `fs_*`) and MCP tools (`${id}_${name}`)
+ * are merged into a single available set. The handler's `tools:`
+ * expression — or, when omitted, the implicit `system` default —
+ * decides what survives.
  *
- * - **System tools** (`send_chat`, `queue_run`, filesystem,
- *   `get_weather`) are owned by the agent runtime and ALWAYS
- *   registered. `send_chat` is how the agent reaches the user;
- *   without it chat handlers can't function.
- * - **Handler tools** (currently MCP tools from
- *   {@link McpClientPool}) are filtered through the handler's
- *   `tools:` expression. When the expression is omitted, NO MCP
- *   tools are exposed — every handler opts in explicitly. The
- *   built-in group `all` is the escape hatch for handlers that
- *   genuinely want everything.
+ * Built-in groups visible from any expression:
+ *
+ * - `all` — every key in the available pool.
+ * - `system` — just the system-tool keys registered for *this*
+ *   agentrun. Conditional registrations (`send_chat` only when chat
+ *   context is present, `queue_run` only when bus + parent are
+ *   present) are reflected here automatically.
+ * - `mcp` — just the MCP-tool keys.
+ * - `none` — empty set; lets a child handler override its parent's
+ *   `tools:` to nothing under the replace-merge rule.
  */
 // biome-ignore lint/complexity/noStaticOnlyClass: Reserved as a growth point for tool registration.
 export class ToolsFactory {
     /**
-     * Build the tool set for one agentrun. System tools are always
-     * present; the handler's `tools:` expression filters MCP tools.
+     * Build the tool set for one agentrun. Fully evaluates the
+     * `tools:` expression (or the `system` default) against the
+     * unified system+MCP pool and returns the projected `ToolSet`.
      */
     static build(context: ToolsFactoryContext = {}): ToolSet {
         const systemTools: ToolSet = {
@@ -85,38 +99,62 @@ export class ToolsFactory {
             Object.assign(systemTools, buildFsTools(context.parent));
         }
 
-        const filteredMcpTools = filterMcpTools(
-            context.mcpTools ?? {},
-            context.toolsExpression,
-            context.groups,
-        );
-        return { ...filteredMcpTools, ...systemTools };
+        const mcpTools = context.mcpTools ?? {};
+        const allTools: ToolSet = { ...systemTools, ...mcpTools };
+        const systemKeys = new Set(Object.keys(systemTools));
+        const mcpKeys = new Set(Object.keys(mcpTools));
+        const availableKeys = new Set(Object.keys(allTools));
+
+        const matched = resolveMatched({
+            available: availableKeys,
+            systemKeys,
+            mcpKeys,
+            toolsExpression: context.toolsExpression,
+            lookup: context.groups,
+        });
+
+        const out: ToolSet = {};
+        for (const name of matched) {
+            const tool = allTools[name];
+            if (tool !== undefined) {
+                out[name] = tool;
+            }
+        }
+        return out;
     }
 }
 
 /**
- * Apply the handler's `tools:` expression to the pool's full MCP tool
- * set. Returns the projected `ToolSet`. Resolution errors (bad syntax,
- * unknown group, group cycle) propagate to the caller so the agentrun
- * fails before the model is invoked.
+ * Compute the set of tool keys that pass the handler's filter.
+ *
+ * - `tools:` undefined ⇒ implicit `system` (every system-tool key).
+ * - `tools:` set ⇒ parse the expression and evaluate against the
+ *   unified pool. The `system` and `mcp` built-ins are supplied via
+ *   the `builtins` map; `all` and `none` are handled by the
+ *   evaluator from `available`.
  */
-function filterMcpTools(
-    mcpTools: ToolSet,
-    expression: string | undefined,
-    groups: ReadonlyMap<string, GroupDef> | undefined,
-): ToolSet {
-    if (expression === undefined || expression.trim().length === 0) {
-        return {};
+function resolveMatched(args: {
+    available: ReadonlySet<string>;
+    systemKeys: ReadonlySet<string>;
+    mcpKeys: ReadonlySet<string>;
+    toolsExpression: string | undefined;
+    lookup: GroupLookup | undefined;
+}): Set<string> {
+    if (args.toolsExpression === undefined || args.toolsExpression.trim().length === 0) {
+        return new Set(args.systemKeys);
     }
-    const ast = parseExpression(expression);
-    const available = new Set(Object.keys(mcpTools));
-    const matched = evaluate(ast, available, groups ?? new Map());
-    const out: ToolSet = {};
-    for (const name of matched) {
-        const tool = mcpTools[name];
-        if (tool !== undefined) {
-            out[name] = tool;
-        }
-    }
-    return out;
+    const ast = parseExpression(args.toolsExpression);
+    const builtins = new Map<string, ReadonlySet<string>>([
+        [SYSTEM_GROUP_NAME, args.systemKeys],
+        [MCP_GROUP_NAME, args.mcpKeys],
+    ]);
+    const lookup = args.lookup ?? rejectAnyLookup;
+    return evaluate(ast, args.available, lookup, builtins);
 }
+
+/**
+ * Default lookup used when no group-loader was wired in (tests,
+ * future call sites). Always resolves to "no such group" — the
+ * resolver translates that to `unknown group: <name>`.
+ */
+const rejectAnyLookup: GroupLookup = () => undefined;

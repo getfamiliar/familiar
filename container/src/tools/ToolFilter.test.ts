@@ -1,6 +1,12 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { evaluate, type GroupDef, parseExpression, parseGroupLine } from "./ToolFilter.js";
+import {
+    evaluate,
+    type GroupDef,
+    type GroupLookup,
+    parseExpression,
+    parseGroupLine,
+} from "./ToolFilter.js";
 
 const POOL = new Set([
     "fetch_fetch",
@@ -10,21 +16,60 @@ const POOL = new Set([
     "atlassian_confluence_get_page",
     "atlassian-personal_confluence_search",
     "atlassian-personal_confluence_get_page",
+    "send_chat",
+    "queue_run",
+    "file_read",
+    "file_write",
+    "fs_ls",
+    "fs_grep",
 ]);
 
-const NO_GROUPS: ReadonlyMap<string, GroupDef> = new Map();
+const SYSTEM_KEYS = new Set([
+    "send_chat",
+    "queue_run",
+    "file_read",
+    "file_write",
+    "fs_ls",
+    "fs_grep",
+]);
+
+const MCP_KEYS = new Set([
+    "fetch_fetch",
+    "atlassian_jira_search",
+    "atlassian_jira_create_issue",
+    "atlassian_jira_get_issue",
+    "atlassian_confluence_get_page",
+    "atlassian-personal_confluence_search",
+    "atlassian-personal_confluence_get_page",
+]);
+
+const BUILTINS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+    ["system", SYSTEM_KEYS],
+    ["mcp", MCP_KEYS],
+]);
+
+const NO_LOOKUP: GroupLookup = () => undefined;
+
+/** Wrap a Map as a GroupLookup, the shape tests use most. */
+function lookupFromMap(map: ReadonlyMap<string, GroupDef>): GroupLookup {
+    return (name) => map.get(name);
+}
 
 /** Convenience: parse + evaluate, return sorted matched keys. */
-function resolve(expression: string, groups: ReadonlyMap<string, GroupDef> = NO_GROUPS): string[] {
-    return [...evaluate(parseExpression(expression), POOL, groups)].sort();
+function resolve(
+    expression: string,
+    lookup: GroupLookup = NO_LOOKUP,
+    builtins: ReadonlyMap<string, ReadonlySet<string>> = BUILTINS,
+): string[] {
+    return [...evaluate(parseExpression(expression), POOL, lookup, builtins)].sort();
 }
 
 describe("ToolFilter — bareword classification", () => {
     it("classifies a lowercase ident without underscore as a group", () => {
-        const groups: ReadonlyMap<string, GroupDef> = new Map([
-            ["reads", [{ kind: "tool", pattern: "fetch_fetch" }]],
-        ]);
-        assert.deepEqual(resolve("reads", groups), ["fetch_fetch"]);
+        const lookup = lookupFromMap(
+            new Map([["reads", [{ kind: "tool", pattern: "fetch_fetch" }]]]),
+        );
+        assert.deepEqual(resolve("reads", lookup), ["fetch_fetch"]);
     });
 
     it("classifies a token with underscore as a tool pattern (literal match)", () => {
@@ -42,9 +87,46 @@ describe("ToolFilter — bareword classification", () => {
     it("the bare `*` matches every key (equivalent to `all`)", () => {
         assert.deepEqual(resolve("*"), [...POOL].sort());
     });
+});
 
-    it("`all` is the built-in group", () => {
+describe("ToolFilter — built-in groups", () => {
+    it("`all` returns the full available pool", () => {
         assert.deepEqual(resolve("all"), [...POOL].sort());
+    });
+
+    it("`none` returns an empty set", () => {
+        assert.deepEqual(resolve("none"), []);
+    });
+
+    it("`system` returns just the system-tool keys", () => {
+        assert.deepEqual(resolve("system"), [...SYSTEM_KEYS].sort());
+    });
+
+    it("`mcp` returns just the MCP-tool keys", () => {
+        assert.deepEqual(resolve("mcp"), [...MCP_KEYS].sort());
+    });
+
+    it("`system && !send_chat` — system minus one tool", () => {
+        const out = new Set(resolve("system && !send_chat"));
+        assert.equal(out.has("send_chat"), false);
+        assert.equal(out.has("file_read"), true);
+        assert.equal(out.size, SYSTEM_KEYS.size - 1);
+    });
+
+    it("`mcp && !atlassian_*` excludes the cloud Atlassian id but keeps -personal", () => {
+        const out = new Set(resolve("mcp && !atlassian_*"));
+        assert.equal(out.has("atlassian_jira_search"), false);
+        assert.equal(out.has("atlassian-personal_confluence_search"), true);
+        assert.equal(out.has("fetch_fetch"), true);
+    });
+
+    it("`none` short-circuits even when paired with other matches via &&", () => {
+        // `none && anything` → empty, since `none` is the empty set.
+        assert.deepEqual(resolve("none && all"), []);
+    });
+
+    it("`none || x` reduces to x", () => {
+        assert.deepEqual(resolve("none || fetch_fetch"), ["fetch_fetch"]);
     });
 });
 
@@ -68,18 +150,13 @@ describe("ToolFilter — operators", () => {
     });
 
     it("id-prefix glob excludes other id literally (atlassian_* vs atlassian-personal_*)", () => {
-        // `atlassian_*` matches keys starting with "atlassian_" — NOT
-        // "atlassian-personal_". This is the literal-id property.
         const out = new Set(resolve("atlassian_*"));
         assert.equal(out.has("atlassian_jira_search"), true);
         assert.equal(out.has("atlassian-personal_confluence_search"), false);
     });
 
     it("precedence: ! > && > ||", () => {
-        // `a || b && !c` parses as `a || (b && (!c))`
-        // With a=fetch_fetch, b=atlassian_jira_search, c=fetch_fetch:
-        // → fetch_fetch || (atlassian_jira_search && !fetch_fetch)
-        // → fetch_fetch || atlassian_jira_search
+        // a || b && !c → a || (b && !c)
         assert.deepEqual(resolve("fetch_fetch || atlassian_jira_search && !fetch_fetch"), [
             "atlassian_jira_search",
             "fetch_fetch",
@@ -87,27 +164,27 @@ describe("ToolFilter — operators", () => {
     });
 
     it("parens override precedence", () => {
-        // `(fetch_fetch || atlassian_jira_search) && !fetch_fetch`
-        // → atlassian_jira_search alone
         assert.deepEqual(resolve("(fetch_fetch || atlassian_jira_search) && !fetch_fetch"), [
             "atlassian_jira_search",
         ]);
     });
 });
 
-describe("ToolFilter — group resolution", () => {
+describe("ToolFilter — group resolution and lazy lookup", () => {
     it("resolves nested group references", () => {
-        const groups: ReadonlyMap<string, GroupDef> = new Map([
-            ["jira-reads", [{ kind: "tool", pattern: "atlassian_jira_get_*" }]],
-            [
-                "reads",
+        const lookup = lookupFromMap(
+            new Map([
+                ["jira-reads", [{ kind: "tool", pattern: "atlassian_jira_get_*" }]],
                 [
-                    { kind: "group", name: "jira-reads" },
-                    { kind: "tool", pattern: "fetch_fetch" },
+                    "reads",
+                    [
+                        { kind: "group", name: "jira-reads" },
+                        { kind: "tool", pattern: "fetch_fetch" },
+                    ],
                 ],
-            ],
-        ]);
-        assert.deepEqual(resolve("reads", groups), ["atlassian_jira_get_issue", "fetch_fetch"]);
+            ]),
+        );
+        assert.deepEqual(resolve("reads", lookup), ["atlassian_jira_get_issue", "fetch_fetch"]);
     });
 
     it("throws on unknown group with the missing name", () => {
@@ -115,17 +192,40 @@ describe("ToolFilter — group resolution", () => {
     });
 
     it("throws on cycle with the full chain in the message", () => {
-        const groups: ReadonlyMap<string, GroupDef> = new Map([
-            ["a", [{ kind: "group", name: "b" }]],
-            ["b", [{ kind: "group", name: "a" }]],
-        ]);
-        assert.throws(() => resolve("a", groups), /cycle in group references: a -> b -> a/);
+        const lookup = lookupFromMap(
+            new Map([
+                ["a", [{ kind: "group", name: "b" }]],
+                ["b", [{ kind: "group", name: "a" }]],
+            ]),
+        );
+        assert.throws(() => resolve("a", lookup), /cycle in group references: a -> b -> a/);
     });
 
     it("a tool pattern matching nothing returns empty (warn-not-throw)", () => {
-        // Whereas an unknown group throws (above), a tool literal that
-        // happens to match no key just contributes nothing.
         assert.deepEqual(resolve("nonexistent_tool"), []);
+    });
+
+    it("lazy lookup: a malformed group is only fatal when referenced", () => {
+        // The lookup throws when asked for `bad`; succeeds for `reads`.
+        // An expression that only touches `reads` should not trigger
+        // the bad-file path — that's the whole point of going lazy.
+        let badAccessed = false;
+        const lookup: GroupLookup = (name) => {
+            if (name === "bad") {
+                badAccessed = true;
+                throw new Error("toolgroups/bad.txt:1: parse error");
+            }
+            if (name === "reads") {
+                return [{ kind: "tool", pattern: "fetch_fetch" }];
+            }
+            return undefined;
+        };
+
+        assert.deepEqual(resolve("reads", lookup), ["fetch_fetch"]);
+        assert.equal(badAccessed, false, "bad group must not be touched when not referenced");
+
+        assert.throws(() => resolve("bad", lookup), /toolgroups\/bad\.txt:1: parse error/);
+        assert.equal(badAccessed, true);
     });
 });
 
@@ -138,10 +238,7 @@ describe("ToolFilter — parseGroupLine", () => {
     });
 
     it("classifies a bareword the same way as expressions do", () => {
-        assert.deepEqual(parseGroupLine("reads"), {
-            kind: "group",
-            name: "reads",
-        });
+        assert.deepEqual(parseGroupLine("reads"), { kind: "group", name: "reads" });
         assert.deepEqual(parseGroupLine("fetch_fetch"), {
             kind: "tool",
             pattern: "fetch_fetch",

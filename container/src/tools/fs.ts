@@ -691,8 +691,8 @@ export function buildFsTools(parent: AgentRunRow): ToolSet {
         file_write: buildFileWriteTool(parent),
         file_str_replace: buildFileStrReplaceTool(parent),
         file_append: buildFileAppendTool(parent),
-        ls: buildLsTool(),
-        glob: buildGlobTool(),
-        grep: buildGrepTool(),
+        fs_ls: buildLsTool(),
+        fs_glob: buildGlobTool(),
+        fs_grep: buildGrepTool(),
     };
 }
