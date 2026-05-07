@@ -7,23 +7,30 @@
  *     or          := and ('||' and)*
  *     and         := unary ('&&' unary)*
  *     unary       := '!' unary | atom
- *     atom        := group | path | '(' expr ')'
- *     group       := IDENT
- *     path        := '/' SEGMENT ('/' SEGMENT)?
+ *     atom        := bareword | '(' expr ')'
  *
- *     IDENT       := [a-z][a-z0-9-]*
- *     SEGMENT     := [a-zA-Z0-9_*-]+
+ *     bareword    := [a-zA-Z0-9_*-]+
  *
  * Precedence: `!` > `&&` > `||`. Whitespace insignificant.
  *
- * Paths address the bastion's namespaced tool keys. The pool registers
- * tools as `${id}_${name}` (AI-SDK convention); `/${id}/${name}` is the
- * filter-syntax form. The translation lives in {@link matchPath}.
+ * **One atom shape for both groups and tool patterns.** A bareword
+ * is classified at evaluation time by regex:
  *
- * Built-in groups handled by the evaluator: `all` resolves to the full
- * set of available pool keys at evaluation time. A user-defined group
- * named `all` is rejected by {@link ToolGroupLoader}, so the built-in
- * always wins.
+ * - matches `^[a-z][a-z0-9-]*$` (i.e. lowercase ident, no `_`, no `*`)
+ *   → **group** lookup (throws on missing).
+ * - anything else → **tool pattern** matched against the pool's
+ *   namespaced keys with `*` as a glob wildcard.
+ *
+ * Tool keys always have the form `${id}_${name}`, and our id regex
+ * forbids `_`, so every tool key contains at least one underscore.
+ * That makes the split structurally unambiguous: an underscore-free
+ * lowercase bareword can never match a tool key, so it must be a
+ * group reference.
+ *
+ * Built-in groups handled by the evaluator: `all` resolves to the
+ * full set of available pool keys at evaluation time. A user-defined
+ * group named `all` is rejected by {@link ToolGroupLoader}, so the
+ * built-in always wins.
  */
 
 /** Built-in group name; resolves to every available namespaced tool. */
@@ -32,24 +39,23 @@ export const ALL_GROUP_NAME = "all";
 /** Pattern an identifier (group name) must match. */
 export const IDENT_PATTERN = /^[a-z][a-z0-9-]*$/;
 
-/** Pattern a path segment (id or tool) must match. */
-const SEGMENT_PATTERN = /^[a-zA-Z0-9_*-]+$/;
+/** Pattern any single bareword (group or tool) must match. */
+const BAREWORD_PATTERN = /^[a-zA-Z0-9_*-]+$/;
 
-/** A path entry: either a whole MCP id, or a specific tool with optional `*` glob. */
-export interface PathEntry {
-    readonly kind: "path";
-    readonly id: string;
-    readonly tool?: string;
+/** Tool-pattern entry: glob string matched against namespaced pool keys. */
+export interface ToolEntry {
+    readonly kind: "tool";
+    readonly pattern: string;
 }
 
-/** A group reference inside an AST node or a group file line. */
+/** Group reference by name (must match {@link IDENT_PATTERN}). */
 export interface GroupEntry {
     readonly kind: "group";
     readonly name: string;
 }
 
 /** One entry in a group file (post-parse). Used by {@link ToolGroupLoader}. */
-export type GroupLineEntry = PathEntry | GroupEntry;
+export type GroupLineEntry = ToolEntry | GroupEntry;
 
 /** A `GroupDef` is the ordered list of entries declared in a group's `.txt` file. */
 export type GroupDef = readonly GroupLineEntry[];
@@ -60,7 +66,7 @@ export type FilterAst =
     | { readonly type: "and"; readonly left: FilterAst; readonly right: FilterAst }
     | { readonly type: "not"; readonly child: FilterAst }
     | (GroupEntry & { readonly type: "group" })
-    | (PathEntry & { readonly type: "path" });
+    | (ToolEntry & { readonly type: "tool" });
 
 /**
  * Parse a `tools:` expression string into an AST. Throws with a
@@ -85,13 +91,12 @@ export function parseGroupLine(line: string): GroupLineEntry | null {
     if (stripped.length === 0) {
         return null;
     }
-    if (stripped.startsWith("/")) {
-        return parsePathToken(stripped);
+    if (!BAREWORD_PATTERN.test(stripped)) {
+        throw new Error(
+            `expected a group name or tool pattern matching ${BAREWORD_PATTERN}, got ${JSON.stringify(stripped)}`,
+        );
     }
-    if (!IDENT_PATTERN.test(stripped)) {
-        throw new Error(`expected an identifier or "/path", got ${JSON.stringify(stripped)}`);
-    }
-    return { kind: "group", name: stripped };
+    return classifyBareword(stripped);
 }
 
 /**
@@ -114,6 +119,18 @@ export function evaluate(
 }
 
 /**
+ * Decide whether a bareword refers to a group (lowercase ident, no
+ * underscore) or a tool pattern. Used by both the expression parser
+ * and the group-line parser so the rule is identical everywhere.
+ */
+function classifyBareword(token: string): GroupLineEntry {
+    if (IDENT_PATTERN.test(token)) {
+        return { kind: "group", name: token };
+    }
+    return { kind: "tool", pattern: token };
+}
+
+/**
  * Lightweight tokenizer. Returns a flat array — the parser consumes
  * positionally. Throws on unexpected characters.
  */
@@ -123,8 +140,7 @@ type Token =
     | { kind: "and"; pos: number }
     | { kind: "or"; pos: number }
     | { kind: "not"; pos: number }
-    | { kind: "ident"; value: string; pos: number }
-    | { kind: "path"; id: string; tool?: string; pos: number }
+    | { kind: "bareword"; value: string; pos: number }
     | { kind: "end"; pos: number };
 
 function tokenize(src: string): Token[] {
@@ -167,44 +183,18 @@ function tokenize(src: string): Token[] {
             i += 2;
             continue;
         }
-        if (c === "/") {
+        if (/[a-zA-Z0-9_*-]/.test(c)) {
             const start = i;
-            i++;
-            const id = readSegment(src, i);
-            i += id.length;
-            let tool: string | undefined;
-            if (src[i] === "/") {
-                i++;
-                tool = readSegment(src, i);
-                i += tool.length;
-            }
-            if (id.length === 0) {
-                throw new Error(`empty path at position ${start}`);
-            }
-            tokens.push({ kind: "path", id, tool, pos: start });
-            continue;
-        }
-        if (/[a-z]/.test(c)) {
-            const start = i;
-            while (i < src.length && /[a-z0-9-]/.test(src[i])) {
+            while (i < src.length && /[a-zA-Z0-9_*-]/.test(src[i])) {
                 i++;
             }
-            tokens.push({ kind: "ident", value: src.slice(start, i), pos: start });
+            tokens.push({ kind: "bareword", value: src.slice(start, i), pos: start });
             continue;
         }
         throw new Error(`unexpected character ${JSON.stringify(c)} at position ${i}`);
     }
     tokens.push({ kind: "end", pos: src.length });
     return tokens;
-}
-
-/** Consume characters of a path segment starting at `i`. */
-function readSegment(src: string, i: number): string {
-    let j = i;
-    while (j < src.length && /[a-zA-Z0-9_*-]/.test(src[j])) {
-        j++;
-    }
-    return src.slice(i, j);
 }
 
 /**
@@ -272,15 +262,14 @@ class Parser {
             this.advance();
             return inner;
         }
-        if (t.kind === "ident") {
+        if (t.kind === "bareword") {
             this.advance();
-            return { type: "group", kind: "group", name: t.value };
+            const classified = classifyBareword(t.value);
+            return classified.kind === "group"
+                ? { type: "group", kind: "group", name: classified.name }
+                : { type: "tool", kind: "tool", pattern: classified.pattern };
         }
-        if (t.kind === "path") {
-            this.advance();
-            return { type: "path", kind: "path", id: t.id, tool: t.tool };
-        }
-        throw new Error(this.errorAt(t.pos, `expected group / path / "(", got ${describe(t)}`));
+        throw new Error(this.errorAt(t.pos, `expected group / tool / "(", got ${describe(t)}`));
     }
 
     private peek(): Token {
@@ -335,7 +324,7 @@ function evalNode(
     if (node.type === "group") {
         return resolveGroup(node.name, available, groups, visiting);
     }
-    return matchPaths(node, available);
+    return matchTools(node.pattern, available);
 }
 
 /** Resolve a group reference, recursively unioning its entries. */
@@ -365,7 +354,7 @@ function resolveGroup(
                     out.add(k);
                 }
             } else {
-                for (const k of matchPaths(entry, available)) {
+                for (const k of matchTools(entry.pattern, available)) {
                     out.add(k);
                 }
             }
@@ -376,48 +365,32 @@ function resolveGroup(
     }
 }
 
-/** Match a path entry against every available key, returning hits. */
-function matchPaths(path: PathEntry, available: ReadonlySet<string>): Set<string> {
+/**
+ * Glob-match a tool pattern against every available key, returning
+ * the matches. Patterns without `*` are exact-match; `*` is a
+ * wildcard for any character sequence (including `_`, since the
+ * keys themselves contain `_`).
+ */
+function matchTools(pattern: string, available: ReadonlySet<string>): Set<string> {
     const out = new Set<string>();
+    if (!pattern.includes("*")) {
+        if (available.has(pattern)) {
+            out.add(pattern);
+        }
+        return out;
+    }
+    const regex = new RegExp(
+        `^${pattern
+            .split("*")
+            .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+            .join(".*")}$`,
+    );
     for (const key of available) {
-        if (matchPath(path, key)) {
+        if (regex.test(key)) {
             out.add(key);
         }
     }
     return out;
-}
-
-/**
- * Test one namespaced key against one path entry. Splits the key on
- * the first `_` to recover the id; the remainder is the tool name.
- * Path id matches literally; path tool matches by glob (`*` allowed
- * anywhere in the tool segment) when present, otherwise matches all
- * tools on that id.
- */
-export function matchPath(path: PathEntry, key: string): boolean {
-    const idx = key.indexOf("_");
-    if (idx === -1) {
-        return false;
-    }
-    if (key.slice(0, idx) !== path.id) {
-        return false;
-    }
-    if (path.tool === undefined) {
-        return true;
-    }
-    return matchGlob(path.tool, key.slice(idx + 1));
-}
-
-/** Convert a glob with `*` wildcards into a regex test (anchored). */
-function matchGlob(pattern: string, str: string): boolean {
-    if (!pattern.includes("*")) {
-        return pattern === str;
-    }
-    const escaped = pattern
-        .split("*")
-        .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-        .join(".*");
-    return new RegExp(`^${escaped}$`).test(str);
 }
 
 /** Trim a `# comment` from end-of-line, returning the prefix. */
@@ -426,35 +399,11 @@ function stripComment(line: string): string {
     return idx === -1 ? line : line.slice(0, idx);
 }
 
-/**
- * Parse a single token like `/atlassian/jira_*` into a {@link PathEntry}.
- * Used by both the expression tokenizer and the group-line parser.
- */
-function parsePathToken(token: string): PathEntry {
-    if (!token.startsWith("/")) {
-        throw new Error(`path must start with "/": ${JSON.stringify(token)}`);
-    }
-    const parts = token.slice(1).split("/");
-    if (parts.length === 0 || parts.length > 2) {
-        throw new Error(`path must be /<id> or /<id>/<tool>: ${JSON.stringify(token)}`);
-    }
-    const [id, tool] = parts;
-    if (!SEGMENT_PATTERN.test(id)) {
-        throw new Error(`invalid id segment in ${JSON.stringify(token)}`);
-    }
-    if (tool !== undefined && !SEGMENT_PATTERN.test(tool)) {
-        throw new Error(`invalid tool segment in ${JSON.stringify(token)}`);
-    }
-    return { kind: "path", id, tool };
-}
-
 /** Render a token for error messages. */
 function describe(t: Token): string {
     switch (t.kind) {
-        case "ident":
+        case "bareword":
             return JSON.stringify(t.value);
-        case "path":
-            return `/${t.id}${t.tool === undefined ? "" : `/${t.tool}`}`;
         case "end":
             return "end of expression";
         default:

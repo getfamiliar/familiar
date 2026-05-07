@@ -145,48 +145,57 @@ expr     := or
 or       := and ('||' and)*
 and      := unary ('&&' unary)*
 unary    := '!' unary | atom
-atom     := group | path | '(' expr ')'
-group    := IDENT                        e.g.  read-operations | all
-path     := '/' SEGMENT ('/' SEGMENT)?   e.g.  /atlassian | /fetch/fetch
-                                                /atlassian/jira_*
+atom     := bareword | '(' expr ')'
+
+bareword := [a-zA-Z0-9_*-]+
 ```
 
 - Precedence: `!` > `&&` > `||`. Whitespace insignificant.
-- `IDENT` is `[a-z][a-z0-9-]*` — group names.
-- `SEGMENT` is `[a-zA-Z0-9_*-]+` — path segments. `*` is a glob
-  wildcard inside a segment.
-- `/<id>` ≡ `/<id>/*` — every tool on that MCP.
-- The path's id must match the `mcp.yml` key **literally**: `/atlassian`
-  matches the `atlassian` MCP only, not `atlassian-personal`.
+- Each bareword is **either a group name or a tool pattern** —
+  classified by shape, not by syntax:
+  - Matches `^[a-z][a-z0-9-]*$` (lowercase ident, no `_`, no `*`)
+    → **group** lookup. Throws "unknown group" if undefined.
+  - Anything else (contains `_`, `*`, uppercase, …) → **tool
+    pattern**, matched against the pool's namespaced keys.
+- Tool keys have the form `${id}_${name}` (e.g. `fetch_fetch`,
+  `atlassian_jira_create_issue`). Use them verbatim — the same form
+  the LLM sees in tool calls.
+- `*` is a glob wildcard matching any character sequence (including
+  `_`). Bare `*` matches every tool key.
+
+The shape-based split is unambiguous: tool keys always contain at
+least one `_`, while group names cannot. There's no resolution
+order to remember.
 
 ### Built-in groups
 
-- **`all`** — every MCP tool currently in the pool. The escape hatch
-  for handlers that genuinely want everything: `tools: all`.
+- **`all`** — every MCP tool currently in the pool. The escape
+  hatch for handlers that genuinely want everything: `tools: all`.
 
 A `workspace/toolgroups/all.txt` is rejected; `all` is reserved.
 
 ### User groups
 
-Plain-text files at `workspace/toolgroups/<name>.txt`, one entry per
-line. Each line is either another group name (an `IDENT`) or a path
-(starting with `/`). Lines are unioned; the group's tool set is the
-collected matches.
+Plain-text files at `workspace/toolgroups/<name>.txt`, one entry
+per line. Each line is either another group name or a tool pattern
+— same classification rule as expressions. Lines are unioned; the
+group's tool set is the collected matches.
 
 ```
 # workspace/toolgroups/read-operations.txt
 # Tools that fetch context without changing anything user-visible.
 
-/atlassian/jira_get_*
-/atlassian/jira_search
-/atlassian/confluence_get_*
-/fetch/fetch
+fetch_fetch
+atlassian_jira_get_*
+atlassian_jira_search
+atlassian_confluence_get_*
 ```
 
-`#` to end of line is a comment. Blank lines are ignored. The group
-name comes from the filename stem and must match `IDENT`. Operators
-(`&&`, `||`, `!`) inside group files are **not** allowed — composition
-lives at the handler-expression level, where it's needed.
+`#` to end of line is a comment. Blank lines are ignored. The
+group's name comes from the filename stem and must match
+`^[a-z][a-z0-9-]*$`. Operators (`&&`, `||`, `!`) inside group files
+are **not** allowed — composition lives at the handler-expression
+level, where it's needed.
 
 The whole `workspace/toolgroups/` directory is gated as
 **privileged-write** regardless of file extension: handlers that
@@ -197,33 +206,38 @@ operator chat) cannot create or modify group definitions.
 
 ```yaml
 ---
-tools: all                          # every MCP tool
+tools: all                                  # every MCP tool
 ---
 
 ---
-tools: /fetch/fetch                 # one specific tool
+tools: fetch_fetch                          # one specific tool
 ---
 
 ---
-tools: /atlassian/jira_*            # all Jira tools on the cloud Atlassian MCP
+tools: atlassian_jira_*                     # all Jira tools on the cloud Atlassian MCP
 ---
 
 ---
-tools: read-operations              # a user-defined group
+tools: atlassian_*                          # every tool on the `atlassian` MCP
+---                                         # (atlassian-personal_* is excluded
+                                            #  — id-prefix match is literal)
+
+---
+tools: read-operations                      # a user-defined group
 ---
 
 ---
-tools: read-operations || /atlassian/jira_create_issue
+tools: read-operations || atlassian_jira_create_issue
 ---
 # union: every read tool, plus this one write tool
 
 ---
-tools: read-operations && /atlassian
+tools: read-operations && atlassian_*
 ---
 # intersection: read tools, narrowed to the atlassian MCP only
 
 ---
-tools: all && !/atlassian-personal && !/atlassian/jira_delete_*
+tools: all && !atlassian-personal_* && !atlassian_jira_delete_*
 ---
 # everything, except the personal Atlassian instance and Jira delete tools
 ```
@@ -232,6 +246,13 @@ Resolution failures fail the agentrun loud, before the model is
 invoked: an unknown group, a cycle in group references, or a syntax
 error in the expression all surface as `agentrun failed` with the
 underlying message in the row's `error` column.
+
+A tool pattern that matches **no** keys (e.g. a typo like
+`atlassian_jira_seerch`) is treated as an empty contribution and
+the agentrun continues with whatever else is in the expression.
+This asymmetry is deliberate — wildcards routinely match nothing
+when a catalog evolves, and we don't want every catalog change to
+break unrelated handlers.
 
 ## Operations
 
