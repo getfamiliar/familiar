@@ -246,8 +246,8 @@ async function handleIncomingMessage(
     const senderLabel = msg.pushName ?? senderJid ?? "an unknown sender";
     const groupLabel = groupName ?? remoteJid;
     const prompt = msg.key.fromMe
-        ? `You sent a message in WhatsApp group "${groupLabel}": ${text}`
-        : `A new WhatsApp group message from ${senderLabel} in "${groupLabel}" arrived: ${text}`;
+        ? `Our owner sent a message in WhatsApp group "${groupLabel}": ${text}`
+        : `A new WhatsApp group message from somebody else: ${senderLabel} in "${groupLabel}" arrived: ${text}`;
 
     try {
         await ctx.events.emit({
