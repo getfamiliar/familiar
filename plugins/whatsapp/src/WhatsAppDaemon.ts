@@ -238,6 +238,7 @@ async function handleIncomingMessage(
         return;
     }
     const groupName = await resolveGroupName(sock, groupNameCache, remoteJid, ctx);
+    const groupCode = buildGroupCode(groupName);
     const senderJid = msg.key.fromMe
         ? (sock.user?.id ?? null)
         : (msg.key.participant ?? msg.participant ?? null);
@@ -262,6 +263,7 @@ async function handleIncomingMessage(
                     message_id: messageId,
                     group_jid: remoteJid,
                     group_name: groupName,
+                    group_code: groupCode,
                     from: {
                         jid: senderJid,
                         name: msg.pushName ?? null,
@@ -331,6 +333,35 @@ async function resolveGroupName(
     const name = metadata?.subject ?? null;
     cache.set(jid, name);
     return name;
+}
+
+/**
+ * Build a filesystem- and identifier-friendly slug from a group name.
+ * Useful as a stable handle in workspace paths (`whatsapp/<group_code>/`)
+ * and for handlers that want to scope behaviour per group without
+ * juggling Unicode names with emoji and umlauts.
+ *
+ * Rules: spaces collapse to underscores, every other non-`A-Za-z0-9`
+ * character is dropped, runs of underscores collapse to one, leading
+ * and trailing underscores are trimmed. A name that maps to an empty
+ * string (all special chars / emoji) returns `null`, same as a
+ * missing name.
+ *
+ * @example
+ *   "MyEO Optimale Vitalität: 💊"  →  "MyEO_Optimale_Vitalitt"
+ *   "MyEO German Real Estate"      →  "MyEO_German_Real_Estate"
+ *   "🎉🎉🎉"                        →  null
+ */
+export function buildGroupCode(name: string | null): string | null {
+    if (name === null) {
+        return null;
+    }
+    const code = name
+        .replace(/\s+/g, "_")
+        .replace(/[^A-Za-z0-9_]/g, "")
+        .replace(/_+/g, "_")
+        .replace(/^_+|_+$/g, "");
+    return code.length === 0 ? null : code;
 }
 
 /**
