@@ -144,6 +144,8 @@ export interface NewEvent {
      * Channel id the assistant should reply on. Plugins typically set
      * this to their own channel name (e.g. `"cli"`). When omitted, the
      * host's `HostContextImpl.emit` stamps `DEFAULT_CHAT_CHANNEL_ID`.
+     * 
+     * If the producer is not a chat plugin, this should be `null` or omitted.
      */
     readonly preferredChatChannelId?: string | null;
     /**

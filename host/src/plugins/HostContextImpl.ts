@@ -179,14 +179,21 @@ export class HostContextImpl implements HostContext {
 
         let row: Awaited<ReturnType<EventBus["add"]>>;
         try {
-            const stamped: NewEvent =
-                event.preferredChatChannelId === undefined
-                    ? {
-                          ...event,
-                          preferredChatChannelId:
-                              this.deps.config.getString("core.defaultChatChannel"),
-                      }
-                    : event;
+            // The only valid channel id is a non-empty string. Anything
+            // else — `null`, `undefined`, `false`, `0`, `""`, an object
+            // — is treated as "no preference" and triggers a fall back
+            // to `core.defaultChatChannel`. Defensive against plugins
+            // that hand in something the TypeScript shape forbids but
+            // that slips through at runtime (untyped import, escape
+            // cast, etc.); without this every such miss orphans any
+            // `send_chat` reply produced while processing the event.
+            const stamped: NewEvent = isUsableChannelId(event.preferredChatChannelId)
+                ? event
+                : {
+                      ...event,
+                      preferredChatChannelId:
+                          this.deps.config.getString("core.defaultChatChannel"),
+                  };
             row = await bus.add(stamped);
             waitedFor = row.id;
         } catch (err) {
@@ -262,6 +269,20 @@ async function fetchFinalResultText(
         [eventId],
     );
     return result.rows[0]?.result_text ?? null;
+}
+
+/**
+ * Predicate guarding the chat-channel default-stamp in
+ * `events.emit`. Returns `true` only when the value is a non-empty
+ * string — every other shape (`null`, `undefined`, `false`, `0`,
+ * empty string, object, array, …) gets stamped with
+ * `core.defaultChatChannel` instead of being persisted as-is.
+ *
+ * Exported for unit testing; the production caller is the predicate
+ * inside `events.emit`.
+ */
+export function isUsableChannelId(value: unknown): value is string {
+    return typeof value === "string" && value.length > 0;
 }
 
 /**

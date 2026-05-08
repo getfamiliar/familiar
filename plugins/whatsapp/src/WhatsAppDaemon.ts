@@ -254,7 +254,6 @@ async function handleIncomingMessage(
         await ctx.events.emit({
             topic: TOPIC,
             isChat: false,
-            preferredChatChannelId: null,
             idempotencyKey: `whatsapp:${messageId}`,
             prompt,
             payload: {

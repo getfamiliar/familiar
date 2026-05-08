@@ -1,4 +1,4 @@
-- Are subagents really subagents or just workers with own system prompts?
+Important: finishReason length gescheit behandeln
 
 ## For later
 
