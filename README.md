@@ -13,3 +13,8 @@ Architecture
 
 MCP Integration
 
+call mcp add 
+
+* Prefered source: Docker MCP Registry, see 
+* Secondary: Official MCP Registry, see
+* Custom: just go, remember the mcp call command if necessary

@@ -5,6 +5,7 @@ import type { McpEntry } from "../McpEntry.js";
 import type { McpServerFactory } from "../McpServerFactory.js";
 import type { McpTransport } from "../transports/McpTransport.js";
 import { StdioMcpTransport } from "../transports/StdioMcpTransport.js";
+import type { DockerArgsOptions } from "./DockerArgsOptions.js";
 
 /** Configuration for {@link DockerMcpRegistryFactory}. */
 export interface DockerMcpRegistryFactoryConfig {
@@ -19,27 +20,48 @@ export interface DockerMcpRegistryFactoryConfig {
 /**
  * Build the `docker run` argv vector for a foreground stdio MCP child.
  *
- * Layout:
+ * Default layout (no `options` passed):
  *   run -i --rm --name ea-mcp-<id> --network <net>
  *     [--entrypoint <command>]
  *     [-e KEY=VAL ...]
  *     [-v HOST:CONTAINER[:ro] ...]
- *     <image> [args...]
+ *     <image> [entry.args...]
  *
  * `-i` keeps stdin attached so the MCP can read JSON-RPC frames; no
  * `-d` (this is a foreground child of the bastion); `--rm` reaps the
  * container when the process exits.
+ *
+ * `options` mirrors {@link buildNpmDockerArgs} — `interactive: true`
+ * adds `-t`, `containerName: null` drops `--name`, and `extraArgs`
+ * overrides `entry.args` (used by `./cli.sh mcp call`).
  */
-function dockerArgsForEntry(entry: McpEntry): string[] {
+export function buildDockerRegistryArgs(
+    entry: McpEntry,
+    options: DockerArgsOptions = {},
+): string[] {
     if (entry.image === undefined) {
         throw new Error(`MCP "${entry.id}": docker-mcp-registry source requires an "image" field.`);
     }
-    const args: string[] = ["run", "-i", "--rm", "--name", `ea-mcp-${entry.id}`];
+    const containerName =
+        options.containerName === undefined ? `ea-mcp-${entry.id}` : options.containerName;
+    const interactive = options.interactive ?? false;
+    const extraArgs = options.extraArgs ?? entry.args;
+
+    const args: string[] = ["run", interactive ? "-it" : "-i", "--rm"];
+    if (containerName !== null) {
+        args.push("--name", containerName);
+    }
 
     if (entry.network.disable) {
         args.push("--network", "none");
     } else {
         args.push("--network", SHARED_NETWORK_NAME);
+        // See the matching comment in NpmFactory: `ea-net` is
+        // IPv4-only but docker's embedded DNS still returns AAAA
+        // records for dual-stack hosts. Disabling IPv6 in-kernel
+        // makes `getaddrinfo` filter them out so apps don't waste
+        // time on connect attempts that always ENETUNREACH.
+        args.push("--sysctl", "net.ipv6.conf.all.disable_ipv6=1");
     }
 
     if (entry.command !== null) {
@@ -55,7 +77,7 @@ function dockerArgsForEntry(entry: McpEntry): string[] {
 
     args.push(entry.image);
 
-    for (const a of entry.args) {
+    for (const a of extraArgs) {
         args.push(a);
     }
 
@@ -83,7 +105,7 @@ export class DockerMcpRegistryFactory implements McpServerFactory {
             id: entry.id,
             title: entry.title,
             description: entry.description,
-            dockerArgs: dockerArgsForEntry(entry),
+            dockerArgs: buildDockerRegistryArgs(entry),
             idleTimeoutSeconds: entry.idleTimeoutSeconds,
             log: this.config.log.child({ mcp: entry.id }),
             openFileSink,

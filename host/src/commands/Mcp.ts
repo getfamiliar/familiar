@@ -3,6 +3,7 @@ import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
 import { lintMcpConfigFile } from "../mcp/McpConfigLoader.js";
 import { mcpAddCommand } from "./mcp/McpAdd.js";
+import { mcpCallCommand } from "./mcp/McpCall.js";
 import { mcpListCommand } from "./mcp/McpList.js";
 import { mcpPurgeCommand } from "./mcp/McpPurge.js";
 
@@ -14,7 +15,8 @@ import { mcpPurgeCommand } from "./mcp/McpPurge.js";
 export const mcpCommand = defineCommand({
     meta: {
         name: "mcp",
-        description: "Inspect, list, purge, and add MCP entries in config/mcp.yml.",
+        description:
+            "Inspect, list, purge, add, and run one-shot calls against MCP entries in config/mcp.yml.",
     },
     subCommands: {
         lint: defineCommand({
@@ -45,5 +47,6 @@ export const mcpCommand = defineCommand({
         list: mcpListCommand,
         purge: mcpPurgeCommand,
         add: mcpAddCommand,
+        call: mcpCallCommand,
     },
 });

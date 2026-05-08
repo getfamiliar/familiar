@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import os from "node:os";
 
 /**
@@ -100,6 +100,28 @@ export function removeContainer(
 /** Send `docker stop` to a container. Ignores already-stopped/missing containers. */
 export function stopContainer(name: string): Promise<void> {
     return dockerExec(["stop", name], { allowFailure: true });
+}
+
+/**
+ * Run a docker CLI command with the parent process's stdin/stdout/
+ * stderr inherited, blocking until the child exits. Used by
+ * subcommands that hand the user's terminal to a foreground docker
+ * process (`./cli.sh psql`'s psql shell, `./cli.sh mcp call`'s
+ * one-shot CLI invocations against an MCP runtime container).
+ *
+ * Returns the child's exit status — `null`-on-signal collapses to
+ * 1 so the caller's `process.exit(...)` always sees a usable
+ * number. A failure to launch docker itself (e.g. binary missing)
+ * surfaces as a thrown {@link Error} the caller can format.
+ *
+ * @throws If the docker binary couldn't be spawned at all.
+ */
+export function dockerInteractive(args: readonly string[]): number {
+    const result = spawnSync("docker", [...args], { stdio: "inherit" });
+    if (result.error) {
+        throw new Error(`failed to launch docker: ${result.error.message}`);
+    }
+    return result.status ?? 1;
 }
 
 /**

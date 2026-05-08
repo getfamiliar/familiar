@@ -360,6 +360,27 @@ break unrelated handlers.
   (`nuget`, `mcpb`) are not supported and are dropped from the
   candidate list.
 
+- **One-shot CLI invocations.** `./cli.sh mcp call <id> -- <args...>`
+  runs a single foreground container with the entry's mount, env,
+  `--user`, and network settings, but with the user's args
+  appended after the package or image. Designed for out-of-band
+  setup steps the bastion's normal stdio-server invocation can't
+  reach — the canonical case is OAuth login flows that write a
+  token under `$HOME` (= `/work`, = `tmp/mcp-mount-<id>/`), where
+  the next bastion-spawned container picks the token up.
+
+  The `--` is required: it tells citty's parser to stop and pass
+  everything after verbatim, so flags like `--login` aren't
+  interpreted as our own. Example:
+  ```
+  ./cli.sh mcp call ms-365 -- --login
+  ```
+  No `--name` is set on the docker invocation, so the call won't
+  collide with a bastion-managed `ea-mcp-<id>` container that
+  may be running concurrently. The exit status of the docker
+  child is propagated to the calling shell. `external` sources
+  are refused (no container to run).
+
 - **Listing live MCPs directly.** `docker ps --filter name=ea-mcp-`
   shows every currently-spawned MCP child. Containers are
   **ephemeral**: they only exist while the bastion holds them

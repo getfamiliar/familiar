@@ -7,51 +7,60 @@ import type { McpServerFactory } from "../McpServerFactory.js";
 import { mcpMountDirFor, PYPI_RUNTIME_IMAGE } from "../RuntimeImages.js";
 import type { McpTransport } from "../transports/McpTransport.js";
 import { StdioMcpTransport } from "../transports/StdioMcpTransport.js";
+import type { DockerArgsOptions, RuntimeContainerConfig } from "./DockerArgsOptions.js";
 
 /** Configuration for {@link PypiFactory}. */
-export interface PypiFactoryConfig {
+export interface PypiFactoryConfig extends RuntimeContainerConfig {
     /** Logger used by transports for spawn/exit/error events. */
     readonly log: Logger;
     /** Per-MCP log directory (`data/logs/mcp/`). */
     readonly mcpLogsDir: string;
     /** Days of rotated log retention. */
     readonly logRetentionDays: number;
-    /** Project-root `tmp/` (see `Bootstrap.tmpDir`). */
-    readonly tmpDir: string;
-    /** UID and GID for `--user`; written by daemon-uid into `/work`. */
-    readonly hostUid: number;
-    readonly hostGid: number;
 }
 
 /**
  * Build the `docker run` argv for a pypi-source MCP. Composes
- * `<package>[==<version>] [args...]` against the shared
+ * `<package>[==<version>] [extraArgs...]` against the shared
  * `ea-mcp-runtime-pypi` image (entrypoint `uvx`).
  *
- * Layout matches {@link NpmFactory}'s with two differences: the
- * runtime image tag and the version separator (`==` per PEP 508).
+ * Layout matches {@link buildNpmDockerArgs}'s with two differences:
+ * the runtime image tag and the version separator (`==` per PEP
+ * 508). `options` semantics are identical — see the doc on the
+ * npm helper for how `interactive`, `containerName`, and
+ * `extraArgs` interact with the bastion defaults.
  *
  * `entry.command` is ignored — see the matching note in NpmFactory.
  */
-function dockerArgsForEntry(entry: McpEntry, config: PypiFactoryConfig): string[] {
+export function buildPypiDockerArgs(
+    entry: McpEntry,
+    config: RuntimeContainerConfig,
+    options: DockerArgsOptions = {},
+): string[] {
     if (entry.package === undefined) {
         throw new Error(`MCP "${entry.id}": pypi source requires a "package" field.`);
     }
 
-    const args: string[] = [
-        "run",
-        "-i",
-        "--rm",
-        "--name",
-        `ea-mcp-${entry.id}`,
-        "--user",
-        `${config.hostUid}:${config.hostGid}`,
-    ];
+    const containerName =
+        options.containerName === undefined ? `ea-mcp-${entry.id}` : options.containerName;
+    const interactive = options.interactive ?? false;
+    const extraArgs = options.extraArgs ?? entry.args;
+
+    const args: string[] = ["run", interactive ? "-it" : "-i", "--rm"];
+    if (containerName !== null) {
+        args.push("--name", containerName);
+    }
+    args.push("--user", `${config.hostUid}:${config.hostGid}`);
 
     if (entry.network.disable) {
         args.push("--network", "none");
     } else {
         args.push("--network", SHARED_NETWORK_NAME);
+        // See the matching comment in NpmFactory: `ea-net` is
+        // IPv4-only but docker's embedded DNS still hands out AAAA
+        // records, which Python's `getaddrinfo` would happily try
+        // and fail on. Disabling IPv6 in-kernel filters those out.
+        args.push("--sysctl", "net.ipv6.conf.all.disable_ipv6=1");
     }
 
     args.push("-v", `${mcpMountDirFor(config.tmpDir, entry.id)}:/work`);
@@ -68,7 +77,7 @@ function dockerArgsForEntry(entry: McpEntry, config: PypiFactoryConfig): string[
     const versionSuffix = entry.version === undefined ? "" : `==${entry.version}`;
     args.push(`${entry.package}${versionSuffix}`);
 
-    for (const a of entry.args) {
+    for (const a of extraArgs) {
         args.push(a);
     }
 
@@ -99,7 +108,7 @@ export class PypiFactory implements McpServerFactory {
             id: entry.id,
             title: entry.title,
             description: entry.description,
-            dockerArgs: dockerArgsForEntry(entry, this.config),
+            dockerArgs: buildPypiDockerArgs(entry, this.config),
             idleTimeoutSeconds: entry.idleTimeoutSeconds,
             log: this.config.log.child({ mcp: entry.id }),
             openFileSink,

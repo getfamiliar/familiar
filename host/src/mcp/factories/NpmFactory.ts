@@ -7,60 +7,80 @@ import type { McpServerFactory } from "../McpServerFactory.js";
 import { mcpMountDirFor, NPM_RUNTIME_IMAGE } from "../RuntimeImages.js";
 import type { McpTransport } from "../transports/McpTransport.js";
 import { StdioMcpTransport } from "../transports/StdioMcpTransport.js";
+import type { DockerArgsOptions, RuntimeContainerConfig } from "./DockerArgsOptions.js";
 
 /** Configuration for {@link NpmFactory}. */
-export interface NpmFactoryConfig {
+export interface NpmFactoryConfig extends RuntimeContainerConfig {
     /** Logger used by transports for spawn/exit/error events. */
     readonly log: Logger;
     /** Per-MCP log directory (`data/logs/mcp/`). */
     readonly mcpLogsDir: string;
     /** Days of rotated log retention. */
     readonly logRetentionDays: number;
-    /** Project-root `tmp/` (see `Bootstrap.tmpDir`). */
-    readonly tmpDir: string;
-    /** UID and GID for `--user`; written by daemon-uid into `/work`. */
-    readonly hostUid: number;
-    readonly hostGid: number;
 }
 
 /**
  * Build the `docker run` argv for an npm-source MCP. Composes
- * `<package>[@<version>] [args...]` against the shared
+ * `<package>[@<version>] [extraArgs...]` against the shared
  * `ea-mcp-runtime-npm` image (entrypoint `npx -y`).
  *
- * Layout:
+ * Default layout (no `options` passed):
  *   run -i --rm --name ea-mcp-<id> --network <net>
  *     --user <uid>:<gid>
  *     -v <tmpDir>/mcp-mount-<id>:/work
  *     [-e KEY=VAL ...]
  *     [-v HOST:CONTAINER[:ro] ...]
  *     ea-mcp-runtime-npm
- *     <package>[@<version>] [args...]
+ *     <package>[@<version>] [entry.args...]
+ *
+ * `options` lets one-shot callers (e.g. `./cli.sh mcp call`)
+ * tweak the bastion defaults: `interactive: true` adds `-t`,
+ * `containerName: null` drops `--name` so the call doesn't
+ * collide with a live bastion-managed container of the same id,
+ * and `extraArgs` overrides `entry.args` so the user can pass
+ * `--login` (or any other CLI invocation) verbatim.
  *
  * The `entry.command` field is ignored for npm sources — the entry
  * point is fixed to `npx -y` to keep the runtime image's contract
  * predictable. Users who need a custom entrypoint should pick the
  * `docker-mcp-registry` source with their own image.
  */
-function dockerArgsForEntry(entry: McpEntry, config: NpmFactoryConfig): string[] {
+export function buildNpmDockerArgs(
+    entry: McpEntry,
+    config: RuntimeContainerConfig,
+    options: DockerArgsOptions = {},
+): string[] {
     if (entry.package === undefined) {
         throw new Error(`MCP "${entry.id}": npm source requires a "package" field.`);
     }
 
-    const args: string[] = [
-        "run",
-        "-i",
-        "--rm",
-        "--name",
-        `ea-mcp-${entry.id}`,
-        "--user",
-        `${config.hostUid}:${config.hostGid}`,
-    ];
+    const containerName =
+        options.containerName === undefined ? `ea-mcp-${entry.id}` : options.containerName;
+    const interactive = options.interactive ?? false;
+    const extraArgs = options.extraArgs ?? entry.args;
+
+    const args: string[] = ["run", interactive ? "-it" : "-i", "--rm"];
+    if (containerName !== null) {
+        args.push("--name", containerName);
+    }
+    args.push("--user", `${config.hostUid}:${config.hostGid}`);
 
     if (entry.network.disable) {
         args.push("--network", "none");
     } else {
         args.push("--network", SHARED_NETWORK_NAME);
+        // Hard-disable IPv6 inside the container. `ea-net` is IPv4-
+        // only at the network level, but docker's embedded DNS
+        // (127.0.0.11) returns AAAA records anyway for hosts that
+        // publish both — and Node's `getaddrinfo` happily attempts
+        // those v6 addresses before failing. Without this sysctl,
+        // calls to e.g. `login.microsoftonline.com` surface as a
+        // generic "Network request failed" because every connect
+        // attempt hits ENETUNREACH on the v6 address. Setting
+        // `net.ipv6.conf.all.disable_ipv6=1` in the container's
+        // kernel makes `getaddrinfo` filter AAAA out before the
+        // app sees it.
+        args.push("--sysctl", "net.ipv6.conf.all.disable_ipv6=1");
     }
 
     // Mandatory `/work` mount comes first so a user-declared
@@ -80,7 +100,7 @@ function dockerArgsForEntry(entry: McpEntry, config: NpmFactoryConfig): string[]
     const versionSuffix = entry.version === undefined ? "" : `@${entry.version}`;
     args.push(`${entry.package}${versionSuffix}`);
 
-    for (const a of entry.args) {
+    for (const a of extraArgs) {
         args.push(a);
     }
 
@@ -114,7 +134,7 @@ export class NpmFactory implements McpServerFactory {
             id: entry.id,
             title: entry.title,
             description: entry.description,
-            dockerArgs: dockerArgsForEntry(entry, this.config),
+            dockerArgs: buildNpmDockerArgs(entry, this.config),
             idleTimeoutSeconds: entry.idleTimeoutSeconds,
             log: this.config.log.child({ mcp: entry.id }),
             openFileSink,
