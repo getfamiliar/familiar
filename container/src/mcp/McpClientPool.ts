@@ -177,19 +177,48 @@ export class McpClientPool {
     }
 
     /**
-     * Build the merged tool set with `${id}_${toolName}` keys.
-     * Collisions across MCPs are impossible by construction since the
-     * id is part of every key.
+     * Build the merged tool set with `${id}_${toolName}` keys, with
+     * every non-alnum-underscore character replaced by `_`. The
+     * sanitization step matters because some open-source LLMs
+     * (notably GLM 5.1, several Qwen variants, others) emit tool
+     * calls in a grammar that doesn't recognize hyphens in tool
+     * names — the model still *reasons* about calling
+     * `ms365_verify-login`, but its function-call decoder drops the
+     * call and the AI SDK reports `finishReason: "other"` with
+     * zero parsed calls. By registering the tool under
+     * `ms365_verify_login` instead, the model emits a name its
+     * decoder accepts and the call routes through cleanly. The
+     * back-map happens implicitly: the AI SDK looks up the tool by
+     * key, and the underlying `Tool` object knows nothing about
+     * its registered name — it executes against the real MCP tool
+     * either way.
+     *
+     * Collisions across MCPs are impossible by construction since
+     * the id is part of every key. Collisions *within* a single
+     * MCP that happen to differ only in non-alnum punctuation
+     * (e.g. `verify-login` and `verify_login`) are theoretically
+     * possible but unobserved; if they ever crop up we can add a
+     * suffix-disambiguation pass.
      */
     private mergeTools(): ToolSet {
         const merged: ToolSet = {};
         for (const c of this.clients) {
             for (const [toolName, tool] of Object.entries(c.tools)) {
-                merged[`${c.id}_${toolName}`] = tool;
+                merged[sanitizeToolKey(`${c.id}_${toolName}`)] = tool;
             }
         }
         return merged;
     }
+}
+
+/**
+ * Replace any character outside `[a-zA-Z0-9_]` with `_`. Used to
+ * make the namespaced tool key safe for every model's
+ * function-call grammar (see {@link McpClientPool.mergeTools}'s
+ * doc-comment for the failure mode this guards against).
+ */
+function sanitizeToolKey(key: string): string {
+    return key.replace(/[^a-zA-Z0-9_]/g, "_");
 }
 
 /** Count keys on a ToolSet without leaking `Object.keys` allocations elsewhere. */

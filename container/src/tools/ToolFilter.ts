@@ -425,17 +425,26 @@ function resolveGroup(
  * the matches. Patterns without `*` are exact-match; `*` is a
  * wildcard for any character sequence (including `_`, since the
  * keys themselves contain `_`).
+ *
+ * Hyphens in the *pattern* are folded to `_` before matching to
+ * mirror the sanitization the MCP pool applies to keys (see
+ * `McpClientPool.mergeTools`'s comment for the why). This keeps
+ * legacy toolgroup entries like `atlassian-personal_confluence_get_page`
+ * working unchanged after the keys themselves moved to
+ * `atlassian_personal_*`. Without this fold, the entries would
+ * silently match nothing — exactly the symptom we want to avoid.
  */
 function matchTools(pattern: string, available: ReadonlySet<string>): Set<string> {
+    const folded = pattern.replace(/-/g, "_");
     const out = new Set<string>();
-    if (!pattern.includes("*")) {
-        if (available.has(pattern)) {
-            out.add(pattern);
+    if (!folded.includes("*")) {
+        if (available.has(folded)) {
+            out.add(folded);
         }
         return out;
     }
     const regex = new RegExp(
-        `^${pattern
+        `^${folded
             .split("*")
             .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
             .join(".*")}$`,

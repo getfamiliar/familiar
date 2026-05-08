@@ -140,14 +140,25 @@ that npm/pypi/external entries use the same shape.
 
 Each MCP tool is registered with the AI SDK as `${id}_${toolName}` —
 the id (the YAML key in `mcp.yml`) and the tool's own name joined by
-a single underscore. Our id regex bans underscores so the delimiter
-is unambiguous. Examples:
+a single underscore. **Every non-`[a-zA-Z0-9_]` character in the
+final key is folded to `_`** so the result is safe for every model's
+function-call grammar (some open-source LLMs — GLM 5.1, several Qwen
+variants — silently drop tool calls whose names contain hyphens, and
+`finish_reason: "other"` falls out the other side with no error).
+
+Examples after sanitization:
 
 ```
-fetch_fetch                        # mcp/fetch's only tool
-atlassian_jira_create_issue        # one of mcp/atlassian's many
-atlassian-personal_confluence_get_page
+fetch_fetch                            # mcp/fetch's only tool
+atlassian_jira_create_issue            # one of mcp/atlassian's many
+atlassian_personal_confluence_get_page # `atlassian-personal` id → underscore
+ms365_verify_login                     # `verify-login` tool → underscore
 ```
+
+Toolgroup files and `tools:` expressions are matched after folding
+hyphens to underscores too, so legacy entries like
+`atlassian-personal_confluence_get_page` keep matching against the
+new keys without rewriting.
 
 The agent boots the pool eagerly: every declared MCP gets its
 `tools/list` fetched once at startup. Cold-spawn cost shows up here
