@@ -136,6 +136,19 @@ that npm/pypi/external entries use the same shape.
 > that this also makes the container unreachable from the agent;
 > useful for stdio-only MCPs only.
 
+> **Two-phase boot for restricted npm/pypi.** When an `npm` or
+> `pypi` entry has `disable: true` or a non-empty `allowHosts`,
+> the bastion can't fetch the package from the run-phase
+> container. On the first cold-spawn after daemon start it runs
+> a **prep container** with full network access (`ea-net`) and
+> **no env vars / no user volumes**: `npx -y --package <pkg> --
+> node -e ""` for npm, `uvx --from <pkg> python -c ""` for pypi.
+> The package lands in the bind-mounted `/work` cache; the
+> phase-2 container then runs as declared (restricted network,
+> env vars, volumes) and the warm cache lets `npx`/`uvx` skip
+> the fetch. Prep needs network even when the running MCP
+> doesn't — fully air-gapped installs aren't supported.
+
 ## How handlers use MCP tools
 
 Each MCP tool is registered with the AI SDK as `${id}_${toolName}` —

@@ -85,6 +85,46 @@ export function buildPypiDockerArgs(
 }
 
 /**
+ * Build a `docker run` argv that pre-populates the per-MCP `/work`
+ * cache with the pypi package, but does **not** start the MCP server.
+ * Counterpart of {@link buildNpmPrepDockerArgs}; same rationale and
+ * same shape — full network + IPv6 sysctl regardless of entry policy,
+ * no user env vars, no user volumes, anonymous container.
+ *
+ * The entrypoint is overridden to `uvx --from <pkg>[==<ver>] python
+ * -c ""`, which builds a temp environment containing the package and
+ * runs an inline no-op. The download lands in `tmp/mcp-mount-<id>/`
+ * (uv's `.cache/uv/` and `.local/share/uv/` under HOME=/work), the
+ * same paths phase-2 `uvx <pkg>` consults.
+ */
+export function buildPypiPrepDockerArgs(entry: McpEntry, config: RuntimeContainerConfig): string[] {
+    if (entry.package === undefined) {
+        throw new Error(`MCP "${entry.id}": pypi source requires a "package" field.`);
+    }
+    const versionSuffix = entry.version === undefined ? "" : `==${entry.version}`;
+    return [
+        "run",
+        "--rm",
+        "--user",
+        `${config.hostUid}:${config.hostGid}`,
+        "--network",
+        SHARED_NETWORK_NAME,
+        "--sysctl",
+        "net.ipv6.conf.all.disable_ipv6=1",
+        "-v",
+        `${mcpMountDirFor(config.tmpDir, entry.id)}:/work`,
+        "--entrypoint",
+        "uvx",
+        PYPI_RUNTIME_IMAGE,
+        "--from",
+        `${entry.package}${versionSuffix}`,
+        "python",
+        "-c",
+        "",
+    ];
+}
+
+/**
  * Factory for `source: pypi`. Produces a {@link StdioMcpTransport}
  * that runs `uvx <package>` inside the shared
  * `ea-mcp-runtime-pypi` image. The runtime image must already exist
@@ -104,11 +144,16 @@ export class PypiFactory implements McpServerFactory {
         const { mcpLogsDir, logRetentionDays } = this.config;
         const openFileSink = (): Promise<McpFileSink> =>
             createMcpFileSink(mcpLogsDir, entry.id, logRetentionDays);
+        const isNetworkRestricted = entry.network.disable || entry.network.allowHosts.length > 0;
+        const prepDockerArgs = isNetworkRestricted
+            ? buildPypiPrepDockerArgs(entry, this.config)
+            : undefined;
         return new StdioMcpTransport({
             id: entry.id,
             title: entry.title,
             description: entry.description,
             dockerArgs: buildPypiDockerArgs(entry, this.config),
+            prepDockerArgs,
             idleTimeoutSeconds: entry.idleTimeoutSeconds,
             log: this.config.log.child({ mcp: entry.id }),
             openFileSink,

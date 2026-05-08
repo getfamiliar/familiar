@@ -39,6 +39,16 @@ export interface StdioMcpTransportConfig {
      * <image> [args...]`. The factory assembles this from the entry.
      */
     readonly dockerArgs: readonly string[];
+    /**
+     * Optional pre-spawn install argv. Run once per transport
+     * instance, before the first real `dockerArgs` spawn, to populate
+     * the bind-mounted `/work` cache with the MCP's package. Used by
+     * npm/pypi sources whose entry has restricted network — phase-2
+     * `dockerArgs` can't reach the registry, so phase-1 fetches with
+     * full network and no env vars. When omitted, the transport
+     * single-phases as before.
+     */
+    readonly prepDockerArgs?: readonly string[];
     /** Seconds of idleness after which the child is closed. */
     readonly idleTimeoutSeconds: number;
     /** Logger for spawn / reap / error events. */
@@ -79,6 +89,7 @@ export class StdioMcpTransport implements McpTransport {
     readonly title: string;
     readonly description: string;
     private readonly dockerArgs: readonly string[];
+    private readonly prepDockerArgs: readonly string[] | null;
     private readonly idleTimeoutMs: number;
     private readonly log: Logger;
     private readonly openFileSink: (() => Promise<McpFileSink>) | undefined;
@@ -89,12 +100,14 @@ export class StdioMcpTransport implements McpTransport {
     private requestQueue: Promise<void> = Promise.resolve();
     private pendingResolve: ((line: string) => void) | null = null;
     private pendingReject: ((err: Error) => void) | null = null;
+    private prepPromise: Promise<void> | null = null;
 
     constructor(config: StdioMcpTransportConfig) {
         this.id = config.id;
         this.title = config.title;
         this.description = config.description;
         this.dockerArgs = config.dockerArgs;
+        this.prepDockerArgs = config.prepDockerArgs ?? null;
         this.idleTimeoutMs = config.idleTimeoutSeconds * 1000;
         this.log = config.log;
         this.openFileSink = config.openFileSink;
@@ -214,6 +227,11 @@ export class StdioMcpTransport implements McpTransport {
         if (this.child !== null) {
             return;
         }
+        // For network-restricted MCPs the registry isn't reachable
+        // from the run-phase container, so we fetch the package once
+        // per transport lifetime in a separate, network-open container
+        // before the real spawn.
+        await this.runPrep();
         // Idempotent cleanup: a previous crash may have left a stale
         // container with the same name. `--rm` should have removed it,
         // but defensively we try first.
@@ -283,6 +301,41 @@ export class StdioMcpTransport implements McpTransport {
                 reject(err);
             }
         });
+    }
+
+    /**
+     * Run the prep argv if configured, populating `/work` with the
+     * MCP's package cache before phase-2 spawn. Memoised on the
+     * promise so concurrent first requests share one prep run; on
+     * failure the promise is cleared so a later request can retry.
+     */
+    private runPrep(): Promise<void> {
+        if (this.prepDockerArgs === null) {
+            return Promise.resolve();
+        }
+        if (this.prepPromise !== null) {
+            return this.prepPromise;
+        }
+        const args = [...this.prepDockerArgs];
+        this.log.info(`prepping stdio mcp '${this.id}' (cold install)`);
+        const promise = new Promise<void>((resolve, reject) => {
+            const proc = spawn("docker", args, { stdio: "ignore" });
+            proc.on("close", (code) => {
+                if (code === 0) {
+                    this.log.info(`prep complete for '${this.id}'`);
+                    resolve();
+                    return;
+                }
+                this.prepPromise = null;
+                reject(new Error(`mcp '${this.id}' prep exited with code ${code}`));
+            });
+            proc.on("error", (err) => {
+                this.prepPromise = null;
+                reject(err);
+            });
+        });
+        this.prepPromise = promise;
+        return promise;
     }
 
     /** Clear and reschedule the idle reaper. */

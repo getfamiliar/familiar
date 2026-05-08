@@ -108,6 +108,51 @@ export function buildNpmDockerArgs(
 }
 
 /**
+ * Build a `docker run` argv that pre-populates the per-MCP `/work`
+ * cache with the npm package, but does **not** start the MCP server.
+ * Used for network-restricted entries (`network.disable: true` or
+ * non-empty `allowHosts`) whose phase-2 container can't reach the
+ * registry. Forces full network and IPv6 sysctl regardless of the
+ * entry's network policy, drops user env vars and user volumes, and
+ * runs anonymously (no `--name`) so it can't collide with the live
+ * `ea-mcp-<id>` container.
+ *
+ * The entrypoint is overridden to `npx -y --package <pkg>[@<ver>] --
+ * node -e ""` — npx fetches and installs the package, then runs an
+ * inline no-op and exits 0. The cache populated lives in
+ * `tmp/mcp-mount-<id>/.npm/_npx/`, the same path the phase-2
+ * `npx -y <pkg>` consults.
+ */
+export function buildNpmPrepDockerArgs(entry: McpEntry, config: RuntimeContainerConfig): string[] {
+    if (entry.package === undefined) {
+        throw new Error(`MCP "${entry.id}": npm source requires a "package" field.`);
+    }
+    const versionSuffix = entry.version === undefined ? "" : `@${entry.version}`;
+    return [
+        "run",
+        "--rm",
+        "--user",
+        `${config.hostUid}:${config.hostGid}`,
+        "--network",
+        SHARED_NETWORK_NAME,
+        "--sysctl",
+        "net.ipv6.conf.all.disable_ipv6=1",
+        "-v",
+        `${mcpMountDirFor(config.tmpDir, entry.id)}:/work`,
+        "--entrypoint",
+        "npx",
+        NPM_RUNTIME_IMAGE,
+        "-y",
+        "--package",
+        `${entry.package}${versionSuffix}`,
+        "--",
+        "node",
+        "-e",
+        "",
+    ];
+}
+
+/**
  * Factory for `source: npm`. Produces a {@link StdioMcpTransport}
  * that runs `npx -y <package>` inside the shared
  * `ea-mcp-runtime-npm` image. The runtime image must already exist
@@ -130,11 +175,16 @@ export class NpmFactory implements McpServerFactory {
         const { mcpLogsDir, logRetentionDays } = this.config;
         const openFileSink = (): Promise<McpFileSink> =>
             createMcpFileSink(mcpLogsDir, entry.id, logRetentionDays);
+        const isNetworkRestricted = entry.network.disable || entry.network.allowHosts.length > 0;
+        const prepDockerArgs = isNetworkRestricted
+            ? buildNpmPrepDockerArgs(entry, this.config)
+            : undefined;
         return new StdioMcpTransport({
             id: entry.id,
             title: entry.title,
             description: entry.description,
             dockerArgs: buildNpmDockerArgs(entry, this.config),
+            prepDockerArgs,
             idleTimeoutSeconds: entry.idleTimeoutSeconds,
             log: this.config.log.child({ mcp: entry.id }),
             openFileSink,
