@@ -122,17 +122,18 @@ export class AgentRunner {
         });
 
         const history = await this.chat.fetchHistory(this.row.eventId);
-        const taskBrief = buildPrompt(this.row.prompt);
+        const prompt = buildPrompt(this.row.prompt, this.row.payload);
 
         // The agent's `instructions` (system prompt — SOUL.md,
         // ENVIRONMENT.md, CONTEXT.md, handler body, tool list) is
         // attached at construction time. `messages` carries everything
         // that varies per-call: prior chat turns (empty for non-chat
-        // events) plus the current task brief (the agentrun's seed
-        // prompt) appended as the trailing user message when non-empty.
+        // events) plus the current user prompt (the agentrun's seed
+        // prompt + sanitized payload) appended as the trailing user
+        // message when non-empty.
         const messages: ModelMessage[] = [...history];
-        if (taskBrief.length > 0) {
-            messages.push({ role: "user", content: taskBrief });
+        if (prompt.length > 0) {
+            messages.push({ role: "user", content: prompt });
         }
 
         const runStartedAt = Date.now();
@@ -142,11 +143,11 @@ export class AgentRunner {
                 temperature: handler.header.temperature,
                 maxOutputTokens: handler.header.maxOutputTokens,
                 systemPrompt: systemPrompt,
-                taskBrief: taskBrief,
-                prompt: this.row.prompt,
+                prompt,
+                runPrompt: this.row.prompt,
                 tools: toolNames,
                 historyMessages: history.length,
-                taskBriefLength: taskBrief.length,
+                promptLength: prompt.length,
             },
             "agent starting",
         );
