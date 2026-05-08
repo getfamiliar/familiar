@@ -13,3 +13,6 @@ Important: finishReason length gescheit behandeln
 
 - The whole schema contains migrations at the moment, pull a blank slate
 
+## Security Holes
+
+- Two step installation of pypis can be circumvented as the installation step happens on every daemon boot. Post-install scripts could exfiltrate env variables that a previous MCP run saved inside the container.

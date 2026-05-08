@@ -7,27 +7,19 @@ import { PassThrough, type Transform } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import type { Logger } from "effective-assistant-shared";
 import type { Bastion, BastionModule } from "./Bastion.js";
-
-/**
- * Default upstream base URLs per known provider. Looked up by provider
- * id. Users can override via `inference.baseUrls.<provider>` in
- * config.yml (e.g. for self-hosted gateways or non-standard regional
- * endpoints).
- */
-const KNOWN_PROVIDER_BASE_URLS: Readonly<Record<string, string>> = {
-    featherless: "https://api.featherless.ai",
-    groq: "https://api.groq.com/openai",
-    openai: "https://api.openai.com",
-    anthropic: "https://api.anthropic.com",
-    deepseek: "https://api.deepseek.com",
-};
+import { NATIVE_PROVIDER_IDS, NATIVE_PROVIDERS } from "./NativeProviders.js";
 
 /** Per-provider runtime config built from `config.yml`. */
 export interface ProviderConfig {
     /** Upstream base URL, no trailing slash. */
     readonly upstreamBase: string;
-    /** Real API key forwarded as `Authorization: Bearer <key>`. */
-    readonly upstreamApiKey: string;
+    /**
+     * Inject the real API key into the outbound headers using the
+     * provider's preferred header name (Bearer for most, `x-api-key`
+     * for Anthropic, `x-goog-api-key` for Google, …). The proxy calls
+     * this after stripping inbound auth headers from the agent.
+     */
+    readonly applyAuth: (headers: Record<string, string | string[]>) => void;
 }
 
 /** Configuration for the {@link ReverseProxy} module. */
@@ -54,17 +46,29 @@ export interface ReverseProxyConfig {
 
 /**
  * Headers stripped from inbound requests before forwarding. Inbound
- * `authorization` must never leak to the upstream — this proxy is the
- * *only* component that holds the real API key. Hop-by-hop headers
- * are dropped so node sets them itself for the outbound request.
+ * auth headers must never leak to the upstream — this proxy is the
+ * *only* component that holds the real API key. We strip every form
+ * we know about (`authorization`, `x-api-key`, `x-goog-api-key`) so
+ * a misconfigured agent can't accidentally pass through whatever it
+ * had on hand. Hop-by-hop headers are dropped so node sets them itself
+ * for the outbound request.
  */
 const HEADERS_TO_STRIP = new Set([
     "authorization",
     "x-api-key",
+    "x-goog-api-key",
     "host",
     "connection",
     "content-length",
 ]);
+
+/**
+ * Header names that — once `applyAuth` has set them — must never be
+ * echoed verbatim into capture dumps. Matches the set of auth-style
+ * headers we know about; values are replaced with `[redacted]` in
+ * the on-disk dump even though the rest of the headers survive.
+ */
+const HEADERS_TO_REDACT_IN_CAPTURE = new Set(["authorization", "x-api-key", "x-goog-api-key"]);
 
 /**
  * Bastion module that handles `/llm/<provider>/v1/*`. Forwards each
@@ -152,7 +156,7 @@ export class ReverseProxy implements BastionModule {
         const path = `${baseTrailing}${upstreamPath}`;
 
         const headers = sanitizeHeaders(req.headers);
-        headers.authorization = `Bearer ${provider.upstreamApiKey}`;
+        provider.applyAuth(headers);
         headers.host = upstreamHost;
 
         const capture = this.openCapture(providerId, req.method ?? "GET", upstreamPath, headers);
@@ -315,13 +319,14 @@ export class ReverseProxy implements BastionModule {
         const respPath = join(dir, `${reqId}.resp.log`);
         const reqFile = createWriteStream(reqPath, { flags: "w" });
         const respFile = createWriteStream(respPath, { flags: "w" });
-        // Do NOT echo the Authorization header into the dump — even
-        // though the proxy is the holder of the real upstream key, a
-        // capture file lying around with a live bearer token in it is
-        // a footgun. The forwarded headers are otherwise inert.
+        // Do NOT echo auth headers into the dump — even though the
+        // proxy is the holder of the real upstream key, a capture file
+        // lying around with a live bearer token (or `x-api-key`,
+        // `x-goog-api-key`, …) in it is a footgun. The forwarded
+        // headers are otherwise inert.
         const safeHeaders: Record<string, string | string[]> = {};
         for (const [k, v] of Object.entries(forwardedHeaders)) {
-            if (k.toLowerCase() === "authorization") {
+            if (HEADERS_TO_REDACT_IN_CAPTURE.has(k.toLowerCase())) {
                 safeHeaders[k] = "[redacted]";
                 continue;
             }
@@ -400,32 +405,85 @@ function writeResponseHeader(file: WriteStream, upstreamRes: IncomingMessage): v
 
 /**
  * Build the providers map from a parsed `inference.apiKeys` mapping
- * and an optional `inference.baseUrls` override mapping. Unknown
- * providers (no baked-in default and no override) fail loudly so the
- * daemon doesn't silently drop a configured key.
+ * (native vendors) and `inference.customProviders` mapping (third-party
+ * gateways we treat as openai-compatible). Native ids must be in the
+ * baked-in whitelist; custom ids must NOT collide with a native id even
+ * when no native key is set, so a custom gateway can never quietly
+ * shadow native semantics. Apart from that, the linter is the primary
+ * gate — this function still re-validates the bare invariants the
+ * proxy depends on so a bug in the linter doesn't ship a malformed
+ * provider table to the forwarding hot path.
  */
 export function buildProviders(
     apiKeys: Readonly<Record<string, unknown>>,
-    baseUrlOverrides: Readonly<Record<string, unknown>>,
+    customProviders: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, ProviderConfig>> {
     const providers: Record<string, ProviderConfig> = {};
+
     for (const [id, key] of Object.entries(apiKeys)) {
         if (typeof key !== "string" || key.length === 0) {
             throw new Error(`inference.apiKeys.${id}: must be a non-empty string`);
         }
-        const override = baseUrlOverrides[id];
-        const baseUrl =
-            typeof override === "string" && override.length > 0
-                ? override
-                : KNOWN_PROVIDER_BASE_URLS[id];
-        if (baseUrl === undefined) {
+        const native = NATIVE_PROVIDERS[id];
+        if (native === undefined) {
             throw new Error(
-                `inference.apiKeys.${id} is set but ${id} is not a known provider — set inference.baseUrls.${id} to its upstream URL.`,
+                `inference.apiKeys.${id} is not a known native provider — declare it under inference.customProviders.${id} instead.`,
             );
         }
-        providers[id] = { upstreamBase: baseUrl, upstreamApiKey: key };
+        providers[id] = {
+            upstreamBase: native.upstreamBase,
+            applyAuth: (headers) => {
+                native.applyAuth(headers, key);
+            },
+        };
     }
+
+    for (const [id, raw] of Object.entries(customProviders)) {
+        if (NATIVE_PROVIDER_IDS.has(id)) {
+            throw new Error(
+                `inference.customProviders.${id}: id is reserved for the native provider — pick a different id.`,
+            );
+        }
+        if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+            throw new Error(`inference.customProviders.${id}: must be a mapping`);
+        }
+        const entry = raw as Record<string, unknown>;
+        const baseUrl = entry.baseUrl;
+        const apiKey = entry.apiKey;
+        const type = entry.type;
+        if (typeof baseUrl !== "string" || !baseUrl.startsWith("https://")) {
+            throw new Error(
+                `inference.customProviders.${id}.baseUrl: must be an https URL (got ${describe(baseUrl)})`,
+            );
+        }
+        if (typeof apiKey !== "string" || apiKey.length === 0) {
+            throw new Error(`inference.customProviders.${id}.apiKey: must be a non-empty string`);
+        }
+        if (type !== "openai-compatible") {
+            throw new Error(
+                `inference.customProviders.${id}.type: only "openai-compatible" is supported (got ${describe(type)})`,
+            );
+        }
+        providers[id] = {
+            upstreamBase: baseUrl.replace(/\/$/, ""),
+            applyAuth: (headers) => {
+                headers.authorization = `Bearer ${apiKey}`;
+            },
+        };
+    }
+
     return providers;
+}
+
+/** Compact, log-friendly description of a value's actual runtime shape. */
+function describe(value: unknown): string {
+    if (value === null) {
+        return "null";
+    }
+    if (Array.isArray(value)) {
+        return "array";
+    }
+    return typeof value;
 }
 
 /** Copy non-stripped inbound headers, lower-casing names. */

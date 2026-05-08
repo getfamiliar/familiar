@@ -8,16 +8,6 @@ import {
 
 const CONTAINER_NAME = "ea-agent";
 
-/**
- * Placeholder API key handed to the agent container. The real LLM
- * provider keys live only on the host (in the bastion's ReverseProxy
- * module); the OpenAI-compatible client in the container needs *some*
- * string to send as `Authorization`, but the bastion strips it and
- * substitutes the real key. This value being readable from inside the
- * container is intentional — it grants no upstream access.
- */
-const PLACEHOLDER_API_KEY = "via-bastion";
-
 /** Configuration for the single long-running agent container. */
 export interface AgentContainerConfig {
     /** Docker image tag to run (e.g. `effective-agent`). */
@@ -36,15 +26,29 @@ export interface AgentContainerConfig {
      * Base URL the agent should dial for everything privileged
      * (LLM proxying, MCP gateway). Resolved at daemon start as
      * `http://<ea-net-gateway-ip>:<port>`. The agent appends
-     * `/llm/<provider>/v1` for inference and `/mcp/<id>` for tools.
+     * `/llm/<provider>/` for inference and `/mcp/<id>` for tools.
      */
     readonly bastionUrl: string;
     /**
-     * Provider id the agent uses by default for inference (e.g.
-     * `featherless`). Combined with `bastionUrl` to form the LLM
-     * client's base URL.
+     * Provider id the agent uses when a handler doesn't put a provider
+     * prefix on its `model` field (e.g. `featherless` so a bare
+     * `zai-org/GLM-5.1` resolves to that client).
      */
-    readonly inferenceProvider: string;
+    readonly defaultProvider: string;
+    /**
+     * Default model id used when a handler omits `model` from its
+     * frontmatter. Resolved on the container side under `defaultProvider`.
+     */
+    readonly defaultModel: string;
+    /**
+     * Map of enabled provider id → SDK type. Native ids (`openai`,
+     * `anthropic`, `grok`, …) map to themselves; custom ids declared
+     * under `inference.customProviders` map to `"openai-compatible"`.
+     * The container's `ModelFactory` switches on this to instantiate
+     * the right Vercel AI SDK client and validates handler-declared
+     * provider prefixes against it.
+     */
+    readonly providerTypes: Readonly<Record<string, string>>;
     /**
      * When true, the agent container runs at debug log level
      * (`EA_LOG_LEVEL=debug`). Mirrors the daemon's `--verbose` flag so
@@ -101,9 +105,11 @@ export class AgentContainer {
             "-e",
             `BASTION_URL=${this.config.bastionUrl}`,
             "-e",
-            `INFERENCE_PROVIDER=${this.config.inferenceProvider}`,
+            `INFERENCE_DEFAULT_PROVIDER=${this.config.defaultProvider}`,
             "-e",
-            `INFERENCE_API_KEY=${PLACEHOLDER_API_KEY}`,
+            `INFERENCE_DEFAULT_MODEL=${this.config.defaultModel}`,
+            "-e",
+            `INFERENCE_PROVIDERS=${JSON.stringify(this.config.providerTypes)}`,
             "-e",
             `EA_LOG_LEVEL=${this.config.verbose ? "debug" : "info"}`,
             "-v",

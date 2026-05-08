@@ -83,19 +83,29 @@ export const startCommand = defineCommand({
         const config = new HostConfigService(boot.configFile);
 
         const postgresPassword = config.getString("core.postgresPassword");
-        const inferenceProvider = config.getString("inference.provider");
-        // Touch the matching api key so a missing value fails the daemon
-        // now rather than at first inference call.
-        config.getString(`inference.apiKeys.${inferenceProvider}`);
+        const defaultProvider = config.getString("inference.defaultProvider");
+        const defaultModel = config.getString("inference.defaultModel");
         // Touch the chat-channel default so a missing value fails the
         // daemon now rather than at first chat event.
         config.getString("core.defaultChatChannel");
-        // Build the providers map for the bastion's reverse-proxy module.
-        // Every key under `inference.apiKeys` becomes a `/llm/<id>/v1`
-        // route; unknown providers without a baseUrls override fail loudly.
-        const apiKeys = config.getMapping("inference.apiKeys");
-        const baseUrlOverrides = config.getMapping("inference.baseUrls", {});
-        const providers = buildProviders(apiKeys, baseUrlOverrides);
+        // Build the providers map for the bastion's reverse-proxy
+        // module. Every native key under `inference.apiKeys` and every
+        // entry under `inference.customProviders` becomes a `/llm/<id>/`
+        // route; native ids are pinned to known upstream URLs and auth
+        // styles, custom ones use openai-compatible Bearer auth.
+        const apiKeys = config.getMapping("inference.apiKeys", {});
+        const customProviders = config.getMapping("inference.customProviders", {});
+        const providers = buildProviders(apiKeys, customProviders);
+        // Provider type map for the agent container — native ids carry
+        // their own SDK package (id is the type), custom ids fall under
+        // the single openai-compatible client.
+        const providerTypes: Record<string, string> = {};
+        for (const id of Object.keys(apiKeys)) {
+            providerTypes[id] = id;
+        }
+        for (const id of Object.keys(customProviders)) {
+            providerTypes[id] = "openai-compatible";
+        }
 
         const log = await buildDaemonLogger(boot, config, verbose);
 
@@ -160,7 +170,9 @@ export const startCommand = defineCommand({
             containerSrcPath: boot.containerSrcDir,
             postgresPassword,
             bastionUrl: bastion.url,
-            inferenceProvider,
+            defaultProvider,
+            defaultModel,
+            providerTypes,
             verbose,
         });
 

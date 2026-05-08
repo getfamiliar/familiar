@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Logger } from "effective-assistant-shared";
 import { parse, YAMLParseError } from "yaml";
+import { NATIVE_PROVIDER_IDS } from "../bastion/NativeProviders.js";
 
 /**
  * Result of a config lint pass. `errors` are platform-level
@@ -68,15 +69,118 @@ export function lintConfigFile(path: string): ConfigLintResult {
 
     requireString(config, "core.postgresPassword", errors);
     requireString(config, "core.defaultChatChannel", errors);
-    const provider = requireString(config, "inference.provider", errors);
+    const defaultProvider = requireString(config, "inference.defaultProvider", errors);
     requireString(config, "inference.defaultModel", errors);
-    if (provider !== undefined) {
-        requireString(config, `inference.apiKeys.${provider}`, errors);
-    }
+    lintInferenceProviders(config, defaultProvider, errors);
 
     optionalPositiveInt(config, "core.logRetentionDays", warnings);
 
     return { ok: errors.length === 0, errors, warnings };
+}
+
+/**
+ * Validate the `inference.apiKeys` and `inference.customProviders`
+ * subtrees, plus the cross-cutting `defaultProvider` invariant. Native
+ * apiKeys must be in the whitelist; custom providers must declare
+ * `baseUrl`, `apiKey`, and `type: "openai-compatible"`; their ids must
+ * not collide with native ids. The default provider id has to resolve
+ * to one of the configured entries.
+ */
+function lintInferenceProviders(
+    root: Record<string, unknown>,
+    defaultProvider: string | undefined,
+    errors: string[],
+): void {
+    const apiKeys = readPath(root, "inference.apiKeys");
+    const customProviders = readPath(root, "inference.customProviders");
+
+    const apiKeyIds = new Set<string>();
+    if (apiKeys !== undefined) {
+        if (!isPlainObject(apiKeys)) {
+            errors.push(`inference.apiKeys must be a mapping (got ${describe(apiKeys)}).`);
+        } else {
+            for (const [id, value] of Object.entries(apiKeys)) {
+                if (!NATIVE_PROVIDER_IDS.has(id)) {
+                    const known = Array.from(NATIVE_PROVIDER_IDS).sort().join(", ");
+                    errors.push(
+                        `inference.apiKeys.${id}: not a known native provider (allowed: ${known}). Use inference.customProviders.${id} for non-native providers.`,
+                    );
+                    continue;
+                }
+                if (typeof value !== "string" || value.length === 0) {
+                    errors.push(
+                        `inference.apiKeys.${id}: must be a non-empty string (got ${describe(value)}).`,
+                    );
+                    continue;
+                }
+                apiKeyIds.add(id);
+            }
+        }
+    }
+
+    const customIds = new Set<string>();
+    if (customProviders !== undefined) {
+        if (!isPlainObject(customProviders)) {
+            errors.push(
+                `inference.customProviders must be a mapping (got ${describe(customProviders)}).`,
+            );
+        } else {
+            for (const [id, value] of Object.entries(customProviders)) {
+                if (NATIVE_PROVIDER_IDS.has(id)) {
+                    errors.push(
+                        `inference.customProviders.${id}: id is reserved for the native provider — pick a different id.`,
+                    );
+                    continue;
+                }
+                if (!isPlainObject(value)) {
+                    errors.push(
+                        `inference.customProviders.${id}: must be a mapping (got ${describe(value)}).`,
+                    );
+                    continue;
+                }
+                const entry = value as Record<string, unknown>;
+                let entryOk = true;
+                const baseUrl = entry.baseUrl;
+                if (typeof baseUrl !== "string" || !baseUrl.startsWith("https://")) {
+                    errors.push(
+                        `inference.customProviders.${id}.baseUrl: must be an https URL (got ${describe(baseUrl)}).`,
+                    );
+                    entryOk = false;
+                }
+                const apiKey = entry.apiKey;
+                if (typeof apiKey !== "string" || apiKey.length === 0) {
+                    errors.push(
+                        `inference.customProviders.${id}.apiKey: must be a non-empty string.`,
+                    );
+                    entryOk = false;
+                }
+                const type = entry.type;
+                if (type !== "openai-compatible") {
+                    errors.push(
+                        `inference.customProviders.${id}.type: only "openai-compatible" is supported (got ${describe(type)}).`,
+                    );
+                    entryOk = false;
+                }
+                if (entryOk) {
+                    customIds.add(id);
+                }
+            }
+        }
+    }
+
+    if (
+        defaultProvider !== undefined &&
+        !apiKeyIds.has(defaultProvider) &&
+        !customIds.has(defaultProvider)
+    ) {
+        errors.push(
+            `inference.defaultProvider "${defaultProvider}" must match an inference.apiKeys.* entry (with a key set) or an inference.customProviders.* entry.`,
+        );
+    }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /**
