@@ -318,10 +318,52 @@ break unrelated handlers.
 
 - **Lint.** `./cli.sh mcp lint` validates `config/mcp.yml`. A
   missing file is treated as "no MCPs" and is not an error.
-- **Listing live MCPs.** `docker ps --filter name=ea-mcp-` shows
-  every currently-spawned MCP child. Containers are **ephemeral**:
-  they only exist while the bastion holds them open, and disappear
-  after `idleTimeoutSeconds`.
+- **List declared MCPs.** `./cli.sh mcp list` prints every entry in
+  `mcp.yml`, its source, and whether the per-id container is `live`
+  or `idle` right now (one `docker ps` shot at the start). For
+  `npm`/`pypi` entries a `(cached)` annotation appears next to the
+  package name when `tmp/mcp-mount-<id>/` already holds package
+  files — useful to know *before* running `mcp purge`. When the
+  docker daemon is unreachable the command still prints the
+  declared list and notes that live state couldn't be probed.
+- **Purge cached package mounts.** `./cli.sh mcp purge` removes
+  every `tmp/mcp-mount-*` directory. **Refuses while the daemon
+  is up** (a live `ea-mcp-<id>` container could be reading from
+  one); stop the daemon first with `./cli.sh stop`. Reports the
+  number of directories removed and approximate bytes freed.
+  `tmp/` itself is left in place so the daemon's next start
+  doesn't fail on a missing parent.
+- **Add a new MCP interactively.** `./cli.sh mcp add <package>`
+  searches the Docker MCP registry first
+  (`https://raw.githubusercontent.com/docker/mcp-registry/main/servers/<name>/server.yaml`),
+  then falls back to the official MCP registry
+  (`https://registry.modelcontextprotocol.io/v0.1/servers?search=…`).
+  Walks the user through env vars (with the registry's
+  description and example surfaced inline; secrets prompted via
+  `password`), optional extra args, and the network setting; then
+  shows a YAML preview and appends to `config/mcp.yml` on
+  confirmation. Re-lints after writing so any structural problem
+  surfaces immediately.
+
+  The positional `<package>` is the **search term** for the
+  registries (e.g. `fetch`, `mcp-server-time`,
+  `io.github.foo/bar`). The local `mcp.yml` key is *derived* from
+  the registry's canonical name and proposed as an editable
+  default in the dialogue — the search term and the local id are
+  intentionally distinct so reverse-DNS or scoped names don't
+  bleed into your config.
+
+  When a server is published as multiple package types
+  (e.g. both an OCI image and an npm package), the dialogue lets
+  you pick; OCI is labelled `(strongly preferred)` and selected
+  by default. Registry types other than `oci`/`npm`/`pypi`
+  (`nuget`, `mcpb`) are not supported and are dropped from the
+  candidate list.
+
+- **Listing live MCPs directly.** `docker ps --filter name=ea-mcp-`
+  shows every currently-spawned MCP child. Containers are
+  **ephemeral**: they only exist while the bastion holds them
+  open, and disappear after `idleTimeoutSeconds`.
 - **Logs.** The bastion logs every spawn / idle-reap / crash event in
   the host log stream. To see an MCP child's own stdout/stderr while
   it is alive: `docker logs ea-mcp-<id>`.

@@ -2,16 +2,19 @@ import { existsSync } from "node:fs";
 import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
 import { lintMcpConfigFile } from "../mcp/McpConfigLoader.js";
+import { mcpAddCommand } from "./mcp/McpAdd.js";
+import { mcpListCommand } from "./mcp/McpList.js";
+import { mcpPurgeCommand } from "./mcp/McpPurge.js";
 
 /**
- * `ea mcp` — root for MCP-related subcommands. Today only `lint` is
- * exposed; future additions (`list`, `add`, …) live under the same
- * root as the docker-registry import helper lands.
+ * `ea mcp` — root for MCP-related subcommands. `lint` stays inline
+ * (one screen); `list`, `purge`, and `add` each live in their own
+ * file under `commands/mcp/` because they grew bigger.
  */
 export const mcpCommand = defineCommand({
     meta: {
         name: "mcp",
-        description: "Inspect and validate config/mcp.yml.",
+        description: "Inspect, list, purge, and add MCP entries in config/mcp.yml.",
     },
     subCommands: {
         lint: defineCommand({
@@ -39,5 +42,8 @@ export const mcpCommand = defineCommand({
                 process.stdout.write(`config/mcp.yml: ok\n`);
             },
         }),
+        list: mcpListCommand,
+        purge: mcpPurgeCommand,
+        add: mcpAddCommand,
     },
 });
