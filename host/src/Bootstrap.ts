@@ -32,6 +32,13 @@ export interface Bootstrap {
      */
     readonly logsDir: string;
     /**
+     * Per-MCP log directory at `data/logs/mcp/`. Each declared MCP
+     * gets its own daily-rotated `<id>.YYYYMMDD.<n>.log` here for
+     * raw stdio capture. Created on demand by the daemon's `start`
+     * command alongside {@link logsDir}.
+     */
+    readonly mcpLogsDir: string;
+    /**
      * Absolute host path of `container/src/`. Bind-mounted into the
      * agent container at `/app/src` so tsx-watch picks up edits
      * without an image rebuild.
@@ -72,6 +79,7 @@ export function bootstrap(): Bootstrap {
         workspaceTemplateDir: `${dataDir}/workspace-template`,
         postgresDataDir: `${dataDir}/postgres`,
         logsDir: `${dataDir}/logs`,
+        mcpLogsDir: `${dataDir}/logs/mcp`,
         containerSrcDir,
         configFile: `${projectRoot}/config/config.yml`,
         mcpConfigFile: `${projectRoot}/config/mcp.yml`,

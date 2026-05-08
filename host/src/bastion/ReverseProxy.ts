@@ -70,9 +70,11 @@ export class ReverseProxy implements BastionModule {
         bastion.registerPrefix("/llm/", (req, res, restPath) => {
             this.handle(req, res, restPath);
         });
+        const ids = Object.keys(this.config.providers);
         this.config.log.info(
-            { providers: Object.keys(this.config.providers) },
-            "reverse-proxy registered /llm/",
+            ids.length === 0
+                ? "reverse-proxy registered /llm/ for no providers"
+                : `reverse-proxy registered /llm/ for ${ids.length} provider${ids.length === 1 ? "" : "s"}: ${ids.join(", ")}`,
         );
     }
 
@@ -152,10 +154,7 @@ export class ReverseProxy implements BastionModule {
         );
 
         upstream.on("error", (err) => {
-            this.config.log.error(
-                { upstream: upstreamHost, err: err.message },
-                "llm proxy upstream error",
-            );
+            this.config.log.error(`llm proxy upstream error from ${upstreamHost}: ${err.message}`);
             if (!res.headersSent) {
                 res.writeHead(502, { "content-type": "text/plain" });
             }

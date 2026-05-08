@@ -88,7 +88,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
 export function lintOrThrow(path: string, log: Logger): void {
     const result = lintConfigFile(path);
     for (const w of result.warnings) {
-        log.warn({ path }, w);
+        log.warn(w);
     }
     if (!result.ok) {
         throw new Error(

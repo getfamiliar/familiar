@@ -74,7 +74,7 @@ async function main(): Promise<void> {
 
     const abortController = new AbortController();
     const shutdown = (signal: string) => {
-        log.info({ signal }, "draining");
+        log.info(`draining (signal=${signal})`);
         abortController.abort();
     };
     process.on("SIGTERM", () => shutdown("SIGTERM"));

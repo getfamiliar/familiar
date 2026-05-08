@@ -112,6 +112,14 @@ export function prettyStdoutStream(): LogStream {
         translateTime: "HH:MM:ss",
         ignore: "pid,hostname",
         messageFormat: "[{component}{if source}/{source}{end}] {msg}",
+        // Suppress the trailing structured payload on stdout. Most
+        // call sites bake the data they want a human to see into
+        // the message itself (`postgres ready on 127.0.0.1:5432`,
+        // not `{host:..., port:...} postgres ready`); the rolling
+        // file sink still gets full JSON for grep / jq, so nothing
+        // is actually lost. See `commands/Start.ts` and friends for
+        // the conversion pattern.
+        hideObject: true,
     });
     return { stream };
 }

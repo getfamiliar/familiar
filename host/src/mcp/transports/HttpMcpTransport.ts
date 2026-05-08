@@ -83,7 +83,7 @@ export class HttpMcpTransport implements McpTransport {
         );
 
         upstream.on("error", (err) => {
-            this.log.error({ mcp: this.id, err: err.message }, "http mcp upstream error");
+            this.log.error(`http mcp '${this.id}' upstream error: ${err.message}`);
             if (!res.headersSent) {
                 res.writeHead(502, { "content-type": "text/plain" });
             }

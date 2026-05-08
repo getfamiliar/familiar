@@ -14,6 +14,14 @@ import type { McpTransport } from "./transports/McpTransport.js";
 export interface McpGatewayConfig {
     /** Absolute path to `config/mcp.yml`. */
     readonly mcpConfigFile: string;
+    /**
+     * Absolute path to the per-MCP log directory
+     * (`data/logs/mcp/`). Each stdio MCP gets a daily-rotated
+     * `<id>.YYYYMMDD.<n>.log` here for raw stdio capture.
+     */
+    readonly mcpLogsDir: string;
+    /** Days of rotated log retention; mirrors `core.logRetentionDays`. */
+    readonly logRetentionDays: number;
     /** Logger used for load / dispatch / error lines. */
     readonly log: Logger;
 }
@@ -39,7 +47,14 @@ export class McpGateway implements BastionModule {
     constructor(config: McpGatewayConfig) {
         this.config = config;
         this.factories = new Map<McpSource, McpServerFactory>([
-            ["docker-mcp-registry", new DockerMcpRegistryFactory(config.log)],
+            [
+                "docker-mcp-registry",
+                new DockerMcpRegistryFactory({
+                    log: config.log,
+                    mcpLogsDir: config.mcpLogsDir,
+                    logRetentionDays: config.logRetentionDays,
+                }),
+            ],
             ["npm", new NpmFactory()],
             ["pypi", new PypiFactory()],
             ["external", new ExternalFactory(config.log)],
@@ -54,23 +69,33 @@ export class McpGateway implements BastionModule {
         bastion.registerPrefix("/mcp/", (req, res, restPath) => {
             return this.dispatch(req, res, restPath);
         });
-        this.config.log.info({ mcps: [...this.transports.keys()] }, "mcp-gateway registered /mcp/");
+        const ids = [...this.transports.keys()];
+        this.config.log.info(
+            ids.length === 0
+                ? "mcp-gateway registered /mcp/ for no servers"
+                : `mcp-gateway registered /mcp/ for ${ids.length} server${ids.length === 1 ? "" : "s"}: ${ids.join(", ")}`,
+        );
     }
 
     async stop(): Promise<void> {
-        for (const transport of this.transports.values()) {
-            try {
-                await transport.stop();
-            } catch (err) {
-                this.config.log.error(
-                    {
-                        mcp: transport.id,
-                        err: err instanceof Error ? err.message : String(err),
-                    },
-                    "mcp-gateway transport stop error",
-                );
-            }
-        }
+        // Stop transports in parallel so one slow child (an MCP
+        // that takes a few seconds to acknowledge EOF) doesn't
+        // serialize with the others. Same pattern as
+        // `McpClientPool.close` container-side. Per-transport
+        // errors are caught locally so one failure can't cancel
+        // the others.
+        await Promise.allSettled(
+            [...this.transports.values()].map(async (transport) => {
+                try {
+                    await transport.stop();
+                } catch (err) {
+                    const message = err instanceof Error ? err.message : String(err);
+                    this.config.log.error(
+                        `mcp-gateway transport stop error for '${transport.id}': ${message}`,
+                    );
+                }
+            }),
+        );
         this.transports.clear();
     }
 

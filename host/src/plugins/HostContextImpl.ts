@@ -191,8 +191,7 @@ export class HostContextImpl implements HostContext {
                 ? event
                 : {
                       ...event,
-                      preferredChatChannelId:
-                          this.deps.config.getString("core.defaultChatChannel"),
+                      preferredChatChannelId: this.deps.config.getString("core.defaultChatChannel"),
                   };
             row = await bus.add(stamped);
             waitedFor = row.id;

@@ -79,18 +79,25 @@ export class HttpServer {
         });
         this.server = server;
         this.config.log.info(
-            { host: this.config.bindHost, port: this.config.port },
-            "bastion http server listening",
+            `bastion server binding on ${this.config.bindHost}:${this.config.port}`,
         );
     }
 
-    /** Stop listening. Drains in-flight handlers via `server.close`. */
+    /**
+     * Stop listening. `server.close` only refuses *new* connections
+     * and waits for existing ones to drain on their own — a
+     * lingering keep-alive from the agent container could keep us
+     * waiting indefinitely. `closeAllConnections()` (Node ≥ 18.2)
+     * forcibly destroys those, so the close callback fires
+     * promptly. The optional-chaining guards older runtimes.
+     */
     async stop(): Promise<void> {
         if (this.server === null) {
             return;
         }
         const server = this.server;
         this.server = null;
+        server.closeAllConnections?.();
         await new Promise<void>((resolve) => {
             server.close(() => {
                 resolve();
@@ -109,12 +116,9 @@ export class HttpServer {
                 try {
                     await route.handler(req, res, rest === "" ? "/" : rest);
                 } catch (err) {
+                    const message = err instanceof Error ? err.message : String(err);
                     this.config.log.error(
-                        {
-                            prefix: route.prefix,
-                            err: err instanceof Error ? err.message : String(err),
-                        },
-                        "bastion handler error",
+                        `bastion handler error on prefix '${route.prefix}': ${message}`,
                     );
                     if (!res.headersSent) {
                         res.writeHead(500, { "content-type": "text/plain" });

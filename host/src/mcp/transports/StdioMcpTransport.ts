@@ -2,7 +2,18 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createInterface } from "node:readline";
 import type { Logger } from "effective-assistant-shared";
+import { removeContainer } from "../../DockerTools.js";
+import type { McpFileSink } from "../../tools/LogRetentionTools.js";
 import type { McpTransport } from "./McpTransport.js";
+
+/**
+ * Time {@link StdioMcpTransport.killChild} waits between closing
+ * stdin and force-removing the container. Chatty MCPs (the
+ * Atlassian images, for example) take ~30 s to react to EOF — at
+ * shutdown we'd rather not wait for them, so once this elapses we
+ * `docker rm -f` the container and move on.
+ */
+const KILL_GRACE_MS = 5000;
 
 /**
  * Docker container name for the spawned child. Mirrors the
@@ -32,6 +43,14 @@ export interface StdioMcpTransportConfig {
     readonly idleTimeoutSeconds: number;
     /** Logger for spawn / reap / error events. */
     readonly log: Logger;
+    /**
+     * Lazy opener for the per-MCP rotated log file. Called once on
+     * first child spawn; the resulting sink captures every stdout
+     * line tagged `out` and every stderr line tagged `err`. When
+     * omitted, per-line stdio is silently dropped (today's behavior
+     * before per-MCP files existed).
+     */
+    readonly openFileSink?: () => Promise<McpFileSink>;
 }
 
 /**
@@ -62,8 +81,10 @@ export class StdioMcpTransport implements McpTransport {
     private readonly dockerArgs: readonly string[];
     private readonly idleTimeoutMs: number;
     private readonly log: Logger;
+    private readonly openFileSink: (() => Promise<McpFileSink>) | undefined;
 
     private child: ChildProcessWithoutNullStreams | null = null;
+    private fileSink: McpFileSink | null = null;
     private idleTimer: NodeJS.Timeout | null = null;
     private requestQueue: Promise<void> = Promise.resolve();
     private pendingResolve: ((line: string) => void) | null = null;
@@ -76,6 +97,7 @@ export class StdioMcpTransport implements McpTransport {
         this.dockerArgs = config.dockerArgs;
         this.idleTimeoutMs = config.idleTimeoutSeconds * 1000;
         this.log = config.log;
+        this.openFileSink = config.openFileSink;
     }
 
     async handle(req: IncomingMessage, res: ServerResponse, _restPath: string): Promise<void> {
@@ -157,7 +179,11 @@ export class StdioMcpTransport implements McpTransport {
 
     async stop(): Promise<void> {
         this.clearIdleTimer();
-        await this.killChild();
+        try {
+            await this.killChild();
+        } finally {
+            await this.closeFileSink();
+        }
     }
 
     /**
@@ -203,7 +229,8 @@ export class StdioMcpTransport implements McpTransport {
             });
         });
 
-        this.log.info({ mcp: this.id }, "spawning stdio mcp child");
+        this.log.info(`spawning stdio mcp child '${this.id}'`);
+        await this.ensureFileSink();
         const child = spawn("docker", [...this.dockerArgs], {
             stdio: ["pipe", "pipe", "pipe"],
         });
@@ -211,24 +238,32 @@ export class StdioMcpTransport implements McpTransport {
 
         const stdoutLines = createInterface({ input: child.stdout });
         stdoutLines.on("line", (line) => {
+            // Tee every stdout line into the per-MCP log file —
+            // including JSON-RPC responses we hand to the waiter, so
+            // a request/response trace is reconstructable from the
+            // file alone.
+            this.fileSink?.write("out", line);
             const resolve = this.pendingResolve;
             this.pendingResolve = null;
             this.pendingReject = null;
             if (resolve !== null) {
                 resolve(line);
-            } else {
-                // Server-initiated message with no waiter — log and drop.
-                this.log.debug({ mcp: this.id, line }, "unsolicited mcp output");
             }
+            // Server-initiated message with no waiter falls through
+            // silently — the file capture is the audit trail; we no
+            // longer pollute the main log with per-line debug.
         });
 
         const stderrLines = createInterface({ input: child.stderr });
         stderrLines.on("line", (line) => {
-            this.log.debug({ mcp: this.id, line }, "mcp stderr");
+            // Stderr is the noisy one — model load logs, retry
+            // banter, raw `console.log` output. Captured per-MCP,
+            // never on the main log.
+            this.fileSink?.write("err", line);
         });
 
         child.on("exit", (code, signal) => {
-            this.log.info({ mcp: this.id, code, signal }, "stdio mcp child exited");
+            this.log.info(`stdio mcp child '${this.id}' exited (code=${code} signal=${signal})`);
             const reject = this.pendingReject;
             this.pendingResolve = null;
             this.pendingReject = null;
@@ -240,7 +275,7 @@ export class StdioMcpTransport implements McpTransport {
         });
 
         child.on("error", (err) => {
-            this.log.error({ mcp: this.id, err: err.message }, "stdio mcp child spawn error");
+            this.log.error(`stdio mcp child '${this.id}' spawn error: ${err.message}`);
             const reject = this.pendingReject;
             this.pendingResolve = null;
             this.pendingReject = null;
@@ -254,12 +289,46 @@ export class StdioMcpTransport implements McpTransport {
     private resetIdleTimer(): void {
         this.clearIdleTimer();
         this.idleTimer = setTimeout(() => {
-            this.log.info(
-                { mcp: this.id, idleSeconds: this.idleTimeoutMs / 1000 },
-                "stdio mcp idle, reaping",
-            );
+            this.log.info(`stdio mcp '${this.id}' idle for ${this.idleTimeoutMs / 1000}s, reaping`);
             void this.killChild();
         }, this.idleTimeoutMs);
+    }
+
+    /**
+     * Open the per-MCP rotated file sink if not yet opened. Called
+     * once on first spawn; reused across the child's lifetime and
+     * across cold-spawn cycles within the same transport instance.
+     * A failure to open is logged and degrades silently — the child
+     * still spawns; we just won't capture stdio to disk for this run.
+     */
+    private async ensureFileSink(): Promise<void> {
+        if (this.fileSink !== null) {
+            return;
+        }
+        if (this.openFileSink === undefined) {
+            return;
+        }
+        try {
+            this.fileSink = await this.openFileSink();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.log.error(`stdio mcp '${this.id}' file sink open failed: ${message}`);
+        }
+    }
+
+    /** Close the per-MCP file sink if open. Idempotent. */
+    private async closeFileSink(): Promise<void> {
+        const sink = this.fileSink;
+        if (sink === null) {
+            return;
+        }
+        this.fileSink = null;
+        try {
+            await sink.close();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.log.error(`stdio mcp '${this.id}' file sink close failed: ${message}`);
+        }
     }
 
     /** Cancel the idle reaper if scheduled. */
@@ -286,18 +355,26 @@ export class StdioMcpTransport implements McpTransport {
             // ignore — pipe might already be closed
         }
         await new Promise<void>((resolve) => {
-            const grace = setTimeout(() => {
-                try {
-                    child.kill("SIGKILL");
-                } catch {
-                    // ignore
+            let done = false;
+            const finish = (): void => {
+                if (done) {
+                    return;
                 }
-                resolve();
-            }, 5_000);
-            child.once("exit", () => {
+                done = true;
                 clearTimeout(grace);
                 resolve();
-            });
+            };
+            // SIGKILL on the local `docker run` CLI process does
+            // NOT cascade to the container — dockerd owns the
+            // container's lifecycle. Force-remove the container
+            // instead so PID 1 inside it dies; the local CLI then
+            // exits as a side effect within ms.
+            const grace = setTimeout(() => {
+                void removeContainer(containerNameFor(this.id))
+                    .catch(() => undefined)
+                    .finally(finish);
+            }, KILL_GRACE_MS);
+            child.once("exit", finish);
         });
         this.child = null;
     }

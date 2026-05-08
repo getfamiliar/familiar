@@ -93,7 +93,7 @@ export function lintMcpConfigFile(path: string): McpLintResult {
 export function loadMcpEntries(path: string, log: Logger): McpEntries {
     const result = lintMcpConfigFile(path);
     for (const w of result.warnings) {
-        log.warn({ path }, w);
+        log.warn(w);
     }
     if (!result.ok) {
         throw new Error(

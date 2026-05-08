@@ -90,10 +90,11 @@ export class AgentRunner {
             log: this.log,
         });
         const toolNames = Object.keys(tools);
-        this.log.info(
-            { tools: toolNames, toolsExpression: handler.header.tools ?? null },
-            "agentrun toolset resolved",
-        );
+        const toolList =
+            toolNames.length === 0
+                ? "(no tools)"
+                : `${toolNames.length} tools — ${toolNames.join(", ")}`;
+        this.log.info(`agentrun toolset resolved: ${toolList}`);
         const systemPrompt = buildSystemPrompt(
             handler,
             toolNames,

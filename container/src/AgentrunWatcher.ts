@@ -77,15 +77,8 @@ export class AgentrunWatcher {
      */
     private async handle(row: AgentRunRow, signal: AbortSignal): Promise<void> {
         const start = Date.now();
-        this.log.info(
-            {
-                agentrunId: row.id,
-                topic: row.topic,
-                handler: row.handler,
-                parentAgentrunId: row.parentAgentrunId ?? null,
-            },
-            "agentrun started",
-        );
+        const parentSuffix = row.parentAgentrunId ? ` (parent=${row.parentAgentrunId})` : "";
+        this.log.info(`agentrun ${row.id} started [${row.topic}/${row.handler}]${parentSuffix}`);
         try {
             const runnerLog = this.log.child({
                 component: "agent-runner",
@@ -97,23 +90,16 @@ export class AgentrunWatcher {
                 signal,
             );
             await this.bus.settle(row.id, "done", { resultText: text });
-            this.log.info({ agentrunId: row.id, durationMs: Date.now() - start }, "agentrun done");
+            this.log.info(`agentrun ${row.id} done in ${Date.now() - start}ms`);
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            this.log.error(
-                { agentrunId: row.id, durationMs: Date.now() - start, err: message },
-                "agentrun failed",
-            );
+            this.log.error(`agentrun ${row.id} failed in ${Date.now() - start}ms: ${message}`);
             try {
                 await this.bus.settle(row.id, "failed", { error: message });
             } catch (settleErr) {
-                this.log.error(
-                    {
-                        agentrunId: row.id,
-                        err: settleErr instanceof Error ? settleErr.message : String(settleErr),
-                    },
-                    "failed to settle agentrun",
-                );
+                const settleMessage =
+                    settleErr instanceof Error ? settleErr.message : String(settleErr);
+                this.log.error(`failed to settle agentrun ${row.id}: ${settleMessage}`);
             }
         }
     }

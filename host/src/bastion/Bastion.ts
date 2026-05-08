@@ -106,7 +106,7 @@ export class Bastion {
             for (const module of this.config.modules) {
                 await module.start(this);
                 this.startedModules.push(module);
-                this.config.log.info({ module: module.name }, "bastion module started");
+                this.config.log.info(`bastion module started: ${module.name}`);
             }
         } catch (err) {
             await this.unwindModules();

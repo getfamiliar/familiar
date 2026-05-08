@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { defineCommand } from "citty";
 import {
@@ -23,6 +23,17 @@ import { PostgresContainer } from "../db/PostgresContainer.js";
 import { McpGateway } from "../mcp/McpGateway.js";
 import { PluginHost } from "../plugins/PluginHost.js";
 import { rollingFileStream } from "../tools/LogRetentionTools.js";
+import { acquirePidFile, removePidFile } from "./pidfile.js";
+
+/**
+ * Hard upper bound on the SIGINT/SIGTERM drain. Combined with the
+ * per-step belts (mcp child grace, file-sink close race), normal
+ * shutdown is well under this; the deadline only fires when
+ * something genuinely wedges. On expiry the daemon force-exits
+ * with code 2 so the failure mode is visible to whoever invoked
+ * `cli.sh stop`.
+ */
+const DRAINING_DEADLINE_MS = 15_000;
 
 /**
  * `ea start` — bring up the daemon: postgres, schema, agent container,
@@ -60,6 +71,15 @@ export const startCommand = defineCommand({
             streams: [process.stdout.isTTY ? prettyStdoutStream() : jsonStdoutStream()],
         });
         lintOrThrow(boot.configFile, bootLog);
+
+        // Single-instance enforcement: bail out *before* any
+        // container is touched if a peer daemon already owns the
+        // pidfile. Stale pidfiles (left over from a crash or a
+        // `kill -9`) auto-recover. Done before the daemon logger
+        // is built so the rolling file isn't opened in the bailing
+        // process.
+        acquirePidFile(boot.pidFile, bootLog);
+
         const config = new HostConfigService(boot.configFile);
 
         const postgresPassword = config.getString("core.postgresPassword");
@@ -80,7 +100,6 @@ export const startCommand = defineCommand({
         const log = await buildDaemonLogger(boot, config, verbose);
 
         ensureDirs(boot);
-        writePidFile(boot.pidFile);
 
         const pluginHost = new PluginHost(boot, log, config);
         pluginHost.installWorkspaceTemplates();
@@ -102,6 +121,8 @@ export const startCommand = defineCommand({
         });
         const mcpGateway = new McpGateway({
             mcpConfigFile: boot.mcpConfigFile,
+            mcpLogsDir: boot.mcpLogsDir,
+            logRetentionDays: config.getNumber("core.logRetentionDays", 7),
             log: log.child({ component: "mcp-gateway" }),
         });
         const bastion = new Bastion({
@@ -110,10 +131,10 @@ export const startCommand = defineCommand({
         });
 
         await ensureNetwork(SHARED_NETWORK_NAME);
-        log.info({ network: SHARED_NETWORK_NAME }, "ensured network");
+        log.info(`ensured network '${SHARED_NETWORK_NAME}'`);
 
         const postgresPort = await postgres.start();
-        log.info({ host: "127.0.0.1", port: postgresPort }, "postgres ready");
+        log.info(`postgres ready on 127.0.0.1:${postgresPort}`);
 
         const schemaConnection = postgres.getConnection();
         try {
@@ -125,7 +146,7 @@ export const startCommand = defineCommand({
         }
 
         await bastion.start();
-        log.info({ url: bastion.url }, "bastion started");
+        log.info(`bastion server started and reachable from container at ${bastion.url}`);
 
         const container = new AgentContainer({
             imageName: "effective-agent",
@@ -154,15 +175,42 @@ export const startCommand = defineCommand({
                 return;
             }
             shuttingDown = true;
-            log.info({ signal }, "draining");
+            log.info(`draining (signal=${signal})`);
 
-            await safeStop(log, "plugin host", () => pluginHost.close());
-            await safeStop(log, "agent container", () => container.stop());
-            await safeStop(log, "bastion", () => bastion.stop());
-            await safeStop(log, "postgres", () => postgres.stop());
-            stopContainerLogStream(containerLogStream);
+            const orderedSteps = async (): Promise<"done"> => {
+                await safeStop(log, "plugin host", () => pluginHost.close());
+                await safeStop(log, "agent container", () => container.stop());
+                await safeStop(log, "bastion", () => bastion.stop());
+                await safeStop(log, "postgres", () => postgres.stop());
+                stopContainerLogStream(containerLogStream);
+                removePidFile(boot.pidFile);
+                return "done";
+            };
 
-            removePidFile(boot.pidFile);
+            // Last-resort shutdown deadline. Even with the per-
+            // step belts inside each stop method, we never want a
+            // future plugin or syscall to block the daemon
+            // indefinitely on SIGINT — the operator's `cli.sh
+            // stop` would silently wedge. After
+            // {@link DRAINING_DEADLINE_MS} we force-exit with a
+            // distinct code so the failure is visible.
+            const deadline = new Promise<"timeout">((resolve) =>
+                setTimeout(() => resolve("timeout"), DRAINING_DEADLINE_MS),
+            );
+            const result = await Promise.race([orderedSteps(), deadline]);
+            if (result === "timeout") {
+                log.error(
+                    `draining timeout exceeded after ${DRAINING_DEADLINE_MS / 1000}s — forcing exit`,
+                );
+                process.exit(2);
+            }
+            // Terminal log line. If this isn't in the rolling file
+            // after a `cli.sh stop`, the shutdown wedged somewhere
+            // between SIGTERM and here — exactly the failure mode
+            // the deadline above guards against, but the explicit
+            // line makes it visible without having to count
+            // upstream "stop error" entries.
+            log.info("daemon stopped cleanly");
             process.exit(0);
         };
 
@@ -173,7 +221,7 @@ export const startCommand = defineCommand({
             void shutdown("SIGINT");
         });
 
-        log.info({ pid: process.pid }, "daemon ready");
+        log.info(`daemon ready (pid=${process.pid})`);
 
         // Keep the event loop alive until a signal arrives. A no-op interval
         // is the simplest portable handle; signal handlers alone don't pin
@@ -199,7 +247,7 @@ async function buildDaemonLogger(
     const retention = config.getNumber("core.logRetentionDays", 7);
     const streams: LogStream[] = [
         process.stdout.isTTY ? prettyStdoutStream() : jsonStdoutStream(),
-        await rollingFileStream(boot.logsDir, retention),
+        await rollingFileStream(boot.logsDir, "ea", retention),
     ];
     return createLogger({
         component: "host",
@@ -243,7 +291,7 @@ function streamContainerLogs(log: Logger, container: string): ChildProcess {
         createInterface({ input: proc.stderr }).on("line", handleLine);
     }
     proc.on("error", (err) => {
-        log.error({ container, err: err.message }, "docker logs stream error");
+        log.error(`docker logs stream error for ${container}: ${err.message}`);
     });
     return proc;
 }
@@ -292,7 +340,8 @@ async function safeStop(log: Logger, label: string, stop: () => Promise<void>): 
     try {
         await stop();
     } catch (err) {
-        log.error({ label, err: err instanceof Error ? err.message : String(err) }, "stop error");
+        const message = err instanceof Error ? err.message : String(err);
+        log.error(`stop error in ${label}: ${message}`);
     }
 }
 
@@ -300,18 +349,5 @@ async function safeStop(log: Logger, label: string, stop: () => Promise<void>): 
 function ensureDirs(boot: ReturnType<typeof bootstrap>): void {
     mkdirSync(boot.workspaceDir, { recursive: true });
     mkdirSync(boot.logsDir, { recursive: true });
-}
-
-/** Write the current pid into the well-known pidfile for the stop command. */
-function writePidFile(path: string): void {
-    writeFileSync(path, `${process.pid}\n`, "utf-8");
-}
-
-/** Best-effort delete of the pidfile during shutdown. */
-function removePidFile(path: string): void {
-    try {
-        unlinkSync(path);
-    } catch {
-        // ignore
-    }
+    mkdirSync(boot.mcpLogsDir, { recursive: true });
 }

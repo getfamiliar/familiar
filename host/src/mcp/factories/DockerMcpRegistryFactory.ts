@@ -1,9 +1,20 @@
 import type { Logger } from "effective-assistant-shared";
 import { SHARED_NETWORK_NAME } from "../../DockerTools.js";
+import { createMcpFileSink, type McpFileSink } from "../../tools/LogRetentionTools.js";
 import type { McpEntry } from "../McpEntry.js";
 import type { McpServerFactory } from "../McpServerFactory.js";
 import type { McpTransport } from "../transports/McpTransport.js";
 import { StdioMcpTransport } from "../transports/StdioMcpTransport.js";
+
+/** Configuration for {@link DockerMcpRegistryFactory}. */
+export interface DockerMcpRegistryFactoryConfig {
+    /** Logger used by transports for spawn/exit/error events. */
+    readonly log: Logger;
+    /** Per-MCP log directory; one rotated file is opened per id on first spawn. */
+    readonly mcpLogsDir: string;
+    /** Days of rotated log retention. */
+    readonly logRetentionDays: number;
+}
 
 /**
  * Build the `docker run` argv vector for a foreground stdio MCP child.
@@ -58,20 +69,24 @@ function dockerArgsForEntry(entry: McpEntry): string[] {
  * by docker on first spawn.
  */
 export class DockerMcpRegistryFactory implements McpServerFactory {
-    private readonly log: Logger;
+    private readonly config: DockerMcpRegistryFactoryConfig;
 
-    constructor(log: Logger) {
-        this.log = log;
+    constructor(config: DockerMcpRegistryFactoryConfig) {
+        this.config = config;
     }
 
     create(entry: McpEntry): McpTransport {
+        const { mcpLogsDir, logRetentionDays } = this.config;
+        const openFileSink = (): Promise<McpFileSink> =>
+            createMcpFileSink(mcpLogsDir, entry.id, logRetentionDays);
         return new StdioMcpTransport({
             id: entry.id,
             title: entry.title,
             description: entry.description,
             dockerArgs: dockerArgsForEntry(entry),
             idleTimeoutSeconds: entry.idleTimeoutSeconds,
-            log: this.log.child({ mcp: entry.id }),
+            log: this.config.log.child({ mcp: entry.id }),
+            openFileSink,
         });
     }
 }

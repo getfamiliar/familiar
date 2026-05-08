@@ -96,23 +96,15 @@ export class EventWatcher {
                 prompt: promptForAgentrun,
                 privileged: event.privileged,
             });
-            this.log.info(
-                { eventId: event.id, topic: event.topic, rootAgentrunId: root.id },
-                "event claimed",
-            );
+            this.log.info(`event ${event.id} claimed [${event.topic}], root agentrun ${root.id}`);
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            this.log.error({ eventId: event.id, err: message }, "event handling failed");
+            this.log.error(`event ${event.id} handling failed: ${message}`);
             try {
                 await this.events.update(event.id, { state: "failed" });
             } catch (markErr) {
-                this.log.error(
-                    {
-                        eventId: event.id,
-                        err: markErr instanceof Error ? markErr.message : String(markErr),
-                    },
-                    "failed to mark event failed",
-                );
+                const markMessage = markErr instanceof Error ? markErr.message : String(markErr);
+                this.log.error(`failed to mark event ${event.id} failed: ${markMessage}`);
             }
         }
     }

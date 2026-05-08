@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
+import { isProcessAlive } from "./pidfile.js";
 
 const POLL_INTERVAL_MS = 100;
 const POLL_TICKS = 100; // 100 × 100 ms = 10 s grace period before SIGKILL.
@@ -72,16 +73,6 @@ export const stopCommand = defineCommand({
         removeQuietly(pidFile);
     },
 });
-
-/** Probe whether a process exists by sending signal 0 (which doesn't kill). */
-function isProcessAlive(pid: number): boolean {
-    try {
-        process.kill(pid, 0);
-        return true;
-    } catch {
-        return false;
-    }
-}
 
 /** Best-effort unlink that swallows ENOENT. */
 function removeQuietly(path: string): void {

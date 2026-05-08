@@ -84,25 +84,23 @@ export class McpClientPool {
             if (result.status === "fulfilled" && result.value !== null) {
                 this.clients.push(result.value);
             } else if (result.status === "rejected") {
+                const reason =
+                    result.reason instanceof Error ? result.reason.message : String(result.reason);
                 this.config.log.error(
-                    {
-                        mcp: entry.id,
-                        err:
-                            result.reason instanceof Error
-                                ? result.reason.message
-                                : String(result.reason),
-                    },
-                    "mcp client failed to start; skipping",
+                    `mcp client '${entry.id}' failed to start, skipping: ${reason}`,
                 );
             }
         }
         this.merged = this.mergeTools();
+        const totalTools = countTools(this.merged);
+        const breakdown = this.clients
+            .map(
+                (c) =>
+                    `  ${c.id} — ${countTools(c.tools)} tool${countTools(c.tools) === 1 ? "" : "s"}`,
+            )
+            .join("\n");
         this.config.log.info(
-            {
-                clients: this.clients.map((c) => ({ id: c.id, toolCount: countTools(c.tools) })),
-                totalTools: countTools(this.merged),
-            },
-            "mcp client pool initialized",
+            `mcp client pool initialized: ${totalTools} tool${totalTools === 1 ? "" : "s"} across ${this.clients.length} server${this.clients.length === 1 ? "" : "s"}\n${breakdown}`,
         );
     }
 
@@ -122,10 +120,8 @@ export class McpClientPool {
                 try {
                     await c.client.close();
                 } catch (err) {
-                    this.config.log.error(
-                        { mcp: c.id, err: err instanceof Error ? err.message : String(err) },
-                        "mcp client close error",
-                    );
+                    const message = err instanceof Error ? err.message : String(err);
+                    this.config.log.error(`mcp client '${c.id}' close error: ${message}`);
                 }
             }),
         );
