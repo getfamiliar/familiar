@@ -63,6 +63,19 @@ export class HostConfigService implements ConfigService {
         throw missingError(key, "finite number", value);
     }
 
+    getBool(key: string): boolean;
+    getBool<T>(key: string, defaultValue: T): boolean | T;
+    getBool<T>(key: string, ...rest: [] | [defaultValue: T]): boolean | T {
+        const value = readPath(this.ensureLoaded(), key);
+        if (typeof value === "boolean") {
+            return value;
+        }
+        if (rest.length > 0) {
+            return rest[0] as T;
+        }
+        throw missingError(key, "boolean", value);
+    }
+
     getArray(key: string): readonly unknown[];
     getArray<T>(key: string, defaultValue: T): readonly unknown[] | T;
     getArray<T>(key: string, ...rest: [] | [defaultValue: T]): readonly unknown[] | T {

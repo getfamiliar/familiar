@@ -1,6 +1,7 @@
 import { defineCommand, runMain } from "citty";
 import { createLogger, prettyStdoutStream } from "effective-assistant-shared";
 import { bootstrap } from "./Bootstrap.js";
+import { agentrunCommand } from "./commands/Agentrun.js";
 import { configCommand } from "./commands/Config.js";
 import { eventCommand } from "./commands/Event.js";
 import { mcpCommand } from "./commands/Mcp.js";
@@ -41,6 +42,7 @@ runMain(
             start: startCommand,
             stop: stopCommand,
             event: eventCommand,
+            agentrun: agentrunCommand,
             psql: psqlCommand,
             config: configCommand,
             mcp: mcpCommand,

@@ -39,6 +39,16 @@ export interface ConfigService {
     getNumber<T>(key: string, defaultValue: T): number | T;
 
     /**
+     * Boolean read. Throws when the key is missing or the resolved
+     * value is not a boolean. YAML's native `true` / `false` parse to
+     * booleans, so a stanza like `inference.captureBodies: true` reads
+     * back as `true` here.
+     */
+    getBool(key: string): boolean;
+    /** Boolean read with default; widening as above. */
+    getBool<T>(key: string, defaultValue: T): boolean | T;
+
+    /**
      * Array read. Element types are not validated — the caller checks
      * shape if it cares (e.g. `.filter((x): x is string => typeof x === "string")`).
      * Throws when the key is missing or the resolved value is not an

@@ -36,6 +36,14 @@ inference:
     featherless: REPLACE_ME
     # openai: REPLACE_ME           # required by transcribe-whisper
 
+  # When true, raw HTTP request/response bodies for every
+  # `/llm/<provider>/v1/*` call are written to `data/llm-debug/`
+  # alongside a small header (status, sanitized request headers).
+  # Off by default; turn on temporarily to debug tool-call parsing
+  # or other model-behavior issues, then turn off again. The
+  # `Authorization` header is redacted in the dumps.
+  # captureBodies: false
+
 # --- Plugin-owned subtrees below. Each plugin parses + validates its
 # --- own keys; the platform linter does not police them.
 

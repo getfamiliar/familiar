@@ -1,5 +1,10 @@
+import { randomUUID } from "node:crypto";
+import { createWriteStream, mkdirSync, type WriteStream } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { request as httpsRequest } from "node:https";
+import { join } from "node:path";
+import { PassThrough, type Transform } from "node:stream";
+import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import type { Logger } from "effective-assistant-shared";
 import type { Bastion, BastionModule } from "./Bastion.js";
 
@@ -31,6 +36,20 @@ export interface ReverseProxyConfig {
     readonly providers: Readonly<Record<string, ProviderConfig>>;
     /** Logger used for forward / error lines. */
     readonly log: Logger;
+    /**
+     * When true, dump the raw request and response bodies of every
+     * `/llm/<provider>/v1/*` call to per-request files under
+     * {@link captureDir}. Off by default; controlled by
+     * `inference.captureBodies` in `config.yml`. The capture is purely
+     * a tap — the forwarded bytes are unchanged and SSE keeps streaming.
+     */
+    readonly captureBodies?: boolean;
+    /**
+     * Directory under which capture files are written when
+     * {@link captureBodies} is true. Created on demand. Files are
+     * named `<isoTs>-<reqId>.req.log` / `.resp.log`.
+     */
+    readonly captureDir?: string;
 }
 
 /**
@@ -61,6 +80,7 @@ export class ReverseProxy implements BastionModule {
     readonly name = "reverse-proxy";
 
     private readonly config: ReverseProxyConfig;
+    private captureDirEnsured = false;
 
     constructor(config: ReverseProxyConfig) {
         this.config = config;
@@ -71,10 +91,14 @@ export class ReverseProxy implements BastionModule {
             this.handle(req, res, restPath);
         });
         const ids = Object.keys(this.config.providers);
+        const captureSuffix =
+            this.config.captureBodies === true
+                ? ` (body capture ON → ${this.config.captureDir ?? "<unset>"})`
+                : "";
         this.config.log.info(
             ids.length === 0
-                ? "reverse-proxy registered /llm/ for no providers"
-                : `reverse-proxy registered /llm/ for ${ids.length} provider${ids.length === 1 ? "" : "s"}: ${ids.join(", ")}`,
+                ? `reverse-proxy registered /llm/ for no providers${captureSuffix}`
+                : `reverse-proxy registered /llm/ for ${ids.length} provider${ids.length === 1 ? "" : "s"}: ${ids.join(", ")}${captureSuffix}`,
         );
     }
 
@@ -102,7 +126,7 @@ export class ReverseProxy implements BastionModule {
             replyError(res, 404, `unknown provider "${providerId}"`);
             return;
         }
-        this.forward(req, res, provider, upstreamPath);
+        this.forward(req, res, providerId, provider, upstreamPath);
     }
 
     /**
@@ -113,6 +137,7 @@ export class ReverseProxy implements BastionModule {
     private forward(
         req: IncomingMessage,
         res: ServerResponse,
+        providerId: string,
         provider: ProviderConfig,
         upstreamPath: string,
     ): void {
@@ -130,6 +155,8 @@ export class ReverseProxy implements BastionModule {
         headers.authorization = `Bearer ${provider.upstreamApiKey}`;
         headers.host = upstreamHost;
 
+        const capture = this.openCapture(providerId, req.method ?? "GET", upstreamPath, headers);
+
         const upstream = httpsRequest(
             {
                 method: req.method,
@@ -140,13 +167,71 @@ export class ReverseProxy implements BastionModule {
             },
             (upstreamRes) => {
                 res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers);
-                upstreamRes.pipe(res);
+                if (capture !== undefined) {
+                    writeResponseHeader(capture.respFile, upstreamRes);
+                    // Tap raw bytes from upstream → respTap → client.
+                    // The capture file gets decompressed bytes when
+                    // the response is gzip/deflate/br-encoded so the
+                    // dump is human-readable; the *forwarded* stream
+                    // to the client stays the original compressed
+                    // bytes (the SDK sets Accept-Encoding and decodes
+                    // it at the client side).
+                    const respTap = new PassThrough();
+                    const decompressor = pickDecompressor(
+                        upstreamRes.headers["content-encoding"],
+                        this.config.log,
+                        capture.reqId,
+                    );
+                    if (decompressor !== null) {
+                        decompressor.on("data", (chunk: Buffer) => {
+                            capture.respFile.write(chunk);
+                        });
+                        decompressor.on("end", () => {
+                            capture.respFile.end();
+                        });
+                        decompressor.on("error", (err) => {
+                            this.config.log.error(
+                                `llm proxy capture ${capture.reqId} decompress error: ${err.message}`,
+                            );
+                            capture.respFile.write(`\n[decompress error: ${err.message}]\n`);
+                            capture.respFile.end();
+                        });
+                        respTap.on("data", (chunk: Buffer) => {
+                            decompressor.write(chunk);
+                        });
+                        respTap.on("end", () => {
+                            decompressor.end();
+                        });
+                        respTap.on("close", () => {
+                            decompressor.end();
+                        });
+                    } else {
+                        respTap.on("data", (chunk: Buffer) => {
+                            capture.respFile.write(chunk);
+                        });
+                        const closeRespFile = (): void => {
+                            capture.respFile.end();
+                        };
+                        respTap.on("end", closeRespFile);
+                        respTap.on("close", closeRespFile);
+                    }
+                    respTap.on("error", (err) => {
+                        this.config.log.error(
+                            `llm proxy capture ${capture.reqId} response tap error: ${err.message}`,
+                        );
+                        capture.respFile.end();
+                    });
+                    upstreamRes.pipe(respTap).pipe(res);
+                } else {
+                    upstreamRes.pipe(res);
+                }
                 this.config.log.debug(
                     {
                         method: req.method,
                         path: upstreamPath,
                         upstream: upstreamHost,
                         status: upstreamRes.statusCode,
+                        captureId: capture?.reqId,
                     },
                     "llm proxy forward",
                 );
@@ -155,6 +240,10 @@ export class ReverseProxy implements BastionModule {
 
         upstream.on("error", (err) => {
             this.config.log.error(`llm proxy upstream error from ${upstreamHost}: ${err.message}`);
+            if (capture !== undefined) {
+                capture.respFile.write(`\n[upstream error: ${err.message}]\n`);
+                capture.respFile.end();
+            }
             if (!res.headersSent) {
                 res.writeHead(502, { "content-type": "text/plain" });
             }
@@ -165,8 +254,148 @@ export class ReverseProxy implements BastionModule {
             upstream.destroy();
         });
 
-        req.pipe(upstream);
+        if (capture !== undefined) {
+            const reqTap = new PassThrough();
+            reqTap.on("data", (chunk: Buffer) => {
+                capture.reqFile.write(chunk);
+            });
+            const closeReqFile = (): void => {
+                capture.reqFile.end();
+            };
+            reqTap.on("end", closeReqFile);
+            reqTap.on("close", closeReqFile);
+            reqTap.on("error", (err) => {
+                this.config.log.error(
+                    `llm proxy capture ${capture.reqId} request tap error: ${err.message}`,
+                );
+                closeReqFile();
+            });
+            req.pipe(reqTap).pipe(upstream);
+        } else {
+            req.pipe(upstream);
+        }
     }
+
+    /**
+     * If body capture is enabled, open a pair of write streams under
+     * {@link ReverseProxyConfig.captureDir} and return handles for the
+     * forward path to tee into. Returns `undefined` when capture is
+     * off so the hot path stays a plain `req.pipe(upstream)` with no
+     * extra stream layer.
+     */
+    private openCapture(
+        providerId: string,
+        method: string,
+        upstreamPath: string,
+        forwardedHeaders: Readonly<Record<string, string | string[]>>,
+    ): CaptureHandles | undefined {
+        if (this.config.captureBodies !== true) {
+            return undefined;
+        }
+        const dir = this.config.captureDir;
+        if (dir === undefined || dir.length === 0) {
+            this.config.log.warn(
+                "llm proxy: captureBodies is true but captureDir is unset — capture skipped",
+            );
+            return undefined;
+        }
+        if (!this.captureDirEnsured) {
+            try {
+                mkdirSync(dir, { recursive: true });
+                this.captureDirEnsured = true;
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                this.config.log.error(`llm proxy: cannot create capture dir ${dir}: ${msg}`);
+                return undefined;
+            }
+        }
+        const ts = new Date().toISOString().replace(/[:.]/g, "-");
+        const reqId = `${ts}-${randomUUID().slice(0, 8)}`;
+        const reqPath = join(dir, `${reqId}.req.log`);
+        const respPath = join(dir, `${reqId}.resp.log`);
+        const reqFile = createWriteStream(reqPath, { flags: "w" });
+        const respFile = createWriteStream(respPath, { flags: "w" });
+        // Do NOT echo the Authorization header into the dump — even
+        // though the proxy is the holder of the real upstream key, a
+        // capture file lying around with a live bearer token in it is
+        // a footgun. The forwarded headers are otherwise inert.
+        const safeHeaders: Record<string, string | string[]> = {};
+        for (const [k, v] of Object.entries(forwardedHeaders)) {
+            if (k.toLowerCase() === "authorization") {
+                safeHeaders[k] = "[redacted]";
+                continue;
+            }
+            safeHeaders[k] = v;
+        }
+        reqFile.write(
+            `# ${method} ${upstreamPath} → ${providerId}\n# headers: ${JSON.stringify(safeHeaders)}\n# body:\n`,
+        );
+        this.config.log.info(`llm proxy capture ${reqId} → ${reqPath} / ${respPath}`);
+        return { reqId, reqFile, respFile };
+    }
+}
+
+/** Per-request capture handles passed between forward() helpers. */
+interface CaptureHandles {
+    readonly reqId: string;
+    readonly reqFile: WriteStream;
+    readonly respFile: WriteStream;
+}
+
+/**
+ * Build a decompressor for the upstream's `content-encoding` so the
+ * captured body is human-readable instead of opaque gzip bytes.
+ * Returns `null` when the response is unencoded or the encoding is
+ * unknown (in which case the raw bytes are written and the operator
+ * can decode out-of-band). The forwarded bytes to the client are
+ * untouched either way — only the capture file is decompressed.
+ */
+function pickDecompressor(
+    encodingHeader: string | string[] | undefined,
+    log: Logger,
+    reqId: string,
+): Transform | null {
+    if (encodingHeader === undefined) {
+        return null;
+    }
+    const raw = Array.isArray(encodingHeader) ? encodingHeader.join(",") : encodingHeader;
+    const encoding = raw.toLowerCase().trim();
+    if (encoding === "" || encoding === "identity") {
+        return null;
+    }
+    // Multi-encodings (`gzip, br`) are rare from inference upstreams;
+    // refuse rather than guess at chained decoders. The capture stays
+    // raw so the operator can investigate manually.
+    if (encoding.includes(",")) {
+        log.warn(
+            `llm proxy capture ${reqId}: chained content-encoding "${encoding}" — writing raw bytes to capture`,
+        );
+        return null;
+    }
+    if (encoding === "gzip" || encoding === "x-gzip") {
+        return createGunzip();
+    }
+    if (encoding === "deflate") {
+        return createInflate();
+    }
+    if (encoding === "br") {
+        return createBrotliDecompress();
+    }
+    log.warn(
+        `llm proxy capture ${reqId}: unknown content-encoding "${encoding}" — writing raw bytes to capture`,
+    );
+    return null;
+}
+
+/**
+ * Write a small status header to the response capture file before the
+ * body bytes start arriving. Mirrors the request-side header so each
+ * dump file is self-describing without needing to look up its sibling.
+ */
+function writeResponseHeader(file: WriteStream, upstreamRes: IncomingMessage): void {
+    file.write(
+        `# status: ${upstreamRes.statusCode ?? "?"}\n# headers: ${JSON.stringify(upstreamRes.headers)}\n# body:\n`,
+    );
 }
 
 /**

@@ -115,9 +115,12 @@ export const startCommand = defineCommand({
             portFilePath: boot.postgresPortFile,
             password: postgresPassword,
         });
+        const captureBodies = config.getBool("inference.captureBodies", false);
         const reverseProxy = new ReverseProxy({
             providers,
             log: log.child({ component: "reverse-proxy" }),
+            captureBodies,
+            captureDir: `${boot.dataDir}/llm-debug`,
         });
         const mcpGateway = new McpGateway({
             mcpConfigFile: boot.mcpConfigFile,
