@@ -190,24 +190,42 @@ export class AgentRunner {
     private async recordStep(step: {
         readonly stepNumber: number;
         readonly finishReason: string;
+        readonly rawFinishReason?: string;
         readonly text: string;
         readonly reasoningText: string | undefined;
+        readonly content?: ReadonlyArray<unknown>;
+        readonly warnings?: ReadonlyArray<unknown>;
         readonly usage: { readonly inputTokens?: number; readonly outputTokens?: number };
         readonly toolCalls: unknown;
         readonly toolResults: unknown;
     }): Promise<void> {
         const durationMs = this.stepStartedAt > 0 ? Date.now() - this.stepStartedAt : null;
-        this.log.debug(
+        // For unsuccessful finish reasons (`other`, `error`, `unknown`)
+        // dump the raw provider info at warn level so the operator
+        // can diagnose without enabling debug logging on the whole
+        // daemon. `content` carries every block the model emitted,
+        // including any blocks the SDK couldn't classify into
+        // text/tool-call/reasoning — exactly the bucket that turns
+        // into "other".
+        const isInconclusive =
+            step.finishReason === "other" ||
+            step.finishReason === "error" ||
+            step.finishReason === "unknown";
+        const logLevel: "warn" | "debug" = isInconclusive ? "warn" : "debug";
+        this.log[logLevel](
             {
                 stepNumber: step.stepNumber,
                 durationMs,
                 finishReason: step.finishReason,
+                rawFinishReason: step.rawFinishReason ?? null,
                 inputTokens: step.usage.inputTokens ?? null,
                 outputTokens: step.usage.outputTokens ?? null,
                 reasoning: step.reasoningText ?? null,
                 text: step.text || null,
                 toolCalls: summarizeToolCalls(step.toolCalls),
                 toolResults: step.toolResults,
+                contentBlocks: isInconclusive ? step.content : undefined,
+                warnings: step.warnings ?? undefined,
             },
             "step finished",
         );
