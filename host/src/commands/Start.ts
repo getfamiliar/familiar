@@ -123,6 +123,9 @@ export const startCommand = defineCommand({
             mcpConfigFile: boot.mcpConfigFile,
             mcpLogsDir: boot.mcpLogsDir,
             logRetentionDays: config.getNumber("core.logRetentionDays", 7),
+            tmpDir: boot.tmpDir,
+            hostUid: boot.hostUid,
+            hostGid: boot.hostGid,
             log: log.child({ component: "mcp-gateway" }),
         });
         const bastion = new Bastion({

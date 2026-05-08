@@ -13,9 +13,11 @@
 # Each top-level key is an MCP id. Ids must be lowercase alphanumeric
 # (with dashes), starting with an alphanumeric.
 #
-# Sources implemented today: `docker-mcp-registry` (stdio), `external`
-# (HTTP forward). `npm` and `pypi` parse and lint, but the bastion
-# refuses to start them until those factories land.
+# Sources implemented today: `docker-mcp-registry` (stdio), `npm`
+# (stdio inside `ea-mcp-runtime-npm`), `pypi` (stdio inside
+# `ea-mcp-runtime-pypi`), `external` (HTTP forward). For npm/pypi,
+# package caches persist in `tmp/mcp-mount-<id>/` on the host
+# (gitignored; safe to wipe).
 
 fetch:
   title: "Fetch"
@@ -46,3 +48,14 @@ fetch:
 #       is_secret: true
 #       example: "ghp_..."
 #       description: "Personal access token with repo + read:org scopes."
+
+# Example of an npm-source MCP. The package's bin runs inside the
+# shared `ea-mcp-runtime-npm` image (entrypoint `npx -y`); the
+# `~/.npm/_npx` cache persists in `tmp/mcp-mount-weather/`.
+#
+# weather:
+#   title: "Weather"
+#   description: "Weather data via NOAA + Open-Meteo (no API key)."
+#   source: npm
+#   package: "@dangahagan/weather-mcp"
+#   version: "1.6.1"

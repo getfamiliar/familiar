@@ -30,9 +30,34 @@ selects which factory builds the container.
 | `source` | What it is | Status |
 | --- | --- | --- |
 | `docker-mcp-registry` | Image from the [Docker MCP registry](https://github.com/docker/mcp-registry) (e.g. `mcp/fetch`). The bastion spawns a foreground `docker run -i` child on demand. | **Implemented (stdio transport).** |
-| `npm` | npm package run inside a generic node container. Intended for MCPs distributed via npm without an official docker image. | Stub — declaring this source today fails fast at gateway start. |
-| `pypi` | pypi package run inside a generic python container. Same idea as `npm`. | Stub. |
+| `npm` | npm package run inside the shared `ea-mcp-runtime-npm` image (entrypoint `npx -y`). For MCPs distributed via npm without an official docker image. | **Implemented (stdio transport).** |
+| `pypi` | pypi package run inside the shared `ea-mcp-runtime-pypi` image (entrypoint `uvx`). | **Implemented (stdio transport).** |
 | `external` | Remote MCP reachable over HTTP. No container is started; the bastion forwards the request to the configured URL. | **Implemented (HTTP forward).** |
+
+### npm and pypi runtime images
+
+Both runtimes are built from `mcp-runtime/<source>/Dockerfile` on
+daemon start (only when `mcp.yml` actually declares an entry of
+that source — no idle build cost). Each MCP gets a per-id host
+directory `tmp/mcp-mount-<id>/` bind-mounted at `/work` inside the
+container; `/work` doubles as `WORKDIR` and `HOME`, so npx's and
+uv's caches persist across cold-spawn cycles.
+
+The runtime containers run with `--user <hostUid>:<hostGid>`
+matched to the daemon process, so files written into
+`tmp/mcp-mount-<id>/` are owned by the operator, not root. The
+`tmp/` directory itself is gitignored and safe to `rm -rf`
+whenever a clean slate is wanted; the next call refetches.
+
+> **Footgun.** A `volumes:` entry that targets `/work` (or a
+> subpath) overlays our mandatory mount — by docker semantics
+> the last `-v` wins. We don't validate this; if a specific MCP
+> needs to mount something else at `/work`, it's allowed.
+
+The `command` field is **ignored** for npm/pypi sources. The entry
+point is fixed to `npx -y` / `uvx` to keep the runtime contract
+predictable. Use `source: docker-mcp-registry` with a custom image
+for anything else.
 
 ## Adding an MCP by hand: `fetch` walkthrough
 
@@ -70,9 +95,9 @@ must match `^[a-z0-9][a-z0-9-]*$` and is used as the container suffix
 | `description` | string | yes | — | Longer human-facing description. |
 | `source` | enum | yes | — | One of `docker-mcp-registry`, `npm`, `pypi`, `external`. |
 | `image` | string | yes when `source = docker-mcp-registry` | — | Docker image reference, e.g. `mcp/fetch`. |
-| `package` | string | yes when `source = npm` or `pypi` | — | Package name on the registry. *(Stub today.)* |
-| `version` | string | no | latest | Pin a `package` version. *(Stub today.)* |
-| `url` | string | yes when `source = external` | — | Remote endpoint URL. *(Stub today.)* |
+| `package` | string | yes when `source = npm` or `pypi` | — | Package name on the registry (e.g. `@dangahagan/weather-mcp`, `mcp-server-time`). |
+| `version` | string | no | latest | Pin a `package` version. Joined with `@` for npm and `==` for pypi. |
+| `url` | string | yes when `source = external` | — | Remote endpoint URL. |
 | `env` | array | no | `[]` | Environment variables; see below. |
 | `volumes` | array of strings | no | `[]` | Bind mounts as `host:container[:ro]`. |
 | `args` | array of strings | no | `[]` | CLI args appended after the image's `CMD`. |
@@ -328,4 +353,5 @@ break unrelated handlers.
 - Auth injection through the bastion on outbound calls *from* MCP
   children (e.g. fetch hitting example.com).
 - `allowHosts` enforcement via an egress proxy.
-- Real `npm` and `pypi` factories.
+- Private npm / pypi registry support (registry config + auth
+  injection through the runtime images).

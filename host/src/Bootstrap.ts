@@ -59,6 +59,23 @@ export interface Bootstrap {
      * subcommand.
      */
     readonly mcpConfigFile: string;
+    /**
+     * Project-root `tmp/` directory. Holds per-MCP bind-mount roots
+     * (`tmp/mcp-mount-<id>/`) for npm/pypi runtime containers,
+     * which double as `/work` (WORKDIR + HOME) so the npx/uv caches
+     * persist across cold-spawn cycles. Gitignored; safe to
+     * `rm -rf` whenever a clean slate is wanted.
+     */
+    readonly tmpDir: string;
+    /**
+     * UID of the daemon process. Passed to docker as `--user` for
+     * the npm/pypi runtime containers so files written into
+     * `tmp/mcp-mount-<id>/` end up host-user-owned. Read once via
+     * `process.getuid()`; Linux-only daemon, so always defined.
+     */
+    readonly hostUid: number;
+    /** GID of the daemon process. See {@link hostUid}. */
+    readonly hostGid: number;
 }
 
 /**
@@ -83,5 +100,8 @@ export function bootstrap(): Bootstrap {
         containerSrcDir,
         configFile: `${projectRoot}/config/config.yml`,
         mcpConfigFile: `${projectRoot}/config/mcp.yml`,
+        tmpDir: `${projectRoot}/tmp`,
+        hostUid: process.getuid?.() ?? 0,
+        hostGid: process.getgid?.() ?? 0,
     });
 }

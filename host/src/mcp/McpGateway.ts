@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Logger } from "effective-assistant-shared";
 import type { Bastion, BastionModule } from "../bastion/Bastion.js";
@@ -8,6 +9,7 @@ import { PypiFactory } from "./factories/PypiFactory.js";
 import { loadMcpEntries } from "./McpConfigLoader.js";
 import type { McpEntry, McpSource } from "./McpEntry.js";
 import type { McpServerFactory } from "./McpServerFactory.js";
+import { ensureRuntimeImage } from "./RuntimeImages.js";
 import type { McpTransport } from "./transports/McpTransport.js";
 
 /** Configuration for the {@link McpGateway} bastion module. */
@@ -22,6 +24,15 @@ export interface McpGatewayConfig {
     readonly mcpLogsDir: string;
     /** Days of rotated log retention; mirrors `core.logRetentionDays`. */
     readonly logRetentionDays: number;
+    /**
+     * Absolute path to the project-root `tmp/` directory; passed
+     * through to npm/pypi factories so each MCP gets a per-id bind
+     * mount root for `/work`.
+     */
+    readonly tmpDir: string;
+    /** Host UID and GID used as `--user` for npm/pypi runtime containers. */
+    readonly hostUid: number;
+    readonly hostGid: number;
     /** Logger used for load / dispatch / error lines. */
     readonly log: Logger;
 }
@@ -46,6 +57,14 @@ export class McpGateway implements BastionModule {
 
     constructor(config: McpGatewayConfig) {
         this.config = config;
+        const sharedNpmPypiConfig = {
+            log: config.log,
+            mcpLogsDir: config.mcpLogsDir,
+            logRetentionDays: config.logRetentionDays,
+            tmpDir: config.tmpDir,
+            hostUid: config.hostUid,
+            hostGid: config.hostGid,
+        };
         this.factories = new Map<McpSource, McpServerFactory>([
             [
                 "docker-mcp-registry",
@@ -55,14 +74,31 @@ export class McpGateway implements BastionModule {
                     logRetentionDays: config.logRetentionDays,
                 }),
             ],
-            ["npm", new NpmFactory()],
-            ["pypi", new PypiFactory()],
+            ["npm", new NpmFactory(sharedNpmPypiConfig)],
+            ["pypi", new PypiFactory(sharedNpmPypiConfig)],
             ["external", new ExternalFactory(config.log)],
         ]);
     }
 
     async start(bastion: Bastion): Promise<void> {
         const entries = loadMcpEntries(this.config.mcpConfigFile, this.config.log);
+
+        // Build only the runtime images that are actually referenced
+        // by `mcp.yml`. No npm/pypi entries → no docker-build cost.
+        const sources = new Set<McpSource>();
+        for (const entry of entries.values()) {
+            sources.add(entry.source);
+        }
+        if (sources.has("npm") || sources.has("pypi")) {
+            mkdirSync(this.config.tmpDir, { recursive: true });
+        }
+        if (sources.has("npm")) {
+            await ensureRuntimeImage("npm", this.config.log);
+        }
+        if (sources.has("pypi")) {
+            await ensureRuntimeImage("pypi", this.config.log);
+        }
+
         for (const entry of entries.values()) {
             this.transports.set(entry.id, this.buildTransport(entry));
         }
