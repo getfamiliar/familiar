@@ -84,7 +84,7 @@ A canonical event lifecycle:
 
 1. **Host plugin** detects something in the world (e.g. new mail via IMAP IDLE) and calls a standardized event ingestion API on the host.
 2. **Host** writes the event to the `events` table with a globally unique idempotency key. Topic matches `\w+(:\w+)?` (e.g. `mail:new`). `NOTIFY events_new` wakes the container.
-3. **Container's input-event watcher** atomically claims the event (`pending → running`) and inserts a root `agentruns` row for it, with `handler='index'` and `topic` copied from the event. `NOTIFY agentruns_changed` wakes the agentrun watcher.
+3. **Container's input-event watcher** atomically claims the event (`pending → running`) and inserts a root `agentruns` row for it, with `handler=event.startHandler ?? 'index'` and `topic` copied from the event. `NOTIFY agentruns_changed` wakes the agentrun watcher.
 4. **Agentrun watcher** claims the row (`pending → running`), resolves the handler markdown file (see "Handler resolution"), and runs an agent session against it. The handler's content is the prompt; the agent has MCP tools and the `queue_next` tool.
 5. **Inside the handler**, the agent decides what to do next. It may call MCP tools, edit workspace files, and call `queue_next(handler, payload)` to spawn child agentruns (e.g. `index.md` triages, then queues `analyze` and `respond`). Each child is another `agentruns` row with `parent_agentrun_id` set to the spawning row and `event_id` propagated.
 6. **For risky writes**, the handler proposes a **pending action** through the approval gate. The agentrun **suspends** until the user responds, then resumes and continues. Suspend/resume mechanics are TBD — see open questions.

@@ -81,6 +81,13 @@ export interface EventRow {
      */
     readonly prompt: string;
     /**
+     * Override for the root agentrun's handler. `null` means the
+     * input-event watcher uses `'index'` (i.e. resolves
+     * `<topic>/index.md`). Set by the emitter via
+     * {@link NewEvent.startHandler}; never mutated after insert.
+     */
+    readonly startHandler: string | null;
+    /**
      * `true` when this event was emitted by a trusted user-input source
      * (the operator at the local terminal via cli-chat, the operator on
      * Telegram). Stamped at emit time, never mutated. Propagated verbatim
@@ -154,6 +161,19 @@ export interface NewEvent {
      * {@link EventRow.privileged} for the trust-model rationale.
      */
     readonly privileged?: boolean;
+    /**
+     * Override which handler markdown the root agentrun runs. When
+     * omitted, the input-event watcher uses `'index'` (i.e. resolves
+     * `<topic>/index.md`). Useful when an emitter wants to skip the
+     * triage `index.md` and invoke a specific handler directly.
+     *
+     * Pass the basename without `.md` (e.g. `'analyze'` resolves to
+     * `<topic>/analyze.md`). The agentrun fails loud at handler-load
+     * time if no such file exists — there is no shape validation
+     * here, mirroring how `topic` is only regex-checked, not
+     * existence-checked, at emit time.
+     */
+    readonly startHandler?: string;
 }
 
 /** Patch shape for {@link EventBus.update}. */

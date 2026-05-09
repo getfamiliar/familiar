@@ -97,6 +97,10 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS preferred_chat_channel_id text;
 -- emitter's framing without the EventWatcher having to reach into the
 -- payload schema.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS prompt text;
+-- Optional override for the root agentrun's handler. When NULL the
+-- input-event watcher falls back to 'index' — same behaviour as
+-- before this column existed. Set by the emitter on NewEvent.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS start_handler text;
 -- Privileged events originate from a trusted user-input source (operator
 -- at the local terminal via cli-chat, operator on Telegram). The flag
 -- propagates verbatim to the root agentrun and to every child agentrun
