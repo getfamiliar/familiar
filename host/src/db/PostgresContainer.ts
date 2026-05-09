@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { chownSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import {
     POSTGRES_DB,
     POSTGRES_HOST,
@@ -43,9 +43,15 @@ export interface PostgresContainerConfig {
  * callers (CLIs etc.) can construct an instance without `start()` and use
  * it purely as a config provider for the running container.
  *
- * Mounts `{dataPath}/postgres` → `/var/lib/postgresql/data`. Postgres in
- * the alpine image runs as uid 70, so files in `data/postgres/` will be
- * owned by that uid — `rm -rf` from the host needs `sudo`.
+ * Mounts `{dataPath}/postgres` → `/var/lib/postgresql/data`. The
+ * container is launched with `--user <hostUid>:<hostGid>` so cluster
+ * files end up owned by the operator, not the alpine image's
+ * default uid 70 — that means `rm -rf data/postgres` from the host
+ * doesn't need `sudo`. Postgres only requires that whoever runs it
+ * owns the data dir; the file contents themselves are uid-agnostic.
+ *
+ * For a daemon upgraded from the old uid-70 layout, chown the
+ * existing data dir once: `sudo chown -R "$(id -u):$(id -g)" data/postgres`.
  */
 export class PostgresContainer {
     private readonly config: PostgresContainerConfig;
@@ -116,9 +122,21 @@ export class PostgresContainer {
 
         const dataDir = `${this.config.dataPath}/postgres`;
         mkdirSync(dataDir, { recursive: true });
+        // Pin the data dir to the caller's uid:gid so the postgres
+        // process (launched with the same `--user` below) can own its
+        // files without needing root for cleanup. On a freshly created
+        // dir this matches what mkdirSync already produced; on a dir
+        // the operator already chowned by hand it's a no-op.
+        const uid = process.geteuid?.() ?? process.getuid?.();
+        const gid = process.getegid?.() ?? process.getgid?.();
+        if (uid !== undefined && gid !== undefined) {
+            chownSync(dataDir, uid, gid);
+        }
 
         const preferredPort = this.config.preferredHostPort ?? 5432;
         const hostPort = await pickFreeLoopbackPort(preferredPort);
+
+        const userArgs = uid !== undefined && gid !== undefined ? ["--user", `${uid}:${gid}`] : [];
 
         await dockerExec([
             "run",
@@ -127,6 +145,7 @@ export class PostgresContainer {
             POSTGRES_HOST,
             "--network",
             SHARED_NETWORK_NAME,
+            ...userArgs,
             "-p",
             `127.0.0.1:${hostPort}:${POSTGRES_PORT}`,
             "-e",

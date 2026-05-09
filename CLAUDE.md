@@ -336,7 +336,7 @@ When in doubt during implementation:
 The `data/` folder is the persistent host-side storage. Layout:
 
 - `data/workspace/` — mounted into the agent container as `/workspace`. The assistant's memory and personality live here (SOUL.md, CONTEXT.md, topic folders, people/, etc.).
-- `data/postgres/` — bind-mounted into `ea-postgres` as `/var/lib/postgresql/data`. Cluster state for the bus-state DB. Files are owned by the postgres uid (70 in alpine), so `rm -rf data/postgres` from the host needs `sudo`.
+- `data/postgres/` — bind-mounted into `ea-postgres` as `/var/lib/postgresql/data`. Cluster state for the bus-state DB. The container runs with `--user <hostUid>:<hostGid>` so cluster files are owned by the operator and `rm -rf data/postgres` works from the host without `sudo`. A daemon upgraded from the old uid-70 layout needs a one-time `sudo chown -R "$(id -u):$(id -g)" data/postgres`.
 - `data/.daemon.pid` — pidfile written by the daemon and consumed by `./cli.sh stop`.
 - `data/.postgres-port` — chosen loopback host port that `ea-postgres` is published on (e.g. `5432`, or the next free port if 5432 was taken at startup). Read by anything host-side that wants to `psql` or use a `pg` client.
 
