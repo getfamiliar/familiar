@@ -52,3 +52,11 @@ export {
 } from "./Schema.js";
 export type { NewStepResult, StepResultRow } from "./StepResult.js";
 export { StepResultBus, type StepResultUnsubscribe } from "./StepResultBus.js";
+export {
+    ALL_GROUP_NAME,
+    IDENT_PATTERN,
+    MCP_GROUP_NAME,
+    NONE_GROUP_NAME,
+    RESERVED_GROUP_NAMES,
+    SYSTEM_GROUP_NAME,
+} from "./ToolDsl.js";

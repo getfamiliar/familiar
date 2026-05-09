@@ -44,6 +44,16 @@ export interface ToolsFactoryContext {
      */
     readonly mcpTools?: ToolSet;
     /**
+     * Sanitized MCP id → the set of that MCP's sanitized tool keys.
+     * Threaded into the evaluator's `builtins` so a handler's
+     * `tools:` expression can reference an MCP id directly
+     * (`tools: fetch + atlassian`) without a user-written toolgroup
+     * file. Reserved names (`all`, `system`, `mcp`, `none`) cannot
+     * appear as keys because the host's `mcp.yml` linter rejects
+     * them as ids.
+     */
+    readonly mcpKeysById?: ReadonlyMap<string, ReadonlySet<string>>;
+    /**
      * Logger child for filter diagnostics. Resolution errors throw
      * so the agentrun fails loud; warnings are not currently
      * emitted (kept for future use).
@@ -106,6 +116,7 @@ export class ToolsFactory {
             available: availableKeys,
             systemKeys,
             mcpKeys,
+            mcpKeysById: context.mcpKeysById,
             toolsExpression: context.toolsExpression,
             lookup: context.groups,
         });
@@ -134,6 +145,7 @@ function resolveMatched(args: {
     available: ReadonlySet<string>;
     systemKeys: ReadonlySet<string>;
     mcpKeys: ReadonlySet<string>;
+    mcpKeysById: ReadonlyMap<string, ReadonlySet<string>> | undefined;
     toolsExpression: string | undefined;
     lookup: GroupLookup | undefined;
 }): Set<string> {
@@ -141,10 +153,19 @@ function resolveMatched(args: {
         return new Set(args.systemKeys);
     }
     const ast = parseExpression(args.toolsExpression);
-    const builtins = new Map<string, ReadonlySet<string>>([
-        [SYSTEM_GROUP_NAME, args.systemKeys],
-        [MCP_GROUP_NAME, args.mcpKeys],
-    ]);
+    // Per-MCP entries land first; `system` and `mcp` are written
+    // afterwards so they win on the (lint-prevented) chance of a
+    // sanitized MCP id colliding with a reserved name. `all` and
+    // `none` are short-circuited by the evaluator before any
+    // builtins lookup.
+    const builtins = new Map<string, ReadonlySet<string>>();
+    if (args.mcpKeysById) {
+        for (const [id, keys] of args.mcpKeysById) {
+            builtins.set(id, keys);
+        }
+    }
+    builtins.set(SYSTEM_GROUP_NAME, args.systemKeys);
+    builtins.set(MCP_GROUP_NAME, args.mcpKeys);
     const lookup = args.lookup ?? rejectAnyLookup;
     return evaluate(ast, args.available, lookup, builtins);
 }

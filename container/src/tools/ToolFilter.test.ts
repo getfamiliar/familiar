@@ -14,8 +14,6 @@ const POOL = new Set([
     "atlassian_jira_create_issue",
     "atlassian_jira_get_issue",
     "atlassian_confluence_get_page",
-    "atlassian-personal_confluence_search",
-    "atlassian-personal_confluence_get_page",
     "send_chat",
     "queue_run",
     "file_read",
@@ -39,13 +37,22 @@ const MCP_KEYS = new Set([
     "atlassian_jira_create_issue",
     "atlassian_jira_get_issue",
     "atlassian_confluence_get_page",
-    "atlassian-personal_confluence_search",
-    "atlassian-personal_confluence_get_page",
 ]);
+
+const ATLASSIAN_KEYS = new Set([
+    "atlassian_jira_search",
+    "atlassian_jira_create_issue",
+    "atlassian_jira_get_issue",
+    "atlassian_confluence_get_page",
+]);
+
+const FETCH_KEYS = new Set(["fetch_fetch"]);
 
 const BUILTINS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
     ["system", SYSTEM_KEYS],
     ["mcp", MCP_KEYS],
+    ["atlassian", ATLASSIAN_KEYS],
+    ["fetch", FETCH_KEYS],
 ]);
 
 const NO_LOOKUP: GroupLookup = () => undefined;
@@ -106,65 +113,127 @@ describe("ToolFilter — built-in groups", () => {
         assert.deepEqual(resolve("mcp"), [...MCP_KEYS].sort());
     });
 
-    it("`system && !send_chat` — system minus one tool", () => {
-        const out = new Set(resolve("system && !send_chat"));
+    it("`system - send_chat` — system minus one tool", () => {
+        const out = new Set(resolve("system - send_chat"));
         assert.equal(out.has("send_chat"), false);
         assert.equal(out.has("file_read"), true);
         assert.equal(out.size, SYSTEM_KEYS.size - 1);
     });
 
-    it("`mcp && !atlassian_*` excludes the cloud Atlassian id but keeps -personal", () => {
-        const out = new Set(resolve("mcp && !atlassian_*"));
+    it("`mcp - atlassian_*` removes every atlassian-prefixed key", () => {
+        const out = new Set(resolve("mcp - atlassian_*"));
         assert.equal(out.has("atlassian_jira_search"), false);
-        assert.equal(out.has("atlassian-personal_confluence_search"), true);
+        assert.equal(out.has("atlassian_confluence_get_page"), false);
         assert.equal(out.has("fetch_fetch"), true);
     });
 
-    it("`none` short-circuits even when paired with other matches via &&", () => {
-        // `none && anything` → empty, since `none` is the empty set.
-        assert.deepEqual(resolve("none && all"), []);
+    it("`none & all` short-circuits to empty", () => {
+        assert.deepEqual(resolve("none & all"), []);
     });
 
-    it("`none || x` reduces to x", () => {
-        assert.deepEqual(resolve("none || fetch_fetch"), ["fetch_fetch"]);
+    it("`none + fetch_fetch` reduces to the single tool", () => {
+        assert.deepEqual(resolve("none + fetch_fetch"), ["fetch_fetch"]);
+    });
+});
+
+describe("ToolFilter — MCP-id default groups", () => {
+    it("a bare MCP id resolves to that MCP's keys", () => {
+        assert.deepEqual(resolve("atlassian"), [...ATLASSIAN_KEYS].sort());
+    });
+
+    it("`fetch` resolves to its single tool key", () => {
+        assert.deepEqual(resolve("fetch"), [...FETCH_KEYS].sort());
+    });
+
+    it("`fetch + atlassian` unions two MCP-id groups", () => {
+        assert.deepEqual(resolve("fetch + atlassian"), [...FETCH_KEYS, ...ATLASSIAN_KEYS].sort());
+    });
+
+    it("`all - atlassian - fetch` excludes both MCPs in one chain", () => {
+        const out = new Set(resolve("all - atlassian - fetch"));
+        for (const k of ATLASSIAN_KEYS) {
+            assert.equal(out.has(k), false, `expected ${k} excluded`);
+        }
+        assert.equal(out.has("fetch_fetch"), false);
+        // System keys survive.
+        assert.equal(out.has("send_chat"), true);
     });
 });
 
 describe("ToolFilter — operators", () => {
-    it("|| unions matches", () => {
-        assert.deepEqual(resolve("fetch_fetch || atlassian_jira_search"), [
+    it("+ unions matches", () => {
+        assert.deepEqual(resolve("fetch_fetch + atlassian_jira_search"), [
             "atlassian_jira_search",
             "fetch_fetch",
         ]);
     });
 
-    it("&& intersects matches", () => {
-        assert.deepEqual(resolve("atlassian_* && *_search"), ["atlassian_jira_search"]);
+    it("& intersects matches", () => {
+        assert.deepEqual(resolve("atlassian_* & *_search"), ["atlassian_jira_search"]);
     });
 
-    it("! complements against the available pool", () => {
-        const out = new Set(resolve("all && !fetch_fetch"));
+    it("- removes the right side from the left", () => {
+        const out = new Set(resolve("all - fetch_fetch"));
         assert.equal(out.has("fetch_fetch"), false);
         assert.equal(out.has("atlassian_jira_search"), true);
         assert.equal(out.size, POOL.size - 1);
     });
 
-    it("id-prefix glob excludes other id literally (atlassian_* vs atlassian-personal_*)", () => {
+    it("id-prefix glob matches every key with that id prefix", () => {
         const out = new Set(resolve("atlassian_*"));
         assert.equal(out.has("atlassian_jira_search"), true);
-        assert.equal(out.has("atlassian-personal_confluence_search"), false);
+        assert.equal(out.has("atlassian_confluence_get_page"), true);
+        assert.equal(out.has("fetch_fetch"), false);
     });
+});
 
-    it("precedence: ! > && > ||", () => {
-        // a || b && !c → a || (b && !c)
-        assert.deepEqual(resolve("fetch_fetch || atlassian_jira_search && !fetch_fetch"), [
+describe("ToolFilter — precedence", () => {
+    it("`&` binds tighter than `+`: a + b & c == a + (b & c)", () => {
+        // fetch_fetch + atlassian_jira_search & *_search
+        //   == fetch_fetch + (atlassian_jira_search & *_search)
+        //   == {fetch_fetch, atlassian_jira_search}
+        assert.deepEqual(resolve("fetch_fetch + atlassian_jira_search & *_search"), [
             "atlassian_jira_search",
             "fetch_fetch",
         ]);
     });
 
+    it("`&` binds tighter than `-`: a - b & c == a - (b & c)", () => {
+        // all - atlassian_* & *_search
+        //   == all - (atlassian_* & *_search)
+        //   == all minus just `atlassian_jira_search`
+        const out = new Set(resolve("all - atlassian_* & *_search"));
+        assert.equal(out.has("atlassian_jira_search"), false);
+        assert.equal(out.has("atlassian_jira_get_issue"), true);
+        assert.equal(out.has("atlassian_jira_create_issue"), true);
+        assert.equal(out.size, POOL.size - 1);
+    });
+
+    it("`+` and `-` share precedence, left-to-right: a + b - c == (a + b) - c", () => {
+        // (fetch_fetch + atlassian_jira_search) - fetch_fetch
+        //   == {atlassian_jira_search}
+        assert.deepEqual(resolve("fetch_fetch + atlassian_jira_search - fetch_fetch"), [
+            "atlassian_jira_search",
+        ]);
+    });
+
+    it("chained `-` is left-associative: all - x - y == (all - x) - y", () => {
+        const out = new Set(resolve("all - fetch_fetch - atlassian_jira_search"));
+        assert.equal(out.has("fetch_fetch"), false);
+        assert.equal(out.has("atlassian_jira_search"), false);
+        assert.equal(out.size, POOL.size - 2);
+    });
+
+    it("mixed - then +: all - x + y reads as (all - x) + y, so y survives", () => {
+        // The case most likely to surprise readers: removing a key
+        // and then adding it back via + still includes it.
+        const out = new Set(resolve("all - fetch_fetch + fetch_fetch"));
+        assert.equal(out.has("fetch_fetch"), true);
+        assert.equal(out.size, POOL.size);
+    });
+
     it("parens override precedence", () => {
-        assert.deepEqual(resolve("(fetch_fetch || atlassian_jira_search) && !fetch_fetch"), [
+        assert.deepEqual(resolve("(fetch_fetch + atlassian_jira_search) - fetch_fetch"), [
             "atlassian_jira_search",
         ]);
     });
@@ -174,11 +243,11 @@ describe("ToolFilter — group resolution and lazy lookup", () => {
     it("resolves nested group references", () => {
         const lookup = lookupFromMap(
             new Map([
-                ["jira-reads", [{ kind: "tool", pattern: "atlassian_jira_get_*" }]],
+                ["jira_reads", [{ kind: "tool", pattern: "atlassian_jira_get_*" }]],
                 [
                     "reads",
                     [
-                        { kind: "group", name: "jira-reads" },
+                        { kind: "group", name: "jira_reads" },
                         { kind: "tool", pattern: "fetch_fetch" },
                     ],
                 ],
@@ -188,7 +257,7 @@ describe("ToolFilter — group resolution and lazy lookup", () => {
     });
 
     it("throws on unknown group with the missing name", () => {
-        assert.throws(() => resolve("not-a-real-group"), /unknown group: not-a-real-group/);
+        assert.throws(() => resolve("notarealgroup"), /unknown group: notarealgroup/);
     });
 
     it("throws on cycle with the full chain in the message", () => {
@@ -206,9 +275,6 @@ describe("ToolFilter — group resolution and lazy lookup", () => {
     });
 
     it("lazy lookup: a malformed group is only fatal when referenced", () => {
-        // The lookup throws when asked for `bad`; succeeds for `reads`.
-        // An expression that only touches `reads` should not trigger
-        // the bad-file path — that's the whole point of going lazy.
         let badAccessed = false;
         const lookup: GroupLookup = (name) => {
             if (name === "bad") {
@@ -257,7 +323,13 @@ describe("ToolFilter — parseGroupLine", () => {
     });
 
     it("rejects a line with operator characters", () => {
-        assert.throws(() => parseGroupLine("a && b"), /matching/);
+        assert.throws(() => parseGroupLine("a + b"), /matching/);
+        assert.throws(() => parseGroupLine("a - b"), /matching/);
+        assert.throws(() => parseGroupLine("a & b"), /matching/);
+    });
+
+    it("rejects a hyphenated bareword (underscores only)", () => {
+        assert.throws(() => parseGroupLine("read-operations"), /matching/);
     });
 });
 
@@ -270,11 +342,31 @@ describe("ToolFilter — syntax errors", () => {
         assert.throws(() => parseExpression(""), /expected/);
     });
 
-    it("rejects a bare operator", () => {
-        assert.throws(() => parseExpression("&&"), /expected group \/ tool/);
+    it("rejects a leading binary operator", () => {
+        assert.throws(() => parseExpression("+ b"), /expected group \/ tool/);
+        assert.throws(() => parseExpression("& b"), /expected group \/ tool/);
+        assert.throws(() => parseExpression("- b"), /expected group \/ tool/);
     });
 
-    it("requires `&&` not `&`", () => {
-        assert.throws(() => parseExpression("a & b"), /expected "&&"/);
+    it("rejects a dangling trailing operator", () => {
+        assert.throws(() => parseExpression("a +"), /expected group \/ tool/);
+        assert.throws(() => parseExpression("a -"), /expected group \/ tool/);
+        assert.throws(() => parseExpression("a &"), /expected group \/ tool/);
+    });
+
+    it("rejects the old `&&` / `||` / `!` operators", () => {
+        // `&&` lexes as two `&` tokens → second one has no left operand.
+        assert.throws(() => parseExpression("a && b"));
+        // `||` lexes as two `+`-less `|` characters (unknown char).
+        assert.throws(() => parseExpression("a || b"), /unexpected character/);
+        // `!` is not a recognized character.
+        assert.throws(() => parseExpression("!a"), /unexpected character/);
+    });
+
+    it("rejects a hyphenated bareword (`-` is always the operator)", () => {
+        // `read-operations` lexes as bareword `read`, op `-`, bareword
+        // `operations`. Without surrounding context it parses as a
+        // diff of two unknown groups — the first `read` lookup fails.
+        assert.throws(() => resolve("read-operations"), /unknown group: read/);
     });
 });

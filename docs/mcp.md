@@ -148,6 +148,16 @@ that npm/pypi/external entries use the same shape.
 > env vars, volumes) and the warm cache lets `npx`/`uvx` skip
 > the fetch. Prep needs network even when the running MCP
 > doesn't — fully air-gapped installs aren't supported.
+>
+> Prep runs **only when the per-MCP mount dir is absent**
+> (`tmp/mcp-mount-<id>/`). Once the package is cached, daemon
+> restarts skip prep entirely — otherwise the package's install
+> hooks would run with full network on every restart and could
+> exfiltrate anything the offline phase-2 run had stashed in
+> `/work`. To re-run prep (after a package version bump or to
+> recover from a poisoned cache), delete `tmp/mcp-mount-<id>/`
+> and restart the daemon. If prep fails, the mount dir is wiped
+> so the next start retries.
 
 ## How handlers use MCP tools
 
@@ -168,10 +178,12 @@ atlassian_personal_confluence_get_page # `atlassian-personal` id → underscore
 ms365_verify_login                     # `verify-login` tool → underscore
 ```
 
-Toolgroup files and `tools:` expressions are matched after folding
-hyphens to underscores too, so legacy entries like
-`atlassian-personal_confluence_get_page` keep matching against the
-new keys without rewriting.
+**Inside `tools:` expressions and toolgroup files, work with these
+sanitized — underscored — names only.** The DSL never sees the
+hyphenated original; tool keys are sanitized at registration time
+and MCP ids are sanitized when exposed as auto-groups (see below),
+so a hyphen inside an expression is always the difference operator,
+never part of a name.
 
 The agent boots the pool eagerly: every declared MCP gets its
 `tools/list` fetched once at startup. Cold-spawn cost shows up here
@@ -194,47 +206,77 @@ tools, matching pre-filter behavior. Override with `tools: all`,
 ### Expression grammar
 
 ```
-expr     := or
-or       := and ('||' and)*
-and      := unary ('&&' unary)*
-unary    := '!' unary | atom
-atom     := bareword | '(' expr ')'
+expr      := plusMinus
+plusMinus := and (('+' | '-') and)*
+and       := atom ('&' atom)*
+atom      := bareword | '(' expr ')'
 
-bareword := [a-zA-Z0-9_*-]+
+bareword  := [a-zA-Z0-9_*]+
 ```
 
-- Precedence: `!` > `&&` > `||`. Whitespace insignificant.
-- Each bareword is **either a group name or a tool pattern** —
-  classified by shape, not by syntax:
-  - Matches `^[a-z][a-z0-9-]*$` (lowercase ident, no `_`, no `*`)
-    → **group** lookup. Throws "unknown group" if undefined.
-  - Anything else (contains `_`, `*`, uppercase, …) → **tool
-    pattern**, matched against the pool's namespaced keys.
+Operators:
+
+- `a + b` — both `a` and `b` together (set union).
+- `a - b` — `a` without the tools in `b` (set difference).
+- `a & b` — tools in `a` and `b` both (set intersection).
+
+Precedence: `&` binds tighter than `+`/`-`. `+` and `-` share one
+level and read left-to-right (`a + b - c` = `(a + b) - c`,
+`all - x - y` = `(all - x) - y`). Parens override. Whitespace is
+insignificant.
+
+**Names use underscores only.** Tool keys are sanitized
+(`atlassian-personal_confluence_get_page` →
+`atlassian_personal_confluence_get_page`) before the DSL sees
+them, MCP ids are sanitized when registered as auto-groups
+(`atlassian-personal` → `atlassian_personal`), and toolgroup
+filenames must use underscores too. `-` inside an expression is
+therefore always the difference operator, never part of a name.
+
+Each bareword is **either a group name or a tool pattern** —
+classified by shape, not by syntax:
+
+- Matches `^[a-z][a-z0-9]*$` (lowercase alnum, leading letter, no
+  `_`, no `*`) → **group** lookup. Throws "unknown group" if
+  undefined.
+- Anything else (contains `_` or `*`, or has uppercase) → **tool
+  pattern**, matched against the pool's namespaced keys.
 - Tool keys have the form `${id}_${name}` (e.g. `fetch_fetch`,
   `atlassian_jira_create_issue`). Use them verbatim — the same form
   the LLM sees in tool calls.
 - `*` is a glob wildcard matching any character sequence (including
   `_`). Bare `*` matches every tool key.
 
-The shape-based split is unambiguous: tool keys always contain at
-least one `_`, while group names cannot. There's no resolution
-order to remember.
+The shape-based split is structurally unambiguous: tool keys
+always contain at least one `_` (the id-name join), while group
+names cannot contain `_` at all. The `mcp.yml` linter rejects ids
+that aren't alnum-only for the same reason — every id doubles as
+a group name.
 
 ### Built-in groups
 
-Four reserved names are resolved by the evaluator before any user
-lookup:
+Four reserved names plus one auto-group per declared MCP are
+resolved by the evaluator before any user lookup:
 
 | Name | Resolves to |
 | --- | --- |
 | `all` | Every key in the available pool — system tools + MCP tools. |
 | `system` | Just the system tools registered for *this* agentrun. Conditional ones (`send_chat` only when chat context is present, `queue_run` only when bus + parent are present) are reflected automatically. **The implicit default** when `tools:` is omitted. |
-| `mcp` | Just the namespaced MCP-tool keys. Useful for `mcp && !atlassian-personal_*` style scopes. |
+| `mcp` | Just the namespaced MCP-tool keys. Useful for `mcp - some_mcp_*` style scopes. |
 | `none` | Empty set. Lets a child handler override its parent's `tools:` to nothing under the replace-merge inheritance rule. |
+| `<mcp-id>` | One auto-group per entry declared in `mcp.yml`. Resolves to every tool key that MCP exposes. So `tools: fetch` is shorthand for `tools: fetch_*`, and `tools: all - atlassian` excludes every Atlassian tool without spelling out the prefix glob. |
 
-These four names are **reserved**. A `workspace/toolgroups/all.txt`
-(or `system.txt`, `mcp.txt`, `none.txt`) is silently shadowed by
-the built-in — the resolver never reads those files.
+The four reserved names (`all`, `system`, `mcp`, `none`) are
+shadowed if a workspace `toolgroups/<name>.txt` exists — the
+resolver never reads those files. They are **also** rejected as
+MCP ids by `./cli.sh mcp lint`, so an `mcp.yml` entry keyed
+`system:` fails up front instead of being silently shadowed.
+
+MCP ids are constrained to lowercase alphanumeric (no hyphens, no
+underscores) precisely because they double as group names. An id
+like `myservice` becomes group `myservice`; ids like `my-service`
+or `my_service` are rejected by the linter — pick `myservice`
+instead.
 
 ### User groups
 
@@ -244,7 +286,7 @@ per line. Each line is either another group name or a tool pattern
 group's tool set is the collected matches.
 
 ```
-# workspace/toolgroups/read-operations.txt
+# workspace/toolgroups/reads.txt
 # Tools that fetch context without changing anything user-visible.
 
 fetch_fetch
@@ -255,9 +297,10 @@ atlassian_confluence_get_*
 
 `#` to end of line is a comment. Blank lines are ignored. The
 group's name comes from the filename stem and must match
-`^[a-z][a-z0-9-]*$`. Operators (`&&`, `||`, `!`) inside group files
-are **not** allowed — composition lives at the handler-expression
-level, where it's needed.
+`^[a-z][a-z0-9]*$` (the same alnum-only shape as MCP ids).
+Operators (`+`, `-`, `&`) inside group files are **not** allowed —
+composition lives at the handler-expression level, where it's
+needed.
 
 The whole `workspace/toolgroups/` directory is gated as
 **privileged-write** regardless of file extension: handlers that
@@ -286,10 +329,9 @@ tools: none                                 # nothing at all (used by a child
 ---                                         # to override its parent's surface)
 
 ---
-tools: system && !file_write                # system tools, but read-only —
----                                         # no file_write, file_str_replace, etc.
-                                            # (also drop file_str_replace and
-                                            #  file_append for true read-only;
+tools: system - file_write                  # system tools, but no file_write
+---                                         # (drop file_str_replace and
+                                            #  file_append too for true read-only;
                                             #  use a group for ergonomics)
 
 ---
@@ -301,28 +343,40 @@ tools: fetch_fetch                          # one specific tool
 ---
 
 ---
-tools: atlassian_jira_*                     # all Jira tools on the cloud Atlassian MCP
+tools: fetch                                # every tool on the `fetch` MCP
+---                                         # (auto-group from mcp.yml id)
+
+---
+tools: atlassian_jira_*                     # all Jira tools on the atlassian MCP
 ---
 
 ---
-tools: atlassian_*                          # every tool on the `atlassian` MCP
----                                         # (atlassian-personal_* is excluded
-                                            #  — id-prefix match is literal)
+tools: atlassian                            # every tool on the `atlassian` MCP
+---                                         # (auto-group; equivalent to
+                                            #  `atlassian_*`)
 
 ---
-tools: read-operations                      # a user-defined group
----
-
----
-tools: system || read-operations            # system tools + user-defined reads
+tools: reads                                # a user-defined group
 ---
 
 ---
-tools: mcp && !atlassian-personal_*         # all MCP tools, no personal-Atlassian
+tools: system + reads                       # system tools + user-defined reads
 ---
 
 ---
-tools: all && !atlassian_jira_delete_*      # everything except Jira delete tools
+tools: fetch + atlassian                    # union of two MCP-id auto-groups
+---
+
+---
+tools: all - atlassian - fetch              # everything except those two MCPs
+---
+
+---
+tools: all - atlassian_jira_delete_*        # everything except Jira delete tools
+---
+
+---
+tools: mcp & *_search                       # only MCP-tool keys ending in _search
 ---
 ```
 

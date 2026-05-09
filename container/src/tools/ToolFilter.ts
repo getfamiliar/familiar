@@ -1,69 +1,74 @@
+import { ALL_GROUP_NAME, IDENT_PATTERN, NONE_GROUP_NAME } from "effective-assistant-shared";
+
 /**
  * Per-handler tool-filter DSL: parser, AST, and evaluator.
  *
  * Expression grammar (recursive descent):
  *
- *     expr        := or
- *     or          := and ('||' and)*
- *     and         := unary ('&&' unary)*
- *     unary       := '!' unary | atom
+ *     expr        := plusMinus
+ *     plusMinus   := and (('+' | '-') and)*
+ *     and         := atom ('&' atom)*
  *     atom        := bareword | '(' expr ')'
  *
- *     bareword    := [a-zA-Z0-9_*-]+
+ *     bareword    := [a-zA-Z0-9_*]+
  *
- * Precedence: `!` > `&&` > `||`. Whitespace insignificant.
+ * Operators:
+ *
+ * - `a + b` — both `a` and `b` together (set union).
+ * - `a - b` — `a` without the tools in `b` (set difference).
+ * - `a & b` — tools in `a` and `b` both (set intersection).
+ *
+ * Precedence: `&` binds tighter than `+`/`-`. `+` and `-` share one
+ * level and are parsed left-associatively (`a + b - c` is `(a + b)
+ * - c`). Whitespace is insignificant. Parens override.
+ *
+ * **Names use underscores only — never hyphens.** Tool keys are
+ * sanitized to underscores by `McpClientPool` before the DSL ever
+ * sees them (any `-` in an MCP tool's original name is folded to
+ * `_`). MCP ids in `mcp.yml` are constrained to alnum-only by the
+ * loader so each id is itself a valid group name. Toolgroup file
+ * stems must match the same alnum-only shape. `-` inside an
+ * expression is therefore unconditionally the difference operator.
  *
  * **One atom shape for both groups and tool patterns.** A bareword
  * is classified at evaluation time by regex:
  *
- * - matches `^[a-z][a-z0-9-]*$` (i.e. lowercase ident, no `_`, no `*`)
- *   → **group** lookup (throws on missing).
+ * - matches `^[a-z][a-z0-9]*$` (lowercase alnum, leading letter,
+ *   no `_`, no `*`) → **group** lookup (throws on missing).
  * - anything else → **tool pattern** matched against the pool's
  *   namespaced keys with `*` as a glob wildcard.
  *
- * Tool keys always have the form `${id}_${name}`, and our id regex
- * forbids `_`, so every tool key contains at least one underscore.
- * That makes the split structurally unambiguous: an underscore-free
- * lowercase bareword can never match a tool key, so it must be a
- * group reference.
+ * Tool keys always have the form `${id}_${name}` and contain at
+ * least one underscore. That makes the split structurally
+ * unambiguous: an alnum-only lowercase bareword can never match a
+ * tool key, so it must be a group reference.
  *
- * Built-in groups handled by the evaluator: `all` resolves to the
- * full set of available pool keys at evaluation time. A user-defined
- * group named `all` is rejected by {@link ToolGroupLoader}, so the
- * built-in always wins.
+ * Built-in groups handled by the evaluator before any user
+ * lookup:
+ *
+ * - `all`    — every key in the available pool (system ∪ MCP).
+ * - `system` — only system-tool keys, supplied via `builtins`.
+ * - `mcp`    — only MCP-tool keys, supplied via `builtins`.
+ * - `none`   — empty set. Lets a child handler override its
+ *   parent's `tools:` to nothing under the replace-merge rule.
+ * - `<mcp-id>` — for every entry declared in `mcp.yml`, the id is
+ *   exposed as a same-named group resolving to that MCP's tool
+ *   keys. Supplied via `builtins` by the caller. Reserved names
+ *   (`all`, `system`, `mcp`, `none`) are rejected by the
+ *   `mcp.yml` linter so they can never collide here.
  */
 
-/**
- * Built-in group names handled by the evaluator before any user
- * lookup. They cannot be redefined in `workspace/toolgroups/*.txt` —
- * the resolver short-circuits them, so a same-named user file is
- * silently shadowed.
- *
- * - `all`   — every key in the available pool (system ∪ MCP).
- * - `system` — only system-tool keys, as supplied by the caller via
- *   the `builtins` map.
- * - `mcp`   — only MCP-tool keys, ditto.
- * - `none`  — empty set; lets a child handler override its parent's
- *   `tools:` to nothing under the replace-merge rule.
- */
-export const ALL_GROUP_NAME = "all";
-export const SYSTEM_GROUP_NAME = "system";
-export const MCP_GROUP_NAME = "mcp";
-export const NONE_GROUP_NAME = "none";
-
-/** All reserved built-in group names. Used by the loader for sanity checks. */
-export const RESERVED_GROUP_NAMES: ReadonlySet<string> = new Set([
+export {
     ALL_GROUP_NAME,
-    SYSTEM_GROUP_NAME,
+    IDENT_PATTERN,
     MCP_GROUP_NAME,
     NONE_GROUP_NAME,
-]);
-
-/** Pattern an identifier (group name) must match. */
-export const IDENT_PATTERN = /^[a-z][a-z0-9-]*$/;
+    RESERVED_GROUP_NAMES,
+    SYSTEM_GROUP_NAME,
+} from "effective-assistant-shared";
 
 /** Pattern any single bareword (group or tool) must match. */
-const BAREWORD_PATTERN = /^[a-zA-Z0-9_*-]+$/;
+const BAREWORD_PATTERN = /^[a-zA-Z0-9_*]+$/;
 
 /** Tool-pattern entry: glob string matched against namespaced pool keys. */
 export interface ToolEntry {
@@ -97,9 +102,9 @@ export type GroupLookup = (name: string) => GroupDef | undefined;
 
 /** AST node returned by {@link parseExpression} and consumed by {@link evaluate}. */
 export type FilterAst =
-    | { readonly type: "or"; readonly left: FilterAst; readonly right: FilterAst }
+    | { readonly type: "plus"; readonly left: FilterAst; readonly right: FilterAst }
+    | { readonly type: "minus"; readonly left: FilterAst; readonly right: FilterAst }
     | { readonly type: "and"; readonly left: FilterAst; readonly right: FilterAst }
-    | { readonly type: "not"; readonly child: FilterAst }
     | (GroupEntry & { readonly type: "group" })
     | (ToolEntry & { readonly type: "tool" });
 
@@ -144,9 +149,11 @@ export function parseGroupLine(line: string): GroupLineEntry | null {
  * @param lookup Lazy lookup for user-defined groups under
  *   `workspace/toolgroups/`. Only invoked for non-reserved names.
  * @param builtins Per-call values for the named built-in groups
- *   `system` and `mcp`. `all` and `none` are computed from
- *   `available` directly and don't need entries here. Pass an empty
- *   map (or omit) when the caller doesn't carry that distinction
+ *   `system` and `mcp`, plus one entry per declared MCP id (so
+ *   `tools: fetch` resolves to every `fetch_*` key without a user
+ *   group file). `all` and `none` are computed from `available`
+ *   directly and don't need entries here. Pass an empty map (or
+ *   omit) when the caller doesn't carry that distinction
  *   (e.g. unit tests that don't exercise `system` / `mcp`).
  * @throws On unknown groups, cycles in the group chain, or a
  *   malformed group file reached by the lookup.
@@ -180,8 +187,8 @@ type Token =
     | { kind: "lparen"; pos: number }
     | { kind: "rparen"; pos: number }
     | { kind: "and"; pos: number }
-    | { kind: "or"; pos: number }
-    | { kind: "not"; pos: number }
+    | { kind: "plus"; pos: number }
+    | { kind: "minus"; pos: number }
     | { kind: "bareword"; value: string; pos: number }
     | { kind: "end"; pos: number };
 
@@ -204,30 +211,24 @@ function tokenize(src: string): Token[] {
             i++;
             continue;
         }
-        if (c === "!") {
-            tokens.push({ kind: "not", pos: i });
+        if (c === "+") {
+            tokens.push({ kind: "plus", pos: i });
+            i++;
+            continue;
+        }
+        if (c === "-") {
+            tokens.push({ kind: "minus", pos: i });
             i++;
             continue;
         }
         if (c === "&") {
-            if (src[i + 1] !== "&") {
-                throw new Error(`expected "&&" at position ${i}`);
-            }
             tokens.push({ kind: "and", pos: i });
-            i += 2;
+            i++;
             continue;
         }
-        if (c === "|") {
-            if (src[i + 1] !== "|") {
-                throw new Error(`expected "||" at position ${i}`);
-            }
-            tokens.push({ kind: "or", pos: i });
-            i += 2;
-            continue;
-        }
-        if (/[a-zA-Z0-9_*-]/.test(c)) {
+        if (/[a-zA-Z0-9_*]/.test(c)) {
             const start = i;
-            while (i < src.length && /[a-zA-Z0-9_*-]/.test(src[i])) {
+            while (i < src.length && /[a-zA-Z0-9_*]/.test(src[i])) {
                 i++;
             }
             tokens.push({ kind: "bareword", value: src.slice(start, i), pos: start });
@@ -254,7 +255,7 @@ class Parser {
     }
 
     parseExpr(): FilterAst {
-        return this.parseOr();
+        return this.parsePlusMinus();
     }
 
     expectEnd(): void {
@@ -264,39 +265,32 @@ class Parser {
         }
     }
 
-    private parseOr(): FilterAst {
+    private parsePlusMinus(): FilterAst {
         let left = this.parseAnd();
-        while (this.peek().kind === "or") {
+        while (this.peek().kind === "plus" || this.peek().kind === "minus") {
+            const op = this.peek().kind;
             this.advance();
             const right = this.parseAnd();
-            left = { type: "or", left, right };
+            left = op === "plus" ? { type: "plus", left, right } : { type: "minus", left, right };
         }
         return left;
     }
 
     private parseAnd(): FilterAst {
-        let left = this.parseUnary();
+        let left = this.parseAtom();
         while (this.peek().kind === "and") {
             this.advance();
-            const right = this.parseUnary();
+            const right = this.parseAtom();
             left = { type: "and", left, right };
         }
         return left;
-    }
-
-    private parseUnary(): FilterAst {
-        if (this.peek().kind === "not") {
-            this.advance();
-            return { type: "not", child: this.parseUnary() };
-        }
-        return this.parseAtom();
     }
 
     private parseAtom(): FilterAst {
         const t = this.peek();
         if (t.kind === "lparen") {
             this.advance();
-            const inner = this.parseOr();
+            const inner = this.parsePlusMinus();
             const close = this.peek();
             if (close.kind !== "rparen") {
                 throw new Error(this.errorAt(close.pos, `expected ")"`));
@@ -335,11 +329,19 @@ function evalNode(
     builtins: ReadonlyMap<string, ReadonlySet<string>>,
     visiting: Set<string>,
 ): Set<string> {
-    if (node.type === "or") {
+    if (node.type === "plus") {
         const left = evalNode(node.left, available, lookup, builtins, visiting);
         const right = evalNode(node.right, available, lookup, builtins, visiting);
         for (const k of right) {
             left.add(k);
+        }
+        return left;
+    }
+    if (node.type === "minus") {
+        const left = evalNode(node.left, available, lookup, builtins, visiting);
+        const right = evalNode(node.right, available, lookup, builtins, visiting);
+        for (const k of right) {
+            left.delete(k);
         }
         return left;
     }
@@ -354,16 +356,6 @@ function evalNode(
         }
         return out;
     }
-    if (node.type === "not") {
-        const inner = evalNode(node.child, available, lookup, builtins, visiting);
-        const out = new Set<string>();
-        for (const k of available) {
-            if (!inner.has(k)) {
-                out.add(k);
-            }
-        }
-        return out;
-    }
     if (node.type === "group") {
         return resolveGroup(node.name, available, lookup, builtins, visiting);
     }
@@ -371,9 +363,10 @@ function evalNode(
 }
 
 /**
- * Resolve a group reference. Built-ins (`all`, `system`, `mcp`,
- * `none`) are short-circuited before any user lookup; user-defined
- * groups are loaded lazily through `lookup`.
+ * Resolve a group reference. Built-ins (`all`, `none`, `system`,
+ * `mcp`, plus per-MCP-id auto-groups) are short-circuited before
+ * any user lookup; user-defined groups are loaded lazily through
+ * `lookup`.
  */
 function resolveGroup(
     name: string,
@@ -425,26 +418,17 @@ function resolveGroup(
  * the matches. Patterns without `*` are exact-match; `*` is a
  * wildcard for any character sequence (including `_`, since the
  * keys themselves contain `_`).
- *
- * Hyphens in the *pattern* are folded to `_` before matching to
- * mirror the sanitization the MCP pool applies to keys (see
- * `McpClientPool.mergeTools`'s comment for the why). This keeps
- * legacy toolgroup entries like `atlassian-personal_confluence_get_page`
- * working unchanged after the keys themselves moved to
- * `atlassian_personal_*`. Without this fold, the entries would
- * silently match nothing — exactly the symptom we want to avoid.
  */
 function matchTools(pattern: string, available: ReadonlySet<string>): Set<string> {
-    const folded = pattern.replace(/-/g, "_");
     const out = new Set<string>();
-    if (!folded.includes("*")) {
-        if (available.has(folded)) {
-            out.add(folded);
+    if (!pattern.includes("*")) {
+        if (available.has(pattern)) {
+            out.add(pattern);
         }
         return out;
     }
     const regex = new RegExp(
-        `^${folded
+        `^${pattern
             .split("*")
             .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
             .join(".*")}$`,

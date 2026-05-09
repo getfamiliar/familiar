@@ -60,6 +60,7 @@ export class McpClientPool {
     private readonly config: McpClientPoolConfig;
     private clients: PooledClient[] = [];
     private merged: ToolSet = {};
+    private keysById: Map<string, ReadonlySet<string>> = new Map();
 
     constructor(config: McpClientPoolConfig) {
         this.config = config;
@@ -91,7 +92,9 @@ export class McpClientPool {
                 );
             }
         }
-        this.merged = this.mergeTools();
+        const merge = this.buildMergedAndIndex();
+        this.merged = merge.merged;
+        this.keysById = merge.keysById;
         const totalTools = countTools(this.merged);
         const breakdown = this.clients
             .map(
@@ -113,6 +116,25 @@ export class McpClientPool {
         return this.merged;
     }
 
+    /**
+     * Map of MCP id → that MCP's sanitized tool keys. The host's
+     * `mcp.yml` linter constrains ids to alnum-only, so the id
+     * itself is already a valid tools-DSL group name and no fold
+     * is needed; only the tool keys (which prepend a tool name
+     * possibly carrying hyphens) pass through `sanitizeToolKey`.
+     *
+     * The container threads this into {@link
+     * import("../tools/ToolsFactory").ToolsFactory}'s `builtins`
+     * map so a handler's `tools:` expression can reference an MCP
+     * id directly (`tools: fetch + atlassian`) without a
+     * user-written toolgroup file. Reserved names (`all`, `system`,
+     * `mcp`, `none`) cannot collide because the linter rejects
+     * them as ids up front.
+     */
+    mcpKeysById(): ReadonlyMap<string, ReadonlySet<string>> {
+        return this.keysById;
+    }
+
     /** Close every client. Per-client failures are logged and swallowed. */
     async close(): Promise<void> {
         await Promise.allSettled(
@@ -127,6 +149,7 @@ export class McpClientPool {
         );
         this.clients = [];
         this.merged = {};
+        this.keysById = new Map();
     }
 
     /**
@@ -200,14 +223,22 @@ export class McpClientPool {
      * possible but unobserved; if they ever crop up we can add a
      * suffix-disambiguation pass.
      */
-    private mergeTools(): ToolSet {
+    private buildMergedAndIndex(): {
+        merged: ToolSet;
+        keysById: Map<string, ReadonlySet<string>>;
+    } {
         const merged: ToolSet = {};
+        const keysById = new Map<string, ReadonlySet<string>>();
         for (const c of this.clients) {
+            const idKeys = new Set<string>();
             for (const [toolName, tool] of Object.entries(c.tools)) {
-                merged[sanitizeToolKey(`${c.id}_${toolName}`)] = tool;
+                const key = sanitizeToolKey(`${c.id}_${toolName}`);
+                merged[key] = tool;
+                idKeys.add(key);
             }
+            keysById.set(c.id, idKeys);
         }
-        return merged;
+        return { merged, keysById };
     }
 }
 

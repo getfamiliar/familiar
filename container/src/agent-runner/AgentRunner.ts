@@ -87,6 +87,7 @@ export class AgentRunner {
             bus: this.bus,
             parent: this.row,
             mcpTools: this.mcpPool.tools(),
+            mcpKeysById: this.mcpPool.mcpKeysById(),
             log: this.log,
         });
         const toolNames = Object.keys(tools);
