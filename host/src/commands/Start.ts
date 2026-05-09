@@ -168,6 +168,7 @@ export const startCommand = defineCommand({
             imageName: "effective-agent",
             dataPath: boot.dataDir,
             containerSrcPath: boot.containerSrcDir,
+            sharedBuildPath: boot.sharedBuildDir,
             postgresPassword,
             bastionUrl: bastion.url,
             defaultProvider,

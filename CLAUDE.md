@@ -350,6 +350,7 @@ The `data/` folder is the persistent host-side storage. Layout:
   - `src/TriageWatcher.ts` is a placeholder for the input-event watcher (claims events `pending → running`, currently just marks them done). The real input-event watcher and the new agentrun watcher land in the next plan.
   - Runs as non-root `node` user.
   - Docker build context is the project root (not `container/`), so `shared/` is available during image build.
+  - Both `container/src/` and `shared/build/` are bind-mounted into the running container (read-only), so source edits in either package take effect on the next daemon restart without an image rebuild. `cli.sh` keeps `shared/build/` fresh before the daemon starts. Image rebuilds (`./container/build.sh`) are still required when `container/Dockerfile` changes or new runtime dependencies land in either `package.json`.
 
 ## Code Style
 

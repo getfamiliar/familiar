@@ -45,6 +45,15 @@ export interface Bootstrap {
      */
     readonly containerSrcDir: string;
     /**
+     * Absolute host path of `shared/build/`. Bind-mounted into the
+     * agent container at `/shared/build` (read-only) so the
+     * container resolves `effective-assistant-shared` against the
+     * host's just-rebuilt artifacts. `cli.sh` already rebuilds
+     * `shared/build/` before the daemon starts, so by the time the
+     * agent container boots this path is fresh.
+     */
+    readonly sharedBuildDir: string;
+    /**
      * Absolute host path of the YAML config file (`config/config.yml`).
      * The file itself is gitignored; `config/config.example.yml` is the
      * tracked sample. Pass this into `HostConfigService` and
@@ -88,6 +97,7 @@ export function bootstrap(): Bootstrap {
     const projectRoot = resolve(import.meta.dirname, "../..");
     const dataDir = `${projectRoot}/data`;
     const containerSrcDir = `${projectRoot}/container/src`;
+    const sharedBuildDir = `${projectRoot}/shared/build`;
     return Object.freeze({
         dataDir,
         pidFile: `${dataDir}/.daemon.pid`,
@@ -98,6 +108,7 @@ export function bootstrap(): Bootstrap {
         logsDir: `${dataDir}/logs`,
         mcpLogsDir: `${dataDir}/logs/mcp`,
         containerSrcDir,
+        sharedBuildDir,
         configFile: `${projectRoot}/config/config.yml`,
         mcpConfigFile: `${projectRoot}/config/mcp.yml`,
         tmpDir: `${projectRoot}/tmp`,

@@ -20,6 +20,16 @@ export interface AgentContainerConfig {
      * picks up source edits without an image rebuild.
      */
     readonly containerSrcPath: string;
+    /**
+     * Absolute host path of `shared/build/`. Bind-mounted (read-only)
+     * over `/shared/build` so the container resolves
+     * `effective-assistant-shared` against the host's just-rebuilt
+     * artifacts. The host (`cli.sh`) refreshes this directory before
+     * the daemon starts, so it's always fresh by the time the
+     * container boots — shared edits no longer need a container
+     * image rebuild, only a daemon restart.
+     */
+    readonly sharedBuildPath: string;
     /** Postgres password forwarded to the agent as `POSTGRES_PASSWORD`. */
     readonly postgresPassword: string;
     /**
@@ -63,6 +73,7 @@ export interface AgentContainerConfig {
  * Mounts:
  *   - {dataPath}/workspace → /workspace (assistant memory)
  *   - {containerSrcPath} → /app/src (read-only, hot-reload via tsx watch)
+ *   - {sharedBuildPath} → /shared/build (read-only, fresh per cli.sh rebuild)
  *
  * Container joins `ea-net` so it can reach `ea-postgres` by hostname.
  * All host↔container communication flows through the postgres `events`
@@ -116,6 +127,8 @@ export class AgentContainer {
             `${workspaceDir}:/workspace`,
             "-v",
             `${this.config.containerSrcPath}:/app/src:ro`,
+            "-v",
+            `${this.config.sharedBuildPath}:/shared/build:ro`,
             this.config.imageName,
         ];
 
