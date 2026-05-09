@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import type { Logger } from "effective-assistant-shared";
 import { SHARED_NETWORK_NAME } from "../../DockerTools.js";
 import { createMcpFileSink, type McpFileSink } from "../../tools/LogRetentionTools.js";
@@ -74,6 +74,15 @@ export function buildPypiDockerArgs(
 
     args.push(PYPI_RUNTIME_IMAGE);
 
+    // Network-restricted phase-2: tell uv to skip the index entirely
+    // and serve the package from the warm cache populated by prep.
+    // Without this, uvx still resolves the package version against
+    // PyPI on every cold spawn, and a `--network none` container
+    // hangs on DNS until uv times out.
+    if (entry.network.disable || entry.network.allowHosts.length > 0) {
+        args.push("--offline");
+    }
+
     const versionSuffix = entry.version === undefined ? "" : `==${entry.version}`;
     args.push(`${entry.package}${versionSuffix}`);
 
@@ -139,21 +148,32 @@ export class PypiFactory implements McpServerFactory {
     }
 
     create(entry: McpEntry): McpTransport {
-        mkdirSync(mcpMountDirFor(this.config.tmpDir, entry.id), { recursive: true });
+        // Prep runs once per mount-dir lifetime: a populated dir means
+        // the package was already fetched on a prior boot, and rerunning
+        // uvx with full network would let the package's build hooks
+        // exfiltrate anything the offline phase-2 run had stashed in
+        // /work. Wipe the dir to force a re-prep (e.g. version bump).
+        const mountDir = mcpMountDirFor(this.config.tmpDir, entry.id);
+        const isFreshMount = !existsSync(mountDir);
+        if (isFreshMount) {
+            mkdirSync(mountDir, { recursive: true });
+        }
 
         const { mcpLogsDir, logRetentionDays } = this.config;
         const openFileSink = (): Promise<McpFileSink> =>
             createMcpFileSink(mcpLogsDir, entry.id, logRetentionDays);
         const isNetworkRestricted = entry.network.disable || entry.network.allowHosts.length > 0;
-        const prepDockerArgs = isNetworkRestricted
-            ? buildPypiPrepDockerArgs(entry, this.config)
-            : undefined;
+        const prepDockerArgs =
+            isFreshMount && isNetworkRestricted
+                ? buildPypiPrepDockerArgs(entry, this.config)
+                : undefined;
         return new StdioMcpTransport({
             id: entry.id,
             title: entry.title,
             description: entry.description,
             dockerArgs: buildPypiDockerArgs(entry, this.config),
             prepDockerArgs,
+            mountDir,
             idleTimeoutSeconds: entry.idleTimeoutSeconds,
             log: this.config.log.child({ mcp: entry.id }),
             openFileSink,

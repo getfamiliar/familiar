@@ -1,4 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createInterface } from "node:readline";
 import type { Logger } from "effective-assistant-shared";
@@ -40,15 +41,26 @@ export interface StdioMcpTransportConfig {
      */
     readonly dockerArgs: readonly string[];
     /**
-     * Optional pre-spawn install argv. Run once per transport
-     * instance, before the first real `dockerArgs` spawn, to populate
-     * the bind-mounted `/work` cache with the MCP's package. Used by
-     * npm/pypi sources whose entry has restricted network — phase-2
-     * `dockerArgs` can't reach the registry, so phase-1 fetches with
-     * full network and no env vars. When omitted, the transport
-     * single-phases as before.
+     * Optional pre-spawn install argv. Run once per mount-dir
+     * lifetime: the factory only sets this when the bind-mount dir
+     * doesn't yet exist on disk, so a daemon restart with a populated
+     * mount dir does **not** re-run prep. Used by npm/pypi sources
+     * whose entry has restricted network — phase-2 `dockerArgs` can't
+     * reach the registry, so phase-1 fetches with full network and no
+     * env vars. To force a re-prep (e.g. after a package version bump
+     * or to recover from a poisoned cache), delete the mount dir and
+     * restart the daemon. When omitted, the transport single-phases
+     * as before.
      */
     readonly prepDockerArgs?: readonly string[];
+    /**
+     * Per-MCP bind-mount directory on the host. Used by `runPrep` to
+     * `rm -rf` the dir on prep failure, so the next start sees a
+     * missing dir and retries — otherwise a half-populated dir would
+     * make the existence-gated factory permanently skip prep while
+     * phase-2 keeps failing.
+     */
+    readonly mountDir?: string;
     /** Seconds of idleness after which the child is closed. */
     readonly idleTimeoutSeconds: number;
     /** Logger for spawn / reap / error events. */
@@ -90,6 +102,7 @@ export class StdioMcpTransport implements McpTransport {
     readonly description: string;
     private readonly dockerArgs: readonly string[];
     private readonly prepDockerArgs: readonly string[] | null;
+    private readonly mountDir: string | null;
     private readonly idleTimeoutMs: number;
     private readonly log: Logger;
     private readonly openFileSink: (() => Promise<McpFileSink>) | undefined;
@@ -108,6 +121,7 @@ export class StdioMcpTransport implements McpTransport {
         this.description = config.description;
         this.dockerArgs = config.dockerArgs;
         this.prepDockerArgs = config.prepDockerArgs ?? null;
+        this.mountDir = config.mountDir ?? null;
         this.idleTimeoutMs = config.idleTimeoutSeconds * 1000;
         this.log = config.log;
         this.openFileSink = config.openFileSink;
@@ -307,7 +321,10 @@ export class StdioMcpTransport implements McpTransport {
      * Run the prep argv if configured, populating `/work` with the
      * MCP's package cache before phase-2 spawn. Memoised on the
      * promise so concurrent first requests share one prep run; on
-     * failure the promise is cleared so a later request can retry.
+     * failure the promise is cleared and the mount dir is wiped so
+     * the next factory pass sees a missing dir and retries — a
+     * half-populated dir would otherwise make the existence-gated
+     * factory permanently skip prep while phase-2 keeps failing.
      */
     private runPrep(): Promise<void> {
         if (this.prepDockerArgs === null) {
@@ -327,15 +344,35 @@ export class StdioMcpTransport implements McpTransport {
                     return;
                 }
                 this.prepPromise = null;
+                this.wipeMountDirOnPrepFailure();
                 reject(new Error(`mcp '${this.id}' prep exited with code ${code}`));
             });
             proc.on("error", (err) => {
                 this.prepPromise = null;
+                this.wipeMountDirOnPrepFailure();
                 reject(err);
             });
         });
         this.prepPromise = promise;
         return promise;
+    }
+
+    /**
+     * Best-effort `rm -rf` of the per-MCP mount dir after a prep
+     * failure. Wrapped so a cleanup error can't mask the original
+     * prep error. No-op when no mount dir was configured (e.g.
+     * one-shot bastion calls that didn't go through the factory).
+     */
+    private wipeMountDirOnPrepFailure(): void {
+        if (this.mountDir === null) {
+            return;
+        }
+        try {
+            rmSync(this.mountDir, { recursive: true, force: true });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.log.error(`stdio mcp '${this.id}' mount dir cleanup failed: ${message}`);
+        }
     }
 
     /** Clear and reschedule the idle reaper. */

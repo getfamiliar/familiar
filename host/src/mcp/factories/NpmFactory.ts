@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import type { Logger } from "effective-assistant-shared";
 import { SHARED_NETWORK_NAME } from "../../DockerTools.js";
 import { createMcpFileSink, type McpFileSink } from "../../tools/LogRetentionTools.js";
@@ -97,6 +97,14 @@ export function buildNpmDockerArgs(
 
     args.push(NPM_RUNTIME_IMAGE);
 
+    // Network-restricted phase-2: tell npx to use only the offline
+    // cache populated by prep. Without this, npx resolves the
+    // package against the registry on every cold spawn, and a
+    // `--network none` container hangs on DNS until it times out.
+    if (entry.network.disable || entry.network.allowHosts.length > 0) {
+        args.push("--offline");
+    }
+
     const versionSuffix = entry.version === undefined ? "" : `@${entry.version}`;
     args.push(`${entry.package}${versionSuffix}`);
 
@@ -167,24 +175,32 @@ export class NpmFactory implements McpServerFactory {
     }
 
     create(entry: McpEntry): McpTransport {
-        // Pre-create the per-id mount directory as the host user
-        // so docker doesn't auto-create it as root the first time
-        // the container starts. Idempotent.
-        mkdirSync(mcpMountDirFor(this.config.tmpDir, entry.id), { recursive: true });
+        // Prep runs once per mount-dir lifetime: a populated dir means
+        // the package was already fetched on a prior boot, and rerunning
+        // npx with full network would let the package's install hooks
+        // exfiltrate anything the offline phase-2 run had stashed in
+        // /work. Wipe the dir to force a re-prep (e.g. version bump).
+        const mountDir = mcpMountDirFor(this.config.tmpDir, entry.id);
+        const isFreshMount = !existsSync(mountDir);
+        if (isFreshMount) {
+            mkdirSync(mountDir, { recursive: true });
+        }
 
         const { mcpLogsDir, logRetentionDays } = this.config;
         const openFileSink = (): Promise<McpFileSink> =>
             createMcpFileSink(mcpLogsDir, entry.id, logRetentionDays);
         const isNetworkRestricted = entry.network.disable || entry.network.allowHosts.length > 0;
-        const prepDockerArgs = isNetworkRestricted
-            ? buildNpmPrepDockerArgs(entry, this.config)
-            : undefined;
+        const prepDockerArgs =
+            isFreshMount && isNetworkRestricted
+                ? buildNpmPrepDockerArgs(entry, this.config)
+                : undefined;
         return new StdioMcpTransport({
             id: entry.id,
             title: entry.title,
             description: entry.description,
             dockerArgs: buildNpmDockerArgs(entry, this.config),
             prepDockerArgs,
+            mountDir,
             idleTimeoutSeconds: entry.idleTimeoutSeconds,
             log: this.config.log.child({ mcp: entry.id }),
             openFileSink,
