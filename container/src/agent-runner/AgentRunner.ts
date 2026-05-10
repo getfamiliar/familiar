@@ -1,3 +1,4 @@
+import { APICallError } from "@ai-sdk/provider";
 import { type ModelMessage, stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import {
     AgentRunBus,
@@ -14,7 +15,19 @@ import { ModelFactory } from "../models/ModelFactory.js";
 import { buildPrompt, buildSystemPrompt } from "../PromptBuilder.js";
 import { createGroupLookup } from "../tools/ToolGroupLoader.js";
 import { ToolsFactory } from "../tools/ToolsFactory.js";
+import { computeRetryDelay } from "./computeRetryDelay.js";
+import { formatInferenceError } from "./formatInferenceError.js";
 import { synthesizeResultText } from "./synthesizeResultText.js";
+
+/**
+ * Sentinel returned from {@link AgentRunner.run} when the agent
+ * call hit a retryable inference error (e.g. Featherless 503 "over
+ * capacity") and the row was put back into `pending` with a future
+ * `not_before`. AgentrunWatcher checks for this and skips the
+ * normal `settle("done", ...)` path.
+ */
+export const POSTPONED = Symbol("agentrun-postponed");
+export type RunOutcome = string | typeof POSTPONED;
 
 /**
  * One-shot runner for a single agentrun row.
@@ -77,7 +90,7 @@ export class AgentRunner {
      *   cannot be constructed (e.g. unset env vars), or the agent loop
      *   itself fails (including abort).
      */
-    async run(signal?: AbortSignal): Promise<string> {
+    async run(signal?: AbortSignal): Promise<RunOutcome> {
         const handler = HandlerFile.load(this.row.topic, this.row.handler);
         const model = ModelFactory.build(handler.header.model);
         const tools = ToolsFactory.build({
@@ -110,6 +123,11 @@ export class AgentRunner {
             instructions: systemPrompt,
             temperature: handler.header.temperature,
             maxOutputTokens: handler.header.maxOutputTokens,
+            // Disable the SDK's blocking retry loop — we own retry
+            // policy via postpone() so a 5-minute backoff doesn't
+            // park the watcher slot. See the catch around `generate`
+            // below for the postpone-or-fail decision.
+            maxRetries: 0,
             stopWhen: stepCountIs(MAX_STEPS_PER_RUN),
             prepareStep: ({ stepNumber, messages }) => {
                 this.stepStartedAt = Date.now();
@@ -165,11 +183,49 @@ export class AgentRunner {
             "agent starting",
         );
 
-        const result = await agent.generate({
-            messages,
-            abortSignal: signal,
-            onStepFinish: (step) => this.recordStep(step),
-        });
+        // The SDK's blocking retry is already disabled via the
+        // ToolLoopAgent constructor (`maxRetries: 0` above). The
+        // catch below catches retryable errors and postpones the
+        // agentrun via `not_before`, freeing the slot for other rows;
+        // the watcher re-claims when the window opens. Cap
+        // precedence: handler YAML override → INFERENCE_MAX_RETRIES
+        // env (set by host from `inference.maxRetries`) → hardcoded
+        // fallback of 3.
+        const retryCap =
+            handler.header.maxRetries ?? parseEnvInt(process.env.INFERENCE_MAX_RETRIES) ?? 3;
+        let result: Awaited<ReturnType<typeof agent.generate>>;
+        try {
+            result = await agent.generate({
+                messages,
+                abortSignal: signal,
+                onStepFinish: (step) => this.recordStep(step),
+            });
+        } catch (err) {
+            if (APICallError.isInstance(err) && err.isRetryable === true) {
+                if (this.row.retryCount < retryCap) {
+                    const delayMs = computeRetryDelay(err, this.row.retryCount);
+                    const runAfter = new Date(Date.now() + delayMs);
+                    const errorText = formatInferenceError(err);
+                    await this.bus.postpone(this.row.id, runAfter, errorText);
+                    this.log.warn(
+                        {
+                            retryAfterMs: delayMs,
+                            attempt: this.row.retryCount + 1,
+                            cap: retryCap,
+                            statusCode: err.statusCode,
+                            url: err.url,
+                        },
+                        "agentrun postponed, retryable inference error",
+                    );
+                    return POSTPONED;
+                }
+                this.log.warn(
+                    { cap: retryCap, statusCode: err.statusCode },
+                    "agentrun retry cap reached, failing",
+                );
+            }
+            throw err;
+        }
 
         const finalText = synthesizeResultText(result);
 
@@ -259,6 +315,19 @@ export class AgentRunner {
             toolResults: step.toolResults,
         });
     }
+}
+
+/**
+ * Parse a non-negative integer env var, returning `undefined` for
+ * unset / blank / unparseable values so the caller can chain to a
+ * downstream default with `??`.
+ */
+function parseEnvInt(raw: string | undefined): number | undefined {
+    if (!raw || raw.trim().length === 0) {
+        return undefined;
+    }
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
 }
 
 /**

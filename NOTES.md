@@ -1,9 +1,6 @@
-Important: finishReason length + other gescheit behandeln
-llm failures / 404 codes etc. fixen
-
 Agentruns: mehr Statistiken sammeln
-
-Zeilenlänge in Markdown
+Chat History für Non-Chat Events
+llm failures / 404 codes etc. fixen
 
 ## For later
 

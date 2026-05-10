@@ -235,6 +235,15 @@ export class HostContextImpl implements HostContext {
             }
         })();
 
+        // Suppress Node's unhandledRejection warning for callers that
+        // never await `settled`. The subscribed no-op handler "marks"
+        // the promise as handled at the V8 level without consuming
+        // the rejection — callers that DO await still get the original
+        // rejection because `await` reads the same resolved/rejected
+        // state. Without this a plugin that emits-and-forgets crashes
+        // the entire daemon as soon as any agentrun fails.
+        void settled.catch(() => {});
+
         return { id: row.id, settled };
     }
 }

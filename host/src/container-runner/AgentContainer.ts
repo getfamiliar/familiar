@@ -51,6 +51,14 @@ export interface AgentContainerConfig {
      */
     readonly defaultModel: string;
     /**
+     * Maximum retry attempts on retryable inference errors when the
+     * handler doesn't override `maxRetries` in its YAML frontmatter.
+     * Reflected to the container as the `INFERENCE_MAX_RETRIES` env
+     * var. Sourced from `inference.maxRetries` in `config.yml`,
+     * defaulting to 3.
+     */
+    readonly inferenceMaxRetries: number;
+    /**
      * Map of enabled provider id → SDK type. Native ids (`openai`,
      * `anthropic`, `grok`, …) map to themselves; custom ids declared
      * under `inference.customProviders` map to `"openai-compatible"`.
@@ -121,6 +129,8 @@ export class AgentContainer {
             `INFERENCE_DEFAULT_MODEL=${this.config.defaultModel}`,
             "-e",
             `INFERENCE_PROVIDERS=${JSON.stringify(this.config.providerTypes)}`,
+            "-e",
+            `INFERENCE_MAX_RETRIES=${this.config.inferenceMaxRetries}`,
             "-e",
             `EA_LOG_LEVEL=${this.config.verbose ? "debug" : "info"}`,
             "-v",

@@ -39,6 +39,16 @@ export interface HandlerFileHeader {
      */
     readonly maxOutputTokens?: number;
     /**
+     * Maximum number of retry attempts on retryable inference errors
+     * (`APICallError.isRetryable === true` — typically 408/429/5xx).
+     * Each retry postpones the agentrun by setting a future
+     * `not_before` so the watcher can serve other rows in the
+     * meantime. When omitted, falls back to `INFERENCE_MAX_RETRIES`
+     * env (set by the host from `inference.maxRetries`) and finally
+     * to the hardcoded default of 3.
+     */
+    readonly maxRetries?: number;
+    /**
      * When `true`, the agentrun's final `result_text` is also persisted
      * to the `chatmessages` table as an assistant message on the parent
      * event's channel. Useful for chat handlers running on models that
@@ -317,6 +327,7 @@ function mergeDeclared(parent: HandlerFileHeader, child: HandlerFileHeader): Han
         temperature: child.temperature ?? parent.temperature,
         tools: child.tools ?? parent.tools,
         maxOutputTokens: child.maxOutputTokens ?? parent.maxOutputTokens,
+        maxRetries: child.maxRetries ?? parent.maxRetries,
         outputChat: child.outputChat ?? parent.outputChat,
         mergeMode: child.mergeMode ?? parent.mergeMode,
     };
@@ -377,6 +388,7 @@ function parseHandler(filePath: string, source: string): DeclaredFile {
         temperature: optionalNumber(filePath, raw, "temperature"),
         tools: optionalString(filePath, raw, "tools"),
         maxOutputTokens: optionalPositiveInteger(filePath, raw, "maxOutputTokens"),
+        maxRetries: optionalNonNegativeInteger(filePath, raw, "maxRetries"),
         outputChat: optionalBoolean(filePath, raw, "outputChat"),
         mergeMode: optionalEnum(filePath, raw, "mergeMode", ["merge", "replace"]),
     };
@@ -398,6 +410,7 @@ function mergeDefaults(
         temperature: declared.temperature ?? defaults.temperature,
         tools: declared.tools ?? defaults.tools,
         maxOutputTokens: declared.maxOutputTokens ?? defaults.maxOutputTokens,
+        maxRetries: declared.maxRetries ?? defaults.maxRetries,
         outputChat: declared.outputChat ?? defaults.outputChat,
         mergeMode: declared.mergeMode ?? defaults.mergeMode,
     };
@@ -459,6 +472,21 @@ function optionalPositiveInteger(
     const value = raw[field];
     if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
         throw new Error(`${filePath}: header field "${field}" must be a positive integer`);
+    }
+    return value;
+}
+
+function optionalNonNegativeInteger(
+    filePath: string,
+    raw: Record<string, unknown>,
+    field: string,
+): number | undefined {
+    if (!(field in raw) || raw[field] === undefined) {
+        return undefined;
+    }
+    const value = raw[field];
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+        throw new Error(`${filePath}: header field "${field}" must be a non-negative integer`);
     }
     return value;
 }

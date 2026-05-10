@@ -85,6 +85,7 @@ export const startCommand = defineCommand({
         const postgresPassword = config.getString("core.postgresPassword");
         const defaultProvider = config.getString("inference.defaultProvider");
         const defaultModel = config.getString("inference.defaultModel");
+        const inferenceMaxRetries = config.getNumber("inference.maxRetries", 3);
         // Touch the chat-channel default so a missing value fails the
         // daemon now rather than at first chat event.
         config.getString("core.defaultChatChannel");
@@ -173,6 +174,7 @@ export const startCommand = defineCommand({
             bastionUrl: bastion.url,
             defaultProvider,
             defaultModel,
+            inferenceMaxRetries,
             providerTypes,
             verbose,
         });
@@ -238,6 +240,30 @@ export const startCommand = defineCommand({
         });
         process.on("SIGINT", () => {
             void shutdown("SIGINT");
+        });
+
+        // Defense in depth: if some future plugin or library code
+        // throws an unhandled async rejection, log it and keep the
+        // daemon alive. The HostContextImpl emit path also attaches
+        // a per-call no-op `.catch`, but the safety net here covers
+        // anything that slips past (e.g. a listener that throws
+        // synchronously inside an async callback). uncaughtException
+        // is treated as program-level corruption — log + initiate an
+        // orderly shutdown so the operator's `cli.sh start` reports
+        // the failure cleanly instead of dying mid-step.
+        process.on("unhandledRejection", (reason) => {
+            const err = reason instanceof Error ? reason : new Error(String(reason));
+            log.error(
+                { err: err.message, stack: err.stack },
+                "unhandledRejection — keeping daemon alive",
+            );
+        });
+        process.on("uncaughtException", (err) => {
+            log.error(
+                { err: err.message, stack: err.stack },
+                "uncaughtException — initiating shutdown",
+            );
+            void shutdown("uncaughtException");
         });
 
         log.info(`daemon ready (pid=${process.pid})`);

@@ -71,6 +71,22 @@ export interface AgentRunRow {
      * flag rather than rummaging through the event payload.
      */
     readonly privileged: boolean;
+    /**
+     * Number of retry attempts already made. Bumped each time
+     * `AgentRunner` postpones the row due to a retryable inference
+     * error. Compared against the per-handler `maxRetries` cap on
+     * each subsequent attempt; once `retry_count >= cap` the run
+     * settles `failed` instead of being postponed again.
+     */
+    readonly retryCount: number;
+    /**
+     * Earliest moment the agentrun watcher is allowed to re-claim
+     * this row. `null` means "claim immediately" (default for fresh
+     * inserts). A future timestamp parks the row so other agentruns
+     * — potentially using different models — can use the watcher
+     * slot in the meantime.
+     */
+    readonly notBefore: Date | null;
     /** Insert timestamp — postgres `now()` at INSERT. */
     readonly createdAt: Date;
     /** Last update timestamp — bumped to `now()` on every update. */

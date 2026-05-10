@@ -271,6 +271,19 @@ To keep things simple for now:
 
 The provider boundary is abstracted. The model client interface allows swapping Featherless, DeepSeek-API direct, Anthropic, etc., without changes to handler code or watcher logic. This is important both for cost control and for long-term resilience as open-weight models evolve.
 
+**Inference error policy.** Retryable `APICallError`s (408/429/5xx — including Featherless's
+`503 "Model is over capacity"`) do not block the watcher slot. `AgentRunner` postpones the row
+by writing it back to `pending` with a future `not_before` and bumping `retry_count`; the
+watcher claims it again when the time arrives, and other agentruns (potentially using
+different models) can run in the meantime. Delay is taken from `retry-after[-ms]` headers when
+present and reasonable, else exponential backoff (2s → 4s → … capped at 5 min). Cap defaults
+to 3 (`inference.maxRetries` in `config.yml`) and can be overridden per-handler via a
+`maxRetries` field in YAML frontmatter (set to 0 there to disable retries for one handler).
+Non-retryable errors (404 wrong model id, 401 bad key, 400 bad request) fail fast with a
+`formatInferenceError`-rendered message on `agentruns.error` ("The model API answered with
+404 Not Found at https://… — <body excerpt>"). The Vercel AI SDK's own `maxRetries` is set to
+0 so it doesn't block inside `agent.generate()`; we own the retry loop.
+
 ## Approval gate
 
 For any action classified as risky (configurable per tool, declared in the plugin manifest):

@@ -86,7 +86,15 @@ function sendCommand(ctx: HostContext) {
                     // same trust model as the REPL.
                     privileged: true,
                 });
-                await handle.settled;
+                try {
+                    await handle.settled;
+                } catch (err) {
+                    // Print the formatted failure (origin: AgentrunWatcher
+                    // via formatInferenceError) and exit cleanly instead
+                    // of dumping a stack trace to the operator.
+                    const message = err instanceof Error ? err.message : String(err);
+                    process.stderr.write(`event ${handle.id} failed: ${message}\n`);
+                }
             } finally {
                 await unsubscribe();
             }

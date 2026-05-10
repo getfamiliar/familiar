@@ -74,6 +74,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
     lintInferenceProviders(config, defaultProvider, errors);
 
     optionalPositiveInt(config, "core.logRetentionDays", warnings);
+    optionalNonNegativeInt(config, "inference.maxRetries", warnings);
 
     return { ok: errors.length === 0, errors, warnings };
 }
@@ -242,6 +243,24 @@ function optionalPositiveInt(
     }
     if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
         warnings.push(`${path} should be a positive integer (got ${describe(value)}).`);
+    }
+}
+
+/**
+ * Like {@link optionalPositiveInt} but allows `0` (e.g. for
+ * `inference.maxRetries: 0` to disable retries entirely).
+ */
+function optionalNonNegativeInt(
+    root: Record<string, unknown>,
+    path: string,
+    warnings: string[],
+): void {
+    const value = readPath(root, path);
+    if (value === undefined) {
+        return;
+    }
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+        warnings.push(`${path} should be a non-negative integer (got ${describe(value)}).`);
     }
 }
 

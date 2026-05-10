@@ -4,7 +4,8 @@ import {
     type Logger,
     type PostgresConnection,
 } from "effective-assistant-shared";
-import { AgentRunner } from "./agent-runner/AgentRunner.js";
+import { AgentRunner, POSTPONED } from "./agent-runner/AgentRunner.js";
+import { formatInferenceError } from "./agent-runner/formatInferenceError.js";
 import type { McpClientPool } from "./mcp/McpClientPool.js";
 
 /**
@@ -86,13 +87,24 @@ export class AgentrunWatcher {
                 topic: row.topic,
                 handler: row.handler,
             });
-            const text = await new AgentRunner(row, this.connection, runnerLog, this.mcpPool).run(
-                signal,
-            );
-            await this.bus.settle(row.id, "done", { resultText: text });
+            const outcome = await new AgentRunner(
+                row,
+                this.connection,
+                runnerLog,
+                this.mcpPool,
+            ).run(signal);
+            if (outcome === POSTPONED) {
+                // AgentRunner already wrote the row back to `pending`
+                // with a future `not_before` and the latest error;
+                // nothing left for the watcher to settle. The next
+                // claim-loop tick frees the slot for other rows.
+                this.log.info(`agentrun ${row.id} postponed in ${Date.now() - start}ms`);
+                return;
+            }
+            await this.bus.settle(row.id, "done", { resultText: outcome });
             this.log.info(`agentrun ${row.id} done in ${Date.now() - start}ms`);
         } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
+            const message = formatInferenceError(err);
             this.log.error(`agentrun ${row.id} failed in ${Date.now() - start}ms: ${message}`);
             try {
                 await this.bus.settle(row.id, "failed", { error: message });

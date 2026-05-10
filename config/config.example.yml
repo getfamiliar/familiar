@@ -33,6 +33,17 @@ inference:
   # `anthropic/claude-opus-4-7`, `featherless/zai-org/GLM-5.1`).
   defaultModel: zai-org/GLM-5.1
 
+  # Maximum number of retry attempts on retryable inference errors
+  # (`APICallError.isRetryable === true` — typically 408/429/5xx,
+  # including Featherless's 503 "Model is over capacity"). Retries
+  # don't block the agentrun watcher: the row is set back to
+  # `pending` with a future `not_before`, freeing the slot for other
+  # agentruns until the retry window opens. Default 3 when omitted.
+  # Per-handler override available via `maxRetries` in YAML
+  # frontmatter (set to 0 there to disable retries for one handler
+  # without changing the global default).
+  # maxRetries: 3
+
   # Native providers — one entry per first-class vendor whose Vercel
   # AI SDK class we ship. Allowed ids: openai, anthropic, google,
   # grok, groq, deepseek, mistral. The id is also the URL segment the

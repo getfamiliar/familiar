@@ -24,6 +24,8 @@ interface RawAgentRunRow {
     result_text: string | null;
     error: string | null;
     privileged: boolean;
+    retry_count: number;
+    not_before: Date | null;
     created_at: Date;
     updated_at: Date;
 }
@@ -154,12 +156,18 @@ export class AgentRunBus {
         fromState: AgentRunState,
         toState: AgentRunState,
     ): Promise<AgentRunRow | undefined> {
+        // The `not_before IS NULL OR not_before <= now()` predicate
+        // skips agentruns that AgentRunner postponed after a retryable
+        // inference error. They stay `pending` but invisible to the
+        // claim until their re-run window opens, freeing the watcher
+        // slot for other rows in the meantime.
         const result = await this.connection.getPool().query<RawAgentRunRow>(
             `UPDATE agentruns
              SET state = $1, updated_at = now()
              WHERE id = (
                SELECT id FROM agentruns
                WHERE state = $2
+                 AND (not_before IS NULL OR not_before <= now())
                ORDER BY priority DESC, id ASC
                FOR UPDATE SKIP LOCKED
                LIMIT 1
@@ -193,7 +201,13 @@ export class AgentRunBus {
                 return row;
             }
 
-            await this.waitForNotification(signal);
+            // If any postponed rows exist, wake up at the earliest
+            // `not_before` so the postponed row gets re-checked even
+            // when no NOTIFY arrives in the meantime. Otherwise wait
+            // for NOTIFY indefinitely (the existing pattern).
+            const next = await this.nextEligibleAt();
+            const maxWaitMs = next === null ? undefined : Math.max(0, next.getTime() - Date.now());
+            await this.waitForNotification(signal, maxWaitMs);
         }
     }
 
@@ -219,7 +233,9 @@ export class AgentRunBus {
                 return row;
             }
 
-            await this.waitForNotification(signal);
+            const next = await this.nextEligibleAt();
+            const maxWaitMs = next === null ? undefined : Math.max(0, next.getTime() - Date.now());
+            await this.waitForNotification(signal, maxWaitMs);
         }
     }
 
@@ -282,6 +298,51 @@ export class AgentRunBus {
         }
     }
 
+    /**
+     * Postpone an agentrun after a retryable inference error.
+     * Returns the row to `pending`, bumps `retry_count`, sets
+     * `not_before` to the supplied timestamp, and records the latest
+     * attempt's error text. The existing `agentruns_changed` UPDATE
+     * trigger fires on the state write so any watcher waiting on
+     * NOTIFY wakes up — it just won't be able to claim the row again
+     * until `not_before` passes.
+     *
+     * Throws if the row is missing (mirrors {@link settle}).
+     */
+    async postpone(id: string, runAfter: Date, errorText: string | null): Promise<void> {
+        const result = await this.connection.getPool().query(
+            `UPDATE agentruns
+             SET state = 'pending',
+                 retry_count = retry_count + 1,
+                 not_before = $2,
+                 error = $3,
+                 updated_at = now()
+             WHERE id = $1`,
+            [id, runAfter, errorText],
+        );
+        if (result.rowCount === 0) {
+            throw new Error(`Agentrun ${id} not found`);
+        }
+    }
+
+    /**
+     * Earliest `not_before` among `pending` agentruns whose window
+     * hasn't opened yet. Returns `null` when nothing is parked.
+     * Used by {@link waitAndClaim} to put a ceiling on the wait so
+     * a postponed row gets re-checked even if no new INSERT or
+     * state update wakes the listener.
+     */
+    async nextEligibleAt(): Promise<Date | null> {
+        const result = await this.connection.getPool().query<{ next: Date | null }>(
+            `SELECT MIN(not_before) AS next
+             FROM agentruns
+             WHERE state = 'pending'
+               AND not_before IS NOT NULL
+               AND not_before > now()`,
+        );
+        return result.rows[0]?.next ?? null;
+    }
+
     /** Subscribe this bus's wake-handler to {@link AGENTRUNS_CHANNEL}. */
     private async ensureListening(): Promise<void> {
         if (this.listenInstalled) {
@@ -291,16 +352,29 @@ export class AgentRunBus {
         await this.connection.listen(AGENTRUNS_CHANNEL, this.listenHandler);
     }
 
-    /** Resolve as soon as the next NOTIFY arrives or `signal` aborts. */
-    private waitForNotification(signal?: AbortSignal): Promise<void> {
+    /**
+     * Resolve as soon as the next NOTIFY arrives, `signal` aborts, or
+     * `maxWaitMs` elapses (when supplied). The timeout exists so a
+     * watcher waiting on a postponed row's `not_before` wakes up to
+     * re-check eligibility even if no INSERT or state update fires
+     * NOTIFY in the meantime.
+     */
+    private waitForNotification(signal?: AbortSignal, maxWaitMs?: number): Promise<void> {
         return new Promise((resolve, reject) => {
+            let timer: NodeJS.Timeout | undefined;
             const wake = () => {
+                if (timer) {
+                    clearTimeout(timer);
+                }
                 if (signal) {
                     signal.removeEventListener("abort", onAbort);
                 }
                 resolve();
             };
             const onAbort = () => {
+                if (timer) {
+                    clearTimeout(timer);
+                }
                 this.notifyWaiters = this.notifyWaiters.filter((w) => w !== wake);
                 reject(new Error("waitForNext aborted"));
             };
@@ -308,6 +382,15 @@ export class AgentRunBus {
             this.notifyWaiters.push(wake);
             if (signal) {
                 signal.addEventListener("abort", onAbort, { once: true });
+            }
+            if (maxWaitMs !== undefined && maxWaitMs >= 0) {
+                timer = setTimeout(() => {
+                    this.notifyWaiters = this.notifyWaiters.filter((w) => w !== wake);
+                    if (signal) {
+                        signal.removeEventListener("abort", onAbort);
+                    }
+                    resolve();
+                }, maxWaitMs);
             }
         });
     }
@@ -323,6 +406,10 @@ export class AgentRunBus {
             conditions.push(`topic = ANY($${n++})`);
             values.push(filter.topics);
         }
+
+        // Mirror `claim`'s not_before gating so blocking observers
+        // (waitForNext) don't return rows that aren't yet eligible.
+        conditions.push("(not_before IS NULL OR not_before <= now())");
 
         const result = await this.connection.getPool().query<RawAgentRunRow>(
             `SELECT * FROM agentruns
@@ -356,6 +443,8 @@ function mapRow(raw: RawAgentRunRow): AgentRunRow {
         resultText: raw.result_text,
         error: raw.error,
         privileged: raw.privileged,
+        retryCount: raw.retry_count,
+        notBefore: raw.not_before,
         createdAt: raw.created_at,
         updatedAt: raw.updated_at,
     };

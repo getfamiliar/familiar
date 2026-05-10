@@ -140,6 +140,17 @@ ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS result_text text;
 -- agentrun (children spawned via queue_run). See the matching ALTER on
 -- the events table for the trust-model rationale.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS privileged boolean NOT NULL DEFAULT false;
+-- Number of retry attempts already made on this agentrun. Bumped each
+-- time AgentRunner postpones the row due to a retryable inference
+-- error (APICallError.isRetryable). Capped per-handler via maxRetries
+-- (frontmatter override) or globally via inference.maxRetries.
+ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS retry_count int NOT NULL DEFAULT 0;
+-- Earliest moment the agentrun watcher is allowed to re-claim this
+-- row. NULL = claim immediately (default for fresh rows). A future
+-- timestamp = leave the row alone until then; the watcher's claim
+-- query gates on this so a parked row doesn't waste the slot while
+-- other agentruns (potentially using different models) can still run.
+ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS not_before timestamptz;
 
 -- Forward-compat: relax the topic CHECK constraint to allow arbitrarily
 -- deep \`a:b:c:…\` topics. CREATE TABLE IF NOT EXISTS above doesn't
