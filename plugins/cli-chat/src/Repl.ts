@@ -1,5 +1,6 @@
 import { createInterface, type Interface } from "node:readline";
 import type { HostContext, StepResultRow } from "effective-assistant-shared";
+import { renderMarkdown } from "./markdownTerminal.js";
 
 const CLI_CHANNEL = "cli";
 const PROMPT = "> ";
@@ -123,9 +124,15 @@ export async function runRepl(ctx: HostContext): Promise<void> {
     const unsubscribe = await ctx.chat.subscribe(
         { channelId: CLI_CHANNEL, role: "assistant" },
         async (m) => {
-            // Trailing newline turns into a blank visual separator
-            // below the assistant message (printAbove appends \n).
-            renderer.printAbove(`${m.textContent}\n`);
+            // On a TTY, render markdown to ANSI styling so headings,
+            // lists, code blocks, and inline emphasis come through
+            // formatted — same treatment Report.ts gives its output.
+            // Off-TTY (piped, redirected) keep the raw markdown so
+            // it round-trips cleanly through grep / files. Trailing
+            // newline turns into a blank visual separator below the
+            // assistant message (printAbove appends \n).
+            const body = isTty ? renderMarkdown(m.textContent) : m.textContent;
+            renderer.printAbove(`${body}\n`);
             return true;
         },
     );
