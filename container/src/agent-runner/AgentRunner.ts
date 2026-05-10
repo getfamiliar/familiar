@@ -14,6 +14,7 @@ import { ModelFactory } from "../models/ModelFactory.js";
 import { buildPrompt, buildSystemPrompt } from "../PromptBuilder.js";
 import { createGroupLookup } from "../tools/ToolGroupLoader.js";
 import { ToolsFactory } from "../tools/ToolsFactory.js";
+import { synthesizeResultText } from "./synthesizeResultText.js";
 
 /**
  * One-shot runner for a single agentrun row.
@@ -160,6 +161,8 @@ export class AgentRunner {
             onStepFinish: (step) => this.recordStep(step),
         });
 
+        const finalText = synthesizeResultText(result);
+
         this.log.debug(
             {
                 durationMs: Date.now() - runStartedAt,
@@ -168,6 +171,7 @@ export class AgentRunner {
                 inputTokens: result.usage?.inputTokens,
                 outputTokens: result.usage?.outputTokens,
                 resultTextLength: result.text.length,
+                synthesized: finalText !== result.text,
             },
             "agent done",
         );
@@ -175,12 +179,14 @@ export class AgentRunner {
         // outputChat: handlers can opt to surface the model's plain
         // text reply as an assistant chat message — useful for models
         // that reliably reply as text rather than calling `send_chat`.
-        // Skip empty text (e.g. tool-only steps).
-        if (handler.header.outputChat === true && result.text.trim().length > 0) {
-            await this.chat.appendAssistantMessage(this.row.eventId, result.text);
+        // Skip empty text (e.g. tool-only steps on non-targeted finish
+        // reasons; targeted reasons get a synthesized diagnostic via
+        // synthesizeResultText so they always have something to post).
+        if (handler.header.outputChat === true && finalText.trim().length > 0) {
+            await this.chat.appendAssistantMessage(this.row.eventId, finalText);
         }
 
-        return result.text;
+        return finalText;
     }
 
     /**
