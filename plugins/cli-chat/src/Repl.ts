@@ -1,6 +1,5 @@
 import { createInterface, type Interface } from "node:readline";
-import type { HostContext, StepResultRow } from "effective-assistant-shared";
-import { renderMarkdown } from "./markdownTerminal.js";
+import { type HostContext, renderMarkdown, type StepResultRow } from "effective-assistant-shared";
 
 const CLI_CHANNEL = "cli";
 const PROMPT = "> ";

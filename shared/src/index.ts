@@ -20,6 +20,7 @@ export {
     type LogStream,
     prettyStdoutStream,
 } from "./logging/Logger.js";
+export { renderMarkdown } from "./markdownTerminal.js";
 export type {
     AnyCommandDef,
     EmitHandle,

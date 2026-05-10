@@ -1,9 +1,8 @@
 import { defineCommand } from "citty";
-import { AgentRunBus, EventBus, StepResultBus } from "effective-assistant-shared";
+import { AgentRunBus, EventBus, renderMarkdown, StepResultBus } from "effective-assistant-shared";
 import { bootstrap } from "../Bootstrap.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
-import { md } from "../reports/markedTerminal.js";
 import {
     type AgentrunAggregate,
     aggregateSteps,
@@ -155,7 +154,7 @@ const reportEventCommand = defineCommand({
             }
 
             const markdown = sections.join("");
-            process.stdout.write(args.raw === true ? markdown : md(markdown));
+            process.stdout.write(args.raw === true ? markdown : renderMarkdown(markdown));
         } finally {
             await connection.close();
         }

@@ -16,13 +16,10 @@
     "license": "MIT",
     "dependencies": {
         "citty": "^0.1.6",
-        "effective-assistant-shared": "*",
-        "marked": "^15.0.12",
-        "marked-terminal": "^7.3.0"
+        "effective-assistant-shared": "*"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.4.12",
-        "@types/marked-terminal": "^6.1.1",
         "@types/node": "^25.6.0",
         "typescript": "^6.0.3"
     }

@@ -3,10 +3,10 @@ import {
     type AgentRunRow,
     type EventRow,
     type PostgresConnection,
+    renderMarkdown,
     StepResultBus,
     type StepResultRow,
 } from "effective-assistant-shared";
-import { md } from "./markedTerminal.js";
 import {
     type AgentrunAggregate,
     aggregateSteps,
@@ -122,7 +122,7 @@ export class ReportTerminalPrinter implements ReportSink {
     }
 
     private write(markdown: string): void {
-        process.stdout.write(md(markdown));
+        process.stdout.write(renderMarkdown(markdown));
     }
 
     private trackerFor(eventId: string): Set<string> {
