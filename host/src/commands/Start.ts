@@ -86,6 +86,7 @@ export const startCommand = defineCommand({
         const defaultProvider = config.getString("inference.defaultProvider");
         const defaultModel = config.getString("inference.defaultModel");
         const inferenceMaxRetries = config.getNumber("inference.maxRetries", 3);
+        const logSystemPrompt = config.getBool("core.logSystemPrompt", false);
         // Touch the chat-channel default so a missing value fails the
         // daemon now rather than at first chat event.
         config.getString("core.defaultChatChannel");
@@ -126,11 +127,18 @@ export const startCommand = defineCommand({
             portFilePath: boot.postgresPortFile,
             password: postgresPassword,
         });
-        const captureBodies = config.getBool("inference.captureBodies", false);
+        const captureModelHttpRequestBodies = config.getBool(
+            "inference.captureModelHttpRequestBodies",
+            false,
+        );
+        const captureRawStepResultToDatabase = config.getBool(
+            "inference.captureRawStepResultToDatabase",
+            false,
+        );
         const reverseProxy = new ReverseProxy({
             providers,
             log: log.child({ component: "reverse-proxy" }),
-            captureBodies,
+            captureModelHttpRequestBodies,
             captureDir: `${boot.dataDir}/llm-debug`,
         });
         const mcpGateway = new McpGateway({
@@ -175,6 +183,8 @@ export const startCommand = defineCommand({
             defaultProvider,
             defaultModel,
             inferenceMaxRetries,
+            logSystemPrompt,
+            captureRawStepResultToDatabase,
             providerTypes,
             verbose,
         });

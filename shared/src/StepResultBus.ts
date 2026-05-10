@@ -15,9 +15,15 @@ interface RawStepResultRow {
     input_tokens: number | null;
     output_tokens: number | null;
     total_tokens: number | null;
+    input_tokens_no_cache: number | null;
+    input_tokens_cache_read: number | null;
+    input_tokens_cache_write: number | null;
+    output_tokens_text: number | null;
+    output_tokens_reasoning: number | null;
     tool_call_count: number;
     tool_calls: unknown;
     tool_results: unknown;
+    raw_result: unknown;
     created_at: Date;
 }
 
@@ -61,13 +67,21 @@ export class StepResultBus {
         const toolResults = step.toolResults ?? [];
         const toolCallCount = Array.isArray(toolCalls) ? toolCalls.length : 0;
 
+        const rawResultJson =
+            step.rawResult === undefined || step.rawResult === null
+                ? null
+                : JSON.stringify(step.rawResult);
+
         const result = await this.connection.getPool().query<RawStepResultRow>(
             `INSERT INTO stepresults
                 (agent_run_id, event_id, step_number, finish_reason,
                  result_text, reasoning_text,
                  input_tokens, output_tokens, total_tokens,
-                 tool_call_count, tool_calls, tool_results)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb)
+                 input_tokens_no_cache, input_tokens_cache_read, input_tokens_cache_write,
+                 output_tokens_text, output_tokens_reasoning,
+                 tool_call_count, tool_calls, tool_results, raw_result)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                     $16::jsonb, $17::jsonb, $18::jsonb)
              RETURNING *`,
             [
                 step.agentRunId,
@@ -79,9 +93,15 @@ export class StepResultBus {
                 inputTokens,
                 outputTokens,
                 totalTokens,
+                step.inputTokensNoCache ?? null,
+                step.inputTokensCacheRead ?? null,
+                step.inputTokensCacheWrite ?? null,
+                step.outputTokensText ?? null,
+                step.outputTokensReasoning ?? null,
                 toolCallCount,
                 JSON.stringify(toolCalls),
                 JSON.stringify(toolResults),
+                rawResultJson,
             ],
         );
         return mapRow(result.rows[0]);
@@ -131,6 +151,36 @@ export class StepResultBus {
     }
 
     /**
+     * Fetch all step rows whose `created_at` is `>= since`, ordered by
+     * id. Steps are immutable so `created_at` is sufficient — no
+     * separate `updated_at` to consider.
+     */
+    async listSince(since: Date): Promise<StepResultRow[]> {
+        const result = await this.connection.getPool().query<RawStepResultRow>(
+            `SELECT * FROM stepresults
+             WHERE created_at >= $1
+             ORDER BY id`,
+            [since],
+        );
+        return result.rows.map(mapRow);
+    }
+
+    /**
+     * Fetch every step belonging to one agentrun, ordered by step
+     * number. Used by the report layer to render an agentrun's full
+     * step list and to sum its token usage at finalization time.
+     */
+    async listByAgentRunId(agentRunId: string): Promise<readonly StepResultRow[]> {
+        const result = await this.connection.getPool().query<RawStepResultRow>(
+            `SELECT * FROM stepresults
+             WHERE agent_run_id = $1
+             ORDER BY step_number`,
+            [agentRunId],
+        );
+        return result.rows.map(mapRow);
+    }
+
+    /**
      * Inner notification dispatcher. Parses the channel payload,
      * fetches the row, and invokes the handler — catching and
      * logging any error from the handler itself.
@@ -171,9 +221,15 @@ function mapRow(raw: RawStepResultRow): StepResultRow {
         inputTokens: raw.input_tokens,
         outputTokens: raw.output_tokens,
         totalTokens: raw.total_tokens,
+        inputTokensNoCache: raw.input_tokens_no_cache,
+        inputTokensCacheRead: raw.input_tokens_cache_read,
+        inputTokensCacheWrite: raw.input_tokens_cache_write,
+        outputTokensText: raw.output_tokens_text,
+        outputTokensReasoning: raw.output_tokens_reasoning,
         toolCallCount: raw.tool_call_count,
         toolCalls: raw.tool_calls,
         toolResults: raw.tool_results,
+        rawResult: raw.raw_result,
         createdAt: raw.created_at,
     };
 }

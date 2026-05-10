@@ -42,6 +42,17 @@ export interface AgentRunRow {
      */
     readonly handler: string;
     /**
+     * Resolved model id actually used for this run, of the form
+     * `<provider>/<modelId>` (e.g. `featherless/zai-org/GLM-5.1`).
+     * Distinct from the handler's *declared* model in markdown:
+     * carries the resolved provider prefix even when the handler
+     * left it bare. `null` for any agentrun that never reached the
+     * `agent.generate()` call (handler-load failures, etc.).
+     * Stamped by AgentRunner immediately after model resolution and
+     * never mutated afterwards.
+     */
+    readonly model: string | null;
+    /**
      * Higher = processed first within a queue. Inherited from the
      * originating event at spawn; constant per row for now.
      */
@@ -50,6 +61,14 @@ export interface AgentRunRow {
     readonly state: AgentRunState;
     /** Optional prompt seed supplied by the queueing caller. */
     readonly prompt: string | null;
+    /**
+     * Resolved system prompt the agent ran under (SOUL.md +
+     * CONTEXT.md + handler body + tool list). Populated by
+     * AgentRunner only when `core.logSystemPrompt` is enabled;
+     * otherwise `null`. Read by the report layer's
+     * `renderAgentrunStart` when `withDetails` is on.
+     */
+    readonly systemPrompt: string | null;
     /** Spawn-time inputs from the calling agent (or the root event). */
     readonly payload: unknown;
     /** Structured terminal output (arbitrary JSON) when the run reaches `done` / `failed`. */
@@ -127,6 +146,8 @@ export interface AgentRunPatch {
     readonly resultText?: string | null;
     readonly error?: string | null;
     readonly priority?: number;
+    readonly model?: string | null;
+    readonly systemPrompt?: string | null;
 }
 
 /** Filter for {@link AgentRunBus.waitForNext}. */

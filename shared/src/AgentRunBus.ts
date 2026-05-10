@@ -26,6 +26,8 @@ interface RawAgentRunRow {
     privileged: boolean;
     retry_count: number;
     not_before: Date | null;
+    model: string | null;
+    system_prompt: string | null;
     created_at: Date;
     updated_at: Date;
 }
@@ -134,6 +136,14 @@ export class AgentRunBus {
         if (patch.priority !== undefined) {
             sets.push(`priority = $${n++}`);
             values.push(patch.priority);
+        }
+        if (patch.model !== undefined) {
+            sets.push(`model = $${n++}`);
+            values.push(patch.model);
+        }
+        if (patch.systemPrompt !== undefined) {
+            sets.push(`system_prompt = $${n++}`);
+            values.push(patch.systemPrompt);
         }
 
         values.push(id);
@@ -299,6 +309,47 @@ export class AgentRunBus {
     }
 
     /**
+     * Fetch one agentrun by id, or `undefined` when missing. Mirrors
+     * {@link EventBus.getById}.
+     */
+    async getById(id: string): Promise<AgentRunRow | undefined> {
+        const result = await this.connection
+            .getPool()
+            .query<RawAgentRunRow>(`SELECT * FROM agentruns WHERE id = $1`, [id]);
+        return result.rows.length > 0 ? mapRow(result.rows[0]) : undefined;
+    }
+
+    /**
+     * Fetch all agentrun rows whose `updated_at` is `>= since`, ordered
+     * by `(updated_at, id)`. Used by the polling-based report layer to
+     * pick up new agentruns and state transitions without NOTIFY.
+     */
+    async listSince(since: Date): Promise<AgentRunRow[]> {
+        const result = await this.connection.getPool().query<RawAgentRunRow>(
+            `SELECT * FROM agentruns
+             WHERE updated_at >= $1
+             ORDER BY updated_at, id`,
+            [since],
+        );
+        return result.rows.map(mapRow);
+    }
+
+    /**
+     * Fetch all agentruns belonging to one event, ordered by id.
+     * Used by the report layer to aggregate token totals and runtime
+     * across an event's full agentrun tree at finalization time.
+     */
+    async listByEventId(eventId: string): Promise<readonly AgentRunRow[]> {
+        const result = await this.connection.getPool().query<RawAgentRunRow>(
+            `SELECT * FROM agentruns
+             WHERE event_id = $1
+             ORDER BY id`,
+            [eventId],
+        );
+        return result.rows.map(mapRow);
+    }
+
+    /**
      * Postpone an agentrun after a retryable inference error.
      * Returns the row to `pending`, bumps `retry_count`, sets
      * `not_before` to the supplied timestamp, and records the latest
@@ -445,6 +496,8 @@ function mapRow(raw: RawAgentRunRow): AgentRunRow {
         privileged: raw.privileged,
         retryCount: raw.retry_count,
         notBefore: raw.not_before,
+        model: raw.model,
+        systemPrompt: raw.system_prompt,
         createdAt: raw.created_at,
         updatedAt: raw.updated_at,
     };

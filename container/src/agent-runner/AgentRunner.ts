@@ -9,6 +9,7 @@ import {
     StepResultBus,
 } from "effective-assistant-shared";
 import { ChatManager } from "../chat/ChatManager.js";
+import { optionalEnvBool, optionalEnvInt } from "../env.js";
 import { HandlerFile } from "../HandlerFile.js";
 import type { McpClientPool } from "../mcp/McpClientPool.js";
 import { ModelFactory } from "../models/ModelFactory.js";
@@ -18,6 +19,23 @@ import { ToolsFactory } from "../tools/ToolsFactory.js";
 import { computeRetryDelay } from "./computeRetryDelay.js";
 import { formatInferenceError } from "./formatInferenceError.js";
 import { synthesizeResultText } from "./synthesizeResultText.js";
+
+/**
+ * When `true`, every step's full SDK result object is JSON-encoded
+ * into `stepresults.raw_result`. Read once at module load — the host
+ * sets the env var from `inference.captureRawStepResultToDatabase`,
+ * so a daemon restart is required to flip it. Off by default.
+ */
+const CAPTURE_RAW_STEP_RESULT = optionalEnvBool("INFERENCE_CAPTURE_RAW_STEP_RESULT");
+
+/**
+ * When `true`, every agentrun's resolved system prompt is persisted
+ * onto the row so the report layer can surface it in the Agentrun
+ * Start section under `--details`. Driven by `core.logSystemPrompt`
+ * in `config.yml`. Off by default — system prompts are several KB
+ * each and only helpful while debugging.
+ */
+const LOG_SYSTEM_PROMPT = optionalEnvBool("INFERENCE_LOG_SYSTEM_PROMPT");
 
 /**
  * Sentinel returned from {@link AgentRunner.run} when the agent
@@ -92,7 +110,7 @@ export class AgentRunner {
      */
     async run(signal?: AbortSignal): Promise<RunOutcome> {
         const handler = HandlerFile.load(this.row.topic, this.row.handler);
-        const model = ModelFactory.build(handler.header.model);
+        const { model, label: modelLabel } = ModelFactory.build(handler.header.model);
         const tools = ToolsFactory.build({
             chat: this.chat,
             eventId: this.row.eventId,
@@ -116,6 +134,16 @@ export class AgentRunner {
             this.row.topic,
             this.row.privileged,
         );
+        // Stamp the resolved model — and, when the operator opted in
+        // via core.logSystemPrompt, the resolved system prompt — on
+        // the row before invoking the agent. One UPDATE keeps the row
+        // honest (even if generate() throws) without a second write.
+        // Patch's `undefined` skip means the SQL only touches
+        // system_prompt when LOG_SYSTEM_PROMPT is on.
+        await this.bus.update(this.row.id, {
+            model: modelLabel,
+            systemPrompt: LOG_SYSTEM_PROMPT ? systemPrompt : undefined,
+        });
 
         const agent = new ToolLoopAgent<never, ToolSet>({
             model,
@@ -191,8 +219,7 @@ export class AgentRunner {
         // precedence: handler YAML override → INFERENCE_MAX_RETRIES
         // env (set by host from `inference.maxRetries`) → hardcoded
         // fallback of 3.
-        const retryCap =
-            handler.header.maxRetries ?? parseEnvInt(process.env.INFERENCE_MAX_RETRIES) ?? 3;
+        const retryCap = handler.header.maxRetries ?? optionalEnvInt("INFERENCE_MAX_RETRIES") ?? 3;
         let result: Awaited<ReturnType<typeof agent.generate>>;
         try {
             result = await agent.generate({
@@ -268,7 +295,19 @@ export class AgentRunner {
         readonly reasoningText: string | undefined;
         readonly content?: ReadonlyArray<unknown>;
         readonly warnings?: ReadonlyArray<unknown>;
-        readonly usage: { readonly inputTokens?: number; readonly outputTokens?: number };
+        readonly usage: {
+            readonly inputTokens?: number;
+            readonly outputTokens?: number;
+            readonly inputTokenDetails?: {
+                readonly noCacheTokens?: number;
+                readonly cacheReadTokens?: number;
+                readonly cacheWriteTokens?: number;
+            };
+            readonly outputTokenDetails?: {
+                readonly textTokens?: number;
+                readonly reasoningTokens?: number;
+            };
+        };
         readonly toolCalls: unknown;
         readonly toolResults: unknown;
     }): Promise<void> {
@@ -311,23 +350,31 @@ export class AgentRunner {
             reasoningText: step.reasoningText ?? null,
             inputTokens: step.usage.inputTokens ?? null,
             outputTokens: step.usage.outputTokens ?? null,
+            inputTokensNoCache: step.usage.inputTokenDetails?.noCacheTokens ?? null,
+            inputTokensCacheRead: step.usage.inputTokenDetails?.cacheReadTokens ?? null,
+            inputTokensCacheWrite: step.usage.inputTokenDetails?.cacheWriteTokens ?? null,
+            outputTokensText: step.usage.outputTokenDetails?.textTokens ?? null,
+            outputTokensReasoning: step.usage.outputTokenDetails?.reasoningTokens ?? null,
             toolCalls: step.toolCalls,
             toolResults: step.toolResults,
+            rawResult: CAPTURE_RAW_STEP_RESULT ? safeJsonClone(step) : undefined,
         });
     }
 }
 
 /**
- * Parse a non-negative integer env var, returning `undefined` for
- * unset / blank / unparseable values so the caller can chain to a
- * downstream default with `??`.
+ * JSON-serialize a step result defensively. The SDK's step object
+ * is normally plain data (numbers, strings, arrays, objects), but
+ * provider-specific extensions occasionally carry non-serializable
+ * values (Date, BigInt, circular refs). Catch and replace with an
+ * informative marker so capture never poisons the INSERT.
  */
-function parseEnvInt(raw: string | undefined): number | undefined {
-    if (!raw || raw.trim().length === 0) {
-        return undefined;
+function safeJsonClone(step: unknown): unknown {
+    try {
+        return JSON.parse(JSON.stringify(step));
+    } catch (err) {
+        return { rawCaptureError: err instanceof Error ? err.message : String(err) };
     }
-    const n = Number.parseInt(raw, 10);
-    return Number.isFinite(n) && n >= 0 ? n : undefined;
 }
 
 /**

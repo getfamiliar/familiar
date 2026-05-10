@@ -10,7 +10,7 @@ import { PostgresContainer } from "../db/PostgresContainer.js";
  * Built primarily to debug "the model said it would call a tool but
  * the step finished with `finish_reason: other` and nothing happened"
  * cases without dropping into psql. Pair with the reverse-proxy body
- * capture (`inference.captureBodies: true` in `config.yml`) to also
+ * capture (`inference.captureModelHttpRequestBodies: true` in `config.yml`) to also
  * inspect the raw upstream HTTP response that produced the step.
  *
  * Truncates long text fields to keep the output readable; pass

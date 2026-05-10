@@ -7,6 +7,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createXai } from "@ai-sdk/xai";
 import type { LanguageModel } from "ai";
+import { requireEnv } from "../env.js";
 
 /**
  * Placeholder API key sent by every provider client. The real upstream
@@ -197,6 +198,11 @@ function builderFor(provider: string, cat: ProviderCatalogue): LanguageModelBuil
 export class ModelFactory {
     /**
      * Build a chat language-model object for the requested model ref.
+     * Returns the constructed `LanguageModel` plus a `label` of the
+     * form `<provider>/<modelId>` — the resolved pair, with the
+     * provider prefix filled in even when the handler declared it
+     * bare. Callers persist the label on `agentruns.model` for
+     * traceability.
      *
      * @param modelRef Handler-declared model identifier — bare or
      *   `<provider>/<modelId>`. Falls back to defaults from
@@ -204,22 +210,12 @@ export class ModelFactory {
      * @throws If env is misconfigured or the provider in the prefix
      *   isn't enabled in `INFERENCE_PROVIDERS`.
      */
-    static build(modelRef?: string): LanguageModel {
+    static build(modelRef?: string): { model: LanguageModel; label: string } {
         const cat = getCatalogue();
         const { provider, modelId } = resolveModelRef(modelRef, cat);
-        return builderFor(provider, cat)(modelId);
+        return {
+            model: builderFor(provider, cat)(modelId),
+            label: `${provider}/${modelId}`,
+        };
     }
-}
-
-/**
- * Read a required environment variable.
- *
- * @throws If the variable is unset or empty.
- */
-function requireEnv(name: string): string {
-    const value = process.env[name];
-    if (!value) {
-        throw new Error(`${name} is not set in the agent container env.`);
-    }
-    return value;
 }

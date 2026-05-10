@@ -41,7 +41,7 @@ export interface ConfigService {
     /**
      * Boolean read. Throws when the key is missing or the resolved
      * value is not a boolean. YAML's native `true` / `false` parse to
-     * booleans, so a stanza like `inference.captureBodies: true` reads
+     * booleans, so a stanza like `inference.captureModelHttpRequestBodies: true` reads
      * back as `true` here.
      */
     getBool(key: string): boolean;

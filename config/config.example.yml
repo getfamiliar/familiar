@@ -20,6 +20,14 @@ core:
   # Optional; falls back to 7 when omitted.
   logRetentionDays: 7
 
+  # When true, every agentrun's resolved system prompt (SOUL.md +
+  # CONTEXT.md + handler body + tool list, often several KB) is
+  # persisted into agentruns.system_prompt. The report layer
+  # surfaces it in the Agentrun Start section when the consumer
+  # opts into `--details`. Off by default — turn on while debugging
+  # a handler, off again after.
+  # logSystemPrompt: false
+
 inference:
   # Provider id used when a handler does not put a provider prefix on
   # its `model` frontmatter field. Must match either an entry under
@@ -76,7 +84,14 @@ inference:
   # or other model-behavior issues, then turn off again. The
   # auth headers (`Authorization`, `x-api-key`, `x-goog-api-key`)
   # are redacted in the dumps.
-  # captureBodies: false
+  # captureModelHttpRequestBodies: false
+
+  # When true, every step's full SDK result object is JSON-encoded
+  # into stepresults.raw_result for diagnosis (Anthropic cache
+  # stats, OpenAI logprobs, etc.). Off by default — the dedicated
+  # token-detail columns (input_tokens_*, output_tokens_*) cover
+  # the common case. Restart the daemon after changing.
+  # captureRawStepResultToDatabase: false
 
 # --- Plugin-owned subtrees below. Each plugin parses + validates its
 # --- own keys; the platform linter does not police them.

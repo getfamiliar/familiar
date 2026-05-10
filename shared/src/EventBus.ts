@@ -162,6 +162,23 @@ export class EventBus {
     }
 
     /**
+     * Fetch all event rows whose `updated_at` is `>= since`, ordered by
+     * `(updated_at, id)`. Used by the polling-based report layer to
+     * pick up new inserts and state transitions without subscribing to
+     * NOTIFY. Returns an empty array when nothing changed since the
+     * anchor.
+     */
+    async listSince(since: Date): Promise<EventRow[]> {
+        const result = await this.connection.getPool().query<RawEventRow>(
+            `SELECT * FROM events
+                 WHERE updated_at >= $1
+                 ORDER BY updated_at, id`,
+            [since],
+        );
+        return result.rows.map(mapRow);
+    }
+
+    /**
      * Patch one or more fields on an existing event by id. Always bumps
      * `updated_at`. No-op if `patch` contains no recognized fields.
      */

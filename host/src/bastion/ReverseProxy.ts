@@ -32,13 +32,14 @@ export interface ReverseProxyConfig {
      * When true, dump the raw request and response bodies of every
      * `/llm/<provider>/v1/*` call to per-request files under
      * {@link captureDir}. Off by default; controlled by
-     * `inference.captureBodies` in `config.yml`. The capture is purely
-     * a tap — the forwarded bytes are unchanged and SSE keeps streaming.
+     * `inference.captureModelHttpRequestBodies` in `config.yml`. The
+     * capture is purely a tap — the forwarded bytes are unchanged and
+     * SSE keeps streaming.
      */
-    readonly captureBodies?: boolean;
+    readonly captureModelHttpRequestBodies?: boolean;
     /**
      * Directory under which capture files are written when
-     * {@link captureBodies} is true. Created on demand. Files are
+     * {@link captureModelHttpRequestBodies} is true. Created on demand. Files are
      * named `<isoTs>-<reqId>.req.log` / `.resp.log`.
      */
     readonly captureDir?: string;
@@ -96,7 +97,7 @@ export class ReverseProxy implements BastionModule {
         });
         const ids = Object.keys(this.config.providers);
         const captureSuffix =
-            this.config.captureBodies === true
+            this.config.captureModelHttpRequestBodies === true
                 ? ` (body capture ON → ${this.config.captureDir ?? "<unset>"})`
                 : "";
         this.config.log.info(
@@ -293,13 +294,13 @@ export class ReverseProxy implements BastionModule {
         upstreamPath: string,
         forwardedHeaders: Readonly<Record<string, string | string[]>>,
     ): CaptureHandles | undefined {
-        if (this.config.captureBodies !== true) {
+        if (this.config.captureModelHttpRequestBodies !== true) {
             return undefined;
         }
         const dir = this.config.captureDir;
         if (dir === undefined || dir.length === 0) {
             this.config.log.warn(
-                "llm proxy: captureBodies is true but captureDir is unset — capture skipped",
+                "llm proxy: captureModelHttpRequestBodies is true but captureDir is unset — capture skipped",
             );
             return undefined;
         }

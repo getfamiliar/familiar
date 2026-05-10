@@ -151,6 +151,18 @@ ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS retry_count int NOT NULL DEFAULT 
 -- query gates on this so a parked row doesn't waste the slot while
 -- other agentruns (potentially using different models) can still run.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS not_before timestamptz;
+-- Resolved model id for this agentrun, of the form
+-- \`<provider>/<modelId>\` (e.g. \`featherless/zai-org/GLM-5.1\`).
+-- Populated by AgentRunner once it builds the model client; stays
+-- NULL for any agentrun that never reached generate() (failed at
+-- handler-load time, etc.).
+ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS model text;
+-- Resolved system prompt (SOUL.md + CONTEXT.md + handler body +
+-- tool list) used for this agentrun. Populated by AgentRunner
+-- only when core.logSystemPrompt is true; otherwise NULL. Surfaced
+-- by the report layer's Agentrun Start section when the consumer
+-- opts into withDetails.
+ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS system_prompt text;
 
 -- Forward-compat: relax the topic CHECK constraint to allow arbitrarily
 -- deep \`a:b:c:…\` topics. CREATE TABLE IF NOT EXISTS above doesn't
@@ -186,6 +198,20 @@ CREATE TABLE IF NOT EXISTS stepresults (
 
 CREATE INDEX IF NOT EXISTS stepresults_agent_run_id_idx ON stepresults (agent_run_id);
 CREATE INDEX IF NOT EXISTS stepresults_event_id_idx     ON stepresults (event_id);
+
+-- AI SDK per-step usage breakdown
+-- (LanguageModelUsage.inputTokenDetails / outputTokenDetails). Each
+-- column is NULL when the provider doesn't report that detail.
+ALTER TABLE stepresults ADD COLUMN IF NOT EXISTS input_tokens_no_cache    int;
+ALTER TABLE stepresults ADD COLUMN IF NOT EXISTS input_tokens_cache_read  int;
+ALTER TABLE stepresults ADD COLUMN IF NOT EXISTS input_tokens_cache_write int;
+ALTER TABLE stepresults ADD COLUMN IF NOT EXISTS output_tokens_text       int;
+ALTER TABLE stepresults ADD COLUMN IF NOT EXISTS output_tokens_reasoning  int;
+-- Full step object snapshot, populated only when the operator opts
+-- in via inference.captureRawStepResultToDatabase: true. Used to
+-- inspect provider-specific fields (Anthropic cache control,
+-- OpenAI logprobs, ...) that don't fit dedicated columns.
+ALTER TABLE stepresults ADD COLUMN IF NOT EXISTS raw_result jsonb;
 
 -- ───────── chatmessages ─────────
 --

@@ -36,12 +36,40 @@ export interface StepResultRow {
     readonly outputTokens: number | null;
     /** `inputTokens + outputTokens` when both are present; `null` otherwise. Denormalized for cheap SUM(). */
     readonly totalTokens: number | null;
+    /**
+     * Per-step input-token breakdown — mirrors the AI SDK's
+     * `LanguageModelUsage.inputTokenDetails`. `noCacheTokens` are
+     * input tokens billed at the full rate; `cacheReadTokens` are
+     * cache hits (cheap); `cacheWriteTokens` are cache writes
+     * (sometimes premium-priced, e.g. Anthropic). All `null` when
+     * the provider doesn't report the detail.
+     */
+    readonly inputTokensNoCache: number | null;
+    readonly inputTokensCacheRead: number | null;
+    readonly inputTokensCacheWrite: number | null;
+    /**
+     * Per-step output-token breakdown — mirrors the AI SDK's
+     * `LanguageModelUsage.outputTokenDetails`. `textTokens` are
+     * normal completion tokens; `reasoningTokens` are extended-
+     * thinking tokens (charged separately by some providers).
+     * Both `null` when the provider doesn't report the detail.
+     */
+    readonly outputTokensText: number | null;
+    readonly outputTokensReasoning: number | null;
     /** Cached `length(toolCalls)` for indexable filtering. */
     readonly toolCallCount: number;
     /** Full `StepResult.toolCalls` array. Opaque to us; the SDK types it as `TypedToolCall<TOOLS>[]`. */
     readonly toolCalls: unknown;
     /** Full `StepResult.toolResults` array. Opaque to us. */
     readonly toolResults: unknown;
+    /**
+     * Full SDK step object captured as JSON for diagnosis. `null`
+     * unless `inference.captureRawStepResultToDatabase: true` is set
+     * in `config.yml`. Useful when chasing provider-specific fields
+     * (Anthropic cache stats, OpenAI logprobs, …) that don't have
+     * dedicated columns.
+     */
+    readonly rawResult: unknown;
     /** Insert timestamp. */
     readonly createdAt: Date;
 }
@@ -59,6 +87,18 @@ export interface NewStepResult {
     readonly reasoningText?: string | null;
     readonly inputTokens?: number | null;
     readonly outputTokens?: number | null;
+    readonly inputTokensNoCache?: number | null;
+    readonly inputTokensCacheRead?: number | null;
+    readonly inputTokensCacheWrite?: number | null;
+    readonly outputTokensText?: number | null;
+    readonly outputTokensReasoning?: number | null;
     readonly toolCalls?: unknown;
     readonly toolResults?: unknown;
+    /**
+     * Full SDK step object to capture as JSON. Pass through only
+     * when the operator has opted into raw capture; pass `undefined`
+     * (or omit) for the common case where the column should stay
+     * NULL.
+     */
+    readonly rawResult?: unknown;
 }

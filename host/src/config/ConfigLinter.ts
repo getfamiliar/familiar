@@ -74,7 +74,10 @@ export function lintConfigFile(path: string): ConfigLintResult {
     lintInferenceProviders(config, defaultProvider, errors);
 
     optionalPositiveInt(config, "core.logRetentionDays", warnings);
+    optionalBool(config, "core.logSystemPrompt", warnings);
     optionalNonNegativeInt(config, "inference.maxRetries", warnings);
+    optionalBool(config, "inference.captureModelHttpRequestBodies", warnings);
+    optionalBool(config, "inference.captureRawStepResultToDatabase", warnings);
 
     return { ok: errors.length === 0, errors, warnings };
 }
@@ -243,6 +246,21 @@ function optionalPositiveInt(
     }
     if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
         warnings.push(`${path} should be a positive integer (got ${describe(value)}).`);
+    }
+}
+
+/**
+ * Validate that an optional path, when present, is a boolean.
+ * Records a warning if malformed; accessors fall back to their
+ * default at read time, so this is not a hard error.
+ */
+function optionalBool(root: Record<string, unknown>, path: string, warnings: string[]): void {
+    const value = readPath(root, path);
+    if (value === undefined) {
+        return;
+    }
+    if (typeof value !== "boolean") {
+        warnings.push(`${path} should be a boolean (got ${describe(value)}).`);
     }
 }
 

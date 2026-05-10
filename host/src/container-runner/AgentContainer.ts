@@ -59,6 +59,22 @@ export interface AgentContainerConfig {
      */
     readonly inferenceMaxRetries: number;
     /**
+     * When `true`, AgentRunner JSON-serializes the full SDK step
+     * result into `stepresults.raw_result`. Reflected to the
+     * container as `INFERENCE_CAPTURE_RAW_STEP_RESULT=true|false`;
+     * sourced from `inference.captureRawStepResultToDatabase` in
+     * `config.yml`, defaulting to `false`.
+     */
+    readonly captureRawStepResultToDatabase: boolean;
+    /**
+     * When `true`, AgentRunner persists each agentrun's resolved
+     * system prompt onto `agentruns.system_prompt`. Reflected to
+     * the container as `INFERENCE_LOG_SYSTEM_PROMPT=true|false`;
+     * sourced from `core.logSystemPrompt` in `config.yml`,
+     * defaulting to `false`.
+     */
+    readonly logSystemPrompt: boolean;
+    /**
      * Map of enabled provider id → SDK type. Native ids (`openai`,
      * `anthropic`, `grok`, …) map to themselves; custom ids declared
      * under `inference.customProviders` map to `"openai-compatible"`.
@@ -131,6 +147,10 @@ export class AgentContainer {
             `INFERENCE_PROVIDERS=${JSON.stringify(this.config.providerTypes)}`,
             "-e",
             `INFERENCE_MAX_RETRIES=${this.config.inferenceMaxRetries}`,
+            "-e",
+            `INFERENCE_CAPTURE_RAW_STEP_RESULT=${this.config.captureRawStepResultToDatabase}`,
+            "-e",
+            `INFERENCE_LOG_SYSTEM_PROMPT=${this.config.logSystemPrompt}`,
             "-e",
             `EA_LOG_LEVEL=${this.config.verbose ? "debug" : "info"}`,
             "-v",
