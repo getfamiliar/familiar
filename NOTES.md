@@ -12,6 +12,8 @@ llm failures / 404 codes etc. fixen
 - Check the tools in the tool groups for existence
 - Parse the tools frontmatter statements and check if they are valid (existing tools and groups and parseable)
 - Count tools per handler and warn if there are too many
+Extreme:
+- Check handler files for tool name mentions that do not exist
 
 ## Before release
 

@@ -275,6 +275,19 @@ export class StdioMcpTransport implements McpTransport {
             // a request/response trace is reconstructable from the
             // file alone.
             this.fileSink?.write("out", line);
+            // Only JSON-RPC *responses* (frames carrying an `id`)
+            // satisfy the in-flight request. Notifications
+            // (`notifications/message`, `notifications/progress`,
+            // …) and anything that doesn't parse — stray banner
+            // text, log lines that escaped stderr — are dropped on
+            // the floor. Without this filter, an MCP that emits
+            // progress notifications during a tool call hands its
+            // first notification to the waiter as if it were the
+            // response, the SDK never sees the real result, and
+            // the agentrun stalls until the 60 s safety timeout.
+            if (classifyStdioLine(line) !== "response") {
+                return;
+            }
             const resolve = this.pendingResolve;
             this.pendingResolve = null;
             this.pendingReject = null;
@@ -510,4 +523,33 @@ function isJsonRpcNotification(payload: string): boolean {
         return false;
     }
     return !Object.hasOwn(parsed, "id");
+}
+
+/**
+ * Classify one line of MCP stdio output. Only `"response"` —
+ * a JSON object carrying an `id` — should satisfy a waiter parked
+ * by {@link StdioMcpTransport.exchange}. Everything else
+ * (server-initiated `notifications/*` frames, stray banner lines,
+ * unparseable text) is `"non-response"` and gets dropped on the
+ * floor by the stdout reader; the per-MCP log file captures
+ * those for audit.
+ *
+ * Note this differs from {@link isJsonRpcNotification}: that
+ * function's contract is "should this *inbound POST body* be
+ * forwarded as a notification or treated as a request", which
+ * means unparseable input falls through to the request path
+ * (let the child error explicitly). Here, unparseable stdout is
+ * never a valid response, so we drop it.
+ */
+export function classifyStdioLine(line: string): "response" | "non-response" {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(line);
+    } catch {
+        return "non-response";
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return "non-response";
+    }
+    return Object.hasOwn(parsed, "id") ? "response" : "non-response";
 }
