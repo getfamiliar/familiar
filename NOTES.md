@@ -11,6 +11,7 @@ llm failures / 404 codes etc. fixen
 - Check reserved group names in toolgroups/: "all", "none", "system", mcp group ids
 - Check the tools in the tool groups for existence
 - Parse the tools frontmatter statements and check if they are valid (existing tools and groups and parseable)
+- Count tools per handler and warn if there are too many
 
 ## Before release
 

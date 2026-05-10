@@ -59,6 +59,14 @@ export interface AgentContainerConfig {
      */
     readonly inferenceMaxRetries: number;
     /**
+     * Hard cap (in seconds) on a single `agent.generate()` call.
+     * Prevents a wedged upstream LLM from parking the agentrun
+     * watcher slot indefinitely. Reflected to the container as
+     * `AGENT_TIMEOUT_SECONDS`. Sourced from `core.agentTimeout` in
+     * `config.yml`, defaulting to 60.
+     */
+    readonly agentTimeoutSeconds: number;
+    /**
      * When `true`, AgentRunner JSON-serializes the full SDK step
      * result into `stepresults.raw_result`. Reflected to the
      * container as `INFERENCE_CAPTURE_RAW_STEP_RESULT=true|false`;
@@ -147,6 +155,8 @@ export class AgentContainer {
             `INFERENCE_PROVIDERS=${JSON.stringify(this.config.providerTypes)}`,
             "-e",
             `INFERENCE_MAX_RETRIES=${this.config.inferenceMaxRetries}`,
+            "-e",
+            `AGENT_TIMEOUT_SECONDS=${this.config.agentTimeoutSeconds}`,
             "-e",
             `INFERENCE_CAPTURE_RAW_STEP_RESULT=${this.config.captureRawStepResultToDatabase}`,
             "-e",

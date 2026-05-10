@@ -350,6 +350,62 @@ export class AgentRunBus {
     }
 
     /**
+     * Sweep agentruns left in `running` state by a previous daemon
+     * instance and settle them as `failed` with a clear marker. The
+     * watcher's claim filter is `state='pending'`, so a row stuck in
+     * `running` (because the daemon died mid-`agent.generate`) is
+     * orphaned forever without this — the agentrun never finishes,
+     * the parent event never settles, and any plugin awaiting that
+     * event waits indefinitely.
+     *
+     * Two SQL writes in sequence:
+     *   1. UPDATE every `running` agentrun → `failed` with the
+     *      orphan-recovery error message.
+     *   2. UPDATE every `running` event whose tree has no remaining
+     *      pending/running agentruns to its terminal state (`failed`
+     *      if any failed, else `done`). Mirrors the per-row logic in
+     *      `EVENT_TERMINAL_UPDATE_SQL` but in bulk.
+     *
+     * Returns the count of agentruns that were transitioned. Safe
+     * to call on every daemon start; a no-op when nothing's stuck.
+     */
+    async failOrphanedRunning(): Promise<number> {
+        const pool = this.connection.getPool();
+        const message = "daemon was restarted while this agentrun was running";
+        const runs = await pool.query<{ id: string }>(
+            `UPDATE agentruns
+             SET state = 'failed',
+                 error = COALESCE(error, $1),
+                 updated_at = now()
+             WHERE state = 'running'
+             RETURNING id`,
+            [message],
+        );
+        if (runs.rowCount === 0) {
+            return 0;
+        }
+        await pool.query(
+            `UPDATE events
+             SET state = CASE
+               WHEN EXISTS (
+                 SELECT 1 FROM agentruns
+                 WHERE event_id = events.id
+                   AND state IN ('pending', 'running')
+               ) THEN state
+               WHEN EXISTS (
+                 SELECT 1 FROM agentruns
+                 WHERE event_id = events.id
+                   AND state = 'failed'
+               ) THEN 'failed'
+               ELSE 'done'
+             END,
+             updated_at = now()
+             WHERE state = 'running'`,
+        );
+        return runs.rowCount ?? 0;
+    }
+
+    /**
      * Postpone an agentrun after a retryable inference error.
      * Returns the row to `pending`, bumps `retry_count`, sets
      * `not_before` to the supplied timestamp, and records the latest

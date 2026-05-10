@@ -20,6 +20,15 @@ core:
   # Optional; falls back to 7 when omitted.
   logRetentionDays: 7
 
+  # Hard cap (seconds) on a single `agent.generate()` call. Belt-
+  # and-suspenders against a wedged upstream LLM that would
+  # otherwise park the agentrun watcher slot indefinitely. Both
+  # the AI SDK's own `timeout` and an outside AbortController
+  # observe this value; whichever fires first surfaces a clean
+  # `agent generate timed out` failure on the agentrun row.
+  # Optional; falls back to 60 when omitted.
+  # agentTimeout: 60
+
   # When true, every agentrun's resolved system prompt (SOUL.md +
   # CONTEXT.md + handler body + tool list, often several KB) is
   # persisted into agentruns.system_prompt. The report layer

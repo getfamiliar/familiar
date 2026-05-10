@@ -220,14 +220,67 @@ export class AgentRunner {
         // env (set by host from `inference.maxRetries`) → hardcoded
         // fallback of 3.
         const retryCap = handler.header.maxRetries ?? optionalEnvInt("INFERENCE_MAX_RETRIES") ?? 3;
+
+        // Hard timeout on a single generate() call. Three layers of
+        // defense, because empirical experience says the SDK's own
+        // abort handling can wedge:
+        //
+        //   1. `timeout: { totalMs }` to the SDK so it races its own
+        //      AbortController against its scheduler.
+        //   2. A linked AbortController of our own — fires when the
+        //      timeout elapses, signals the SDK to clean up.
+        //   3. `Promise.race` against a hard timeout-rejection
+        //      promise so the AWAIT itself rejects even if the SDK
+        //      never honours the abort. This is the load-bearing
+        //      guarantee: regardless of what the SDK does, the
+        //      catch below runs and the agentrun fails cleanly
+        //      after `core.agentTimeout` seconds.
+        //
+        // The orphaned generate continues in the background until it
+        // unwinds; the AbortController gives it a chance to do so
+        // gracefully, and the agentrun is already settled by then so
+        // its outcome doesn't matter.
+        const timeoutMs = (optionalEnvInt("AGENT_TIMEOUT_SECONDS") ?? 60) * 1000;
+        const timeoutController = new AbortController();
+        const linkedSignal = signal
+            ? AbortSignal.any([signal, timeoutController.signal])
+            : timeoutController.signal;
+        let timedOut = false;
+        let timer: NodeJS.Timeout | undefined;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+                timedOut = true;
+                const err = new Error(
+                    `agent generate timed out after ${timeoutMs} ms (configure via core.agentTimeout)`,
+                );
+                timeoutController.abort(err);
+                reject(err);
+            }, timeoutMs);
+        });
+
         let result: Awaited<ReturnType<typeof agent.generate>>;
         try {
-            result = await agent.generate({
-                messages,
-                abortSignal: signal,
-                onStepFinish: (step) => this.recordStep(step),
-            });
+            try {
+                result = await Promise.race([
+                    agent.generate({
+                        messages,
+                        abortSignal: linkedSignal,
+                        timeout: { totalMs: timeoutMs },
+                        onStepFinish: (step) => this.recordStep(step),
+                    }),
+                    timeoutPromise,
+                ]);
+            } finally {
+                if (timer !== undefined) {
+                    clearTimeout(timer);
+                }
+            }
         } catch (err) {
+            if (timedOut) {
+                throw new Error(
+                    `agent generate timed out after ${timeoutMs} ms (configure via core.agentTimeout)`,
+                );
+            }
             if (APICallError.isInstance(err) && err.isRetryable === true) {
                 if (this.row.retryCount < retryCap) {
                     const delayMs = computeRetryDelay(err, this.row.retryCount);

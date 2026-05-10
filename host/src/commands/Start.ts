@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { defineCommand } from "citty";
 import {
+    AgentRunBus,
     type ConfigService,
     createLogger,
     EventBus,
@@ -86,6 +87,7 @@ export const startCommand = defineCommand({
         const defaultProvider = config.getString("inference.defaultProvider");
         const defaultModel = config.getString("inference.defaultModel");
         const inferenceMaxRetries = config.getNumber("inference.maxRetries", 3);
+        const agentTimeoutSeconds = config.getNumber("core.agentTimeout", 60);
         const logSystemPrompt = config.getBool("core.logSystemPrompt", false);
         // Touch the chat-channel default so a missing value fails the
         // daemon now rather than at first chat event.
@@ -166,6 +168,20 @@ export const startCommand = defineCommand({
             const bus = new EventBus(schemaConnection);
             await bus.installSchema();
             log.info("bus-state schema installed");
+            // Recover any agentruns left in `running` state by a
+            // previous daemon instance — they're orphaned (the
+            // claim filter only picks up `pending` rows) and would
+            // never finish without an explicit failure. The same
+            // pass recomputes parent event terminal states so
+            // emit-and-await callers don't hang either.
+            const recoveryBus = new AgentRunBus(schemaConnection);
+            const orphaned = await recoveryBus.failOrphanedRunning();
+            if (orphaned > 0) {
+                log.warn(
+                    { count: orphaned },
+                    "recovered orphaned agentruns from previous daemon run (state running → failed)",
+                );
+            }
         } finally {
             await schemaConnection.close();
         }
@@ -183,6 +199,7 @@ export const startCommand = defineCommand({
             defaultProvider,
             defaultModel,
             inferenceMaxRetries,
+            agentTimeoutSeconds,
             logSystemPrompt,
             captureRawStepResultToDatabase,
             providerTypes,
