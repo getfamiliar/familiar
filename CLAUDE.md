@@ -149,45 +149,35 @@ Files are plain markdown. Handlers read and write them through the file-system M
 
 ### 3. Configuration and secrets (host, YAML)
 
-All configuration — sensitive and non-sensitive — lives in
-`config/config.yml` (gitignored; `config/config.example.yml` is the
-tracked sample). The host accesses it via two services:
+All configuration — sensitive and non-sensitive — lives in `config/config.yml` (gitignored;
+`config/config.example.yml` is the tracked sample). The host accesses it via two services:
 
-- **`ConfigService`** (interface in `shared/src/Config.ts`,
-  implementation in `host/src/config/ConfigService.ts`) is the runtime
-  read/write surface. Plugin-agnostic; exposes
-  `getString(key)` / `getNumber(key)` / `getArray(key)` keyed by
-  dotted paths (e.g. `"core.postgresPassword"`,
-  `"telegram.botToken"`), with optional defaults that widen the
-  return type to include the default when omitted-vs-throws is the
-  difference between "throw on missing" and "return null". Plugins
-  reach it via `ctx.config`. **No plugin-specific types in `shared/`.**
-- **`ConfigLinter`** (`host/src/config/ConfigLinter.ts`) validates
-  the file at boot: file readable, parses as a YAML mapping, contains
-  the platform-level minimum (`core.postgresPassword`,
-  `core.defaultChatChannel`, `inference.provider`,
-  `inference.defaultModel`, `inference.apiKeys.<provider>`). Unknown
-  top-level groups are ignored — plugins own their own keys, the
-  platform doesn't enumerate them.
+- **`ConfigService`** (interface in `shared/src/Config.ts`, implementation in
+  `host/src/config/ConfigService.ts`) is the runtime read/write surface. Plugin-agnostic; exposes
+  `getString(key)` / `getNumber(key)` / `getArray(key)` keyed by dotted paths (e.g.
+  `"core.postgresPassword"`, `"telegram.botToken"`), with optional defaults that widen the return
+  type to include the default when omitted-vs-throws is the difference between "throw on missing"
+  and "return null". Plugins reach it via `ctx.config`. **No plugin-specific types in `shared/`.**
+- **`ConfigLinter`** (`host/src/config/ConfigLinter.ts`) validates the file at boot: file readable,
+  parses as a YAML mapping, contains the platform-level minimum (`core.postgresPassword`,
+  `core.defaultChatChannel`, `inference.provider`, `inference.defaultModel`,
+  `inference.apiKeys.<provider>`). Unknown top-level groups are ignored — plugins own their own
+  keys, the platform doesn't enumerate them.
 
 Top-level groups in `config/config.yml`:
 
-- `core` — `postgresPassword`, `defaultChatChannel`, optional
-  `logRetentionDays`. Required.
-- `inference` — `provider`, `defaultModel`, `apiKeys.<provider>` map.
-  Required.
-- per-plugin (`telegram`, `whatsapp`, …) — owned by the plugin;
-  plugin parses its own subtree and self-disables when absent.
+- `core` — `postgresPassword`, `defaultChatChannel`, optional `logRetentionDays`. Required.
+- `inference` — `provider`, `defaultModel`, `apiKeys.<provider>` map. Required.
+- per-plugin (`telegram`, `whatsapp`, …) — owned by the plugin; plugin parses its own subtree and
+  self-disables when absent.
 
-Container-side env stays explicit: `Start.ts` reads from the config
-service and hand-picks which values become container env vars.
-**Proxy-placeholder API keys** (e.g. `FEATHERLESS_API_KEY=via-proxy`
-inside `ea-agent`) are hardcoded in the container launcher
-(`AgentContainer.ts`); the real upstream key only flows from config →
-`ReverseProxyContainer.upstreamApiKey`.
+Container-side env stays explicit: `Start.ts` reads from the config service and hand-picks which
+values become container env vars. **Proxy-placeholder API keys** (e.g. `FEATHERLESS_API_KEY=via-proxy`
+inside `ea-agent`) are hardcoded in the container launcher (`AgentContainer.ts`); the real upstream
+key only flows from config → `ReverseProxyContainer.upstreamApiKey`.
 
-CLI: `./cli.sh config lint` validates the file. `./cli.sh start`
-runs the linter implicitly before bringing the daemon up.
+CLI: `./cli.sh config lint` validates the file. `./cli.sh start` runs the linter implicitly before
+bringing the daemon up.
 
 ## Plugins
 
@@ -373,6 +363,12 @@ All TypeScript code is auto-formatted by [Biome](https://biomejs.dev/) on every 
 - All shell scripts must pass [shellcheck](https://www.shellcheck.net/).
 - Use `set -e` at the top of every script.
 - Quote all variable expansions: `"${VAR}"` not `$VAR`.
+
+### Markdown
+
+- Wrap prose at **100 characters**, matching the TypeScript line width in `biome.json`. Don't reflow at 70/80; the wider width matches modern editors.
+- Code fences and tables are exempt — leave them at their natural width.
+- Existing files predating this convention may have varying wrap widths; reflow opportunistically when editing nearby content, not as a separate cleanup pass.
 
 ### Formatting & Linting
 

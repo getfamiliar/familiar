@@ -1,8 +1,6 @@
 Important: finishReason length + other gescheit behandeln
 llm failures / 404 codes etc. fixen
 
-Postgres auf User ID pinnen
-
 Agentruns: mehr Statistiken sammeln
 
 Zeilenlänge in Markdown
