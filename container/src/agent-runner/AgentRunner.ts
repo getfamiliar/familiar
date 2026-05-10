@@ -125,14 +125,24 @@ export class AgentRunner {
         });
 
         const history = await this.chat.fetchHistory(this.row.eventId);
-        const prompt = buildPrompt(this.row.prompt, this.row.payload);
+        // `chatmessages` only carries rows linked to chat events, so a
+        // non-empty history is the unambiguous signal that the user's
+        // trailing turn is already in `messages` via that channel.
+        // EventWatcher writes the same text onto `row.prompt` for
+        // inspection purposes, but feeding it through buildPrompt as a
+        // user message here would inject it twice. Skip the seed
+        // prompt in that case; payload rendering still goes through
+        // either way, so structured supplementary data remains visible
+        // to the model.
+        const seedPrompt = history.length > 0 ? null : this.row.prompt;
+        const prompt = buildPrompt(seedPrompt, this.row.payload);
 
         // The agent's `instructions` (system prompt — SOUL.md,
         // ENVIRONMENT.md, CONTEXT.md, handler body, tool list) is
         // attached at construction time. `messages` carries everything
-        // that varies per-call: prior chat turns (empty for non-chat
-        // events) plus the current user prompt (the agentrun's seed
-        // prompt + sanitized payload) appended as the trailing user
+        // that varies per-call: prior chat turns (non-empty only for
+        // chat events) plus, for non-chat events, the agentrun's seed
+        // prompt + sanitized payload appended as the trailing user
         // message when non-empty.
         const messages: ModelMessage[] = [...history];
         if (prompt.length > 0) {

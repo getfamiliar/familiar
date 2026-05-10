@@ -83,19 +83,19 @@ export class EventWatcher {
      */
     private async handle(event: EventRow): Promise<void> {
         try {
-            // Only forward `prompt` for non-chat events. For chat
-            // events the same text was mirrored into `chatmessages` at
-            // emit time, and the AgentRunner consumes it via chat
-            // history; setting `agentrun.prompt` too would duplicate
-            // the trailing user turn.
-            const promptForAgentrun = event.isChat ? null : event.prompt;
+            // Copy the event's prompt onto the agentrun unconditionally
+            // so a `psql` inspection of the row shows what triggered it
+            // — chat or otherwise. AgentRunner skips the trailing
+            // user-message append when chat history is non-empty, so
+            // chat events don't end up with the user turn injected
+            // twice (once via history, once via row.prompt).
             const root = await this.agentruns.add({
                 eventId: event.id,
                 topic: event.topic,
                 handler: event.startHandler ?? "index",
                 priority: event.priority,
                 payload: event.payload,
-                prompt: promptForAgentrun,
+                prompt: event.prompt,
                 privileged: event.privileged,
             });
             this.log.info(`event ${event.id} claimed [${event.topic}], root agentrun ${root.id}`);
