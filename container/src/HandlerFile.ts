@@ -60,6 +60,14 @@ export interface HandlerFileHeader {
      */
     readonly outputChat?: boolean;
     /**
+     * Cron expression triggering this handler. Honoured by the host's
+     * cronjob scheduler — friendly-node-cron grammar (`every monday at
+     * 8 am`) or a raw cron expression. The container does not act on
+     * this field; it is declared here so the YAML validator accepts it
+     * and the schema stays self-documenting.
+     */
+    readonly cron?: string;
+    /**
      * Controls how this file combines with its inheritance chain during
      * {@link HandlerFile.load}. Topics can nest arbitrarily deep
      * (`chat:telegram:group:reaction`); each `:`-segment maps to a
@@ -329,6 +337,7 @@ function mergeDeclared(parent: HandlerFileHeader, child: HandlerFileHeader): Han
         maxOutputTokens: child.maxOutputTokens ?? parent.maxOutputTokens,
         maxRetries: child.maxRetries ?? parent.maxRetries,
         outputChat: child.outputChat ?? parent.outputChat,
+        cron: child.cron ?? parent.cron,
         mergeMode: child.mergeMode ?? parent.mergeMode,
     };
 }
@@ -390,6 +399,7 @@ function parseHandler(filePath: string, source: string): DeclaredFile {
         maxOutputTokens: optionalPositiveInteger(filePath, raw, "maxOutputTokens"),
         maxRetries: optionalNonNegativeInteger(filePath, raw, "maxRetries"),
         outputChat: optionalBoolean(filePath, raw, "outputChat"),
+        cron: optionalString(filePath, raw, "cron"),
         mergeMode: optionalEnum(filePath, raw, "mergeMode", ["merge", "replace"]),
     };
 
@@ -412,6 +422,7 @@ function mergeDefaults(
         maxOutputTokens: declared.maxOutputTokens ?? defaults.maxOutputTokens,
         maxRetries: declared.maxRetries ?? defaults.maxRetries,
         outputChat: declared.outputChat ?? defaults.outputChat,
+        cron: declared.cron ?? defaults.cron,
         mergeMode: declared.mergeMode ?? defaults.mergeMode,
     };
 }

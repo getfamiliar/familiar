@@ -19,11 +19,14 @@ import { buildProviders, ReverseProxy } from "../bastion/ReverseProxy.js";
 import { lintOrThrow } from "../config/ConfigLinter.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { AgentContainer } from "../container-runner/AgentContainer.js";
+import { CronjobScheduler } from "../cron/CronjobScheduler.js";
 import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { McpGateway } from "../mcp/McpGateway.js";
+import { HostContextImpl } from "../plugins/HostContextImpl.js";
 import { PluginHost } from "../plugins/PluginHost.js";
 import { rollingFileStream } from "../tools/LogRetentionTools.js";
+import { WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
 import { acquirePidFile, removePidFile } from "./pidfile.js";
 
 /**
@@ -217,6 +220,33 @@ export const startCommand = defineCommand({
         await pluginHost.startDaemons();
         log.info("plugin daemons started");
 
+        // Cron-fired events go through HostContextImpl, not raw
+        // EventBus.add. The host-side ctx.events.emit path is where
+        // core.defaultChatChannel is stamped onto preferredChatChannelId
+        // for events that don't carry one. Without that stamping, any
+        // chat message the agent produces in response (send_chat) ends
+        // up on an empty channel and no chat plugin claims it.
+        const cronCtx = new HostContextImpl({
+            ensureConnection: () => pluginHost.ensureConnection(),
+            config,
+            log: log.child({ component: "cron-scheduler" }),
+            dataDir: boot.dataDir,
+        });
+        const workspaceWatcher = new WorkspaceWatcher({
+            workspaceDir: boot.workspaceDir,
+            log: log.child({ component: "workspace-watcher" }),
+        });
+        await workspaceWatcher.start();
+        const cronScheduler = new CronjobScheduler({
+            watcher: workspaceWatcher,
+            emit: async (event) => {
+                const handle = await cronCtx.events.emit(event);
+                return { id: handle.id };
+            },
+            log: log.child({ component: "cron-scheduler" }),
+        });
+        await cronScheduler.start();
+
         let shuttingDown = false;
         const shutdown = async (signal: string) => {
             if (shuttingDown) {
@@ -226,6 +256,8 @@ export const startCommand = defineCommand({
             log.info(`draining (signal=${signal})`);
 
             const orderedSteps = async (): Promise<"done"> => {
+                await safeStop(log, "cron scheduler", () => cronScheduler.stop());
+                await safeStop(log, "workspace watcher", () => workspaceWatcher.stop());
                 await safeStop(log, "plugin host", () => pluginHost.close());
                 await safeStop(log, "agent container", () => container.stop());
                 await safeStop(log, "bastion", () => bastion.stop());

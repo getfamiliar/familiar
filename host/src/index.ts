@@ -3,6 +3,7 @@ import { createLogger, prettyStdoutStream } from "effective-assistant-shared";
 import { bootstrap } from "./Bootstrap.js";
 import { agentrunCommand } from "./commands/Agentrun.js";
 import { configCommand } from "./commands/Config.js";
+import { cronCommand } from "./commands/Cron.js";
 import { eventCommand } from "./commands/Event.js";
 import { mcpCommand } from "./commands/Mcp.js";
 import { psqlCommand } from "./commands/Psql.js";
@@ -46,6 +47,7 @@ runMain(
             agentrun: agentrunCommand,
             psql: psqlCommand,
             config: configCommand,
+            cron: cronCommand,
             mcp: mcpCommand,
             report: reportCommand,
             ...pluginHost.buildSubCommands(),

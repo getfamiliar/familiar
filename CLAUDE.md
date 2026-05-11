@@ -122,22 +122,17 @@ Planned but not yet implemented: `pending_actions` (approval gate), `scheduled_t
 
 ### 2. Workspace (container, markdown)
 
-Mounted directory, the assistant's "memory and personality." Conventions:
+Mounted directory, the assistant's process handbook, memory and personality. Structure:
 
 ```
 workspace/
   SOUL.md                   # the assistant's core identity and values, read by every handler
   CONTEXT.md                # situational context — the job, relations, duties etc.
-  workflows/                # time-driven workflows (user-defined cronjobs)
-    monday-digest.md
-    monthly-spending-review.md
-    ...
-  people/                   # cross-plugin facts about people
-    anna.md                 # written and updated by handlers, user-correctable
-    ...
-  <topic>/                  # one folder per top-level topic (e.g. mail/, chat/, calendar/)
+  ENVIRONMENT.md            # description of the system environment for the agent's situational awareness
+  <topic>/                  # one folder per top-level topic (e.g. mail/, chat/, calendar/) - the user can invent new ones as needed, some are shipped by plugins
     index.md                # default entry-point handler for events of this topic
     analyze.md              # additional handler, queued by name from another handler
+    daily-digest.md         # example of a handler with "cron"
     ...
     <subtopic>/             # optional override folder for `<topic>:<subtopic>`
       index.md              # overrides the parent index.md for this subtype
@@ -145,7 +140,7 @@ workspace/
       ...
 ```
 
-Files are plain markdown. Handlers read and write them through the file-system MCP. The workspace can be backed by a git repo for free versioning.
+Handler files are plain markdown. They are usually authored by the user but can be created and modified by privileged event handlers.
 
 ### 3. Configuration and secrets (host, YAML)
 
@@ -179,6 +174,8 @@ key only flows from config → `ReverseProxyContainer.upstreamApiKey`.
 CLI: `./cli.sh config lint` validates the file. `./cli.sh start` runs the linter implicitly before
 bringing the daemon up.
 
+Note that `config/mcp.yml` contains the configuration for MCP tools and likely contains sensitive information like API keys as well.
+
 ## Plugins
 
 Plugins are npm packages with a standard structure:
@@ -196,7 +193,7 @@ my-plugin/
       ...
 ```
 
-A plugin owns one or more topics, each represented as a folder under `workspace-template/`. The plugin ships default handler markdown; the user edits or overrides them in `data/workspace/`.
+A plugin may emit events on any number of topics and usually ships default handlers for the emitted events in its folder under `workspace-template/`. The daemon checks all workspace templates on startup and copies new / missing files to the `data/workspace` directory.
 
 ### Plugin manifest (in package.json)
 
@@ -208,41 +205,51 @@ Declares:
 - MCPs provided (optional)
 - Cronjobs and daemons (with schedule and entry points)
 
-## Workflows
+## Cronjobs
 
-Files in `workspace/workflows/`. The first line describes when the workflow fires and what it does. The rest contains the schedule and detailed instructions.
+Any handler can declare a `cron:` field in its YAML frontmatter. The host's
+`CronjobScheduler` (in `host/src/cron/`) scans the workspace at daemon startup, watches for
+file changes via the generalized `WorkspaceWatcher` (in `host/src/workspace/`), and
+registers a Croner job per valid expression. When the cron fires, the scheduler emits a
+fresh event whose `topic` and `startHandler` resolve to the same `.md` file, with the
+prompt `"The cronjob has fired"` and no payload.
 
-Parsed by the workflow plugin, which extracts the schedule and registers a cronjob. When the cronjob fires, an event is emitted that proceeds through the normal pipeline.
+The expression is parsed by `friendly-node-cron` first (`every monday at 8 am`,
+`every 5 minutes`, `weekly`, …). If the friendly grammar doesn't match, the verbatim string
+is passed straight to Croner as a raw cron expression. Invalid expressions are logged at
+`warn` and silently dropped; the rest of the workspace keeps working. Editing or deleting
+a handler file re-evaluates its job live — no daemon restart needed.
 
-Example: `workspace/workflows/monday-digest.md`
+`ea cron list` prints every handler with a `cron:` field, the verbatim string, and the
+parsed expression. The command runs a standalone filesystem scan, so it works whether the
+daemon is up or not.
+
+Example: `workspace/emails/monday-digest.md`
 
 ```markdown
-# Every Monday at 8 AM, send a week-ahead briefing via Telegram
+---
+cron: every monday at 8
+---
+# Send a week-ahead briefing via Telegram
 
-## Schedule
-Every Monday at 8:00 in local time.
-
-## Action
-Compile a briefing of:
-- Calendar events for the upcoming week
-- Open tasks with deadlines this week
-- Any unread mails marked important
-
-Send the briefing via Telegram.
+Compile a briefing of calendar events, open tasks with deadlines this week, and unread
+mails marked important. Send the briefing via Telegram.
 ```
 
-### Editing handlers and workflows via chat
+**Handler placement rule:** handler markdown files must live under at least one topic
+folder (e.g. `workflows/<name>.md`, `mail/digest.md`).
 
-When the user expresses a behavior change in chat ("remember: Anna gets priority on mails"), the handler running the chat event identifies the edit intent and writes to the relevant markdown files (the topic's handler, a person's note, a workflow, etc.).
+### Editing handlers via chat
+
+When the user asks for it in the chat, the agent can edit the handler markdown files to reflect the requested behaviors.
 
 ## Markdown layers and self-organization
 
 Handler behavior is shaped by markdown files in layers, each with distinct ownership and purpose:
 
 - **Code-level capability** — what plugins make possible (in TypeScript/MCPs)
-- **Global context** — `SOUL.md` and `CONTEXT.md`, written by the user to define the assistant's identity and situational context
+- **Global context** — `SOUL.md`, `ENVIRONMENT.md` and `CONTEXT.md`, written by the user to define the assistant's identity and situational context
 - **Handler layer** — per-topic handler files (`<topic>/index.md`, `<topic>/analyze.md`, …) and sub-topic overrides (`<topic>/<subtopic>/…`). Plugin-shipped defaults, user-editable.
-- **Workflow layer** — user-defined time-driven `workflows/`
 - **Knowledge layer** — facts about people, projects, etc. (`people/`, plugin-specific), built up over time by handlers themselves, correctable by the user
 
 Handler prompts are kept short. They tell the agent how to find more context (e.g. "always read `people/<sender>.md` before drafting a reply"). The agent pulls additional files into context as needed. This avoids loading large amounts of context into every prompt and lets the assistant build its own knowledge structure over time, guided by user conventions.
@@ -253,7 +260,6 @@ Handler prompts are kept short. They tell the agent how to find more context (e.
 
 - **Cronjobs** — stateless, idempotent. On exception: log and continue at next schedule. Use `node-cron` or `bullmq`.
 - **Daemons** (long-running processes like IMAP IDLE, Telegram bot) — exponential backoff on restart (1s → 2s → 4s → ... up to 5min cap).
-- **Health checks** — plugin-required `healthcheck()` method called every 30s by host. No response within 5s ⇒ restart. !!! NOT SURE HOW TO IMPLEMENT THIS, MAYBE RECONSIDER OR TURN INTO A HEARTBEAT
 - **Graceful shutdown** — SIGTERM with 10s grace period; plugins should drain in-flight operations and persist any pending state.
 
 ### Logging
@@ -320,7 +326,9 @@ The following are deliberately deferred but should be addressed during implement
 5. **Logging service** — centralized structured logging.
 6. **Approval gate** — `pending_actions` table, suspend/resume mechanics (per the open question above), notification push (start with Telegram or simple web UI), response handling.
 7. **First real plugin** — mail plugin end to end as the reference implementation: IMAP IDLE in host, `mail/index.md` (and optionally `mail/new/index.md`) handlers in workspace-template, MCP for mail operations behind the gateway.
-8. **Workflow plugin** — built-in workflow scanning, schedule extraction, cron registration.
+8. **Cron scheduler** — host-side scanning of handler frontmatter for `cron:` fields,
+   live re-evaluation on file change, event emission on firing. *(Implemented:
+   `host/src/cron/`, `host/src/workspace/WorkspaceWatcher.ts`.)*
 9. **Additional plugins** — calendar, Jira, Telegram, chat (probably web UI for chat).
 
 ## Design principles to preserve

@@ -27,7 +27,6 @@ export type {
     EmitOptions,
     HostContext,
     PluginContainerManifest,
-    PluginCronjob,
     PluginHostManifest,
     PluginManifest,
 } from "./Plugin.js";

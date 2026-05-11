@@ -177,9 +177,11 @@ export class PluginHost {
      * Open the postgres connection on demand. Reads
      * `core.postgresPassword` from the config service only when first
      * called, so commands that don't touch the bus don't trigger
-     * config validation.
+     * config validation. Public so daemon-owned host services
+     * (cron scheduler, future approval gate, etc.) can share the same
+     * pool plugins already use.
      */
-    private async ensureConnection(): Promise<PostgresConnection> {
+    async ensureConnection(): Promise<PostgresConnection> {
         if (this.connection) {
             return this.connection;
         }

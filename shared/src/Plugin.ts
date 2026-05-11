@@ -128,22 +128,6 @@ export interface HostContext {
 }
 
 /**
- * One scheduled invocation of a CLI command, declared by a plugin.
- *
- * Cronjobs deliberately call back into the CLI rather than running
- * arbitrary in-process code: every scheduled action is also a
- * manually-invokable command, which is invaluable for debugging and
- * audit. The scheduler implementation is deferred — this type just
- * fixes the manifest shape.
- */
-export interface PluginCronjob {
-    /** Standard cron expression (e.g. `0 8 * * 1`). */
-    readonly schedule: string;
-    /** CLI argv to invoke. First element is typically the plugin id. */
-    readonly command: readonly string[];
-}
-
-/**
  * Host-side surface a plugin may declare. All fields optional; a
  * plugin that's pure workspace template (no host code) leaves `host`
  * out of its manifest entirely.
@@ -195,11 +179,6 @@ export interface PluginHostManifest {
      * (e.g. `cli.sh cli-chat send "hi"`).
      */
     commands?(ctx: HostContext): readonly AnyCommandDef[];
-    /**
-     * Cronjob declarations. Scheduler implementation is a separate
-     * plan; for now this is data only.
-     */
-    cronjobs?(ctx: HostContext): readonly PluginCronjob[];
 }
 
 /**
