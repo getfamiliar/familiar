@@ -1,10 +1,6 @@
-Cron Jobs
-Chat History für Non-Chat Events
-
 Alternativen Modellprovider testen: Synthetic.new - wie Featherless, 30€ / Monat, scheinbar zuverlässiger
 
 hostname limits in mcp.yml parsen
-
 
 ## For later
 
@@ -29,4 +25,3 @@ Extreme:
 
 ## Security Holes
 
-- Two step installation of pypis can be circumvented as the installation step happens on every daemon boot. Post-install scripts could exfiltrate env variables that a previous MCP run saved inside the container.

@@ -4,6 +4,7 @@ import {
     AgentRunBus,
     type AgentRunRow,
     ChatMessageBus,
+    EventBus,
     type Logger,
     type PostgresConnection,
     StepResultBus,
@@ -16,6 +17,7 @@ import { ModelFactory } from "../models/ModelFactory.js";
 import { buildPrompt, buildSystemPrompt } from "../PromptBuilder.js";
 import { createGroupLookup } from "../tools/ToolGroupLoader.js";
 import { ToolsFactory } from "../tools/ToolsFactory.js";
+import { fetchAncestorChain } from "./AgentRunLineage.js";
 import { computeRetryDelay } from "./computeRetryDelay.js";
 import { formatInferenceError } from "./formatInferenceError.js";
 import { synthesizeResultText } from "./synthesizeResultText.js";
@@ -74,6 +76,7 @@ export class AgentRunner {
     private readonly steps: StepResultBus;
     private readonly chat: ChatManager;
     private readonly bus: AgentRunBus;
+    private readonly events: EventBus;
     private readonly log: Logger;
     private readonly mcpPool: McpClientPool;
     private stepStartedAt = 0;
@@ -88,6 +91,7 @@ export class AgentRunner {
         this.steps = new StepResultBus(connection);
         this.chat = new ChatManager(new ChatMessageBus(connection));
         this.bus = new AgentRunBus(connection, log);
+        this.events = new EventBus(connection);
         this.log = log;
         this.mcpPool = mcpPool;
     }
@@ -170,29 +174,71 @@ export class AgentRunner {
             },
         });
 
-        const history = await this.chat.fetchHistory(this.row.eventId);
-        // `chatmessages` only carries rows linked to chat events, so a
-        // non-empty history is the unambiguous signal that the user's
-        // trailing turn is already in `messages` via that channel.
-        // EventWatcher writes the same text onto `row.prompt` for
-        // inspection purposes, but feeding it through buildPrompt as a
-        // user message here would inject it twice. Skip the seed
-        // prompt in that case; payload rendering still goes through
-        // either way, so structured supplementary data remains visible
-        // to the model.
-        const seedPrompt = history.length > 0 ? null : this.row.prompt;
-        const prompt = buildPrompt(seedPrompt, this.row.payload);
+        // Gate context assembly on the originating event's `isChat`
+        // flag. Chat events feed prior turns from `chatmessages`; every
+        // other event (cron firings, mail ingestion, jira webhooks,
+        // queue_run descendants of those) feeds the agentrun lineage
+        // instead. Default-stamping put a chat channel on those events
+        // for `send_chat` routing, so the channel column alone is no
+        // longer a reliable "is this a chat" signal — `events.is_chat`
+        // is. A missing event row (shouldn't happen for a claimed
+        // agentrun) is treated as non-chat to fail safer.
+        const event = await this.events.getById(this.row.eventId);
+        const isChat = event?.isChat === true;
 
-        // The agent's `instructions` (system prompt — SOUL.md,
-        // ENVIRONMENT.md, CONTEXT.md, handler body, tool list) is
-        // attached at construction time. `messages` carries everything
-        // that varies per-call: prior chat turns (non-empty only for
-        // chat events) plus, for non-chat events, the agentrun's seed
-        // prompt + sanitized payload appended as the trailing user
-        // message when non-empty.
-        const messages: ModelMessage[] = [...history];
-        if (prompt.length > 0) {
-            messages.push({ role: "user", content: prompt });
+        let messages: ModelMessage[];
+        let historyMessages = 0;
+        let ancestorCount = 0;
+        let prompt: string;
+
+        if (isChat) {
+            const history = await this.chat.fetchHistory(this.row.eventId);
+            // `chatmessages` carries rows linked to chat events, so a
+            // non-empty history is the unambiguous signal that the
+            // user's trailing turn is already in `messages` via that
+            // channel. EventWatcher writes the same text onto
+            // `row.prompt` for inspection purposes, but feeding it
+            // through buildPrompt as a user message here would inject
+            // it twice. Skip the seed prompt in that case; payload
+            // rendering still goes through either way, so structured
+            // supplementary data remains visible to the model.
+            const seedPrompt = history.length > 0 ? null : this.row.prompt;
+            prompt = buildPrompt(seedPrompt, this.row.payload);
+            messages = [...history];
+            if (prompt.length > 0) {
+                messages.push({ role: "user", content: prompt });
+            }
+            historyMessages = history.length;
+        } else {
+            // Non-chat: synthesise prior turns from the agentrun
+            // lineage. Both `prompt` and `resultText` of each ancestor
+            // are assistant-side artifacts here — the prompt was
+            // written by the host emitter (cron, mail plugin) or by
+            // the parent agent's `queue_run`, never by a literal user.
+            // Tagging it `user` would falsely imply user authorship.
+            // Reasoning text from `stepresults` is intentionally
+            // omitted in v1; fold it in later (inline block or
+            // structured `reasoning` part) once it proves useful.
+            const ancestors = await fetchAncestorChain(this.bus, this.row.parentAgentrunId);
+            messages = [];
+            for (const ancestor of ancestors) {
+                if (ancestor.prompt !== null && ancestor.prompt.trim().length > 0) {
+                    messages.push({ role: "assistant", content: ancestor.prompt });
+                }
+                if (ancestor.resultText !== null && ancestor.resultText.trim().length > 0) {
+                    messages.push({ role: "assistant", content: ancestor.resultText });
+                }
+            }
+            // The current run's prompt stays `user`-roled even though
+            // it too is host- or parent-assistant-generated: the
+            // conversational protocol expects a user turn last to cue
+            // the model to respond. This is a protocol convention, not
+            // a claim about authorship.
+            prompt = buildPrompt(this.row.prompt, this.row.payload);
+            if (prompt.length > 0) {
+                messages.push({ role: "user", content: prompt });
+            }
+            ancestorCount = ancestors.length;
         }
 
         const runStartedAt = Date.now();
@@ -205,7 +251,9 @@ export class AgentRunner {
                 prompt,
                 runPrompt: this.row.prompt,
                 tools: toolNames,
-                historyMessages: history.length,
+                contextSource: isChat ? "chat-history" : "agentrun-lineage",
+                historyMessages,
+                ancestorCount,
                 promptLength: prompt.length,
             },
             "agent starting",
