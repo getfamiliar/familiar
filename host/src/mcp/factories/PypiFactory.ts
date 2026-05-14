@@ -28,7 +28,7 @@ export interface PypiFactoryConfig extends RuntimeContainerConfig {
  * the runtime image tag and the version separator (`==` per PEP
  * 508). `options` semantics are identical — see the doc on the
  * npm helper for how `interactive`, `containerName`, and
- * `extraArgs` interact with the bastion defaults.
+ * `appendArgs` interact with the bastion defaults.
  *
  * `entry.command` is ignored — see the matching note in NpmFactory.
  */
@@ -44,7 +44,6 @@ export function buildPypiDockerArgs(
     const containerName =
         options.containerName === undefined ? `ea-mcp-${entry.id}` : options.containerName;
     const interactive = options.interactive ?? false;
-    const extraArgs = options.extraArgs ?? entry.args;
 
     const args: string[] = ["run", interactive ? "-it" : "-i", "--rm"];
     if (containerName !== null) {
@@ -86,7 +85,11 @@ export function buildPypiDockerArgs(
     const versionSuffix = entry.version === undefined ? "" : `==${entry.version}`;
     args.push(`${entry.package}${versionSuffix}`);
 
-    for (const a of extraArgs) {
+    // mcp.yml args always apply; user-supplied `appendArgs` tail them.
+    for (const a of entry.args) {
+        args.push(a);
+    }
+    for (const a of options.appendArgs ?? []) {
         args.push(a);
     }
 

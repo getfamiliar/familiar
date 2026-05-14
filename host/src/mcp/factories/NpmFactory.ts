@@ -37,8 +37,9 @@ export interface NpmFactoryConfig extends RuntimeContainerConfig {
  * tweak the bastion defaults: `interactive: true` adds `-t`,
  * `containerName: null` drops `--name` so the call doesn't
  * collide with a live bastion-managed container of the same id,
- * and `extraArgs` overrides `entry.args` so the user can pass
- * `--login` (or any other CLI invocation) verbatim.
+ * and `appendArgs` is concatenated AFTER `entry.args` so the user
+ * can pass `--login` (or any other CLI tail) without losing the
+ * mcp.yml `args:` block — flags like `--org-mode` always apply.
  *
  * The `entry.command` field is ignored for npm sources — the entry
  * point is fixed to `npx -y` to keep the runtime image's contract
@@ -57,7 +58,6 @@ export function buildNpmDockerArgs(
     const containerName =
         options.containerName === undefined ? `ea-mcp-${entry.id}` : options.containerName;
     const interactive = options.interactive ?? false;
-    const extraArgs = options.extraArgs ?? entry.args;
 
     const args: string[] = ["run", interactive ? "-it" : "-i", "--rm"];
     if (containerName !== null) {
@@ -108,7 +108,14 @@ export function buildNpmDockerArgs(
     const versionSuffix = entry.version === undefined ? "" : `@${entry.version}`;
     args.push(`${entry.package}${versionSuffix}`);
 
-    for (const a of extraArgs) {
+    // mcp.yml args always apply; user-supplied `appendArgs` tail them.
+    // The order matters for tools that consume args positionally —
+    // entry.args go first because that's the "default invocation" the
+    // operator configured.
+    for (const a of entry.args) {
+        args.push(a);
+    }
+    for (const a of options.appendArgs ?? []) {
         args.push(a);
     }
 

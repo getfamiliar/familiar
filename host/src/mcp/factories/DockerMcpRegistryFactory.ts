@@ -32,8 +32,9 @@ export interface DockerMcpRegistryFactoryConfig {
  * container when the process exits.
  *
  * `options` mirrors {@link buildNpmDockerArgs} — `interactive: true`
- * adds `-t`, `containerName: null` drops `--name`, and `extraArgs`
- * overrides `entry.args` (used by `./cli.sh mcp call`).
+ * adds `-t`, `containerName: null` drops `--name`, and `appendArgs`
+ * is concatenated AFTER `entry.args` (used by `./cli.sh mcp call`,
+ * which never replaces the mcp.yml args block).
  */
 export function buildDockerRegistryArgs(
     entry: McpEntry,
@@ -45,7 +46,6 @@ export function buildDockerRegistryArgs(
     const containerName =
         options.containerName === undefined ? `ea-mcp-${entry.id}` : options.containerName;
     const interactive = options.interactive ?? false;
-    const extraArgs = options.extraArgs ?? entry.args;
 
     const args: string[] = ["run", interactive ? "-it" : "-i", "--rm"];
     if (containerName !== null) {
@@ -77,7 +77,11 @@ export function buildDockerRegistryArgs(
 
     args.push(entry.image);
 
-    for (const a of extraArgs) {
+    // mcp.yml args always apply; user-supplied `appendArgs` tail them.
+    for (const a of entry.args) {
+        args.push(a);
+    }
+    for (const a of options.appendArgs ?? []) {
         args.push(a);
     }
 

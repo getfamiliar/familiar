@@ -23,12 +23,15 @@ import { ensureRuntimeImage, mcpMountDirFor } from "../../mcp/RuntimeImages.js";
 
 /**
  * `ea mcp call <id> -- <args...>` — one-shot interactive
- * invocation of an MCP's runtime container with the user's args
- * appended after the package/image. Replicates the bastion's
- * normal docker-run setup (mount, env, `--user`, network) so
- * side-effects like OAuth tokens written under `$HOME` (= `/work`,
- * = `tmp/mcp-mount-<id>/`) persist exactly where the bastion's
- * stdio-server invocation will pick them up next time it spawns.
+ * invocation of an MCP's runtime container that uses the *same*
+ * docker invocation the bastion would build for the same `mcp.yml`
+ * entry. Mount, env, `--user`, network, and the entry's `args:`
+ * block all flow through unchanged; the user's `-- <tail>` is
+ * **appended** to the entry's args (it never replaces them), so a
+ * call like `./cli.sh mcp call ms365 -- --login` runs with the
+ * mcp.yml-declared flags first (e.g. `--org-mode`) and then
+ * `--login`. The OAuth scopes the user authenticates with thus
+ * match what the bastion will request silently later.
  *
  * Use case: `./cli.sh mcp call ms-365 -- --login` walks the user
  * through Microsoft's device-code OAuth flow, drops a token into
@@ -151,7 +154,7 @@ function spawnAndExit(
     const options: DockerArgsOptions = {
         interactive: process.stdin.isTTY === true,
         containerName: null,
-        extraArgs,
+        appendArgs: extraArgs,
     };
     let argv: string[];
     if (entry.source === "npm") {

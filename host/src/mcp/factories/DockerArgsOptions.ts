@@ -45,12 +45,16 @@ export interface DockerArgsOptions {
     readonly containerName?: string | null;
 
     /**
-     * Args appended after the package/image. Bastion mode uses
-     * `entry.args` from `mcp.yml` (the package's normal CLI). One-
-     * shot calls override with the user's command line, e.g.
-     * `["--login"]` for an OAuth setup invocation.
+     * Args appended **after** `entry.args` (which always apply). Used
+     * by `./cli.sh mcp call <id> -- <tail>` so the user's flags run
+     * after whatever the mcp.yml `args:` block declares — never
+     * replacing it. This keeps a one-shot CLI invocation in lockstep
+     * with the bastion: same image, same env, same network, same
+     * mcp.yml args, plus whatever extra flag (`--login`, `--version`,
+     * …) the user wants on top.
      *
-     * Default (omitted) → `entry.args`.
+     * Default (omitted) → no extra args; the container runs with
+     * exactly `entry.args`, matching bastion behavior.
      */
-    readonly extraArgs?: readonly string[];
+    readonly appendArgs?: readonly string[];
 }
