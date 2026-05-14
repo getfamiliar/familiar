@@ -150,7 +150,6 @@ export class PluginMcpService {
             { capabilities: {} },
         );
         await client.connect(new StreamableHTTPClientTransport(url));
-        this.log.info(`plugin-mcp connected to "${key}" at ${url.toString()}`);
         return client;
     }
 

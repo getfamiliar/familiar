@@ -18,6 +18,7 @@ import {
     StepResultBus,
     type StepResultUnsubscribe,
 } from "effective-assistant-shared";
+import { inspectPidFile } from "../commands/pidfile.js";
 import type { PluginMcpService } from "../mcp/PluginMcpService.js";
 
 /**
@@ -49,6 +50,12 @@ export interface HostContextImplDeps {
      * env var to drift out of sync.
      */
     dataDir: string;
+    /**
+     * Absolute path of the daemon's pidfile (`<dataDir>/.daemon.pid`).
+     * Used by `ctx.isDaemonRunning()` to decide whether the host
+     * daemon is live without going through the bastion.
+     */
+    pidFile: string;
     /**
      * Shared singleton that backs `ctx.mcp`. One instance per host
      * process; each `HostContextImpl` just delegates. Owns the MCP
@@ -99,6 +106,16 @@ export class HostContextImpl implements HostContext {
 
     get dataDir(): string {
         return this.deps.dataDir;
+    }
+
+    /**
+     * Daemon-liveness probe. Used by CLI commands that go through the
+     * bastion (`ctx.mcp.*`) so they can fail fast with a clear
+     * "daemon not running" message instead of a misleading network
+     * error from the bastion's port being closed.
+     */
+    isDaemonRunning(): boolean {
+        return inspectPidFile(this.deps.pidFile).kind === "alive";
     }
 
     get config(): ConfigService {

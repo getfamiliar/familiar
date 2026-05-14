@@ -138,6 +138,20 @@ export interface HostContext {
      */
     readonly dataDir: string;
     /**
+     * Cheap synchronous probe for whether the host daemon (`./cli.sh
+     * start`) is currently running on this machine. Inspects the
+     * daemon's pidfile under `<dataDir>/.daemon.pid` and confirms the
+     * recorded pid is still alive — no network calls, no MCP traffic.
+     *
+     * One-shot CLI commands that need to reach MCPs (i.e. anything
+     * routed through `ctx.mcp`) should call this up front and exit
+     * early when it returns `false`: the bastion that fronts MCPs
+     * lives inside the daemon, so attempting an MCP call without it
+     * fails with a generic `fetch failed` that misleads users into
+     * chasing login state instead of the missing daemon.
+     */
+    readonly isDaemonRunning: () => boolean;
+    /**
      * Read/write access to the host's YAML config (`config/config.yml`).
      *
      * Plugins read their own subtree (e.g. `telegram.botToken`) via

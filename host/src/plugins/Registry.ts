@@ -1,5 +1,6 @@
 import cliChat from "cli-chat";
 import type { PluginManifest } from "effective-assistant-shared";
+import mail from "mail";
 import telegram from "telegram";
 import transcribeWhisper from "transcribe-whisper";
 import whatsapp from "whatsapp";
@@ -14,4 +15,10 @@ import whatsapp from "whatsapp";
  * here become annoying. That trades compile-time safety on the
  * plugin contract for runtime flexibility.
  */
-export const plugins: readonly PluginManifest[] = [cliChat, telegram, transcribeWhisper, whatsapp];
+export const plugins: readonly PluginManifest[] = [
+    cliChat,
+    mail,
+    telegram,
+    transcribeWhisper,
+    whatsapp,
+];

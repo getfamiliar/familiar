@@ -243,6 +243,7 @@ export const startCommand = defineCommand({
             config,
             log: log.child({ component: "cron-scheduler" }),
             dataDir: boot.dataDir,
+            pidFile: boot.pidFile,
             mcp: pluginHost.mcp,
         });
         const workspaceWatcher = new WorkspaceWatcher({

@@ -223,6 +223,7 @@ export class PluginHost {
             config: this.config,
             log: this.log.child({ component: `plugin:${pluginId}` }),
             dataDir: this.boot.dataDir,
+            pidFile: this.boot.pidFile,
             mcp: this.mcpService,
         });
     }

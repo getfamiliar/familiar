@@ -120,3 +120,13 @@ inference:
 # whatsapp:
 #   groupAllowlist:
 #     - "1203....@g.us"
+
+# Mail plugin. All keys are optional — defaults are operational, so a
+# fresh install just needs a compatible MCP that is logged in to start
+# producing events. See plugins/mail/README.md for the full guide.
+# mail:
+#   pollingInterval: 15      # minutes between polls per provider
+#   pollingBackoff: 1        # minutes; base of exponential backoff on poll errors
+#   o365:
+#     onlyNew: false         # true = ignore historical mail on first start
+#     mailboxes: []          # empty = every logged-in account's primary inbox
