@@ -1,5 +1,5 @@
 Alternativen Modellprovider testen: Synthetic.new - wie Featherless, 30€ / Monat, scheinbar zuverlässiger
-
+Wakeups / Alerts per Datenbank bauen
 hostname limits in mcp.yml parsen
 
 ## For later

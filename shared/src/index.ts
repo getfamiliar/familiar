@@ -26,6 +26,8 @@ export type {
     EmitHandle,
     EmitOptions,
     HostContext,
+    McpClient,
+    McpInfo,
     PluginContainerManifest,
     PluginHostManifest,
     PluginManifest,

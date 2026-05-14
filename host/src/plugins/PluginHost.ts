@@ -10,8 +10,20 @@ import type {
 import type { Bootstrap } from "../Bootstrap.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
+import { McpRegistry } from "../mcp/McpRegistry.js";
+import { PluginMcpService } from "../mcp/PluginMcpService.js";
 import { HostContextImpl } from "./HostContextImpl.js";
 import { plugins } from "./Registry.js";
+
+/**
+ * Fallback bastion loopback URL used by {@link PluginHost} when no
+ * URL is set (e.g. one-shot CLI commands that hit MCPs without a
+ * running daemon — connections still fail with `ECONNREFUSED` in
+ * that case, which is the right behavior). Matches the bastion's
+ * own default port; daemon mode overrides via
+ * {@link PluginHost.setBastionBaseUrl}.
+ */
+const DEFAULT_BASTION_BASE_URL = "http://127.0.0.1:8788";
 
 /**
  * Loader and lifecycle owner for plugins inside the host process.
@@ -28,13 +40,48 @@ export class PluginHost {
     private readonly boot: Bootstrap;
     private readonly log: Logger;
     private readonly config: ConfigService;
+    private readonly mcpRegistry: McpRegistry;
+    private readonly mcpService: PluginMcpService;
+    private bastionBaseUrl: string = DEFAULT_BASTION_BASE_URL;
     private connection: PostgresConnection | undefined;
     private prepared = false;
 
-    constructor(boot: Bootstrap, log: Logger, config?: ConfigService) {
+    constructor(boot: Bootstrap, log: Logger, config?: ConfigService, mcpRegistry?: McpRegistry) {
         this.boot = boot;
         this.log = log;
         this.config = config ?? new HostConfigService(boot.configFile);
+        this.mcpRegistry = mcpRegistry ?? new McpRegistry(boot.mcpConfigFile, log);
+        this.mcpService = new PluginMcpService({
+            registry: this.mcpRegistry,
+            bastionBaseUrl: this.bastionBaseUrl,
+            log: log.child({ component: "plugin-mcp" }),
+        });
+    }
+
+    /**
+     * Override the loopback URL plugin MCP calls dial. Daemon mode
+     * calls this after {@link Bastion.start} resolves so plugin MCP
+     * calls hit the live port, even if the operator configured a
+     * non-default bastion port. Calling before any client connects
+     * keeps the indirection cost at zero.
+     *
+     * One-shot CLI commands that never touch `ctx.mcp` simply use
+     * the default; if they do touch it without a running daemon,
+     * the connect fails with `ECONNREFUSED` — the correct outcome.
+     */
+    setBastionBaseUrl(url: string): void {
+        this.bastionBaseUrl = url;
+        this.mcpService.setBastionBaseUrl(url);
+    }
+
+    /**
+     * The shared MCP service backing every plugin's `ctx.mcp`. Exposed
+     * so daemon-owned host services (cron scheduler, future approval
+     * gate) can build their own {@link HostContextImpl} pointing at
+     * the same singleton instead of opening a parallel client pool.
+     */
+    get mcp(): PluginMcpService {
+        return this.mcpService;
     }
 
     /**
@@ -149,8 +196,14 @@ export class PluginHost {
         }
     }
 
-    /** Close the underlying postgres connection, if it was opened. */
+    /**
+     * Tear down host-side resources held by plugins: every cached MCP
+     * client, then the shared postgres connection (if it was opened).
+     * MCP first because some clients may want to log lifecycle lines
+     * the postgres-backed sink relays.
+     */
     async close(): Promise<void> {
+        await this.mcpService.close();
         if (!this.connection) {
             return;
         }
@@ -170,6 +223,7 @@ export class PluginHost {
             config: this.config,
             log: this.log.child({ component: `plugin:${pluginId}` }),
             dataDir: this.boot.dataDir,
+            mcp: this.mcpService,
         });
     }
 

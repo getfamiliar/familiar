@@ -23,6 +23,7 @@ import { CronjobScheduler } from "../cron/CronjobScheduler.js";
 import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { McpGateway } from "../mcp/McpGateway.js";
+import { McpRegistry } from "../mcp/McpRegistry.js";
 import { HostContextImpl } from "../plugins/HostContextImpl.js";
 import { PluginHost } from "../plugins/PluginHost.js";
 import { rollingFileStream } from "../tools/LogRetentionTools.js";
@@ -118,7 +119,12 @@ export const startCommand = defineCommand({
 
         ensureDirs(boot);
 
-        const pluginHost = new PluginHost(boot, log, config);
+        // One parse of mcp.yml shared by the gateway (transports) and
+        // the host-side PluginMcpService (plugin lookups). Fails fast
+        // here if the file is malformed.
+        const mcpRegistry = new McpRegistry(boot.mcpConfigFile, log);
+
+        const pluginHost = new PluginHost(boot, log, config, mcpRegistry);
         pluginHost.installWorkspaceTemplates();
         log.info("plugin workspace templates installed");
 
@@ -147,7 +153,7 @@ export const startCommand = defineCommand({
             captureDir: `${boot.dataDir}/llm-debug`,
         });
         const mcpGateway = new McpGateway({
-            mcpConfigFile: boot.mcpConfigFile,
+            registry: mcpRegistry,
             mcpLogsDir: boot.mcpLogsDir,
             logRetentionDays: config.getNumber("core.logRetentionDays", 7),
             tmpDir: boot.tmpDir,
@@ -192,6 +198,12 @@ export const startCommand = defineCommand({
         await bastion.start();
         log.info(`bastion server started and reachable from container at ${bastion.url}`);
 
+        // With the bastion live, point plugin MCP calls at the actual
+        // loopback URL. Calling before `bastion.start()` would throw
+        // (the port isn't bound yet); calling after — but before any
+        // plugin daemon runs — guarantees first-call connects succeed.
+        pluginHost.setBastionBaseUrl(bastion.loopbackUrl);
+
         const container = new AgentContainer({
             imageName: "effective-agent",
             dataPath: boot.dataDir,
@@ -231,6 +243,7 @@ export const startCommand = defineCommand({
             config,
             log: log.child({ component: "cron-scheduler" }),
             dataDir: boot.dataDir,
+            mcp: pluginHost.mcp,
         });
         const workspaceWatcher = new WorkspaceWatcher({
             workspaceDir: boot.workspaceDir,

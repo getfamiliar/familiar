@@ -10,12 +10,15 @@ import {
     EventBus,
     type HostContext,
     type Logger,
+    type McpClient,
+    type McpInfo,
     type NewEvent,
     type NotificationHandler,
     type PostgresConnection,
     StepResultBus,
     type StepResultUnsubscribe,
 } from "effective-assistant-shared";
+import type { PluginMcpService } from "../mcp/PluginMcpService.js";
 
 /**
  * Dependencies a {@link HostContextImpl} needs from its owner. The
@@ -46,6 +49,12 @@ export interface HostContextImplDeps {
      * env var to drift out of sync.
      */
     dataDir: string;
+    /**
+     * Shared singleton that backs `ctx.mcp`. One instance per host
+     * process; each `HostContextImpl` just delegates. Owns the MCP
+     * client cache and closes connections on host shutdown.
+     */
+    mcp: PluginMcpService;
 }
 
 /**
@@ -75,6 +84,13 @@ export class HostContextImpl implements HostContext {
     readonly chat = {
         subscribe: (filter: ChatFilter, handler: ChatHandler): Promise<ChatUnsubscribe> =>
             this.subscribeChat(filter, handler),
+    };
+
+    readonly mcp = {
+        getList: (): readonly McpInfo[] => this.deps.mcp.getList(),
+        getByKey: (key: string): McpClient => this.deps.mcp.getByKey(key),
+        getByPackage: (pkg: string, source?: string): McpClient =>
+            this.deps.mcp.getByPackage(pkg, source),
     };
 
     log(message: string): void {

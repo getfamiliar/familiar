@@ -6,16 +6,21 @@ import { DockerMcpRegistryFactory } from "./factories/DockerMcpRegistryFactory.j
 import { ExternalFactory } from "./factories/ExternalFactory.js";
 import { NpmFactory } from "./factories/NpmFactory.js";
 import { PypiFactory } from "./factories/PypiFactory.js";
-import { loadMcpEntries } from "./McpConfigLoader.js";
 import type { McpEntry, McpSource } from "./McpEntry.js";
+import type { McpRegistry } from "./McpRegistry.js";
 import type { McpServerFactory } from "./McpServerFactory.js";
 import { ensureRuntimeImage } from "./RuntimeImages.js";
 import type { McpTransport } from "./transports/McpTransport.js";
 
 /** Configuration for the {@link McpGateway} bastion module. */
 export interface McpGatewayConfig {
-    /** Absolute path to `config/mcp.yml`. */
-    readonly mcpConfigFile: string;
+    /**
+     * Shared registry of parsed `mcp.yml` entries. Owned by the
+     * daemon and passed to both the gateway and the host-side
+     * {@link import("./PluginMcpService.js").PluginMcpService} so
+     * neither re-parses the file.
+     */
+    readonly registry: McpRegistry;
     /**
      * Absolute path to the per-MCP log directory
      * (`data/logs/mcp/`). Each stdio MCP gets a daily-rotated
@@ -81,12 +86,12 @@ export class McpGateway implements BastionModule {
     }
 
     async start(bastion: Bastion): Promise<void> {
-        const entries = loadMcpEntries(this.config.mcpConfigFile, this.config.log);
+        const entries = this.config.registry.list();
 
         // Build only the runtime images that are actually referenced
         // by `mcp.yml`. No npm/pypi entries → no docker-build cost.
         const sources = new Set<McpSource>();
-        for (const entry of entries.values()) {
+        for (const entry of entries) {
             sources.add(entry.source);
         }
         if (sources.has("npm") || sources.has("pypi")) {
@@ -99,7 +104,7 @@ export class McpGateway implements BastionModule {
             await ensureRuntimeImage("pypi", this.config.log);
         }
 
-        for (const entry of entries.values()) {
+        for (const entry of entries) {
             this.transports.set(entry.id, this.buildTransport(entry));
         }
         bastion.registerPrefix("/mcp/", (req, res, restPath) => {

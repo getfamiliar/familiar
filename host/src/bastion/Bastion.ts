@@ -90,6 +90,20 @@ export class Bastion {
     }
 
     /**
+     * URL host-side callers (e.g. plugins reaching MCPs via the
+     * gateway) use to dial the bastion. `host.docker.internal`
+     * (exposed via {@link url}) only resolves inside the agent
+     * container, so host-side code must use the loopback address.
+     * Both URLs reach the same `0.0.0.0`-bound listener.
+     */
+    get loopbackUrl(): string {
+        if (this.httpServer === null) {
+            throw new Error("bastion not started yet");
+        }
+        return `http://127.0.0.1:${this.port}`;
+    }
+
+    /**
      * Start the listening socket, then start each registered module so
      * it can register its own routes. If any module's start throws, the
      * already-started modules are stopped in reverse order.

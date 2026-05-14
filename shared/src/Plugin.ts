@@ -1,3 +1,4 @@
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CommandDef } from "citty";
 import type { ChatFilter } from "./ChatMessage.js";
 import type { ChatHandler, ChatUnsubscribe } from "./ChatMessageBus.js";
@@ -5,7 +6,7 @@ import type { ConfigService } from "./Config.js";
 import type { NewEvent } from "./Event.js";
 import type { StepResultRow } from "./StepResult.js";
 
-export type { ChatHandler };
+export type { ChatHandler, Client as McpClient };
 
 /**
  * Citty's `CommandDef` is generic over its `ArgsDef`, and that
@@ -73,6 +74,27 @@ export interface EmitHandle {
     readonly settled: Promise<string>;
 }
 
+/**
+ * Metadata projection of one MCP entry as `ctx.mcp.getList()` exposes
+ * it to plugins. Combines the `mcp.yml` key with the (non-sensitive)
+ * identifying string of whatever provides the MCP: image for
+ * `docker-mcp-registry`, package name for `npm` / `pypi`, URL for
+ * `external`.
+ */
+export interface McpInfo {
+    /** The top-level key in `mcp.yml`. Plugin-stable identifier. */
+    readonly key: string;
+    /** Source classifier; matches the `source` value in `mcp.yml`. */
+    readonly source: string;
+    /**
+     * The image (docker-mcp-registry), bare package name (npm / pypi),
+     * or URL (external) — whichever fits the source. One field so
+     * callers can grep across sources uniformly; the source tag tells
+     * them how to interpret it. Always non-empty.
+     */
+    readonly package: string;
+}
+
 export interface HostContext {
     /**
      * Emit an event into the bus. The returned outer promise resolves
@@ -125,6 +147,45 @@ export interface HostContext {
      * to get a `string | null` back and self-disable on absence.
      */
     readonly config: ConfigService;
+    /**
+     * Access to MCPs declared in `config/mcp.yml`. `getList()` returns
+     * metadata only (no connections opened). The two getters return the
+     * official `@modelcontextprotocol/sdk` `Client` ready to use —
+     * `client.callTool({ name, arguments })`, `client.listTools()`, etc.
+     *
+     * Connections are lazy and cached: returning a client from
+     * `getByKey` does not open one; the first method invocation on the
+     * client opens a connection to the bastion's MCP gateway and that
+     * connection is reused thereafter. The host closes every cached
+     * client on daemon shutdown.
+     *
+     * First-call latency note: stdio-transport MCPs (npm / pypi /
+     * docker-mcp-registry) are cold-spawned on the bastion's first
+     * request and idle-reaped after `idleTimeoutSeconds` (per-entry in
+     * `mcp.yml`, default 30 min). The first `callTool` / `listTools`
+     * after the daemon starts can therefore take seconds; subsequent
+     * calls within the idle window are milliseconds.
+     */
+    readonly mcp: {
+        /**
+         * Snapshot of every MCP declared in `mcp.yml` as `{ key, source,
+         * package }`. Does not open any connections.
+         */
+        getList(): readonly McpInfo[];
+        /**
+         * Return the MCP SDK client for the entry with this yml key.
+         * Throws if the key is unknown. The returned client opens its
+         * connection lazily on its first method call.
+         */
+        getByKey(key: string): Client;
+        /**
+         * Return the MCP SDK client whose combined `package` field
+         * (image / package / url, per source) exactly matches `pkg`.
+         * The optional `source` arg narrows the search first. Throws
+         * if zero or multiple entries match.
+         */
+        getByPackage(pkg: string, source?: string): Client;
+    };
 }
 
 /**
