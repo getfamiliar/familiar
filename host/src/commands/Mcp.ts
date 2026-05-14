@@ -4,6 +4,7 @@ import { bootstrap } from "../Bootstrap.js";
 import { lintMcpConfigFile } from "../mcp/McpConfigLoader.js";
 import { mcpAddCommand } from "./mcp/McpAdd.js";
 import { mcpCallCommand } from "./mcp/McpCall.js";
+import { mcpFunctionsCommand } from "./mcp/McpFunctions.js";
 import { mcpListCommand } from "./mcp/McpList.js";
 import { mcpPurgeCommand } from "./mcp/McpPurge.js";
 
@@ -45,6 +46,7 @@ export const mcpCommand = defineCommand({
             },
         }),
         list: mcpListCommand,
+        functions: mcpFunctionsCommand,
         purge: mcpPurgeCommand,
         add: mcpAddCommand,
         call: mcpCallCommand,
