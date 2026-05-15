@@ -1,6 +1,6 @@
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import type { ToolSet } from "ai";
-import type { Logger } from "effective-assistant-shared";
+import { type Logger, sanitizeToolKey } from "effective-assistant-shared";
 
 /**
  * Configuration for {@link McpClientPool}. Built from the agent's env
@@ -240,16 +240,6 @@ export class McpClientPool {
         }
         return { merged, keysById };
     }
-}
-
-/**
- * Replace any character outside `[a-zA-Z0-9_]` with `_`. Used to
- * make the namespaced tool key safe for every model's
- * function-call grammar (see {@link McpClientPool.mergeTools}'s
- * doc-comment for the failure mode this guards against).
- */
-function sanitizeToolKey(key: string): string {
-    return key.replace(/[^a-zA-Z0-9_]/g, "_");
 }
 
 /** Count keys on a ToolSet without leaking `Object.keys` allocations elsewhere. */

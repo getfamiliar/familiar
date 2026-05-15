@@ -1,9 +1,11 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CommandDef } from "citty";
+import type { AgentRunRow } from "./AgentRun.js";
 import type { ChatFilter } from "./ChatMessage.js";
 import type { ChatHandler, ChatUnsubscribe } from "./ChatMessageBus.js";
 import type { ConfigService } from "./Config.js";
-import type { NewEvent } from "./Event.js";
+import type { EventRow, NewEvent } from "./Event.js";
+import type { Logger } from "./logging/Logger.js";
 import type { StepResultRow } from "./StepResult.js";
 
 export type { ChatHandler, Client as McpClient };
@@ -203,6 +205,73 @@ export interface HostContext {
 }
 
 /**
+ * One tool a plugin contributes to the agent. The agent reaches it
+ * via the bastion's `/plugin-tools/` gateway: the container fetches
+ * the catalog (name, description, schema), and any tool call routes
+ * back to the host where {@link execute} runs **inside the plugin's
+ * own Node process** with access to the plugin's deps.
+ *
+ * Naming: `name` is the bare tool name (e.g. `draft_response`); the
+ * gateway registers it under `${pluginId}_${name}` so the agent's
+ * filter DSL can address each plugin's tools as a group. Keep `name`
+ * lowercase alnum + `_` to avoid the sanitization fold the gateway
+ * applies on the key.
+ *
+ * `inputSchema` is raw JSON Schema — the same shape MCP tools return
+ * from `listTools()`. The container converts it via the AI SDK's
+ * `jsonSchema()` helper before handing the tool to the model.
+ *
+ * Result is returned to the agent **unwrapped**: whatever {@link
+ * execute} resolves with goes straight back to the model. The
+ * `{ ok, result | error }` envelope on the wire is purely the
+ * HTTP-layer error channel; agent-facing semantics match how MCP
+ * tools and the built-in `queue_run` feel.
+ */
+export interface PluginTool<TInput = unknown, TOutput = unknown> {
+    /**
+     * Bare tool name (no plugin prefix). The gateway namespaces it as
+     * `${pluginId}_${name}` for registration, so this stays short and
+     * action-oriented.
+     */
+    readonly name: string;
+    /** Plain-English description the model sees on its tool list. */
+    readonly description: string;
+    /** Raw JSON Schema describing the `execute` args. */
+    readonly inputSchema: object;
+    /**
+     * Run the tool. Receives the parsed args and the call context the
+     * gateway resolves per invocation (full event + agentrun rows,
+     * plugin-scoped HostContext, scoped logger). Throw or reject to
+     * surface a tool error to the agent.
+     */
+    execute(args: TInput, ctx: PluginToolCallContext): Promise<TOutput>;
+}
+
+/**
+ * Per-invocation context the host gateway resolves for every plugin
+ * tool call. The container POSTs `{ args, eventId, agentrunId }`; the
+ * gateway loads the full rows and the plugin's scoped {@link
+ * HostContext} before calling {@link PluginTool.execute}.
+ */
+export interface PluginToolCallContext {
+    /**
+     * The originating event row. Tools dig into `payload` here for
+     * the entity they're acting on (e.g. mail id for `draft_response`).
+     */
+    readonly event: EventRow;
+    /** The agentrun row that issued the tool call. */
+    readonly agentrun: AgentRunRow;
+    /**
+     * The plugin's own {@link HostContext} — same instance the
+     * plugin's `start`/`tools` saw. Lets the tool emit follow-up
+     * events, reach MCPs, read config, etc.
+     */
+    readonly host: HostContext;
+    /** Logger child pre-scoped to `{ plugin, tool, eventId, agentrunId }`. */
+    readonly log: Logger;
+}
+
+/**
  * Host-side surface a plugin may declare. All fields optional; a
  * plugin that's pure workspace template (no host code) leaves `host`
  * out of its manifest entirely.
@@ -237,6 +306,23 @@ export interface PluginHostManifest {
      */
     start?(ctx: HostContext): Promise<void>;
     /**
+     * Declarative list of {@link PluginTool}s this plugin contributes
+     * to the agent. Collected once, **after** the plugin's `start`
+     * resolves, so closures over `start`-time state are safe.
+     *
+     * Hard rules: synchronous, side-effect-free — just build and
+     * return the tool list. The host registers each tool under
+     * `${plugin.id}_${tool.name}` (after sanitization) on the bastion's
+     * `/plugin-tools/` gateway, and the container's tools client
+     * discovers them per agentrun.
+     *
+     * A plugin id used for tools must match {@link IDENT_PATTERN} and
+     * not collide with an MCP id — the registry enforces both at
+     * register time so the failure surfaces at startup, not at first
+     * call.
+     */
+    tools?(ctx: HostContext): readonly PluginTool[];
+    /**
      * Default command for the plugin's CLI root. When set, invoking
      * the plugin id with no subcommand (e.g. `cli.sh cli-chat`) runs
      * this command's `run`. Its `args` are also lifted onto the root.
@@ -257,40 +343,26 @@ export interface PluginHostManifest {
 }
 
 /**
- * Container-side surface a plugin may declare. Loader implementation
- * (mount built plugin output into the container, scan + import at
- * startup) is deferred — cli-chat doesn't need it. The field shape
- * exists so future plugins can declare it without breaking the
- * manifest type.
- */
-export interface PluginContainerManifest {
-    /**
-     * Path (relative to the plugin package's build output) of the
-     * module the container imports for tools. The container's tool
-     * loader will scan `/plugins/<id>/<toolsModule>` once mounting is
-     * implemented.
-     */
-    readonly toolsModule?: string;
-}
-
-/**
  * The full plugin manifest shape returned by {@link definePlugin}.
  *
- * A minimal plugin needs only `id`. Any combination of `host`,
- * `container`, and `workspaceTemplate` may be added — they are
- * independent concerns.
+ * A minimal plugin needs only `id`. Any combination of `host` and
+ * `workspaceTemplate` may be added — they are independent concerns.
+ * Plugin code never ships into the container: tools the agent can
+ * call are declared on {@link PluginHostManifest.tools} and execute
+ * host-side inside the plugin's own Node process via the bastion.
  */
 export interface PluginManifest {
     /**
      * Plugin id, matching `[a-z0-9-]+`. Used to namespace the
-     * plugin's CLI commands (`cli.sh <id> <subcommand>`) and as the
-     * container mount subdirectory once container loading lands.
+     * plugin's CLI commands (`cli.sh <id> <subcommand>`). A plugin
+     * that contributes {@link PluginHostManifest.tools | tools} must
+     * additionally satisfy {@link IDENT_PATTERN} so the id is usable
+     * as a DSL group name; the tools registry enforces that at
+     * register time.
      */
     readonly id: string;
-    /** Host-side surface (CLI commands, daemons, cronjobs). */
+    /** Host-side surface (CLI commands, daemons, cronjobs, tools). */
     readonly host?: PluginHostManifest;
-    /** Container-side surface (tools). Loader deferred. */
-    readonly container?: PluginContainerManifest;
     /**
      * Absolute path to a directory of files copied into
      * `data/workspace/` on first install. Existing files are left

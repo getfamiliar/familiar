@@ -31,13 +31,13 @@ export interface AgentContainerConfig {
      */
     readonly sharedBuildPath: string;
     /**
-     * Absolute host path of `data/agent-tmp/`. Bind-mounted at
+     * Absolute host path of `tmp/scratch/`. Bind-mounted at
      * `/scratch/` inside the container (read-write) so the agent can
      * read per-event auxiliary files staged by `ctx.events.emit({
      * files: [...] })` using normal file tools, and pass the same
      * absolute paths to MCPs that have the same mount.
      */
-    readonly agentTmpPath: string;
+    readonly scratchPath: string;
     /** Postgres password forwarded to the agent as `POSTGRES_PASSWORD`. */
     readonly postgresPassword: string;
     /**
@@ -114,7 +114,7 @@ export interface AgentContainerConfig {
  *   - {dataPath}/workspace → /workspace (assistant memory)
  *   - {containerSrcPath} → /app/src (read-only, hot-reload via tsx watch)
  *   - {sharedBuildPath} → /shared/build (read-only, fresh per cli.sh rebuild)
- *   - {agentTmpPath} → /scratch (read-write, shared with every MCP)
+ *   - {scratchPath} → /scratch (read-write, shared with every MCP)
  *
  * Container joins `ea-net` so it can reach `ea-postgres` by hostname.
  * All host↔container communication flows through the postgres `events`
@@ -179,7 +179,7 @@ export class AgentContainer {
             "-v",
             `${this.config.sharedBuildPath}:/shared/build:ro`,
             "-v",
-            `${this.config.agentTmpPath}:/scratch`,
+            `${this.config.scratchPath}:/scratch`,
             this.config.imageName,
         ];
 

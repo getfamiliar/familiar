@@ -1,6 +1,7 @@
 import { definePlugin } from "effective-assistant-shared";
 import { buildCommands, buildMain } from "./Commands.js";
 import { startMailDaemon } from "./MailDaemon.js";
+import { draftResponseTool } from "./tools/DraftResponse.js";
 
 /**
  * Mail host-side plugin.
@@ -25,6 +26,7 @@ export default definePlugin({
     id: "mail",
     host: {
         start: (ctx) => startMailDaemon(ctx),
+        tools: (ctx) => [draftResponseTool(ctx)],
         commands: (ctx) => buildCommands(ctx),
         main: () => buildMain(),
     },

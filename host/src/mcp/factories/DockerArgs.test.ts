@@ -28,7 +28,7 @@ function entryFixture(overrides: Partial<McpEntry>): McpEntry {
 
 const runtime = {
     tmpDir: "/tmp/ea-test",
-    agentTmpDir: "/tmp/ea-test-agent-tmp",
+    scratchDir: "/tmp/ea-test-scratch",
     hostUid: 1000,
     hostGid: 1000,
 } as const;

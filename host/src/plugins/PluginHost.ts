@@ -14,6 +14,7 @@ import { McpRegistry } from "../mcp/McpRegistry.js";
 import { PluginMcpService } from "../mcp/PluginMcpService.js";
 import { HostContextImpl } from "./HostContextImpl.js";
 import { plugins } from "./Registry.js";
+import type { PluginToolsRegistry } from "./ToolsRegistry.js";
 
 /**
  * Fallback bastion loopback URL used by {@link PluginHost} when no
@@ -42,6 +43,7 @@ export class PluginHost {
     private readonly config: ConfigService;
     private readonly mcpRegistry: McpRegistry;
     private readonly mcpService: PluginMcpService;
+    private toolsRegistry: PluginToolsRegistry | undefined;
     private bastionBaseUrl: string = DEFAULT_BASTION_BASE_URL;
     private connection: PostgresConnection | undefined;
     private prepared = false;
@@ -56,6 +58,16 @@ export class PluginHost {
             bastionBaseUrl: this.bastionBaseUrl,
             log: log.child({ component: "plugin-mcp" }),
         });
+    }
+
+    /**
+     * Wire the plugin-tools registry that {@link startDaemons} will
+     * populate from each plugin's `tools(ctx)` hook. Optional — when
+     * unset (one-shot CLI commands that never run plugin daemons),
+     * `tools(ctx)` hooks are skipped silently.
+     */
+    setToolsRegistry(registry: PluginToolsRegistry): void {
+        this.toolsRegistry = registry;
     }
 
     /**
@@ -189,10 +201,29 @@ export class PluginHost {
      */
     async startDaemons(): Promise<void> {
         for (const plugin of plugins) {
-            if (!plugin.host?.start) {
+            const host = plugin.host;
+            if (!host?.start && !host?.tools) {
                 continue;
             }
-            await plugin.host.start(this.context(plugin.id));
+            const ctx = this.context(plugin.id);
+            if (host?.start) {
+                await host.start(ctx);
+            }
+            // `tools(ctx)` runs after `start()` resolves so closures
+            // over start-time state are safe. Skipped when no
+            // registry is wired (one-shot CLI paths).
+            if (host?.tools && this.toolsRegistry) {
+                const tools = host.tools(ctx);
+                this.toolsRegistry.register(plugin.id, ctx, tools);
+            }
+        }
+        if (this.toolsRegistry) {
+            const registered = this.toolsRegistry.list();
+            if (registered.length > 0) {
+                this.log.info(
+                    `plugin tool registry: ${registered.length} tool${registered.length === 1 ? "" : "s"} — ${registered.map((t) => t.key).join(", ")}`,
+                );
+            }
         }
     }
 
@@ -223,7 +254,7 @@ export class PluginHost {
             config: this.config,
             log: this.log.child({ component: `plugin:${pluginId}` }),
             dataDir: this.boot.dataDir,
-            agentTmpDir: this.boot.agentTmpDir,
+            scratchDir: this.boot.scratchDir,
             pidFile: this.boot.pidFile,
             mcp: this.mcpService,
         });

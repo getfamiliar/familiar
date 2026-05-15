@@ -12,6 +12,7 @@ import { AgentrunWatcher } from "./AgentrunWatcher.js";
 import { EventWatcher } from "./EventWatcher.js";
 import { HandlerFile } from "./HandlerFile.js";
 import { McpClientPool } from "./mcp/McpClientPool.js";
+import { PluginToolsClient } from "./plugins/ToolsClient.js";
 
 /**
  * Process-wide handler-header defaults. A handler can override any of
@@ -69,8 +70,13 @@ async function main(): Promise<void> {
     });
     await mcpPool.start();
 
+    const pluginToolsClient = new PluginToolsClient({
+        bastionUrl,
+        log: log.child({ component: "plugin-tools-client" }),
+    });
+
     const eventWatcher = new EventWatcher(connection, log);
-    const agentWatcher = new AgentrunWatcher(connection, log, mcpPool);
+    const agentWatcher = new AgentrunWatcher(connection, log, mcpPool, pluginToolsClient);
 
     const abortController = new AbortController();
     const shutdown = (signal: string) => {

@@ -35,9 +35,10 @@ export type {
     HostContext,
     McpClient,
     McpInfo,
-    PluginContainerManifest,
     PluginHostManifest,
     PluginManifest,
+    PluginTool,
+    PluginToolCallContext,
 } from "./Plugin.js";
 export { definePlugin } from "./Plugin.js";
 export {
@@ -68,4 +69,5 @@ export {
     NONE_GROUP_NAME,
     RESERVED_GROUP_NAMES,
     SYSTEM_GROUP_NAME,
+    sanitizeToolKey,
 } from "./ToolDsl.js";

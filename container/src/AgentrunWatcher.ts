@@ -7,6 +7,7 @@ import {
 import { AgentRunner, POSTPONED } from "./agent-runner/AgentRunner.js";
 import { formatInferenceError } from "./agent-runner/formatInferenceError.js";
 import type { McpClientPool } from "./mcp/McpClientPool.js";
+import type { PluginToolsClient } from "./plugins/ToolsClient.js";
 
 /**
  * Agentrun watcher. Claims `pending` agentruns into `running`, runs
@@ -27,12 +28,19 @@ export class AgentrunWatcher {
     private readonly connection: PostgresConnection;
     private readonly log: Logger;
     private readonly mcpPool: McpClientPool;
+    private readonly pluginToolsClient: PluginToolsClient;
 
-    constructor(connection: PostgresConnection, log: Logger, mcpPool: McpClientPool) {
+    constructor(
+        connection: PostgresConnection,
+        log: Logger,
+        mcpPool: McpClientPool,
+        pluginToolsClient: PluginToolsClient,
+    ) {
         this.log = log.child({ component: "agentrun-watcher" });
         this.bus = new AgentRunBus(connection, this.log);
         this.connection = connection;
         this.mcpPool = mcpPool;
+        this.pluginToolsClient = pluginToolsClient;
     }
 
     /** Run the claim-and-execute loop until `signal` aborts. */
@@ -92,6 +100,7 @@ export class AgentrunWatcher {
                 this.connection,
                 runnerLog,
                 this.mcpPool,
+                this.pluginToolsClient,
             ).run(signal);
             if (outcome === POSTPONED) {
                 // AgentRunner already wrote the row back to `pending`

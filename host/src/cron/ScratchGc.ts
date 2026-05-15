@@ -4,7 +4,7 @@ import { Cron } from "croner";
 import type { Logger } from "effective-assistant-shared";
 
 /**
- * 24 hours, in milliseconds. Subdirectories of `agentTmpDir` whose
+ * 24 hours, in milliseconds. Subdirectories of `scratchDir` whose
  * directory mtime is older than this are removed by each sweep. Picked
  * to give the operator a comfortable window to inspect post-mortem
  * scratch contents (e.g. an email attachment that produced a confusing
@@ -16,14 +16,14 @@ const SCRATCH_RETENTION_MS = 24 * 60 * 60 * 1000;
 const SCRATCH_GC_SCHEDULE = "0 * * * *";
 
 export interface ScratchGcConfig {
-    /** Absolute host path of `data/agent-tmp/`. */
-    readonly agentTmpDir: string;
+    /** Absolute host path of `tmp/scratch/`. */
+    readonly scratchDir: string;
     /** Logger; one line per removed dir at `info`. */
     readonly log: Logger;
 }
 
 /**
- * Hourly Croner job that sweeps `agentTmpDir`, removing per-event
+ * Hourly Croner job that sweeps `scratchDir`, removing per-event
  * scratch directories whose mtime is older than 24 hours.
  *
  * The retention window is intentionally generous — scratch files (mail
@@ -35,12 +35,12 @@ export interface ScratchGcConfig {
  * almost certainly wants the dir gone.
  */
 export class ScratchGc {
-    private readonly agentTmpDir: string;
+    private readonly scratchDir: string;
     private readonly log: Logger;
     private job: Cron | undefined;
 
     constructor(config: ScratchGcConfig) {
-        this.agentTmpDir = config.agentTmpDir;
+        this.scratchDir = config.scratchDir;
         this.log = config.log;
     }
 
@@ -53,7 +53,7 @@ export class ScratchGc {
             void this.sweep();
         });
         this.log.info(
-            { agentTmpDir: this.agentTmpDir, schedule: SCRATCH_GC_SCHEDULE },
+            { scratchDir: this.scratchDir, schedule: SCRATCH_GC_SCHEDULE },
             "scratch GC scheduled",
         );
     }
@@ -68,7 +68,7 @@ export class ScratchGc {
     }
 
     /**
-     * One pass through `agentTmpDir`: stat every immediate child, remove
+     * One pass through `scratchDir`: stat every immediate child, remove
      * those whose mtime is older than the retention threshold. Exposed
      * for direct testing — a test can backdate a dir's mtime and call
      * `sweep()` instead of waiting for the next hour boundary.
@@ -76,7 +76,7 @@ export class ScratchGc {
     async sweep(): Promise<void> {
         let entries: string[];
         try {
-            entries = await fs.readdir(this.agentTmpDir);
+            entries = await fs.readdir(this.scratchDir);
         } catch (err) {
             const code = (err as NodeJS.ErrnoException).code;
             if (code === "ENOENT") {
@@ -91,7 +91,7 @@ export class ScratchGc {
 
         const cutoff = Date.now() - SCRATCH_RETENTION_MS;
         for (const name of entries) {
-            const full = path.join(this.agentTmpDir, name);
+            const full = path.join(this.scratchDir, name);
             let stat: Awaited<ReturnType<typeof fs.stat>>;
             try {
                 stat = await fs.stat(full);

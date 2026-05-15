@@ -27,6 +27,8 @@ import { McpGateway } from "../mcp/McpGateway.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
 import { HostContextImpl } from "../plugins/HostContextImpl.js";
 import { PluginHost } from "../plugins/PluginHost.js";
+import { PluginToolsGateway } from "../plugins/ToolsGateway.js";
+import { PluginToolsRegistry } from "../plugins/ToolsRegistry.js";
 import { rollingFileStream } from "../tools/LogRetentionTools.js";
 import { WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
 import { acquirePidFile, removePidFile } from "./pidfile.js";
@@ -158,14 +160,24 @@ export const startCommand = defineCommand({
             mcpLogsDir: boot.mcpLogsDir,
             logRetentionDays: config.getNumber("core.logRetentionDays", 7),
             tmpDir: boot.tmpDir,
-            agentTmpDir: boot.agentTmpDir,
+            scratchDir: boot.scratchDir,
             hostUid: boot.hostUid,
             hostGid: boot.hostGid,
             log: log.child({ component: "mcp-gateway" }),
         });
+        const pluginToolsRegistry = new PluginToolsRegistry(
+            mcpRegistry,
+            log.child({ component: "plugin-tools" }),
+        );
+        pluginHost.setToolsRegistry(pluginToolsRegistry);
+        const pluginToolsGateway = new PluginToolsGateway({
+            registry: pluginToolsRegistry,
+            ensureConnection: () => pluginHost.ensureConnection(),
+            log: log.child({ component: "plugin-tools-gateway" }),
+        });
         const bastion = new Bastion({
             log: log.child({ component: "bastion" }),
-            modules: [reverseProxy, mcpGateway],
+            modules: [reverseProxy, mcpGateway, pluginToolsGateway],
         });
 
         await ensureNetwork(SHARED_NETWORK_NAME);
@@ -211,7 +223,7 @@ export const startCommand = defineCommand({
             dataPath: boot.dataDir,
             containerSrcPath: boot.containerSrcDir,
             sharedBuildPath: boot.sharedBuildDir,
-            agentTmpPath: boot.agentTmpDir,
+            scratchPath: boot.scratchDir,
             postgresPassword,
             bastionUrl: bastion.url,
             defaultProvider,
@@ -246,7 +258,7 @@ export const startCommand = defineCommand({
             config,
             log: log.child({ component: "cron-scheduler" }),
             dataDir: boot.dataDir,
-            agentTmpDir: boot.agentTmpDir,
+            scratchDir: boot.scratchDir,
             pidFile: boot.pidFile,
             mcp: pluginHost.mcp,
         });
@@ -266,7 +278,7 @@ export const startCommand = defineCommand({
         await cronScheduler.start();
 
         const scratchGc = new ScratchGc({
-            agentTmpDir: boot.agentTmpDir,
+            scratchDir: boot.scratchDir,
             log: log.child({ component: "scratch-gc" }),
         });
         scratchGc.start();
@@ -479,5 +491,5 @@ function ensureDirs(boot: ReturnType<typeof bootstrap>): void {
     mkdirSync(boot.workspaceDir, { recursive: true });
     mkdirSync(boot.logsDir, { recursive: true });
     mkdirSync(boot.mcpLogsDir, { recursive: true });
-    mkdirSync(boot.agentTmpDir, { recursive: true });
+    mkdirSync(boot.scratchDir, { recursive: true });
 }

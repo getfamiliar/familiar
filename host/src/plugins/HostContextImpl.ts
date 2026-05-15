@@ -55,13 +55,13 @@ export interface HostContextImplDeps {
      */
     dataDir: string;
     /**
-     * Absolute host path of `data/agent-tmp/`. Used internally by the
+     * Absolute host path of `tmp/scratch/`. Used internally by the
      * `events.emit` wrapper to stage `event.files` under
-     * `<agentTmpDir>/<eventId>/` inside the INSERT transaction. Not
+     * `<scratchDir>/<eventId>/` inside the INSERT transaction. Not
      * exposed on `HostContext`; plugins reach scratch only through
      * `emit({ files })`.
      */
-    agentTmpDir: string;
+    scratchDir: string;
     /**
      * Absolute path of the daemon's pidfile (`<dataDir>/.daemon.pid`).
      * Used by `ctx.isDaemonRunning()` to decide whether the host
@@ -249,7 +249,7 @@ export class HostContextImpl implements HostContext {
                 // are on disk. If staging throws, the outer catch tears
                 // down whatever partial dir we created — the EventBus
                 // ROLLBACK keeps the database side clean.
-                const targetDir = path.join(this.deps.agentTmpDir, insertedRow.id);
+                const targetDir = path.join(this.deps.scratchDir, insertedRow.id);
                 stagedScratchDir = targetDir;
                 await stageEventFiles(targetDir, files);
             });

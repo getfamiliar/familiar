@@ -16,11 +16,11 @@ export interface DockerMcpRegistryFactoryConfig {
     /** Days of rotated log retention. */
     readonly logRetentionDays: number;
     /**
-     * Absolute host path of `data/agent-tmp/`. Bind-mounted at `/scratch`
+     * Absolute host path of `tmp/scratch/`. Bind-mounted at `/scratch`
      * inside every MCP container so the agent and all MCPs share one
      * scratch namespace by absolute path.
      */
-    readonly agentTmpDir: string;
+    readonly scratchDir: string;
 }
 
 /**
@@ -44,7 +44,7 @@ export interface DockerMcpRegistryFactoryConfig {
  */
 export function buildDockerRegistryArgs(
     entry: McpEntry,
-    config: { readonly agentTmpDir: string },
+    config: { readonly scratchDir: string },
     options: DockerArgsOptions = {},
 ): string[] {
     if (entry.image === undefined) {
@@ -76,7 +76,7 @@ export function buildDockerRegistryArgs(
     }
 
     // Shared scratch dir; see NpmFactory for the rationale.
-    args.push("-v", `${config.agentTmpDir}:/scratch`);
+    args.push("-v", `${config.scratchDir}:/scratch`);
 
     for (const env of entry.env) {
         args.push("-e", `${env.name}=${env.value}`);
@@ -119,7 +119,7 @@ export class DockerMcpRegistryFactory implements McpServerFactory {
             id: entry.id,
             title: entry.title,
             description: entry.description,
-            dockerArgs: buildDockerRegistryArgs(entry, { agentTmpDir: this.config.agentTmpDir }),
+            dockerArgs: buildDockerRegistryArgs(entry, { scratchDir: this.config.scratchDir }),
             idleTimeoutSeconds: entry.idleTimeoutSeconds,
             log: this.config.log.child({ mcp: entry.id }),
             openFileSink,

@@ -11,7 +11,7 @@
  */
 export interface RuntimeContainerConfig {
     readonly tmpDir: string;
-    readonly agentTmpDir: string;
+    readonly scratchDir: string;
     readonly hostUid: number;
     readonly hostGid: number;
 }

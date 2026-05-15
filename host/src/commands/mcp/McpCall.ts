@@ -112,7 +112,7 @@ export const mcpCallCommand = defineCommand({
         });
         const runtimeConfig: RuntimeContainerConfig = {
             tmpDir: boot.tmpDir,
-            agentTmpDir: boot.agentTmpDir,
+            scratchDir: boot.scratchDir,
             hostUid: boot.hostUid,
             hostGid: boot.hostGid,
         };

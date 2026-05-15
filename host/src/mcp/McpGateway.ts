@@ -36,12 +36,12 @@ export interface McpGatewayConfig {
      */
     readonly tmpDir: string;
     /**
-     * Absolute path of `data/agent-tmp/`. Bind-mounted at `/scratch`
+     * Absolute path of `tmp/scratch/`. Bind-mounted at `/scratch`
      * inside every MCP so the agent and all MCPs share one scratch
      * namespace by absolute path. See AgentContainer for the
      * matching agent-side mount.
      */
-    readonly agentTmpDir: string;
+    readonly scratchDir: string;
     /** Host UID and GID used as `--user` for npm/pypi runtime containers. */
     readonly hostUid: number;
     readonly hostGid: number;
@@ -74,7 +74,7 @@ export class McpGateway implements BastionModule {
             mcpLogsDir: config.mcpLogsDir,
             logRetentionDays: config.logRetentionDays,
             tmpDir: config.tmpDir,
-            agentTmpDir: config.agentTmpDir,
+            scratchDir: config.scratchDir,
             hostUid: config.hostUid,
             hostGid: config.hostGid,
         };
@@ -85,7 +85,7 @@ export class McpGateway implements BastionModule {
                     log: config.log,
                     mcpLogsDir: config.mcpLogsDir,
                     logRetentionDays: config.logRetentionDays,
-                    agentTmpDir: config.agentTmpDir,
+                    scratchDir: config.scratchDir,
                 }),
             ],
             ["npm", new NpmFactory(sharedNpmPypiConfig)],

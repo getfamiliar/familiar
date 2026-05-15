@@ -93,7 +93,7 @@ export class EventBus {
      * row (and any chat mirror) is inserted but before COMMIT. Use it
      * for filesystem side-effects that must be atomic with the INSERT
      * from the watcher's perspective — most importantly, staging
-     * `event.files` under `<agentTmpDir>/<row.id>/` so the container
+     * `event.files` under `<scratchDir>/<row.id>/` so the container
      * never observes an event without its scratch files in place.
      * Throwing from `beforeCommit` rolls the INSERT back; cleaning up
      * any partial filesystem state is the callback's responsibility.

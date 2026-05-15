@@ -91,7 +91,7 @@ export function buildNpmDockerArgs(
     // agent container and every MCP. Lets the agent pass paths like
     // `/scratch/<event-id>/invoice.pdf` straight through to MCP tool
     // calls without translation.
-    args.push("-v", `${config.agentTmpDir}:/scratch`);
+    args.push("-v", `${config.scratchDir}:/scratch`);
 
     for (const env of entry.env) {
         args.push("-e", `${env.name}=${env.value}`);

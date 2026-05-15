@@ -54,6 +54,22 @@ export interface ToolsFactoryContext {
      */
     readonly mcpKeysById?: ReadonlyMap<string, ReadonlySet<string>>;
     /**
+     * Plugin-contributed tools, namespaced as `${pluginId}_${name}`
+     * by the host's plugin-tools registry. Merged into the same
+     * available pool as system + MCP tools so one `tools:`
+     * expression decides what survives.
+     */
+    readonly pluginTools?: ToolSet;
+    /**
+     * Plugin id → the set of that plugin's sanitized tool keys.
+     * Threaded into the evaluator's `builtins` so a handler can
+     * write `tools: system + mail` to pull in every mail-plugin
+     * tool. The host registry rejects plugin ids that collide
+     * with reserved names or MCP ids, so the namespace is safe to
+     * merge with `mcpKeysById`.
+     */
+    readonly pluginKeysById?: ReadonlyMap<string, ReadonlySet<string>>;
+    /**
      * Logger child for filter diagnostics. Resolution errors throw
      * so the agentrun fails loud; warnings are not currently
      * emitted (kept for future use).
@@ -107,7 +123,8 @@ export class ToolsFactory {
         }
 
         const mcpTools = context.mcpTools ?? {};
-        const allTools: ToolSet = { ...systemTools, ...mcpTools };
+        const pluginTools = context.pluginTools ?? {};
+        const allTools: ToolSet = { ...systemTools, ...mcpTools, ...pluginTools };
         const systemKeys = new Set(Object.keys(systemTools));
         const mcpKeys = new Set(Object.keys(mcpTools));
         const availableKeys = new Set(Object.keys(allTools));
@@ -117,6 +134,7 @@ export class ToolsFactory {
             systemKeys,
             mcpKeys,
             mcpKeysById: context.mcpKeysById,
+            pluginKeysById: context.pluginKeysById,
             toolsExpression: context.toolsExpression,
             lookup: context.groups,
         });
@@ -146,6 +164,7 @@ function resolveMatched(args: {
     systemKeys: ReadonlySet<string>;
     mcpKeys: ReadonlySet<string>;
     mcpKeysById: ReadonlyMap<string, ReadonlySet<string>> | undefined;
+    pluginKeysById: ReadonlyMap<string, ReadonlySet<string>> | undefined;
     toolsExpression: string | undefined;
     lookup: GroupLookup | undefined;
 }): Set<string> {
@@ -153,14 +172,21 @@ function resolveMatched(args: {
         return new Set(args.systemKeys);
     }
     const ast = parseExpression(args.toolsExpression);
-    // Per-MCP entries land first; `system` and `mcp` are written
-    // afterwards so they win on the (lint-prevented) chance of a
-    // sanitized MCP id colliding with a reserved name. `all` and
-    // `none` are short-circuited by the evaluator before any
-    // builtins lookup.
+    // Per-MCP and per-plugin entries land first; `system` and `mcp`
+    // are written afterwards so they win on the (lint-prevented)
+    // chance of a sanitized id colliding with a reserved name.
+    // `all` and `none` are short-circuited by the evaluator before
+    // any builtins lookup. The plugin registry guarantees plugin
+    // ids do not collide with MCP ids, so the two id maps can be
+    // merged unconditionally.
     const builtins = new Map<string, ReadonlySet<string>>();
     if (args.mcpKeysById) {
         for (const [id, keys] of args.mcpKeysById) {
+            builtins.set(id, keys);
+        }
+    }
+    if (args.pluginKeysById) {
+        for (const [id, keys] of args.pluginKeysById) {
             builtins.set(id, keys);
         }
     }

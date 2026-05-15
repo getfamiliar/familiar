@@ -106,7 +106,7 @@ export interface EventRow {
 
 /**
  * One auxiliary file to attach to an event at emit time. The host writes
- * each file under `<agentTmpDir>/<eventId>/<name>` inside the same
+ * each file under `<scratchDir>/<eventId>/<name>` inside the same
  * transaction that inserts the event row, so the container watcher only
  * ever observes events whose files are already on disk at
  * `/scratch/<event-id>/<name>` inside both the agent and every MCP

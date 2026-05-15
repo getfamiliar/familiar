@@ -15,6 +15,7 @@ import { HandlerFile } from "../HandlerFile.js";
 import type { McpClientPool } from "../mcp/McpClientPool.js";
 import { ModelFactory } from "../models/ModelFactory.js";
 import { buildPrompt, buildScratchListing, buildSystemPrompt } from "../PromptBuilder.js";
+import type { PluginToolsClient } from "../plugins/ToolsClient.js";
 import { createGroupLookup } from "../tools/ToolGroupLoader.js";
 import { ToolsFactory } from "../tools/ToolsFactory.js";
 import { fetchAncestorChain } from "./AgentRunLineage.js";
@@ -79,6 +80,7 @@ export class AgentRunner {
     private readonly events: EventBus;
     private readonly log: Logger;
     private readonly mcpPool: McpClientPool;
+    private readonly pluginToolsClient: PluginToolsClient;
     private stepStartedAt = 0;
 
     constructor(
@@ -86,6 +88,7 @@ export class AgentRunner {
         connection: PostgresConnection,
         log: Logger,
         mcpPool: McpClientPool,
+        pluginToolsClient: PluginToolsClient,
     ) {
         this.row = row;
         this.steps = new StepResultBus(connection);
@@ -94,6 +97,7 @@ export class AgentRunner {
         this.events = new EventBus(connection);
         this.log = log;
         this.mcpPool = mcpPool;
+        this.pluginToolsClient = pluginToolsClient;
     }
 
     /**
@@ -115,6 +119,11 @@ export class AgentRunner {
     async run(signal?: AbortSignal): Promise<RunOutcome> {
         const handler = HandlerFile.load(this.row.topic, this.row.handler);
         const { model, label: modelLabel } = ModelFactory.build(handler.header.model);
+        // Plugin tools are fetched per-agentrun: the catalog is small,
+        // the request is one loopback HTTP call, and lazy fetch dodges
+        // the boot-order race between the container coming up and host
+        // plugins finishing their `start(ctx)` hooks.
+        const pluginToolset = await this.pluginToolsClient.tools(this.row.eventId, this.row.id);
         const tools = ToolsFactory.build({
             chat: this.chat,
             eventId: this.row.eventId,
@@ -124,6 +133,8 @@ export class AgentRunner {
             parent: this.row,
             mcpTools: this.mcpPool.tools(),
             mcpKeysById: this.mcpPool.mcpKeysById(),
+            pluginTools: pluginToolset.tools,
+            pluginKeysById: pluginToolset.keysById,
             log: this.log,
         });
         const toolNames = Object.keys(tools);

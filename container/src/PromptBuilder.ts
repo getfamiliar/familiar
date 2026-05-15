@@ -4,7 +4,7 @@ import { HandlerFile } from "./HandlerFile.js";
 
 /**
  * Absolute path of the per-container scratch root. Bind-mounted to the
- * host's `data/agent-tmp/` and to every MCP container at the same
+ * host's `tmp/scratch/` and to every MCP container at the same
  * absolute path, so `/scratch/<event-id>/<name>` is the one path string
  * the agent uses for both `file_read` and MCP tool arguments.
  */

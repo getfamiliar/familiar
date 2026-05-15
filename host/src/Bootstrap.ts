@@ -77,15 +77,15 @@ export interface Bootstrap {
      */
     readonly tmpDir: string;
     /**
-     * Shared scratch directory at `data/agent-tmp/`. Bind-mounted at
+     * Shared scratch directory at `tmp/scratch/`. Bind-mounted at
      * `/scratch/` into both the agent container and every MCP container,
      * so files staged here are visible to all of them under the same
      * absolute path. Plugins place per-event auxiliary files via
      * `ctx.events.emit({ files: [...] })`; the host writes them under
-     * `<agentTmpDir>/<eventId>/` atomically with the event INSERT.
+     * `<scratchDir>/<eventId>/` atomically with the event INSERT.
      * Subdirectories older than 24 h are swept by an hourly Croner job.
      */
-    readonly agentTmpDir: string;
+    readonly scratchDir: string;
     /**
      * UID of the daemon process. Passed to docker as `--user` for
      * the npm/pypi runtime containers so files written into
@@ -122,7 +122,7 @@ export function bootstrap(): Bootstrap {
         configFile: `${projectRoot}/config/config.yml`,
         mcpConfigFile: `${projectRoot}/config/mcp.yml`,
         tmpDir: `${projectRoot}/tmp`,
-        agentTmpDir: `${dataDir}/agent-tmp`,
+        scratchDir: `${projectRoot}/tmp/scratch`,
         hostUid: process.getuid?.() ?? 0,
         hostGid: process.getgid?.() ?? 0,
     });
