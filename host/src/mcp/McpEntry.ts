@@ -29,15 +29,14 @@ export interface McpEnvVar {
 }
 
 /**
- * Networking constraints declared on an MCP entry. Both fields are
- * **parsed but not yet enforced** — egress filtering needs a sidecar
- * proxy that is out of scope for the initial runtime support. They
- * exist now so users can declare intent and we can wire enforcement
- * later without a schema change.
+ * Networking constraints declared on an MCP entry. Two states: online
+ * (default, joins `ea-net`) or offline (`disable: true`, runs with
+ * `--network none`). Hostname-level allowlisting was considered and
+ * rejected — docker has no native hostname-egress flag, so real
+ * enforcement would mean shipping a forward-proxy sidecar.
  */
 export interface McpNetwork {
     readonly disable: boolean;
-    readonly allowHosts: readonly string[];
 }
 
 /**

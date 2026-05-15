@@ -75,12 +75,12 @@ export function buildPypiDockerArgs(
 
     args.push(PYPI_RUNTIME_IMAGE);
 
-    // Network-restricted phase-2: tell uv to skip the index entirely
+    // Network-disabled phase-2: tell uv to skip the index entirely
     // and serve the package from the warm cache populated by prep.
     // Without this, uvx still resolves the package version against
     // PyPI on every cold spawn, and a `--network none` container
     // hangs on DNS until uv times out.
-    if (entry.network.disable || entry.network.allowHosts.length > 0) {
+    if (entry.network.disable) {
         args.push("--offline");
     }
 
@@ -167,9 +167,8 @@ export class PypiFactory implements McpServerFactory {
         const { mcpLogsDir, logRetentionDays } = this.config;
         const openFileSink = (): Promise<McpFileSink> =>
             createMcpFileSink(mcpLogsDir, entry.id, logRetentionDays);
-        const isNetworkRestricted = entry.network.disable || entry.network.allowHosts.length > 0;
         const prepDockerArgs =
-            isFreshMount && isNetworkRestricted
+            isFreshMount && entry.network.disable
                 ? buildPypiPrepDockerArgs(entry, this.config)
                 : undefined;
         return new StdioMcpTransport({

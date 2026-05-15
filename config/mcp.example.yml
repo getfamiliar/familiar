@@ -30,9 +30,8 @@ fetch:
   env: []
   volumes: []
   args: []
-  network:
-    disable: false
-    allowHosts: []
+  # network:
+  #   disable: true   # run with --network none
   # idleTimeoutSeconds: 1800
 
 # Example of an env-driven MCP. Uncomment and fill in to use.

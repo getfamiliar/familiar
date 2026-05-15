@@ -1,5 +1,3 @@
-import type { McpNetwork } from "../McpEntry.js";
-
 /**
  * Normalized result of looking up an MCP in either the Docker MCP
  * registry or the official MCP registry. Both clients map their
@@ -15,8 +13,6 @@ export interface RegistryHit {
     readonly title: string;
     readonly description: string;
     readonly candidates: readonly RegistryCandidate[];
-    /** Optional pre-filled network constraints (Docker registry's `run.allowHosts`). */
-    readonly network?: McpNetwork;
 }
 
 /**

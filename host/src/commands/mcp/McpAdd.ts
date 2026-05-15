@@ -138,7 +138,6 @@ async function runDialogue(positional: string | undefined): Promise<void> {
         env: envValues,
         extraArgs,
         networkDisabled,
-        baseAllowHosts: hit.network?.allowHosts ?? [],
     });
 
     process.stdout.write("\nProposed entry:\n");
@@ -167,9 +166,9 @@ async function runDialogue(positional: string | undefined): Promise<void> {
     }
     process.stdout.write(`appended "${id}" to ${boot.mcpConfigFile}\n`);
 
-    // Surface any post-append warnings that aren't lint errors
-    // (e.g. `allowHosts` no-op notice). The hard errors are
-    // handled by `appendEntry`'s rollback path above.
+    // Surface any post-append warnings that aren't lint errors.
+    // The hard errors are handled by `appendEntry`'s rollback path
+    // above.
     const lintResult = lintMcpConfigFile(boot.mcpConfigFile);
     for (const w of lintResult.warnings) {
         process.stdout.write(`warning: ${w}\n`);
@@ -384,7 +383,6 @@ function renderEntry(input: {
     }>;
     extraArgs: readonly string[];
     networkDisabled: boolean;
-    baseAllowHosts: readonly string[];
 }): string {
     const source: McpSource =
         input.candidate.kind === "oci" ? "docker-mcp-registry" : input.candidate.kind; // "npm" | "pypi"
@@ -424,18 +422,11 @@ function renderEntry(input: {
     if (args.length > 0) {
         body.args = args;
     }
-    // Only emit the keys the user actually configured. An empty
-    // `allowHosts` adds no information and just clutters the file;
-    // `disable: false` is already the default at runtime.
-    if (input.networkDisabled || input.baseAllowHosts.length > 0) {
-        const network: Record<string, unknown> = {};
-        if (input.networkDisabled) {
-            network.disable = true;
-        }
-        if (input.baseAllowHosts.length > 0) {
-            network.allowHosts = input.baseAllowHosts;
-        }
-        body.network = network;
+    // Only emit `network` when the user opted into `disable: true`.
+    // `disable: false` is already the default at runtime, so leaving
+    // the key out keeps the file clean.
+    if (input.networkDisabled) {
+        body.network = { disable: true };
     }
     return stringify({ [input.id]: body });
 }

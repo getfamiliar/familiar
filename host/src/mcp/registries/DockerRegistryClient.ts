@@ -1,5 +1,4 @@
 import { parse } from "yaml";
-import type { McpNetwork } from "../McpEntry.js";
 import type { EnvSlot, RegistryHit } from "./RegistryEntry.js";
 
 /**
@@ -23,7 +22,6 @@ const DOCKER_REGISTRY_BASE = "https://raw.githubusercontent.com/docker/mcp-regis
  * - `image` → single `oci` candidate's `identifier`
  * - `config.secrets[]` → env slots with `isSecret: true`
  * - `config.env[]` → env slots with `isSecret: false`
- * - `run.allowHosts[]` → `network.allowHosts`
  *
  * Fields the Docker registry doesn't carry (`args`, `command`,
  * `version`) are left empty — the `mcp add` dialogue prompts for
@@ -80,11 +78,6 @@ function mapServerYaml(name: string, raw: unknown): RegistryHit {
     const config = isMapping(root.config) ? root.config : {};
     const envSlots = [...mapSecretsBlock(config.secrets), ...mapEnvBlock(config.env)];
 
-    const run = isMapping(root.run) ? root.run : {};
-    const allowHosts = stringArray(run.allowHosts);
-    const network: McpNetwork | undefined =
-        allowHosts.length > 0 ? { disable: false, allowHosts } : undefined;
-
     return {
         registryName,
         title,
@@ -99,7 +92,6 @@ function mapServerYaml(name: string, raw: unknown): RegistryHit {
                 argSlots: [],
             },
         ],
-        network,
     };
 }
 
@@ -176,12 +168,4 @@ function stringOr(value: unknown, fallback: string): string {
 /** Coerce to a string only when present + string-typed; undefined otherwise. */
 function optionalString(value: unknown): string | undefined {
     return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-/** Filter an unknown value to a string array; empty when shape is wrong. */
-function stringArray(value: unknown): string[] {
-    if (!Array.isArray(value)) {
-        return [];
-    }
-    return value.filter((v): v is string => typeof v === "string");
 }

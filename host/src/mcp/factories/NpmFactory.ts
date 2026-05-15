@@ -102,11 +102,11 @@ export function buildNpmDockerArgs(
 
     args.push(NPM_RUNTIME_IMAGE);
 
-    // Network-restricted phase-2: tell npx to use only the offline
+    // Network-disabled phase-2: tell npx to use only the offline
     // cache populated by prep. Without this, npx resolves the
     // package against the registry on every cold spawn, and a
     // `--network none` container hangs on DNS until it times out.
-    if (entry.network.disable || entry.network.allowHosts.length > 0) {
+    if (entry.network.disable) {
         args.push("--offline");
     }
 
@@ -130,12 +130,11 @@ export function buildNpmDockerArgs(
 /**
  * Build a `docker run` argv that pre-populates the per-MCP `/work`
  * cache with the npm package, but does **not** start the MCP server.
- * Used for network-restricted entries (`network.disable: true` or
- * non-empty `allowHosts`) whose phase-2 container can't reach the
- * registry. Forces full network and IPv6 sysctl regardless of the
- * entry's network policy, drops user env vars and user volumes, and
- * runs anonymously (no `--name`) so it can't collide with the live
- * `ea-mcp-<id>` container.
+ * Used for `network.disable: true` entries whose phase-2 container
+ * can't reach the registry. Forces full network and IPv6 sysctl
+ * regardless of the entry's network policy, drops user env vars and
+ * user volumes, and runs anonymously (no `--name`) so it can't
+ * collide with the live `ea-mcp-<id>` container.
  *
  * The entrypoint is overridden to `npx -y --package <pkg>[@<ver>] --
  * node -e ""` — npx fetches and installs the package, then runs an
@@ -201,9 +200,8 @@ export class NpmFactory implements McpServerFactory {
         const { mcpLogsDir, logRetentionDays } = this.config;
         const openFileSink = (): Promise<McpFileSink> =>
             createMcpFileSink(mcpLogsDir, entry.id, logRetentionDays);
-        const isNetworkRestricted = entry.network.disable || entry.network.allowHosts.length > 0;
         const prepDockerArgs =
-            isFreshMount && isNetworkRestricted
+            isFreshMount && entry.network.disable
                 ? buildNpmPrepDockerArgs(entry, this.config)
                 : undefined;
         return new StdioMcpTransport({

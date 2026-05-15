@@ -20,7 +20,7 @@ function entryFixture(overrides: Partial<McpEntry>): McpEntry {
         volumes: [],
         args: [],
         command: null,
-        network: { disable: false, allowHosts: [] },
+        network: { disable: false },
         idleTimeoutSeconds: DEFAULT_IDLE_TIMEOUT_SECONDS,
         ...overrides,
     };

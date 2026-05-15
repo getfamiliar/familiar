@@ -114,23 +114,21 @@ into this single `env` array so that npm/pypi/external entries use the same shap
 | Field | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `disable` | boolean | `false` | When `true`, the container runs with `--network none`. |
-| `allowHosts` | array of strings | `[]` | Allowed egress hosts (`host[:port]`, `*` wildcards). |
 
-> **Enforcement caveat.** `allowHosts` is **parsed but not yet enforced** — it requires a sidecar
-> egress proxy that is out of scope for the current runtime support. The lint warns when a
-> non-empty `allowHosts` is set so the no-op behaviour is visible. `disable: true` is enforced
-> today via `--network none`, but note that this also makes the container unreachable from the
-> agent; useful for stdio-only MCPs only.
+Two states: online (default, joins `ea-net`) or offline (`disable: true`). Hostname-level
+allowlisting is deliberately not supported — docker has no native hostname-egress flag, and a
+forward-proxy sidecar is more infrastructure than the runtime wants to own. `disable: true` also
+makes the container unreachable from the agent's HTTP catalog calls; useful for stdio-only MCPs
+only.
 
-> **Two-phase boot for restricted npm/pypi.** When an `npm` or `pypi` entry has `disable: true` or
-> a non-empty `allowHosts`, the bastion can't fetch the package from the run-phase container. On
-> the first cold-spawn after daemon start it runs a **prep container** with full network access
-> (`ea-net`) and **no env vars / no user volumes**:
-> `npx -y --package <pkg> -- node -e ""` for npm, `uvx --from <pkg> python -c ""` for pypi. The
-> package lands in the bind-mounted `/work` cache; the phase-2 container then runs as declared
-> (restricted network, env vars, volumes) and the warm cache lets `npx`/`uvx` skip the fetch.
-> Prep needs network even when the running MCP doesn't — fully air-gapped installs aren't
-> supported.
+> **Two-phase boot for offline npm/pypi.** When an `npm` or `pypi` entry has `disable: true`,
+> the bastion can't fetch the package from the run-phase container. On the first cold-spawn
+> after daemon start it runs a **prep container** with full network access (`ea-net`) and **no
+> env vars / no user volumes**: `npx -y --package <pkg> -- node -e ""` for npm,
+> `uvx --from <pkg> python -c ""` for pypi. The package lands in the bind-mounted `/work`
+> cache; the phase-2 container then runs as declared (no network, env vars, volumes) and the
+> warm cache lets `npx`/`uvx` skip the fetch. Prep needs network even when the running MCP
+> doesn't — fully air-gapped installs aren't supported.
 >
 > Prep runs **only when the per-MCP mount dir is absent** (`tmp/mcp-mount-<id>/`). Once the
 > package is cached, daemon restarts skip prep entirely — otherwise the package's install hooks
@@ -424,6 +422,5 @@ want every catalog change to break unrelated handlers.
   the catalog grows.
 - Auth injection through the bastion on outbound calls *from* MCP children (e.g. fetch hitting
   example.com).
-- `allowHosts` enforcement via an egress proxy.
 - Private npm / pypi registry support (registry config + auth injection through the runtime
   images).

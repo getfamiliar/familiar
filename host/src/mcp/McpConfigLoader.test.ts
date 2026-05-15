@@ -112,24 +112,4 @@ fetch:
         assert.equal(result.ok, false);
         assert.match(result.errors.join("\n"), /idleTimeoutSeconds/);
     });
-
-    it("warns when allowHosts is non-empty (parsed but not yet enforced)", () => {
-        const file = write(`
-fetch:
-  title: "Fetch"
-  description: "Fetches a URL."
-  source: docker-mcp-registry
-  image: mcp/fetch
-  network:
-    disable: false
-    allowHosts:
-      - github.com:443
-`);
-        const result = lintMcpConfigFile(file);
-        assert.equal(result.ok, true);
-        assert.equal(
-            result.warnings.some((w) => w.includes("allowHosts")),
-            true,
-        );
-    });
 });

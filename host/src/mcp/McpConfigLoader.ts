@@ -273,12 +273,8 @@ function validateStringArray(id: string, key: string, value: unknown, errors: st
     }
 }
 
-/**
- * Validate the optional `network` block. Both fields are parsed but
- * not yet enforced; a warning is emitted if a user sets a non-default
- * value so they're aware their constraint is currently a no-op.
- */
-function validateNetwork(id: string, value: unknown, errors: string[], warnings: string[]): void {
+/** Validate the optional `network` block. */
+function validateNetwork(id: string, value: unknown, errors: string[], _warnings: string[]): void {
     if (value === undefined) {
         return;
     }
@@ -289,24 +285,6 @@ function validateNetwork(id: string, value: unknown, errors: string[], warnings:
     const net = value as Record<string, unknown>;
     if (net.disable !== undefined && typeof net.disable !== "boolean") {
         errors.push(`mcp.yml entry "${id}": network.disable must be a boolean.`);
-    }
-    if (net.allowHosts !== undefined) {
-        if (!Array.isArray(net.allowHosts)) {
-            errors.push(`mcp.yml entry "${id}": network.allowHosts must be an array of strings.`);
-        } else {
-            for (let i = 0; i < net.allowHosts.length; i++) {
-                if (typeof net.allowHosts[i] !== "string") {
-                    errors.push(
-                        `mcp.yml entry "${id}": network.allowHosts[${i}] must be a string.`,
-                    );
-                }
-            }
-            if (net.allowHosts.length > 0) {
-                warnings.push(
-                    `mcp.yml entry "${id}": network.allowHosts is parsed but not yet enforced.`,
-                );
-            }
-        }
     }
 }
 
@@ -325,10 +303,6 @@ function materializeEntry(id: string, raw: Record<string, unknown>): McpEntry {
     }));
     const network: McpNetwork = {
         disable: Boolean((raw.network as Record<string, unknown> | undefined)?.disable ?? false),
-        allowHosts:
-            ((raw.network as Record<string, unknown> | undefined)?.allowHosts as
-                | string[]
-                | undefined) ?? [],
     };
     return {
         id,

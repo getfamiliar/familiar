@@ -224,10 +224,6 @@ function loadEntry(filePath: string, id: string): McpEntry | null {
     const e = value as Record<string, unknown>;
     const network: McpNetwork = {
         disable: Boolean((e.network as Record<string, unknown> | undefined)?.disable ?? false),
-        allowHosts:
-            ((e.network as Record<string, unknown> | undefined)?.allowHosts as
-                | string[]
-                | undefined) ?? [],
     };
     return {
         id,
