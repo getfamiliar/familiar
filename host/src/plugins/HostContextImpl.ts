@@ -1,3 +1,5 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import {
     type ChatFilter,
     type ChatHandler,
@@ -8,6 +10,8 @@ import {
     type EmitOptions,
     EVENTS_STATE_CHANNEL,
     EventBus,
+    type EventFile,
+    type EventRow,
     type HostContext,
     type Logger,
     type McpClient,
@@ -50,6 +54,14 @@ export interface HostContextImplDeps {
      * env var to drift out of sync.
      */
     dataDir: string;
+    /**
+     * Absolute host path of `data/agent-tmp/`. Used internally by the
+     * `events.emit` wrapper to stage `event.files` under
+     * `<agentTmpDir>/<eventId>/` inside the INSERT transaction. Not
+     * exposed on `HostContext`; plugins reach scratch only through
+     * `emit({ files })`.
+     */
+    agentTmpDir: string;
     /**
      * Absolute path of the daemon's pidfile (`<dataDir>/.daemon.pid`).
      * Used by `ctx.isDaemonRunning()` to decide whether the host
@@ -211,6 +223,7 @@ export class HostContextImpl implements HostContext {
         }
 
         let row: Awaited<ReturnType<EventBus["add"]>>;
+        let stagedScratchDir: string | undefined;
         try {
             // The only valid channel id is a non-empty string. Anything
             // else — `null`, `undefined`, `false`, `0`, `""`, an object
@@ -226,9 +239,25 @@ export class HostContextImpl implements HostContext {
                       ...event,
                       preferredChatChannelId: this.deps.config.getString("core.defaultChatChannel"),
                   };
-            row = await bus.add(stamped);
+            const files = event.files;
+            row = await bus.add(stamped, async (insertedRow: EventRow) => {
+                if (!files || files.length === 0) {
+                    return;
+                }
+                // Staging happens inside the INSERT transaction, so
+                // NOTIFY events_new (post-COMMIT) only fires once files
+                // are on disk. If staging throws, the outer catch tears
+                // down whatever partial dir we created — the EventBus
+                // ROLLBACK keeps the database side clean.
+                const targetDir = path.join(this.deps.agentTmpDir, insertedRow.id);
+                stagedScratchDir = targetDir;
+                await stageEventFiles(targetDir, files);
+            });
             waitedFor = row.id;
         } catch (err) {
+            if (stagedScratchDir) {
+                await fs.rm(stagedScratchDir, { recursive: true, force: true });
+            }
             // INSERT failed before we got an id — tear down listeners
             // and propagate.
             if (stepUnsubscribe) {
@@ -324,6 +353,55 @@ async function fetchFinalResultText(
  */
 export function isUsableChannelId(value: unknown): value is string {
     return typeof value === "string" && value.length > 0;
+}
+
+/**
+ * Validate a basename submitted as `EventFile.name`. Rejects empty,
+ * path separators, `..` segments, and absolute-style leading slashes.
+ * The check is intentionally strict — `name` is the literal basename
+ * the file will land under inside `/scratch/<event-id>/`, no
+ * subdirectories allowed.
+ */
+function validateEventFileName(name: unknown): string {
+    if (typeof name !== "string" || name.length === 0) {
+        throw new Error("EventFile.name must be a non-empty string");
+    }
+    if (name.includes("/") || name.includes("\\")) {
+        throw new Error(`EventFile.name must be a basename without path separators: ${name}`);
+    }
+    if (name === "." || name === "..") {
+        throw new Error(`EventFile.name must not be "." or "..": ${name}`);
+    }
+    return name;
+}
+
+/**
+ * Stage each {@link EventFile} into `targetDir`. Creates the directory,
+ * then for each file either writes the `contents` Buffer or moves the
+ * file at `sourcePath` (falling back to copy+unlink across filesystems).
+ * Caller is responsible for `rm -rf`-ing `targetDir` on failure.
+ */
+async function stageEventFiles(targetDir: string, files: readonly EventFile[]): Promise<void> {
+    await fs.mkdir(targetDir, { recursive: true });
+    for (const file of files) {
+        const name = validateEventFileName(file.name);
+        const targetPath = path.join(targetDir, name);
+        if ("contents" in file) {
+            await fs.writeFile(targetPath, file.contents);
+            continue;
+        }
+        try {
+            await fs.rename(file.sourcePath, targetPath);
+        } catch (err) {
+            if ((err as NodeJS.ErrnoException).code !== "EXDEV") {
+                throw err;
+            }
+            // Cross-device rename: fall back to copy + unlink so the
+            // plugin still gives up ownership of the source file.
+            await fs.copyFile(file.sourcePath, targetPath);
+            await fs.unlink(file.sourcePath);
+        }
+    }
 }
 
 /**

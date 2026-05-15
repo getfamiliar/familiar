@@ -105,6 +105,31 @@ export interface EventRow {
 }
 
 /**
+ * One auxiliary file to attach to an event at emit time. The host writes
+ * each file under `<agentTmpDir>/<eventId>/<name>` inside the same
+ * transaction that inserts the event row, so the container watcher only
+ * ever observes events whose files are already on disk at
+ * `/scratch/<event-id>/<name>` inside both the agent and every MCP
+ * container.
+ *
+ * Two arms:
+ * - `contents` — Buffer the host writes directly. Use when bytes are
+ *   already in memory (e.g. just decoded from a base64 MCP response).
+ * - `sourcePath` — absolute host path to a file the plugin has already
+ *   written to disk. The host **moves** the file into the scratch dir
+ *   (`fs.rename`, falling back to copy+unlink across filesystems); the
+ *   plugin gives up ownership. Use for large files the plugin doesn't
+ *   want to re-buffer in memory.
+ *
+ * `name` is a basename. Path separators and `..` segments are rejected
+ * at emit; on collision within the same emit, the second file overwrites
+ * the first (caller's responsibility to keep names unique).
+ */
+export type EventFile =
+    | { readonly name: string; readonly contents: Buffer }
+    | { readonly name: string; readonly sourcePath: string };
+
+/**
  * Input shape for {@link EventBus.add}.
  *
  * `prompt` carries the event's primary user-visible text — for chat
@@ -174,6 +199,15 @@ export interface NewEvent {
      * existence-checked, at emit time.
      */
     readonly startHandler?: string;
+    /**
+     * Auxiliary files to stage at `/scratch/<event-id>/<name>` for this
+     * event. Visible to the agent and to every MCP container under the
+     * same absolute path. Staging happens atomically with the event
+     * INSERT (inside the same transaction), so the container watcher
+     * never sees an event whose files aren't yet on disk. See {@link
+     * EventFile} for the two payload shapes.
+     */
+    readonly files?: readonly EventFile[];
 }
 
 /** Patch shape for {@link EventBus.update}. */

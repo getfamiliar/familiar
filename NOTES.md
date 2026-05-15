@@ -2,6 +2,12 @@ Alternativen Modellprovider testen: Synthetic.new - wie Featherless, 30€ / Mon
 Wakeups / Alerts per Datenbank bauen
 hostname limits in mcp.yml parsen
 
+Reflect and learn from things when memory plugin is ready:
+* Mail Digest
+* ...
+
+MCP functions: keep or remove the renaming of "-"?
+
 ## For later
 
 - Protect the bastion port on the host? Maybe a simple basic auth?

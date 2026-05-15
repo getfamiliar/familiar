@@ -1,6 +1,14 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { HandlerFile } from "./HandlerFile.js";
+
+/**
+ * Absolute path of the per-container scratch root. Bind-mounted to the
+ * host's `data/agent-tmp/` and to every MCP container at the same
+ * absolute path, so `/scratch/<event-id>/<name>` is the one path string
+ * the agent uses for both `file_read` and MCP tool arguments.
+ */
+const SCRATCH_ROOT = "/scratch";
 
 /**
  * Hard cap on the character length of each individually-included
@@ -156,7 +164,11 @@ function buildRuntimeSection(handler: HandlerFile, topic: string, privileged: bo
  * @param payload The agentrun's structured payload (the `payload`
  *   jsonb column on the row), an arbitrary JSON value.
  */
-export function buildPrompt(runPrompt: string | null, payload: unknown): string {
+export function buildPrompt(
+    runPrompt: string | null,
+    payload: unknown,
+    scratchListing?: string | null,
+): string {
     const sections: string[] = [];
 
     if (runPrompt && runPrompt.trim().length > 0) {
@@ -168,10 +180,62 @@ export function buildPrompt(runPrompt: string | null, payload: unknown): string 
         sections.push(`# Payload\n\n\`\`\`json\n${payloadJson}\n\`\`\``);
     }
 
+    if (scratchListing !== undefined && scratchListing !== null && scratchListing.length > 0) {
+        sections.push(scratchListing);
+    }
+
     if (sections.length === 0) {
         return "";
     }
     return truncate(sections.join("\n\n"), MAX_PROMPT_CHARS);
+}
+
+/**
+ * List the files staged at `/scratch/<eventId>/` for the prompt
+ * scaffold. Returns a markdown block ready to append to the user
+ * prompt, or `null` when the dir is missing or empty (in which case
+ * the section is skipped entirely so the model isn't told about a
+ * concept that doesn't apply to this run).
+ *
+ * Sizes are listed in bytes; the model is good at scaling those.
+ * Files are listed in name order for stability across runs. Hidden
+ * dotfiles are skipped — same convention as `WorkspaceWatcher`.
+ */
+export function buildScratchListing(eventId: string): string | null {
+    if (typeof eventId !== "string" || eventId.length === 0) {
+        return null;
+    }
+    const dir = path.join(SCRATCH_ROOT, eventId);
+    let entries: string[];
+    try {
+        entries = readdirSync(dir);
+    } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+            return null;
+        }
+        throw err;
+    }
+    const lines: string[] = [];
+    for (const name of entries.sort()) {
+        if (name.startsWith(".")) {
+            continue;
+        }
+        const full = path.join(dir, name);
+        let stat: ReturnType<typeof statSync>;
+        try {
+            stat = statSync(full);
+        } catch {
+            continue;
+        }
+        if (!stat.isFile()) {
+            continue;
+        }
+        lines.push(`- \`${full}\` (${stat.size} bytes)`);
+    }
+    if (lines.length === 0) {
+        return null;
+    }
+    return `# Files staged for this event\n\nThese files live in this event's shared scratch directory. They are visible to every MCP under the same path, so you can pass these paths verbatim to MCP tools (e.g. a PDF parser):\n\n${lines.join("\n")}`;
 }
 
 /**

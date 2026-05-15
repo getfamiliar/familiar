@@ -30,6 +30,14 @@ The file paths are always relative to your workspace root, and you can use subdi
 
 **Only privileged runs can write to .md files**, to prevent accidental damage to handlers. All other files can be written by any run.
 
+#### Per-event scratch files at `/scratch/<event-id>/`
+
+Some events ship auxiliary files (mail attachments, for example). When that's the case, the user prompt includes a "Files staged for this event" section listing their absolute paths under `/scratch/<event-id>/`.
+
+These paths are absolute. The same path resolves to the same bytes inside every MCP container, so you can pass `/scratch/<event-id>/<name>` verbatim to MCP tools (e.g. a PDF parser) without translation. Your file tools accept these paths too — they're the one exception to the workspace-relative rule.
+
+Scratch files are ephemeral: directories older than 24 hours are swept automatically. Don't store anything here you want to keep — write to the workspace instead.
+
 #### Best practices on how to organize files
 
 Feel free to create new files to organize information as the task at hand instructs you to. Some best practices:

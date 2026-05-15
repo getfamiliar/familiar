@@ -26,12 +26,32 @@ const GREP_MAX_FILE_BYTES = 256 * 1024;
 const GREP_LINE_PREVIEW_CHARS = 500;
 
 /**
- * Resolve a workspace-relative input path to an absolute path,
- * rejecting empty strings, absolute inputs, and any path that escapes
- * the workspace root via `..`. Centralizes the sandbox check so each
- * tool just calls this once and surfaces the error to the model.
+ * Absolute mount point for the shared scratch directory. Mounted at
+ * the same path inside the agent container and every MCP container, so
+ * the agent can pass `/scratch/<event-id>/<name>` paths verbatim to
+ * MCP tools without translation. See `host/src/Bootstrap.ts` for the
+ * host side and the MCP factories for the per-MCP mount.
+ */
+const SCRATCH_ROOT = "/scratch";
+
+/**
+ * Resolve an input path to an absolute path, rejecting empty strings
+ * and `..` escapes. Two valid shapes:
  *
- * @throws If `input` is empty, absolute, or escapes the workspace.
+ * - **Workspace-relative**: anything that isn't absolute. Resolved
+ *   against the workspace root, must stay within it.
+ * - **Scratch absolute**: an absolute path under `/scratch/<sub>` —
+ *   the shared per-event scratch dir mounted at the same absolute
+ *   path in the agent container and in every MCP. Allowed so the
+ *   agent reads scratch files with the same path string it passes to
+ *   MCP tools; `/scratch` alone (no subdirectory) is rejected to keep
+ *   the root inviolable.
+ *
+ * All other absolute paths are rejected. Centralizes the sandbox check
+ * so each tool just calls this once and surfaces the error to the model.
+ *
+ * @throws If `input` is empty, an absolute path outside `/scratch/`,
+ *   or escapes its allowed root via `..`.
  */
 function resolveWorkspacePath(input: string): string {
     if (typeof input !== "string") {
@@ -42,7 +62,18 @@ function resolveWorkspacePath(input: string): string {
         throw new Error("path must not be empty");
     }
     if (path.isAbsolute(trimmed)) {
-        throw new Error("path must be relative to the workspace root");
+        const normalized = path.resolve(trimmed);
+        if (normalized === SCRATCH_ROOT) {
+            throw new Error(
+                "path must include a subdirectory under /scratch/ (e.g. /scratch/<event-id>/<file>)",
+            );
+        }
+        if (normalized === `${SCRATCH_ROOT}/` || normalized.startsWith(`${SCRATCH_ROOT}/`)) {
+            return normalized;
+        }
+        throw new Error(
+            "absolute paths are only allowed under /scratch/; workspace paths must be relative",
+        );
     }
     const root = HandlerFile.getWorkspaceRoot();
     const resolved = path.resolve(root, trimmed);
@@ -63,12 +94,21 @@ const TOOLGROUPS_DIR = "toolgroups";
  * True when writing this absolute path requires a privileged
  * agentrun. Two cases:
  *
- * - `.md` anywhere — handlers, SOUL.md, people notes, etc.
+ * - `.md` anywhere in the workspace — handlers, SOUL.md, people notes, etc.
  * - Anything (any extension) under `workspace/toolgroups/` — those
  *   files declare which MCP tools handlers may use, so widening
  *   them is privilege escalation in spirit.
+ *
+ * Scratch paths (`/scratch/<event-id>/...`) bypass both checks: scratch
+ * is per-event ephemeral storage shared with MCPs, never a handler
+ * source, and the privilege gate would only get in the way of
+ * legitimate work (e.g. saving an intermediate `.md` artifact for a
+ * child agentrun to read).
  */
 function requiresPrivilegedWrite(absolute: string): boolean {
+    if (absolute === SCRATCH_ROOT || absolute.startsWith(`${SCRATCH_ROOT}/`)) {
+        return false;
+    }
     if (absolute.toLowerCase().endsWith(".md")) {
         return true;
     }
@@ -118,9 +158,10 @@ type FileReadOutput =
 function buildFileReadTool(): Tool<FileReadInput, FileReadOutput> {
     return tool<FileReadInput, FileReadOutput>({
         description:
-            "Read a file from the workspace and return its UTF-8 contents. " +
-            "Paths are workspace-relative — e.g. `SOUL.md`, `people/anna.md`, " +
-            "`data/subscriptions.jsonl`.",
+            "Read a file and return its UTF-8 contents. Paths are workspace-" +
+            "relative (e.g. `SOUL.md`, `people/anna.md`) — except absolute " +
+            "paths under `/scratch/<event-id>/...` are also accepted, for per-" +
+            "event files (e.g. mail attachments) shared with MCP tools.",
         inputSchema: jsonSchema<FileReadInput>({
             type: "object",
             additionalProperties: false,

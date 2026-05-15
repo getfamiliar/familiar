@@ -1,15 +1,17 @@
 /**
  * Inputs that the npm/pypi `build*DockerArgs` helpers actually need
  * from the surrounding host: the tmp-dir root for per-id bind
- * mounts, plus the daemon's uid/gid for the `--user` flag. Both
- * `NpmFactoryConfig` and `PypiFactoryConfig` extend this so the
- * factories' wider configs (which also carry log + retention for
- * the file sink) flow through unchanged, while the args helper's
- * signature stays minimal — easy to satisfy from a one-shot CLI
- * caller like `./cli.sh mcp call`.
+ * mounts, the shared scratch dir mounted at `/scratch` so MCPs can
+ * read per-event files staged by `ctx.events.emit`, plus the daemon's
+ * uid/gid for the `--user` flag. Both `NpmFactoryConfig` and
+ * `PypiFactoryConfig` extend this so the factories' wider configs
+ * (which also carry log + retention for the file sink) flow through
+ * unchanged, while the args helper's signature stays minimal — easy
+ * to satisfy from a one-shot CLI caller like `./cli.sh mcp call`.
  */
 export interface RuntimeContainerConfig {
     readonly tmpDir: string;
+    readonly agentTmpDir: string;
     readonly hostUid: number;
     readonly hostGid: number;
 }

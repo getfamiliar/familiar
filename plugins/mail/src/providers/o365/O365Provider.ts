@@ -1,5 +1,5 @@
 import type { CommandDef } from "citty";
-import type { HostContext, McpClient, NewEvent } from "effective-assistant-shared";
+import type { EventFile, HostContext, McpClient, NewEvent } from "effective-assistant-shared";
 import type { LoginStatus, MailProvider, MailProviderDeps } from "../MailProvider.js";
 import { buildO365Commands } from "./O365Commands.js";
 import {
@@ -7,6 +7,7 @@ import {
     flatAddress,
     formatAddress,
     type GraphAccount,
+    type GraphAttachment,
     type GraphMailMessage,
     isSafeEmailAddress,
     type VerifyLoginResponse,
@@ -18,7 +19,17 @@ const PAGE_SIZE = 50;
 const MAX_PAGES_PER_POLL = 20;
 /** Fields requested via Graph `$select`. Keep narrow to keep MCP responses small. */
 const SELECT_FIELDS =
-    "id,internetMessageId,from,toRecipients,ccRecipients,subject,receivedDateTime,bodyPreview";
+    "id,internetMessageId,from,toRecipients,ccRecipients,subject,receivedDateTime,bodyPreview,hasAttachments";
+/**
+ * `$expand=attachments(...)` value used by {@link fetchAttachments}.
+ * Includes `contentBytes` so non-inline file attachments under Graph's
+ * inline-bytes ceiling (~3 MB) come back base64-encoded in the same
+ * call. The bytes never enter the event payload — they're decoded and
+ * routed to the event's `/scratch/<event-id>/` dir via `NewEvent.files`,
+ * which the host stages atomically with the INSERT. Metadata-only
+ * fields (id, name, contentType, size, isInline) still feed the payload.
+ */
+const ATTACHMENT_EXPAND = "attachments($select=id,name,contentType,size,isInline,contentBytes)";
 /** Graph caps bodyPreview at 255 chars; equals signal we hit the cap and the body has more. */
 const BODY_PREVIEW_TRUNCATION_LENGTH = 255;
 
@@ -295,6 +306,8 @@ async function emitMailEvent(
             ? " Body is truncated. If needed get full body with get-mail-message tool."
             : "");
 
+    const fetched = await fetchAttachments(deps, target, message);
+
     const event: NewEvent = {
         topic: "mail:o365",
         prompt,
@@ -311,7 +324,167 @@ async function emitMailEvent(
             date: message.receivedDateTime,
             messageId: message.id,
             internetMessageId: message.internetMessageId,
+            hasAttachments: message.hasAttachments,
+            attachments: fetched === null ? null : fetched.metadata,
         },
+        files: fetched?.files,
     };
     await deps.emit(event);
+}
+
+/**
+ * Result of a successful attachment fetch: metadata to embed in the
+ * event payload, plus decoded files to stage under
+ * `/scratch/<event-id>/` via `NewEvent.files`. Files are only present
+ * for non-inline attachments small enough that Graph inlined their
+ * `contentBytes`; larger ones still appear in `metadata`, but the
+ * handler will need to download them via the MCP if it wants the bytes.
+ */
+interface FetchedAttachments {
+    readonly metadata: readonly GraphAttachment[];
+    readonly files: readonly EventFile[];
+}
+
+/**
+ * Return the message's attachment metadata, and decoded bytes for any
+ * file attachment small enough that Graph inlined `contentBytes`.
+ * Three return shapes mirror the `hasAttachments`/`attachments` matrix
+ * documented in the plugin README:
+ *
+ * - `{ metadata: [], files: [] }` — `message.hasAttachments === false`;
+ *   no call made.
+ * - `{ metadata: […], files: […] }` — fetch succeeded.
+ * - `null` — fetch failed (throttling, transient Graph error). The
+ *            handler can retry via the same MCP tool itself.
+ *
+ * The call goes through `get-shared-mailbox-message` for both own
+ * and shared mailboxes — `userId` accepts the caller's own UPN, so
+ * one path covers everything.
+ */
+async function fetchAttachments(
+    deps: MailProviderDeps,
+    target: PollTarget,
+    message: GraphMailMessage,
+): Promise<FetchedAttachments | null> {
+    if (!message.hasAttachments) {
+        return { metadata: [], files: [] };
+    }
+    try {
+        const response = await callJsonTool<{
+            attachments?: ReadonlyArray<{
+                id?: unknown;
+                name?: unknown;
+                contentType?: unknown;
+                size?: unknown;
+                isInline?: unknown;
+                contentBytes?: unknown;
+            }>;
+        }>(deps.client, "get-shared-mailbox-message", {
+            userId: target.mailbox,
+            messageId: message.id,
+            select: "id",
+            expand: ATTACHMENT_EXPAND,
+        });
+        return normalizeAttachments(response.attachments);
+    } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        deps.log(
+            `attachment fetch for ${target.mailbox}/${message.id} failed: ${reason}; emitting with attachments=null`,
+        );
+        return null;
+    }
+}
+
+/**
+ * Split the raw Graph attachments into payload metadata (always
+ * present, bytes stripped) and stageable scratch files (only for
+ * non-inline attachments whose `contentBytes` survived Graph's
+ * inline-bytes ceiling). Defensive against the MCP carrying fields
+ * we didn't ask for.
+ *
+ * Inline attachments (`isInline=true`, typically cid:-referenced
+ * images embedded in the HTML body) are kept in metadata but not
+ * staged — they aren't user-facing files the agent needs to act on.
+ */
+function normalizeAttachments(
+    raw:
+        | ReadonlyArray<{
+              id?: unknown;
+              name?: unknown;
+              contentType?: unknown;
+              size?: unknown;
+              isInline?: unknown;
+              contentBytes?: unknown;
+          }>
+        | undefined,
+): FetchedAttachments {
+    if (!raw || raw.length === 0) {
+        return { metadata: [], files: [] };
+    }
+    const metadata: GraphAttachment[] = [];
+    const files: EventFile[] = [];
+    const usedNames = new Set<string>();
+    for (const item of raw) {
+        if (item === null || typeof item !== "object") {
+            continue;
+        }
+        const id = typeof item.id === "string" ? item.id : "";
+        const name = typeof item.name === "string" ? item.name : "";
+        const contentType = typeof item.contentType === "string" ? item.contentType : "";
+        const size = typeof item.size === "number" ? item.size : 0;
+        const isInline = item.isInline === true;
+        if (id.length === 0 || name.length === 0) {
+            continue;
+        }
+        metadata.push({ id, name, contentType, size, isInline });
+        if (isInline) {
+            continue;
+        }
+        if (typeof item.contentBytes !== "string" || item.contentBytes.length === 0) {
+            continue;
+        }
+        const safeName = sanitizeAttachmentName(name, id, usedNames);
+        const contents = Buffer.from(item.contentBytes, "base64");
+        files.push({ name: safeName, contents });
+    }
+    return { metadata, files };
+}
+
+/**
+ * Make an attachment filename safe to land at `/scratch/<event-id>/`.
+ *
+ * The host's emit guard rejects any name containing `/`, `\`, or `..`
+ * outright. To stay friendly for legitimate attachments — Graph can
+ * return names like `Q3 Report.pdf` or `meeting (rev 2).docx` — we
+ * replace separators with `_` rather than throw. Hidden-file leading
+ * dots are stripped (no `..bashrc`-style ambushes). Empty results
+ * fall back to `attachment-<id>`. Collisions within one emit get a
+ * `(2)`/`(3)`/... suffix before the extension.
+ */
+function sanitizeAttachmentName(name: string, id: string, used: Set<string>): string {
+    let cleaned = name.replace(/[/\\]/g, "_").replace(/^\.+/, "");
+    if (cleaned === "." || cleaned === "..") {
+        cleaned = "";
+    }
+    if (cleaned.length === 0) {
+        cleaned = `attachment-${id.replace(/[/\\]/g, "_")}`;
+    }
+    if (!used.has(cleaned)) {
+        used.add(cleaned);
+        return cleaned;
+    }
+    const dot = cleaned.lastIndexOf(".");
+    const stem = dot > 0 ? cleaned.slice(0, dot) : cleaned;
+    const ext = dot > 0 ? cleaned.slice(dot) : "";
+    for (let i = 2; i < 1000; i++) {
+        const candidate = `${stem} (${i})${ext}`;
+        if (!used.has(candidate)) {
+            used.add(candidate);
+            return candidate;
+        }
+    }
+    // Pathological: 1000 same-named attachments. Fall back to id-suffix.
+    const fallback = `${stem}-${id.replace(/[/\\]/g, "_")}${ext}`;
+    used.add(fallback);
+    return fallback;
 }

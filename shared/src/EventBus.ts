@@ -89,10 +89,20 @@ export class EventBus {
      * unsafe casts) still surface the bug at emit time instead of
      * leaving the AgentRunner with an empty messages array.
      *
+     * `beforeCommit` runs **inside the transaction** after the event
+     * row (and any chat mirror) is inserted but before COMMIT. Use it
+     * for filesystem side-effects that must be atomic with the INSERT
+     * from the watcher's perspective — most importantly, staging
+     * `event.files` under `<agentTmpDir>/<row.id>/` so the container
+     * never observes an event without its scratch files in place.
+     * Throwing from `beforeCommit` rolls the INSERT back; cleaning up
+     * any partial filesystem state is the callback's responsibility.
+     *
      * @throws If `idempotencyKey` collides, if `topic` does not match
-     *   `\w+(:\w+)*`, or if `prompt` is missing or whitespace-only.
+     *   `\w+(:\w+)*`, if `prompt` is missing or whitespace-only, or if
+     *   `beforeCommit` throws.
      */
-    async add(event: NewEvent): Promise<EventRow> {
+    async add(event: NewEvent, beforeCommit?: (row: EventRow) => Promise<void>): Promise<EventRow> {
         if (typeof event.prompt !== "string" || event.prompt.trim().length === 0) {
             throw new Error(
                 "EventBus.add: every event requires a non-empty `prompt` (the agent-visible text)",
@@ -132,6 +142,10 @@ export class EventBus {
                      VALUES ($1, 'user', $2)`,
                     [row.id, prompt],
                 );
+            }
+
+            if (beforeCommit) {
+                await beforeCommit(row);
             }
 
             await client.query("COMMIT");

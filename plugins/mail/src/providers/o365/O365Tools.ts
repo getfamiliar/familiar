@@ -18,9 +18,25 @@ export interface GraphMailMessage {
     readonly subject: string | null;
     readonly receivedDateTime: string;
     readonly bodyPreview: string;
+    readonly hasAttachments: boolean;
     readonly from: { readonly emailAddress: { name?: string; address: string } } | null;
     readonly toRecipients: ReadonlyArray<{ emailAddress: { name?: string; address: string } }>;
     readonly ccRecipients: ReadonlyArray<{ emailAddress: { name?: string; address: string } }>;
+}
+
+/**
+ * Attachment metadata as it lands in the event payload — five
+ * fields, no bytes. Mirrors the subset of Microsoft Graph's
+ * `attachment` resource we `$select` for. Inline images, non-inline
+ * file attachments, and item-attachment (forwarded mails) all
+ * normalize to this shape.
+ */
+export interface GraphAttachment {
+    readonly id: string;
+    readonly name: string;
+    readonly contentType: string;
+    readonly size: number;
+    readonly isInline: boolean;
 }
 
 /**

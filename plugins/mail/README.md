@@ -42,8 +42,32 @@ ends with:
     date: string,           // ISO-8601, == receivedDateTime
     messageId: string,      // Graph "id" — pass to get-mail-message
     internetMessageId: string,
+    hasAttachments: boolean,
+    attachments: Array<{
+        id: string,
+        name: string,
+        contentType: string,
+        size: number,         // bytes
+        isInline: boolean,
+    }> | null,
 }
 ```
+
+### Attachments
+
+When a message has attachments, the plugin issues one extra MCP call per
+message (`get-shared-mailbox-message` with `$expand=attachments(...)`) and
+inlines metadata for each item — no bytes. The `attachments` field follows
+three shapes:
+
+- `[]` — `hasAttachments` is `false`, no fetch issued.
+- `[…]` — fetch succeeded; one entry per attachment.
+- `null` — the per-message fetch failed (e.g. transient throttling). The
+  handler can retry via the same MCP tool itself.
+
+Bytes are deliberately not included. Handlers that need the file contents
+should call `download-bytes` / `get-attachment` with the `id` from this
+list and the `messageId` from the payload.
 
 ### Address safety
 

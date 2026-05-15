@@ -87,6 +87,11 @@ export function buildNpmDockerArgs(
     // overlapping `volumes:` entry layers on top — by docker's
     // own semantics, last `-v` wins. Documented as a footgun.
     args.push("-v", `${mcpMountDirFor(config.tmpDir, entry.id)}:/work`);
+    // Shared scratch dir, mounted at the same absolute path inside the
+    // agent container and every MCP. Lets the agent pass paths like
+    // `/scratch/<event-id>/invoice.pdf` straight through to MCP tool
+    // calls without translation.
+    args.push("-v", `${config.agentTmpDir}:/scratch`);
 
     for (const env of entry.env) {
         args.push("-e", `${env.name}=${env.value}`);

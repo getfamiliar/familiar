@@ -63,6 +63,8 @@ export function buildPypiDockerArgs(
     }
 
     args.push("-v", `${mcpMountDirFor(config.tmpDir, entry.id)}:/work`);
+    // Shared scratch dir; see NpmFactory for the rationale.
+    args.push("-v", `${config.agentTmpDir}:/scratch`);
 
     for (const env of entry.env) {
         args.push("-e", `${env.name}=${env.value}`);

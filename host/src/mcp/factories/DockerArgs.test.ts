@@ -26,7 +26,12 @@ function entryFixture(overrides: Partial<McpEntry>): McpEntry {
     };
 }
 
-const runtime = { tmpDir: "/tmp/ea-test", hostUid: 1000, hostGid: 1000 } as const;
+const runtime = {
+    tmpDir: "/tmp/ea-test",
+    agentTmpDir: "/tmp/ea-test-agent-tmp",
+    hostUid: 1000,
+    hostGid: 1000,
+} as const;
 
 describe("buildNpmDockerArgs — appendArgs tails entry.args, never replaces", () => {
     it("bastion path (no options) uses entry.args verbatim", () => {
@@ -88,7 +93,7 @@ describe("buildDockerRegistryArgs — appendArgs tails entry.args", () => {
             image: "mcp/fetch",
             args: ["--verbose"],
         });
-        const argv = buildDockerRegistryArgs(entry, { appendArgs: ["--debug"] });
+        const argv = buildDockerRegistryArgs(entry, runtime, { appendArgs: ["--debug"] });
         const tail = argv.slice(argv.indexOf("mcp/fetch") + 1);
         assert.deepEqual(tail, ["--verbose", "--debug"]);
     });

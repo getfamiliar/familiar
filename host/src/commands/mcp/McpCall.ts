@@ -112,6 +112,7 @@ export const mcpCallCommand = defineCommand({
         });
         const runtimeConfig: RuntimeContainerConfig = {
             tmpDir: boot.tmpDir,
+            agentTmpDir: boot.agentTmpDir,
             hostUid: boot.hostUid,
             hostGid: boot.hostGid,
         };
@@ -162,7 +163,7 @@ function spawnAndExit(
     } else if (entry.source === "pypi") {
         argv = buildPypiDockerArgs(entry, runtimeConfig, options);
     } else {
-        argv = buildDockerRegistryArgs(entry, options);
+        argv = buildDockerRegistryArgs(entry, runtimeConfig, options);
     }
     try {
         process.exit(dockerInteractive(argv));

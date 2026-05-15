@@ -20,6 +20,7 @@ import { lintOrThrow } from "../config/ConfigLinter.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { AgentContainer } from "../container-runner/AgentContainer.js";
 import { CronjobScheduler } from "../cron/CronjobScheduler.js";
+import { ScratchGc } from "../cron/ScratchGc.js";
 import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { McpGateway } from "../mcp/McpGateway.js";
@@ -157,6 +158,7 @@ export const startCommand = defineCommand({
             mcpLogsDir: boot.mcpLogsDir,
             logRetentionDays: config.getNumber("core.logRetentionDays", 7),
             tmpDir: boot.tmpDir,
+            agentTmpDir: boot.agentTmpDir,
             hostUid: boot.hostUid,
             hostGid: boot.hostGid,
             log: log.child({ component: "mcp-gateway" }),
@@ -209,6 +211,7 @@ export const startCommand = defineCommand({
             dataPath: boot.dataDir,
             containerSrcPath: boot.containerSrcDir,
             sharedBuildPath: boot.sharedBuildDir,
+            agentTmpPath: boot.agentTmpDir,
             postgresPassword,
             bastionUrl: bastion.url,
             defaultProvider,
@@ -243,6 +246,7 @@ export const startCommand = defineCommand({
             config,
             log: log.child({ component: "cron-scheduler" }),
             dataDir: boot.dataDir,
+            agentTmpDir: boot.agentTmpDir,
             pidFile: boot.pidFile,
             mcp: pluginHost.mcp,
         });
@@ -261,6 +265,12 @@ export const startCommand = defineCommand({
         });
         await cronScheduler.start();
 
+        const scratchGc = new ScratchGc({
+            agentTmpDir: boot.agentTmpDir,
+            log: log.child({ component: "scratch-gc" }),
+        });
+        scratchGc.start();
+
         let shuttingDown = false;
         const shutdown = async (signal: string) => {
             if (shuttingDown) {
@@ -270,6 +280,7 @@ export const startCommand = defineCommand({
             log.info(`draining (signal=${signal})`);
 
             const orderedSteps = async (): Promise<"done"> => {
+                scratchGc.stop();
                 await safeStop(log, "cron scheduler", () => cronScheduler.stop());
                 await safeStop(log, "workspace watcher", () => workspaceWatcher.stop());
                 await safeStop(log, "plugin host", () => pluginHost.close());
@@ -468,4 +479,5 @@ function ensureDirs(boot: ReturnType<typeof bootstrap>): void {
     mkdirSync(boot.workspaceDir, { recursive: true });
     mkdirSync(boot.logsDir, { recursive: true });
     mkdirSync(boot.mcpLogsDir, { recursive: true });
+    mkdirSync(boot.agentTmpDir, { recursive: true });
 }

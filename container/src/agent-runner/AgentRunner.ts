@@ -14,7 +14,7 @@ import { optionalEnvBool, optionalEnvInt } from "../env.js";
 import { HandlerFile } from "../HandlerFile.js";
 import type { McpClientPool } from "../mcp/McpClientPool.js";
 import { ModelFactory } from "../models/ModelFactory.js";
-import { buildPrompt, buildSystemPrompt } from "../PromptBuilder.js";
+import { buildPrompt, buildScratchListing, buildSystemPrompt } from "../PromptBuilder.js";
 import { createGroupLookup } from "../tools/ToolGroupLoader.js";
 import { ToolsFactory } from "../tools/ToolsFactory.js";
 import { fetchAncestorChain } from "./AgentRunLineage.js";
@@ -185,6 +185,7 @@ export class AgentRunner {
         // agentrun) is treated as non-chat to fail safer.
         const event = await this.events.getById(this.row.eventId);
         const isChat = event?.isChat === true;
+        const scratchListing = buildScratchListing(this.row.eventId);
 
         let messages: ModelMessage[];
         let historyMessages = 0;
@@ -203,7 +204,7 @@ export class AgentRunner {
             // rendering still goes through either way, so structured
             // supplementary data remains visible to the model.
             const seedPrompt = history.length > 0 ? null : this.row.prompt;
-            prompt = buildPrompt(seedPrompt, this.row.payload);
+            prompt = buildPrompt(seedPrompt, this.row.payload, scratchListing);
             messages = [...history];
             if (prompt.length > 0) {
                 messages.push({ role: "user", content: prompt });
@@ -234,7 +235,7 @@ export class AgentRunner {
             // conversational protocol expects a user turn last to cue
             // the model to respond. This is a protocol convention, not
             // a claim about authorship.
-            prompt = buildPrompt(this.row.prompt, this.row.payload);
+            prompt = buildPrompt(this.row.prompt, this.row.payload, scratchListing);
             if (prompt.length > 0) {
                 messages.push({ role: "user", content: prompt });
             }
