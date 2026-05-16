@@ -1,6 +1,6 @@
 import { readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import type { LogStream } from "effective-assistant-shared";
+import type { LogStream } from "@getfamiliar/shared";
 import type { DestinationStream } from "pino";
 
 /**

@@ -3,7 +3,7 @@ import { bootstrap } from "../Bootstrap.js";
 import { lintConfigFile } from "../config/ConfigLinter.js";
 
 /**
- * `ea config` — root for config-related subcommands. Today only
+ * `cli.sh config` — root for config-related subcommands. Today only
  * `lint` is exposed; future additions (`get`, `set`, …) live under
  * the same root so the CLI surface stays organised.
  */

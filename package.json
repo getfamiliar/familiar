@@ -1,8 +1,8 @@
 {
-    "name": "effective-assistant",
+    "name": "@getfamiliar/familiar",
     "version": "0.0.1",
     "private": true,
-    "description": "Effective-assistant root workspace. The actual code lives in shared/, host/, container/, and plugins/<name>/. The host-side bastion (LLM proxy + MCP gateway) lives under host/src/bastion/.",
+    "description": "Familiar root workspace — your personal AI assistant. Loyal. Local. Markdown. The actual code lives in shared/, host/, container/, and plugins/<name>/. The host-side bastion (LLM proxy + MCP gateway) lives under host/src/bastion/.",
     "workspaces": [
         "shared",
         "host",

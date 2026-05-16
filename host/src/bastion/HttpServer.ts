@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { Logger } from "effective-assistant-shared";
+import type { Logger } from "@getfamiliar/shared";
 
 /**
  * Handler for a request whose URL path matched a registered prefix.
@@ -15,7 +15,7 @@ export type PrefixHandler = (
 
 /** Configuration for the {@link HttpServer}. */
 export interface HttpServerConfig {
-    /** Address to bind on (e.g. the ea-net bridge gateway IP). */
+    /** Address to bind on (e.g. the familiar-net bridge gateway IP). */
     readonly bindHost: string;
     /** Port to listen on. */
     readonly port: number;

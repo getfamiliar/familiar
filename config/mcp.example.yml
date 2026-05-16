@@ -1,9 +1,9 @@
-# Effective Assistant — MCP servers.
+# Familiar — MCP servers.
 #
 # Copy this file to config/mcp.yml (gitignored) and add the MCPs you
 # want to run. The host-side bastion brings stdio MCPs up on demand
 # as docker children when the agent calls them; container names
-# follow the `ea-mcp-<id>` pattern. After `idleTimeoutSeconds`
+# follow the `familiar-mcp-<id>` pattern. After `idleTimeoutSeconds`
 # (default 1800 s) of inactivity the child is reaped; the next
 # request cold-spawns it again.
 #
@@ -14,8 +14,8 @@
 # (with dashes), starting with an alphanumeric.
 #
 # Sources implemented today: `docker-mcp-registry` (stdio), `npm`
-# (stdio inside `ea-mcp-runtime-npm`), `pypi` (stdio inside
-# `ea-mcp-runtime-pypi`), `external` (HTTP forward). For npm/pypi,
+# (stdio inside `familiar-mcp-runtime-npm`), `pypi` (stdio inside
+# `familiar-mcp-runtime-pypi`), `external` (HTTP forward). For npm/pypi,
 # package caches persist in `tmp/mcp-mount-<id>/` on the host
 # (gitignored; safe to wipe).
 
@@ -49,7 +49,7 @@ fetch:
 #       description: "Personal access token with repo + read:org scopes."
 
 # Example of an npm-source MCP. The package's bin runs inside the
-# shared `ea-mcp-runtime-npm` image (entrypoint `npx -y`); the
+# shared `familiar-mcp-runtime-npm` image (entrypoint `npx -y`); the
 # `~/.npm/_npx` cache persists in `tmp/mcp-mount-weather/`.
 #
 # weather:

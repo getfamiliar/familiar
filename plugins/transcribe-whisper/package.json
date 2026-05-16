@@ -1,9 +1,9 @@
 {
-    "name": "transcribe-whisper",
+    "name": "@getfamiliar/plugin-transcribe-whisper",
     "type": "module",
     "version": "0.0.1",
     "private": true,
-    "description": "Audio transcription utility plugin: transcribeAudio() backed by OpenAI's Whisper API.",
+    "description": "Familiar plugin: transcribeAudio() backed by OpenAI's Whisper API.",
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "scripts": {
@@ -16,7 +16,7 @@
     "license": "MIT",
     "dependencies": {
         "citty": "^0.1.6",
-        "effective-assistant-shared": "*",
+        "@getfamiliar/shared": "*",
         "openai": "^4.77.0"
     },
     "devDependencies": {

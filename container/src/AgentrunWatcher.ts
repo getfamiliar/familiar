@@ -3,7 +3,7 @@ import {
     type AgentRunRow,
     type Logger,
     type PostgresConnection,
-} from "effective-assistant-shared";
+} from "@getfamiliar/shared";
 import { AgentRunner, POSTPONED } from "./agent-runner/AgentRunner.js";
 import { formatInferenceError } from "./agent-runner/formatInferenceError.js";
 import type { McpClientPool } from "./mcp/McpClientPool.js";

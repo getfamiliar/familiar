@@ -1,12 +1,12 @@
 import { Boom } from "@hapi/boom";
 import makeWASocket, { DisconnectReason, type WASocket } from "@whiskeysockets/baileys";
 import { type CommandDef, defineCommand } from "citty";
-import type { HostContext } from "effective-assistant-shared";
+import type { HostContext } from "@getfamiliar/shared";
 import qrcodeTerminal from "qrcode-terminal";
 import { clearAuth, loadAuth } from "./Auth.js";
 import { buildBaileysLogger, resolveWaVersion } from "./WhatsAppDaemon.js";
 
-const BROWSER_DESCRIPTION: [string, string, string] = ["effective-assistant", "Chrome", "1.0"];
+const BROWSER_DESCRIPTION: [string, string, string] = ["familiar", "Chrome", "1.0"];
 
 /**
  * Build the citty subcommands exposed under `./cli.sh whatsapp`.

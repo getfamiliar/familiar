@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Logger, McpInfo } from "effective-assistant-shared";
+import type { Logger, McpInfo } from "@getfamiliar/shared";
 import type { McpEntry } from "./McpEntry.js";
 import type { McpRegistry } from "./McpRegistry.js";
 
@@ -146,7 +146,7 @@ export class PluginMcpService {
     private async openClient(key: string): Promise<Client> {
         const url = new URL(`${this.bastionBaseUrl.replace(/\/$/, "")}/mcp/${key}/`);
         const client = new Client(
-            { name: "effective-assistant-host", version: "0.1.0" },
+            { name: "@getfamiliar/host", version: "0.1.0" },
             { capabilities: {} },
         );
         await client.connect(new StreamableHTTPClientTransport(url));

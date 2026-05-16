@@ -1,4 +1,4 @@
-import type { AgentRunBus, AgentRunRow } from "effective-assistant-shared";
+import type { AgentRunBus, AgentRunRow } from "@getfamiliar/shared";
 
 /**
  * Walk the `parent_agentrun_id` chain upward from `startParentId`, root-first.

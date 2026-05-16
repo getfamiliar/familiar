@@ -1,4 +1,4 @@
-import { ALL_GROUP_NAME, IDENT_PATTERN, NONE_GROUP_NAME } from "effective-assistant-shared";
+import { ALL_GROUP_NAME, IDENT_PATTERN, NONE_GROUP_NAME } from "@getfamiliar/shared";
 
 /**
  * Per-handler tool-filter DSL: parser, AST, and evaluator.
@@ -65,7 +65,7 @@ export {
     NONE_GROUP_NAME,
     RESERVED_GROUP_NAMES,
     SYSTEM_GROUP_NAME,
-} from "effective-assistant-shared";
+} from "@getfamiliar/shared";
 
 /** Pattern any single bareword (group or tool) must match. */
 const BAREWORD_PATTERN = /^[a-zA-Z0-9_*]+$/;

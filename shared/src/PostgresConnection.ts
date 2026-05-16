@@ -8,19 +8,19 @@ const { Pool: PgPool, Client: PgClient } = pg;
  *
  * - {@link POSTGRES_HOST} is both the docker container `--name` (used by
  *   `PostgresContainer` on the host) and the DNS name the agent
- *   container resolves over `ea-net`.
+ *   container resolves over `familiar-net`.
  * - {@link POSTGRES_PORT} is the in-container postgres port — the
  *   *internal* side of the host's loopback `-p` mapping, and the port
- *   the agent container connects to over `ea-net`.
+ *   the agent container connects to over `familiar-net`.
  *
  * The password is *not* a constant — it lives in `.env`
  * (`POSTGRES_PASSWORD`) and is passed explicitly to
  * `PostgresConnection`.
  */
-export const POSTGRES_HOST = "ea-postgres";
+export const POSTGRES_HOST = "familiar-postgres";
 export const POSTGRES_PORT = 5432;
-export const POSTGRES_USER = "ea";
-export const POSTGRES_DB = "ea";
+export const POSTGRES_USER = "familiar";
+export const POSTGRES_DB = "familiar";
 
 /** Connection coordinates for a postgres database. */
 export interface PostgresConnectionConfig {

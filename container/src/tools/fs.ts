@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { Tool, ToolSet } from "ai";
 import { jsonSchema, tool } from "ai";
-import type { AgentRunRow } from "effective-assistant-shared";
+import type { AgentRunRow } from "@getfamiliar/shared";
 import { HandlerFile } from "../HandlerFile.js";
 
 /**

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { type AuthenticationState, useMultiFileAuthState } from "@whiskeysockets/baileys";
-import type { HostContext } from "effective-assistant-shared";
+import type { HostContext } from "@getfamiliar/shared";
 
 /**
  * Subdirectory under `<dataDir>/whatsapp/` where baileys' multi-file

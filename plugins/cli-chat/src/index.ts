@@ -1,6 +1,6 @@
 import path from "node:path";
 import { defineCommand } from "citty";
-import { definePlugin, type HostContext } from "effective-assistant-shared";
+import { definePlugin, type HostContext } from "@getfamiliar/shared";
 import { runRepl } from "./Repl.js";
 
 /**

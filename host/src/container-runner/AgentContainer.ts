@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { Logger } from "effective-assistant-shared";
+import type { Logger } from "@getfamiliar/shared";
 import {
     dockerExec,
     hostGatewayArgs,
@@ -8,13 +8,13 @@ import {
     stopContainer,
 } from "../DockerTools.js";
 
-const CONTAINER_NAME = "ea-agent";
+const CONTAINER_NAME = "familiar-agent";
 
 /**
  * Image tag for the long-running agent container. Built from
  * `container/Dockerfile` on demand by {@link ensureAgentImage}.
  */
-export const AGENT_IMAGE_TAG = "effective-agent";
+export const AGENT_IMAGE_TAG = "familiar-agent";
 
 /**
  * Build the agent container image if it isn't already up to date with
@@ -34,7 +34,7 @@ export async function ensureAgentImage(log: Logger): Promise<void> {
 
 /** Configuration for the single long-running agent container. */
 export interface AgentContainerConfig {
-    /** Docker image tag to run (e.g. `effective-agent`). */
+    /** Docker image tag to run (e.g. `familiar-agent`). */
     readonly imageName: string;
     /** Absolute host path to the data directory; mounted as workspace. */
     readonly dataPath: string;
@@ -47,7 +47,7 @@ export interface AgentContainerConfig {
     /**
      * Absolute host path of `shared/build/`. Bind-mounted (read-only)
      * over `/shared/build` so the container resolves
-     * `effective-assistant-shared` against the host's just-rebuilt
+     * `@getfamiliar/shared` against the host's just-rebuilt
      * artifacts. The host (`cli.sh`) refreshes this directory before
      * the daemon starts, so it's always fresh by the time the
      * container boots — shared edits no longer need a container
@@ -67,7 +67,7 @@ export interface AgentContainerConfig {
     /**
      * Base URL the agent should dial for everything privileged
      * (LLM proxying, MCP gateway). Resolved at daemon start as
-     * `http://<ea-net-gateway-ip>:<port>`. The agent appends
+     * `http://<familiar-net-gateway-ip>:<port>`. The agent appends
      * `/llm/<provider>/` for inference and `/mcp/<id>` for tools.
      */
     readonly bastionUrl: string;
@@ -125,14 +125,14 @@ export interface AgentContainerConfig {
     readonly providerTypes: Readonly<Record<string, string>>;
     /**
      * When true, the agent container runs at debug log level
-     * (`EA_LOG_LEVEL=debug`). Mirrors the daemon's `--verbose` flag so
+     * (`FAMILIAR_LOG_LEVEL=debug`). Mirrors the daemon's `--verbose` flag so
      * a single switch turns up detail across both processes.
      */
     readonly verbose: boolean;
 }
 
 /**
- * Manages the single long-running agent container (`ea-agent`).
+ * Manages the single long-running agent container (`familiar-agent`).
  *
  * Mounts:
  *   - {dataPath}/workspace → /workspace (assistant memory)
@@ -140,7 +140,7 @@ export interface AgentContainerConfig {
  *   - {sharedBuildPath} → /shared/build (read-only, fresh per cli.sh rebuild)
  *   - {scratchPath} → /scratch (read-write, shared with every MCP)
  *
- * Container joins `ea-net` so it can reach `ea-postgres` by hostname.
+ * Container joins `familiar-net` so it can reach `familiar-postgres` by hostname.
  * All host↔container communication flows through the postgres `events`
  * table — no file-based IPC, no host-side reverse proxy.
  */
@@ -195,7 +195,7 @@ export class AgentContainer {
             "-e",
             `INFERENCE_LOG_SYSTEM_PROMPT=${this.config.logSystemPrompt}`,
             "-e",
-            `EA_LOG_LEVEL=${this.config.verbose ? "debug" : "info"}`,
+            `FAMILIAR_LOG_LEVEL=${this.config.verbose ? "debug" : "info"}`,
             "-v",
             `${workspaceDir}:/workspace`,
             "-v",

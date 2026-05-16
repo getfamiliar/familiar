@@ -1,5 +1,5 @@
 import { defineCommand } from "citty";
-import { AgentRunBus, EventBus, renderMarkdown, StepResultBus } from "effective-assistant-shared";
+import { AgentRunBus, EventBus, renderMarkdown, StepResultBus } from "@getfamiliar/shared";
 import { bootstrap } from "../Bootstrap.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
@@ -16,7 +16,7 @@ import { ReportPoller } from "../reports/ReportPoller.js";
 import { ReportTerminalPrinter } from "../reports/ReportTerminalPrinter.js";
 
 /**
- * `ea report tail` — stays attached and prints rendered markdown for
+ * `cli.sh report tail` — stays attached and prints rendered markdown for
  * every new or state-changed event / agentrun / step the daemon
  * produces from now onward. Backed by `ReportPoller`, which queries
  * the bus tables once a second; no NOTIFY subscription is required.
@@ -75,7 +75,7 @@ const reportTailCommand = defineCommand({
 });
 
 /**
- * `ea report event <id>` — render the full markdown report for one
+ * `cli.sh report event <id>` — render the full markdown report for one
  * event by reading the bus tables directly. Includes every section
  * `report tail` would have streamed (event created, every agentrun
  * start + steps + result, final event summary) so an operator can

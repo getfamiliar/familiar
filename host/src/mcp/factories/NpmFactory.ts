@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs";
-import type { Logger } from "effective-assistant-shared";
+import type { Logger } from "@getfamiliar/shared";
 import { SHARED_NETWORK_NAME } from "../../DockerTools.js";
 import { createMcpFileSink, type McpFileSink } from "../../tools/LogRetentionTools.js";
 import type { McpEntry } from "../McpEntry.js";
@@ -22,15 +22,15 @@ export interface NpmFactoryConfig extends RuntimeContainerConfig {
 /**
  * Build the `docker run` argv for an npm-source MCP. Composes
  * `<package>[@<version>] [extraArgs...]` against the shared
- * `ea-mcp-runtime-npm` image (entrypoint `npx -y`).
+ * `familiar-mcp-runtime-npm` image (entrypoint `npx -y`).
  *
  * Default layout (no `options` passed):
- *   run -i --rm --name ea-mcp-<id> --network <net>
+ *   run -i --rm --name familiar-mcp-<id> --network <net>
  *     --user <uid>:<gid>
  *     -v <tmpDir>/mcp-mount-<id>:/work
  *     [-e KEY=VAL ...]
  *     [-v HOST:CONTAINER[:ro] ...]
- *     ea-mcp-runtime-npm
+ *     familiar-mcp-runtime-npm
  *     <package>[@<version>] [entry.args...]
  *
  * `options` lets one-shot callers (e.g. `./cli.sh mcp call`)
@@ -56,7 +56,7 @@ export function buildNpmDockerArgs(
     }
 
     const containerName =
-        options.containerName === undefined ? `ea-mcp-${entry.id}` : options.containerName;
+        options.containerName === undefined ? `familiar-mcp-${entry.id}` : options.containerName;
     const interactive = options.interactive ?? false;
 
     const args: string[] = ["run", interactive ? "-it" : "-i", "--rm"];
@@ -69,7 +69,7 @@ export function buildNpmDockerArgs(
         args.push("--network", "none");
     } else {
         args.push("--network", SHARED_NETWORK_NAME);
-        // Hard-disable IPv6 inside the container. `ea-net` is IPv4-
+        // Hard-disable IPv6 inside the container. `familiar-net` is IPv4-
         // only at the network level, but docker's embedded DNS
         // (127.0.0.11) returns AAAA records anyway for hosts that
         // publish both — and Node's `getaddrinfo` happily attempts
@@ -134,7 +134,7 @@ export function buildNpmDockerArgs(
  * can't reach the registry. Forces full network and IPv6 sysctl
  * regardless of the entry's network policy, drops user env vars and
  * user volumes, and runs anonymously (no `--name`) so it can't
- * collide with the live `ea-mcp-<id>` container.
+ * collide with the live `familiar-mcp-<id>` container.
  *
  * The entrypoint is overridden to `npx -y --package <pkg>[@<ver>] --
  * node -e ""` — npx fetches and installs the package, then runs an
@@ -174,7 +174,7 @@ export function buildNpmPrepDockerArgs(entry: McpEntry, config: RuntimeContainer
 /**
  * Factory for `source: npm`. Produces a {@link StdioMcpTransport}
  * that runs `npx -y <package>` inside the shared
- * `ea-mcp-runtime-npm` image. The runtime image must already exist
+ * `familiar-mcp-runtime-npm` image. The runtime image must already exist
  * (the gateway calls `ensureRuntimeImage("npm", …)` at start before
  * any factory is invoked).
  */

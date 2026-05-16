@@ -9,7 +9,7 @@ import { mcpListCommand } from "./mcp/McpList.js";
 import { mcpPurgeCommand } from "./mcp/McpPurge.js";
 
 /**
- * `ea mcp` — root for MCP-related subcommands. `lint` stays inline
+ * `cli.sh mcp` — root for MCP-related subcommands. `lint` stays inline
  * (one screen); `list`, `purge`, and `add` each live in their own
  * file under `commands/mcp/` because they grew bigger.
  */

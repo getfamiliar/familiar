@@ -1,5 +1,5 @@
 import type { ToolSet } from "ai";
-import type { AgentRunBus, AgentRunRow, Logger } from "effective-assistant-shared";
+import type { AgentRunBus, AgentRunRow, Logger } from "@getfamiliar/shared";
 import type { ChatManager } from "../chat/ChatManager.js";
 import { buildFsTools } from "./fs.js";
 import { buildQueueRunTool } from "./queueRun.js";

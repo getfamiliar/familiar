@@ -1,4 +1,4 @@
-import type { Logger } from "effective-assistant-shared";
+import type { Logger } from "@getfamiliar/shared";
 import { SHARED_NETWORK_NAME } from "../../DockerTools.js";
 import { createMcpFileSink, type McpFileSink } from "../../tools/LogRetentionTools.js";
 import type { McpEntry } from "../McpEntry.js";
@@ -27,7 +27,7 @@ export interface DockerMcpRegistryFactoryConfig {
  * Build the `docker run` argv vector for a foreground stdio MCP child.
  *
  * Default layout (no `options` passed):
- *   run -i --rm --name ea-mcp-<id> --network <net>
+ *   run -i --rm --name familiar-mcp-<id> --network <net>
  *     [--entrypoint <command>]
  *     [-e KEY=VAL ...]
  *     [-v HOST:CONTAINER[:ro] ...]
@@ -51,7 +51,7 @@ export function buildDockerRegistryArgs(
         throw new Error(`MCP "${entry.id}": docker-mcp-registry source requires an "image" field.`);
     }
     const containerName =
-        options.containerName === undefined ? `ea-mcp-${entry.id}` : options.containerName;
+        options.containerName === undefined ? `familiar-mcp-${entry.id}` : options.containerName;
     const interactive = options.interactive ?? false;
 
     const args: string[] = ["run", interactive ? "-it" : "-i", "--rm"];
@@ -63,7 +63,7 @@ export function buildDockerRegistryArgs(
         args.push("--network", "none");
     } else {
         args.push("--network", SHARED_NETWORK_NAME);
-        // See the matching comment in NpmFactory: `ea-net` is
+        // See the matching comment in NpmFactory: `familiar-net` is
         // IPv4-only but docker's embedded DNS still returns AAAA
         // records for dual-stack hosts. Disabling IPv6 in-kernel
         // makes `getaddrinfo` filter them out so apps don't waste

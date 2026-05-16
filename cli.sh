@@ -1,10 +1,10 @@
 #!/bin/bash
-# Effective Assistant CLI — single entry point.
+# Familiar CLI — single entry point.
 # Verifies config/config.yml exists, rebuilds shared/ and host/ if their
 # sources are newer than their compiled output, and dispatches to the
 # citty-based subcommand router in host/src/index.ts.
 #
-# `host` imports `shared` via the `effective-assistant-shared` workspace
+# `host` imports `shared` via the `@getfamiliar/shared` workspace
 # package, which is a symlink to ../shared at runtime — host reads
 # `shared/build/index.js` directly. So both packages need to be in sync
 # with their src/ on every invocation.

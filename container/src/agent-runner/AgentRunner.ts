@@ -8,7 +8,7 @@ import {
     type Logger,
     type PostgresConnection,
     StepResultBus,
-} from "effective-assistant-shared";
+} from "@getfamiliar/shared";
 import { ChatManager } from "../chat/ChatManager.js";
 import { optionalEnvBool, optionalEnvInt } from "../env.js";
 import { HandlerFile } from "../HandlerFile.js";

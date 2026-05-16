@@ -5,7 +5,7 @@ import { pathToHandlerTarget, readVerbatimCron } from "../cron/CronjobScheduler.
 import { scanWorkspace } from "../workspace/WorkspaceWatcher.js";
 
 /**
- * `ea cron` — root for cronjob-related subcommands. Today only `list`
+ * `cli.sh cron` — root for cronjob-related subcommands. Today only `list`
  * is exposed; future additions (`fire`, `next`, `disable`, …) live
  * under the same root.
  */

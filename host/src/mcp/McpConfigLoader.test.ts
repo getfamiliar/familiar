@@ -8,7 +8,7 @@ import { lintMcpConfigFile } from "./McpConfigLoader.js";
 let scratch: string;
 
 beforeEach(() => {
-    scratch = mkdtempSync(path.join(tmpdir(), "ea-mcp-lint-"));
+    scratch = mkdtempSync(path.join(tmpdir(), "familiar-mcp-lint-"));
 });
 
 afterEach(() => {

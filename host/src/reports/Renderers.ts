@@ -1,4 +1,4 @@
-import type { AgentRunRow, EventRow, StepResultRow } from "effective-assistant-shared";
+import type { AgentRunRow, EventRow, StepResultRow } from "@getfamiliar/shared";
 
 /**
  * Pure markdown renderers used by `report tail` (live streaming via

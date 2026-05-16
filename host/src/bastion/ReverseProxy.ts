@@ -5,7 +5,7 @@ import { request as httpsRequest } from "node:https";
 import { join } from "node:path";
 import { PassThrough, type Transform } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
-import type { Logger } from "effective-assistant-shared";
+import type { Logger } from "@getfamiliar/shared";
 import type { Bastion, BastionModule } from "./Bastion.js";
 import { NATIVE_PROVIDER_IDS, NATIVE_PROVIDERS } from "./NativeProviders.js";
 

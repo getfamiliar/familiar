@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentRunBus, AgentRunRow } from "effective-assistant-shared";
+import type { AgentRunBus, AgentRunRow } from "@getfamiliar/shared";
 import { fetchAncestorChain } from "./AgentRunLineage.js";
 
 /** Build a minimal AgentRunRow stub keyed by id with a chosen parent pointer. */

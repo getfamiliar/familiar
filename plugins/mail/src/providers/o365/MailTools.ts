@@ -1,4 +1,4 @@
-import type { EventRow, PluginTool, PluginToolCallContext } from "effective-assistant-shared";
+import type { EventRow, PluginTool, PluginToolCallContext } from "@getfamiliar/shared";
 import { readO365Config } from "../../Config.js";
 import { FOLDER_IDS, type FolderAlias, isFolderAlias } from "./Folders.js";
 import { GraphClient, GraphError, type GraphRecipient } from "./GraphClient.js";

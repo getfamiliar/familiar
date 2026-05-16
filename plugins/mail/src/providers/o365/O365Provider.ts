@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { CommandDef } from "citty";
-import type { EventFile, HostContext, NewEvent } from "effective-assistant-shared";
+import type { EventFile, HostContext, NewEvent } from "@getfamiliar/shared";
 import { readO365Config } from "../../Config.js";
 import type { MailProvider, MailProviderDeps, MailProviderPrepareResult } from "../MailProvider.js";
 import { flatAddress, formatAddress, isSafeEmailAddress } from "./AddressFormat.js";

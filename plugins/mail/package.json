@@ -1,9 +1,9 @@
 {
-    "name": "mail",
+    "name": "@getfamiliar/plugin-mail",
     "type": "module",
     "version": "0.0.1",
     "private": true,
-    "description": "Mail host-side plugin: polls one or more mail MCPs (Microsoft 365 today) and emits an event per new mail.",
+    "description": "Familiar plugin: polls one or more mail MCPs (Microsoft 365 today) and emits an event per new mail.",
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "scripts": {
@@ -18,7 +18,7 @@
     "dependencies": {
         "@azure/msal-node": "^5.2.1",
         "citty": "^0.1.6",
-        "effective-assistant-shared": "*",
+        "@getfamiliar/shared": "*",
         "marked": "^18.0.3"
     },
     "devDependencies": {

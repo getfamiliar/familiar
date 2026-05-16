@@ -7,12 +7,12 @@ import { lintMcpConfigFile } from "../../mcp/McpConfigLoader.js";
 import { mcpMountDirFor } from "../../mcp/RuntimeImages.js";
 
 /**
- * `ea mcp list` — print every MCP declared in `config/mcp.yml`,
+ * `cli.sh mcp list` — print every MCP declared in `config/mcp.yml`,
  * its source, runtime state, and the relevant identifier (image,
  * package@version, or url). Read-only; safe to run any time.
  *
  * State derivation:
- * - `live` — `docker ps --filter name=ea-mcp-` shows the
+ * - `live` — `docker ps --filter name=familiar-mcp-` shows the
  *   per-id container.
  * - `idle` — declared but no live container.
  *
@@ -59,7 +59,7 @@ export const mcpListCommand = defineCommand({
         const live = await probeLiveSet();
 
         for (const row of rows) {
-            row.state = live.containers.has(`ea-mcp-${row.id}`) ? "live" : "idle";
+            row.state = live.containers.has(`familiar-mcp-${row.id}`) ? "live" : "idle";
             if (row.source === "npm" || row.source === "pypi") {
                 if (isMountCached(boot.tmpDir, row.id)) {
                     row.detail = `${row.detail} (cached)`;
@@ -138,7 +138,7 @@ function detailFor(entry: Record<string, unknown>, source: string): string {
 }
 
 /**
- * Snapshot the set of currently-running `ea-mcp-*` container names
+ * Snapshot the set of currently-running `familiar-mcp-*` container names
  * via a single `docker ps`. `dockerReachable: false` when docker
  * fails (daemon stopped, cli missing) — the caller turns this into
  * the trailing note + every-row-idle behavior.
@@ -151,7 +151,7 @@ async function probeLiveSet(): Promise<{
         const result = await dockerCapture([
             "ps",
             "--filter",
-            "name=ea-mcp-",
+            "name=familiar-mcp-",
             "--format",
             "{{.Names}}",
         ]);

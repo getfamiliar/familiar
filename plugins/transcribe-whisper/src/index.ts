@@ -1,14 +1,14 @@
-import { definePlugin } from "effective-assistant-shared";
+import { definePlugin } from "@getfamiliar/shared";
 import { buildCommands } from "./Commands.js";
 import { setApiKey } from "./Whisper.js";
 
 /**
  * Re-export the plugin's public library API. Sibling plugins
- * consume it as `import { transcribeAudio } from "transcribe-whisper"`.
+ * consume it as `import { transcribeAudio } from "@getfamiliar/plugin-transcribe-whisper"`.
  *
  * Cross-plugin imports are wired the same way as the existing
- * `effective-assistant-shared` package: the consuming plugin adds
- * `"transcribe-whisper": "*"` to its `dependencies`, and npm's
+ * `@getfamiliar/shared` package: the consuming plugin adds
+ * `"@getfamiliar/plugin-transcribe-whisper": "*"` to its `dependencies`, and npm's
  * workspace resolution does the rest.
  *
  * Note: `setApiKey` is intentionally **not** re-exported. Callers

@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs";
-import type { Logger } from "effective-assistant-shared";
+import type { Logger } from "@getfamiliar/shared";
 import { SHARED_NETWORK_NAME } from "../../DockerTools.js";
 import { createMcpFileSink, type McpFileSink } from "../../tools/LogRetentionTools.js";
 import type { McpEntry } from "../McpEntry.js";
@@ -22,7 +22,7 @@ export interface PypiFactoryConfig extends RuntimeContainerConfig {
 /**
  * Build the `docker run` argv for a pypi-source MCP. Composes
  * `<package>[==<version>] [extraArgs...]` against the shared
- * `ea-mcp-runtime-pypi` image (entrypoint `uvx`).
+ * `familiar-mcp-runtime-pypi` image (entrypoint `uvx`).
  *
  * Layout matches {@link buildNpmDockerArgs}'s with two differences:
  * the runtime image tag and the version separator (`==` per PEP
@@ -42,7 +42,7 @@ export function buildPypiDockerArgs(
     }
 
     const containerName =
-        options.containerName === undefined ? `ea-mcp-${entry.id}` : options.containerName;
+        options.containerName === undefined ? `familiar-mcp-${entry.id}` : options.containerName;
     const interactive = options.interactive ?? false;
 
     const args: string[] = ["run", interactive ? "-it" : "-i", "--rm"];
@@ -55,7 +55,7 @@ export function buildPypiDockerArgs(
         args.push("--network", "none");
     } else {
         args.push("--network", SHARED_NETWORK_NAME);
-        // See the matching comment in NpmFactory: `ea-net` is
+        // See the matching comment in NpmFactory: `familiar-net` is
         // IPv4-only but docker's embedded DNS still hands out AAAA
         // records, which Python's `getaddrinfo` would happily try
         // and fail on. Disabling IPv6 in-kernel filters those out.
@@ -141,7 +141,7 @@ export function buildPypiPrepDockerArgs(entry: McpEntry, config: RuntimeContaine
 /**
  * Factory for `source: pypi`. Produces a {@link StdioMcpTransport}
  * that runs `uvx <package>` inside the shared
- * `ea-mcp-runtime-pypi` image. The runtime image must already exist
+ * `familiar-mcp-runtime-pypi` image. The runtime image must already exist
  * (the gateway calls `ensureRuntimeImage("pypi", …)` at start before
  * any factory is invoked).
  */

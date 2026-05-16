@@ -11,7 +11,7 @@ import {
     type Logger,
     type LogStream,
     prettyStdoutStream,
-} from "effective-assistant-shared";
+} from "@getfamiliar/shared";
 import type { Bootstrap } from "../Bootstrap.js";
 import { bootstrap } from "../Bootstrap.js";
 import { Bastion } from "../bastion/Bastion.js";
@@ -44,10 +44,10 @@ import { acquirePidFile, removePidFile } from "./pidfile.js";
 const DRAINING_DEADLINE_MS = 15_000;
 
 /**
- * `ea start` — bring up the daemon: postgres, schema, agent container,
+ * `familiar start` — bring up the daemon: postgres, schema, agent container,
  * then idle waiting for SIGTERM/SIGINT to drain everything cleanly.
  *
- * Start order:   ea-net → postgres → schema → bastion (LLM proxy + MCP gateway) → agent
+ * Start order:   familiar-net → postgres → schema → bastion (LLM proxy + MCP gateway) → agent
  * Stop order:    plugin host → agent → bastion → postgres
  */
 export const startCommand = defineCommand({
@@ -240,11 +240,11 @@ export const startCommand = defineCommand({
 
         await container.start();
         log.info(
-            { running: container.isRunning, container: "ea-agent" },
+            { running: container.isRunning, container: "familiar-agent" },
             "agent container started",
         );
 
-        const containerLogStream = streamContainerLogs(log, "ea-agent");
+        const containerLogStream = streamContainerLogs(log, "familiar-agent");
 
         await pluginHost.startDaemons();
         log.info("plugin daemons started");
@@ -378,7 +378,7 @@ export const startCommand = defineCommand({
 /**
  * Build the daemon's root logger. Stdout is pretty-printed when
  * attached to a TTY, raw JSON otherwise. A second stream rolls
- * `data/logs/ea.YYYYMMDD.<n>.log` daily; retention is read from
+ * `data/logs/familiar.YYYYMMDD.<n>.log` daily; retention is read from
  * `core.logRetentionDays` and falls back to 7 when absent.
  */
 async function buildDaemonLogger(
@@ -390,7 +390,7 @@ async function buildDaemonLogger(
     const retention = config.getNumber("core.logRetentionDays", 7);
     const streams: LogStream[] = [
         process.stdout.isTTY ? prettyStdoutStream() : jsonStdoutStream(),
-        await rollingFileStream(boot.logsDir, "ea", retention),
+        await rollingFileStream(boot.logsDir, "familiar", retention),
     ];
     return createLogger({
         component: "host",

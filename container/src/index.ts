@@ -7,7 +7,7 @@ import {
     POSTGRES_PORT,
     POSTGRES_USER,
     PostgresConnection,
-} from "effective-assistant-shared";
+} from "@getfamiliar/shared";
 import { AgentrunWatcher } from "./AgentrunWatcher.js";
 import { EventWatcher } from "./EventWatcher.js";
 import { HandlerFile } from "./HandlerFile.js";
@@ -35,7 +35,7 @@ const HEADER_DEFAULTS = {
 async function main(): Promise<void> {
     const log = createLogger({
         component: "container",
-        level: parseLevel(process.env.EA_LOG_LEVEL),
+        level: parseLevel(process.env.FAMILIAR_LOG_LEVEL),
         streams: [jsonStdoutStream()],
     });
 
@@ -98,7 +98,7 @@ async function main(): Promise<void> {
     }
 }
 
-/** Coerce `EA_LOG_LEVEL` to a {@link LogLevel}, defaulting to `info`. */
+/** Coerce `FAMILIAR_LOG_LEVEL` to a {@link LogLevel}, defaulting to `info`. */
 function parseLevel(raw: string | undefined): LogLevel {
     if (raw === "debug" || raw === "info" || raw === "warn" || raw === "error") {
         return raw;

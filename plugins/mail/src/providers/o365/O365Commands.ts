@@ -1,6 +1,6 @@
 import path from "node:path";
 import { type CommandDef, defineCommand } from "citty";
-import type { HostContext } from "effective-assistant-shared";
+import type { HostContext } from "@getfamiliar/shared";
 import { readO365Config } from "../../Config.js";
 import { type AppRegistration, DEFAULT_APP } from "./AppRegistration.js";
 import { GraphAuth } from "./GraphAuth.js";

@@ -1,14 +1,14 @@
-# Effective Assistant — sample config.
+# Familiar — sample config.
 # Copy this file to config/config.yml (gitignored) and fill in the
 # real values. The platform reads it at daemon boot via the linter
 # (`./cli.sh config lint`) and at runtime via the host ConfigService.
 
 core:
-  # Password for the bus-state postgres (`ea-postgres`). Used by the
+  # Password for the bus-state postgres (`familiar-postgres`). Used by the
   # host daemon to start the container, by the agent container (passed
   # in via -e), and by host-side CLIs (event, etc.). Database name and
-  # user are hardcoded as `ea`.
-  postgresPassword: ea
+  # user are hardcoded as `familiar`.
+  postgresPassword: familiar
 
   # Chat channel the user prefers to be contacted on. Set to a
   # messenger plugin like "whatsapp" or "telegram" once you've set up

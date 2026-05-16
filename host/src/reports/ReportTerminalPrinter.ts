@@ -6,7 +6,7 @@ import {
     renderMarkdown,
     StepResultBus,
     type StepResultRow,
-} from "effective-assistant-shared";
+} from "@getfamiliar/shared";
 import {
     type AgentrunAggregate,
     aggregateSteps,

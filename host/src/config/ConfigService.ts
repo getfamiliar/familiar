@@ -1,6 +1,6 @@
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ConfigService } from "effective-assistant-shared";
+import type { ConfigService } from "@getfamiliar/shared";
 import { parse, stringify, YAMLParseError } from "yaml";
 
 /**

@@ -5,7 +5,7 @@ import {
     type PluginTool,
     RESERVED_GROUP_NAMES,
     sanitizeToolKey,
-} from "effective-assistant-shared";
+} from "@getfamiliar/shared";
 import type { McpRegistry } from "../mcp/McpRegistry.js";
 
 /**

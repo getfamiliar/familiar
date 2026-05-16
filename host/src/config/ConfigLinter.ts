@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import type { Logger } from "effective-assistant-shared";
+import type { Logger } from "@getfamiliar/shared";
 import { parse, YAMLParseError } from "yaml";
 import { NATIVE_PROVIDER_IDS } from "../bastion/NativeProviders.js";
 

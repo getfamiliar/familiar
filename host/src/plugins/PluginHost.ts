@@ -6,7 +6,7 @@ import type {
     HostContext,
     Logger,
     PostgresConnection,
-} from "effective-assistant-shared";
+} from "@getfamiliar/shared";
 import type { Bootstrap } from "../Bootstrap.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";

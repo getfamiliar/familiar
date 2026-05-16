@@ -1,9 +1,9 @@
 {
-    "name": "whatsapp",
+    "name": "@getfamiliar/plugin-whatsapp",
     "type": "module",
     "version": "0.0.1",
     "private": true,
-    "description": "WhatsApp host-side plugin: read-only group observer that pairs the user's account as a linked device and emits chat:whatsapp:group events.",
+    "description": "Familiar plugin: read-only WhatsApp group observer that pairs the user's account as a linked device and emits chat:whatsapp:group events.",
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "scripts": {
@@ -18,7 +18,7 @@
     "dependencies": {
         "@whiskeysockets/baileys": "7.0.0-rc.9",
         "citty": "^0.1.6",
-        "effective-assistant-shared": "*",
+        "@getfamiliar/shared": "*",
         "qrcode-terminal": "^0.12.0"
     },
     "devDependencies": {

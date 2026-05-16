@@ -1,4 +1,4 @@
-import type { HostContext } from "effective-assistant-shared";
+import type { HostContext } from "@getfamiliar/shared";
 import { readMailConfig } from "./Config.js";
 import { MailPollLoop } from "./PollLoop.js";
 import { providers } from "./providers/Registry.js";

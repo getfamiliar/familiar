@@ -1,4 +1,4 @@
-import { definePlugin } from "effective-assistant-shared";
+import { definePlugin } from "@getfamiliar/shared";
 import { buildCommands, buildMain } from "./Commands.js";
 import { startMailDaemon } from "./MailDaemon.js";
 import { buildMailTools } from "./providers/o365/MailTools.js";

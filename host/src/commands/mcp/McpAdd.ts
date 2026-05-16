@@ -17,7 +17,7 @@ import {
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
 /**
- * `ea mcp add <package>` — interactive dialogue that finds an MCP
+ * `cli.sh mcp add <package>` — interactive dialogue that finds an MCP
  * by name in the Docker MCP registry first, falls back to the
  * official MCP registry, lets the user fill in env vars and any
  * extra args, and appends a validated entry to `config/mcp.yml`.

@@ -37,12 +37,12 @@ export interface DockerArgsOptions {
 
     /**
      * `--name` value for the container. The bastion uses
-     * `ea-mcp-<id>` so it can `docker rm -f` precisely on shutdown.
+     * `familiar-mcp-<id>` so it can `docker rm -f` precisely on shutdown.
      * One-shot CLI calls pass `null` to omit `--name` entirely,
      * which lets docker auto-generate one and avoids colliding with
      * a live bastion-managed container of the same id.
      *
-     * Default (omitted) → `ea-mcp-<entry.id>`. Pass `null` to skip.
+     * Default (omitted) → `familiar-mcp-<entry.id>`. Pass `null` to skip.
      */
     readonly containerName?: string | null;
 

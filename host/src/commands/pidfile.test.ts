@@ -8,7 +8,7 @@ import { inspectPidFile } from "./pidfile.js";
 let scratch: string;
 
 beforeEach(() => {
-    scratch = mkdtempSync(path.join(tmpdir(), "ea-pidfile-"));
+    scratch = mkdtempSync(path.join(tmpdir(), "familiar-pidfile-"));
 });
 
 afterEach(() => {

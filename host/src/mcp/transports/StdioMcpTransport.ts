@@ -2,7 +2,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createInterface } from "node:readline";
-import type { Logger } from "effective-assistant-shared";
+import type { Logger } from "@getfamiliar/shared";
 import { removeContainer } from "../../DockerTools.js";
 import type { McpFileSink } from "../../tools/LogRetentionTools.js";
 import type { McpTransport } from "./McpTransport.js";
@@ -18,11 +18,11 @@ const KILL_GRACE_MS = 5000;
 
 /**
  * Docker container name for the spawned child. Mirrors the
- * `ea-mcp-<id>` convention so listings (`docker ps --filter
- * name=ea-mcp-`) still group every MCP container.
+ * `familiar-mcp-<id>` convention so listings (`docker ps --filter
+ * name=familiar-mcp-`) still group every MCP container.
  */
 function containerNameFor(id: string): string {
-    return `ea-mcp-${id}`;
+    return `familiar-mcp-${id}`;
 }
 
 /**
@@ -36,7 +36,7 @@ export interface StdioMcpTransportConfig {
     /**
      * Argv vector to pass to `docker` (without the leading "docker").
      * Must be a foreground-style invocation: `run -i --rm --name
-     * ea-mcp-<id> --network <net> [-e ...] [-v ...] [--entrypoint ...]
+     * familiar-mcp-<id> --network <net> [-e ...] [-v ...] [--entrypoint ...]
      * <image> [args...]`. The factory assembles this from the entry.
      */
     readonly dockerArgs: readonly string[];

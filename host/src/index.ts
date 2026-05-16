@@ -1,5 +1,5 @@
 import { defineCommand, runMain } from "citty";
-import { createLogger, prettyStdoutStream } from "effective-assistant-shared";
+import { createLogger, prettyStdoutStream } from "@getfamiliar/shared";
 import { bootstrap } from "./Bootstrap.js";
 import { agentrunCommand } from "./commands/Agentrun.js";
 import { configCommand } from "./commands/Config.js";
@@ -37,8 +37,8 @@ const pluginHost = new PluginHost(bootstrap(), cliLogger);
 runMain(
     defineCommand({
         meta: {
-            name: "ea",
-            description: "Effective Assistant host CLI",
+            name: "familiar",
+            description: "Familiar host CLI",
         },
         subCommands: {
             start: startCommand,

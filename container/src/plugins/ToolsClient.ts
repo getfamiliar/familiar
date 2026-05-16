@@ -1,5 +1,5 @@
 import { jsonSchema, type ToolSet, tool } from "ai";
-import type { Logger } from "effective-assistant-shared";
+import type { Logger } from "@getfamiliar/shared";
 
 /**
  * Configuration for {@link PluginToolsClient}. Mirrors the

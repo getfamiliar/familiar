@@ -1,4 +1,4 @@
-import type { Logger, McpInfo } from "effective-assistant-shared";
+import type { Logger, McpInfo } from "@getfamiliar/shared";
 import { loadMcpEntries } from "./McpConfigLoader.js";
 import type { McpEntries, McpEntry } from "./McpEntry.js";
 

@@ -1,8 +1,8 @@
 {
-    "name": "effective-assistant-shared",
+    "name": "@getfamiliar/shared",
     "type": "module",
     "version": "0.0.1",
-    "description": "Shared types and bus-state client between host and container.",
+    "description": "Familiar — shared types and bus-state client between host and container.",
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "scripts": {

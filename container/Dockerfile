@@ -1,4 +1,4 @@
-# Effective Assistant Agent Container
+# Familiar Agent Container
 
 FROM node:24-slim
 
@@ -19,8 +19,11 @@ WORKDIR /app
 COPY container/package*.json ./
 COPY container/tsconfig.json ./
 
-# Fix shared package path for Docker context and install dependencies
-RUN sed -i 's|file:../shared|file:/shared|' package.json && npm install
+# Rewrite the workspace-resolved `*` version of @getfamiliar/shared to
+# the in-image path so npm doesn't try to hit the registry (the scope
+# is unpublished — every workspace package resolves locally on the host
+# via npm workspaces, but the container build has no workspace context).
+RUN sed -i 's|"@getfamiliar/shared": "\*"|"@getfamiliar/shared": "file:/shared"|' package.json && npm install
 
 # Copy entrypoint script and make it executable
 COPY container/entrypoint.sh ./

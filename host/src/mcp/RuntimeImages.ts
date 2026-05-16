@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { Logger } from "effective-assistant-shared";
+import type { Logger } from "@getfamiliar/shared";
 import { dockerExec } from "../DockerTools.js";
 
 /**
@@ -7,14 +7,14 @@ import { dockerExec } from "../DockerTools.js";
  * entries. Built from `mcp-runtime/npm/Dockerfile` on demand by
  * {@link ensureRuntimeImage}.
  */
-export const NPM_RUNTIME_IMAGE = "ea-mcp-runtime-npm";
+export const NPM_RUNTIME_IMAGE = "familiar-mcp-runtime-npm";
 
 /**
  * Tag for the generic python runtime image used by `source: pypi`
  * entries. Built from `mcp-runtime/pypi/Dockerfile` on demand by
  * {@link ensureRuntimeImage}.
  */
-export const PYPI_RUNTIME_IMAGE = "ea-mcp-runtime-pypi";
+export const PYPI_RUNTIME_IMAGE = "familiar-mcp-runtime-pypi";
 
 /**
  * Absolute host path to the `mcp-runtime/<source>/` Dockerfile

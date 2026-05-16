@@ -1,5 +1,5 @@
 import path from "node:path";
-import { definePlugin } from "effective-assistant-shared";
+import { definePlugin } from "@getfamiliar/shared";
 import { buildCommands } from "./Commands.js";
 import { startTelegramDaemon } from "./TelegramDaemon.js";
 

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { type Logger, RESERVED_GROUP_NAMES } from "effective-assistant-shared";
+import { type Logger, RESERVED_GROUP_NAMES } from "@getfamiliar/shared";
 import { parse, YAMLParseError } from "yaml";
 import {
     DEFAULT_IDLE_TIMEOUT_SECONDS,
@@ -33,7 +33,7 @@ const VALID_SOURCES: readonly McpSource[] = ["docker-mcp-registry", "npm", "pypi
  * (a) compose unambiguously with `_` into `${id}_${toolName}` tool
  * keys, and (b) sit inside the alnum-only group-name shape the
  * evaluator uses to tell groups from tool patterns. Container names
- * still expand cleanly to `ea-mcp-<id>`.
+ * still expand cleanly to `familiar-mcp-<id>`.
  */
 const ID_PATTERN = /^[a-z][a-z0-9]*$/;
 

@@ -1,5 +1,5 @@
 import { type CommandDef, defineCommand } from "citty";
-import type { HostContext } from "effective-assistant-shared";
+import type { HostContext } from "@getfamiliar/shared";
 import { Bot, GrammyError } from "grammy";
 import { readTelegramConfig, splitForTelegram } from "./TelegramDaemon.js";
 

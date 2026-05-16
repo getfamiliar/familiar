@@ -6,7 +6,7 @@ import makeWASocket, {
     type WAMessage,
     type WASocket,
 } from "@whiskeysockets/baileys";
-import type { HostContext } from "effective-assistant-shared";
+import type { HostContext } from "@getfamiliar/shared";
 import { clearAuth, loadAuth, type WhatsAppAuth } from "./Auth.js";
 
 const TOPIC = "chat:whatsapp:group";
@@ -16,9 +16,9 @@ const RECONNECT_BACKOFF_MAX_MS = 5 * 60 * 1000;
 /**
  * `userAgent` advertised to the WhatsApp servers when this device
  * registers. Showing up in the user's "Linked devices" UI as
- * "effective-assistant" makes the link easy to recognize and revoke.
+ * "familiar" makes the link easy to recognize and revoke.
  */
-const BROWSER_DESCRIPTION: [string, string, string] = ["effective-assistant", "Chrome", "1.0"];
+const BROWSER_DESCRIPTION: [string, string, string] = ["familiar", "Chrome", "1.0"];
 
 /**
  * Build the {@link ILogger} we hand to baileys' `makeWASocket`. By

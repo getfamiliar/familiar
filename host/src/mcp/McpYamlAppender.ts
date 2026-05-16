@@ -8,7 +8,7 @@ import { lintMcpConfigFile } from "./McpConfigLoader.js";
  * open it.
  */
 const FRESH_FILE_HEADER =
-    "# Effective Assistant — MCP servers (see config/mcp.example.yml).\n" +
+    "# Familiar — MCP servers (see config/mcp.example.yml).\n" +
     "# Edited by `./cli.sh mcp add`; you can hand-edit too.\n";
 
 /**

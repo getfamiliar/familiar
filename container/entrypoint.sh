@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "Starting Effective Assistant agent container entrypoint (nodemon + tsx)..."
+echo "Starting Familiar agent container entrypoint (nodemon + tsx)..."
 
 # nodemon supervises a `tsx` child that runs the TypeScript directly.
 # nodemon's `--legacy-watch` polls (every NODEMON_INTERVAL ms) instead

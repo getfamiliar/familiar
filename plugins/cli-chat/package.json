@@ -1,9 +1,9 @@
 {
-    "name": "cli-chat",
+    "name": "@getfamiliar/plugin-cli-chat",
     "type": "module",
     "version": "0.0.1",
     "private": true,
-    "description": "First plugin: emits chat:cli events from the command line.",
+    "description": "Familiar plugin: emits chat:cli events from the command line.",
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "scripts": {
@@ -16,7 +16,7 @@
     "license": "MIT",
     "dependencies": {
         "citty": "^0.1.6",
-        "effective-assistant-shared": "*"
+        "@getfamiliar/shared": "*"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.4.12",

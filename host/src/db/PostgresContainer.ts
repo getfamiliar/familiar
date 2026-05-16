@@ -5,7 +5,7 @@ import {
     POSTGRES_PORT,
     POSTGRES_USER,
     PostgresConnection,
-} from "effective-assistant-shared";
+} from "@getfamiliar/shared";
 import {
     dockerCapture,
     dockerExec,
@@ -32,9 +32,9 @@ export interface PostgresContainerConfig {
 }
 
 /**
- * Manages the singleton postgres container (`ea-postgres`).
+ * Manages the singleton postgres container (`familiar-postgres`).
  *
- * Joins `ea-net` so the agent container can reach it as `ea-postgres:5432`.
+ * Joins `familiar-net` so the agent container can reach it as `familiar-postgres:5432`.
  * Publishes the postgres TCP port on `127.0.0.1:<host-port>:5432` so host
  * code (and `psql` from a host shell) can connect, but nothing on the LAN.
  *
@@ -112,7 +112,7 @@ export class PostgresContainer {
      * until postgres accepts connections, then writes the chosen port to
      * `portFilePath` and returns it.
      *
-     * Removes any previous `ea-postgres` container with the same name
+     * Removes any previous `familiar-postgres` container with the same name
      * first so this is safe to call after a crash.
      *
      * @returns The host port that postgres is reachable on (`127.0.0.1:<port>`).

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Effective-assistant is an AI executive assistant built as a containerized agent. It observes the user's world (mail, calendar, chat, ticketing, etc.) and acts on the user's behalf — drafting, scheduling, summarizing, escalating — under explicit user approval for anything risky. The system is designed to be:
+Familiar is an AI executive assistant built as a containerized agent — your personal AI assistant: loyal, local, markdown. It observes the user's world (mail, calendar, chat, ticketing, etc.) and acts on the user's behalf — drafting, scheduling, summarizing, escalating — under explicit user approval for anything risky. The system is designed to be:
 
 - **Proactive, not reactive.** It reacts to world events (incoming mail, calendar invitations, Jira webhooks), not just user prompts.
 - **Personal.** The assistant's behavior is shaped by markdown files the user can edit. The "personality" lives in the workspace, not in code or model weights.
@@ -168,7 +168,7 @@ Top-level groups in `config/config.yml`:
 
 Container-side env stays explicit: `Start.ts` reads from the config service and hand-picks which
 values become container env vars. **Proxy-placeholder API keys** (e.g. `FEATHERLESS_API_KEY=via-proxy`
-inside `ea-agent`) are hardcoded in the container launcher (`AgentContainer.ts`); the real upstream
+inside `familiar-agent`) are hardcoded in the container launcher (`AgentContainer.ts`); the real upstream
 key only flows from config → `ReverseProxyContainer.upstreamApiKey`.
 
 CLI: `./cli.sh config lint` validates the file. `./cli.sh start` runs the linter implicitly before
@@ -220,7 +220,7 @@ is passed straight to Croner as a raw cron expression. Invalid expressions are l
 `warn` and silently dropped; the rest of the workspace keeps working. Editing or deleting
 a handler file re-evaluates its job live — no daemon restart needed.
 
-`ea cron list` prints every handler with a `cron:` field, the verbatim string, and the
+`./cli.sh cron list` prints every handler with a `cron:` field, the verbatim string, and the
 parsed expression. The command runs a standalone filesystem scan, so it works whether the
 daemon is up or not.
 
@@ -347,15 +347,15 @@ When in doubt during implementation:
 The `data/` folder is the persistent host-side storage. Layout:
 
 - `data/workspace/` — mounted into the agent container as `/workspace`. The assistant's memory and personality live here (SOUL.md, CONTEXT.md, topic folders, people/, etc.).
-- `data/postgres/` — bind-mounted into `ea-postgres` as `/var/lib/postgresql/data`. Cluster state for the bus-state DB. The container runs with `--user <hostUid>:<hostGid>` so cluster files are owned by the operator and `rm -rf data/postgres` works from the host without `sudo`. A daemon upgraded from the old uid-70 layout needs a one-time `sudo chown -R "$(id -u):$(id -g)" data/postgres`.
+- `data/postgres/` — bind-mounted into `familiar-postgres` as `/var/lib/postgresql/data`. Cluster state for the bus-state DB. The container runs with `--user <hostUid>:<hostGid>` so cluster files are owned by the operator and `rm -rf data/postgres` works from the host without `sudo`. A daemon upgraded from the old uid-70 layout needs a one-time `sudo chown -R "$(id -u):$(id -g)" data/postgres`.
 - `data/.daemon.pid` — pidfile written by the daemon and consumed by `./cli.sh stop`.
-- `data/.postgres-port` — chosen loopback host port that `ea-postgres` is published on (e.g. `5432`, or the next free port if 5432 was taken at startup). Read by anything host-side that wants to `psql` or use a `pg` client.
+- `data/.postgres-port` — chosen loopback host port that `familiar-postgres` is published on (e.g. `5432`, or the next free port if 5432 was taken at startup). Read by anything host-side that wants to `psql` or use a `pg` client.
 
 ## Architecture
 
-- **shared/**: TypeScript package (`effective-assistant-shared`) used by both host and container. Both sides depend on it via `"file:../shared"` in their package.json. Contains the `EventBus` / `AgentRunBus` / `PostgresConnection` clients, the events + agentruns schema (with `EVENT_TERMINAL_UPDATE_SQL` helper), and the related types. Must be built (`npm run build`) before host or container can compile. The Docker build handles this automatically.
-- **host/**: Single Node.js CLI entry at `host/src/index.ts` using [citty](https://github.com/unjs/citty) for subcommand dispatch. Subcommands live in `host/src/commands/` (`Start`, `Stop`, `Event`, `Config`); shared paths live in `host/src/Bootstrap.ts`; the YAML-backed `ConfigService` and `ConfigLinter` live in `host/src/config/`. Invoked through one root wrapper, `./cli.sh <subcommand>`, which verifies `config/config.yml` exists and rebuilds the host package if stale. The `start` subcommand runs as a long-running daemon that manages two singleton Docker containers: the bus-state postgres `ea-postgres` and the agent runtime `ea-agent`. Both join the shared bridge network `ea-net`. Postgres is published on `127.0.0.1:<port>:5432` only (port chosen at startup; written to `data/.postgres-port`). All host↔container communication flows through the postgres `events` and `agentruns` tables — there is no file-based IPC.
-- **host/src/db/**: Postgres lifecycle. `PostgresContainer` runs `postgres:16-alpine`, picks a free loopback port, joins `ea-net`, and waits for `pg_isready`. Hardcoded dev credentials: `POSTGRES_USER=ea`, `POSTGRES_PASSWORD=ea`, `POSTGRES_DB=ea`. Container code reaches the DB at `ea-postgres:5432`; host code at `127.0.0.1:<port>` (port from `data/.postgres-port`).
+- **shared/**: TypeScript package (`@getfamiliar/shared`) used by both host and container. Both sides depend on it via `"*"` workspace resolution in their package.json. Contains the `EventBus` / `AgentRunBus` / `PostgresConnection` clients, the events + agentruns schema (with `EVENT_TERMINAL_UPDATE_SQL` helper), and the related types. Must be built (`npm run build`) before host or container can compile. The Docker build handles this automatically.
+- **host/**: Single Node.js CLI entry at `host/src/index.ts` using [citty](https://github.com/unjs/citty) for subcommand dispatch. Subcommands live in `host/src/commands/` (`Start`, `Stop`, `Event`, `Config`); shared paths live in `host/src/Bootstrap.ts`; the YAML-backed `ConfigService` and `ConfigLinter` live in `host/src/config/`. Invoked through one root wrapper, `./cli.sh <subcommand>`, which verifies `config/config.yml` exists and rebuilds the host package if stale. The `start` subcommand runs as a long-running daemon that manages two singleton Docker containers: the bus-state postgres `familiar-postgres` and the agent runtime `familiar-agent`. Both join the shared bridge network `familiar-net`. Postgres is published on `127.0.0.1:<port>:5432` only (port chosen at startup; written to `data/.postgres-port`). All host↔container communication flows through the postgres `events` and `agentruns` tables — there is no file-based IPC.
+- **host/src/db/**: Postgres lifecycle. `PostgresContainer` runs `postgres:16-alpine`, picks a free loopback port, joins `familiar-net`, and waits for `pg_isready`. Hardcoded user / database: `POSTGRES_USER=familiar`, `POSTGRES_DB=familiar`; the password is sourced from `core.postgresPassword` in `config/config.yml`. Container code reaches the DB at `familiar-postgres:5432`; host code at `127.0.0.1:<port>` (port from `data/.postgres-port`).
 - **container/**: Docker container definition for the agent runtime. Long-running; built once, started by the host daemon and reused across all tasks.
   - Base image: `node:24-slim`. Currently no LLM SDK is installed — Featherless integration is the next step.
   - `src/TriageWatcher.ts` is a placeholder for the input-event watcher (claims events `pending → running`, currently just marks them done). The real input-event watcher and the new agentrun watcher land in the next plan.

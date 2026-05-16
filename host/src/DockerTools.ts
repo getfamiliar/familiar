@@ -2,11 +2,11 @@ import { spawn, spawnSync } from "node:child_process";
 import os from "node:os";
 
 /**
- * Shared bridge network all effective-assistant containers join. Owned
+ * Shared bridge network all Familiar containers join. Owned
  * by the daemon (see `commands/Start.ts`); created once via
  * {@link ensureNetwork} before any container is started.
  */
-export const SHARED_NETWORK_NAME = "ea-net";
+export const SHARED_NETWORK_NAME = "familiar-net";
 
 /** Options shared by {@link dockerExec}. */
 export interface DockerExecOptions {

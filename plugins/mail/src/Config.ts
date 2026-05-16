@@ -1,4 +1,4 @@
-import type { HostContext } from "effective-assistant-shared";
+import type { HostContext } from "@getfamiliar/shared";
 
 /** Plugin-wide knobs read from the `mail.*` config subtree. */
 export interface MailConfig {

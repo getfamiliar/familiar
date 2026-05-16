@@ -1,9 +1,9 @@
-import cliChat from "cli-chat";
-import type { PluginManifest } from "effective-assistant-shared";
-import mail from "mail";
-import telegram from "telegram";
-import transcribeWhisper from "transcribe-whisper";
-import whatsapp from "whatsapp";
+import cliChat from "@getfamiliar/plugin-cli-chat";
+import mail from "@getfamiliar/plugin-mail";
+import telegram from "@getfamiliar/plugin-telegram";
+import transcribeWhisper from "@getfamiliar/plugin-transcribe-whisper";
+import whatsapp from "@getfamiliar/plugin-whatsapp";
+import type { PluginManifest } from "@getfamiliar/shared";
 
 /**
  * Static list of installed plugins. Each entry is the manifest

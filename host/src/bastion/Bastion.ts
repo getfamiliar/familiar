@@ -1,4 +1,4 @@
-import type { Logger } from "effective-assistant-shared";
+import type { Logger } from "@getfamiliar/shared";
 import { HttpServer, type PrefixHandler } from "./HttpServer.js";
 
 /**

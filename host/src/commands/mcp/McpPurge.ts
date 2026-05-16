@@ -8,9 +8,9 @@ import { inspectPidFile } from "../pidfile.js";
 const MOUNT_DIR_PREFIX = "mcp-mount-";
 
 /**
- * `ea mcp purge` — remove every `tmp/mcp-mount-*` directory. Refuses
+ * `cli.sh mcp purge` — remove every `tmp/mcp-mount-*` directory. Refuses
  * while the daemon is up so we never yank a cache out from under a
- * live `ea-mcp-<id>` container reading from it.
+ * live `familiar-mcp-<id>` container reading from it.
  *
  * Out of scope: the daemon's general logs, `data/`, anything other
  * than the `mcp-mount-*` prefix. `tmp/` itself is left in place

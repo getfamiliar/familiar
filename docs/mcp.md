@@ -1,6 +1,6 @@
 # MCP servers
 
-This document covers how the effective-assistant runtime brings up
+This document covers how the Familiar runtime brings up
 [Model Context Protocol](https://modelcontextprotocol.io) servers as docker containers and how to
 configure them via `config/mcp.yml`.
 
@@ -27,8 +27,8 @@ container.
 | `source` | What it is | Status |
 | --- | --- | --- |
 | `docker-mcp-registry` | Image from the [Docker MCP registry](https://github.com/docker/mcp-registry) (e.g. `mcp/fetch`). The bastion spawns a foreground `docker run -i` child on demand. | **Implemented (stdio transport).** |
-| `npm` | npm package run inside the shared `ea-mcp-runtime-npm` image (entrypoint `npx -y`). For MCPs distributed via npm without an official docker image. | **Implemented (stdio transport).** |
-| `pypi` | pypi package run inside the shared `ea-mcp-runtime-pypi` image (entrypoint `uvx`). | **Implemented (stdio transport).** |
+| `npm` | npm package run inside the shared `familiar-mcp-runtime-npm` image (entrypoint `npx -y`). For MCPs distributed via npm without an official docker image. | **Implemented (stdio transport).** |
+| `pypi` | pypi package run inside the shared `familiar-mcp-runtime-pypi` image (entrypoint `uvx`). | **Implemented (stdio transport).** |
 | `external` | Remote MCP reachable over HTTP. No container is started; the bastion forwards the request to the configured URL. | **Implemented (HTTP forward).** |
 
 ### npm and pypi runtime images
@@ -66,14 +66,14 @@ image for anything else.
    add a new top-level key under `mcps:` and fill in `title`, `description`,
    `source: docker-mcp-registry`, and `image`.
 4. **Lint.** `./cli.sh mcp lint` checks structure and required fields without starting anything.
-5. **Restart the daemon.** `./cli.sh stop && ./cli.sh start`. Logs from `ea-mcp-<id>` flow into
+5. **Restart the daemon.** `./cli.sh stop && ./cli.sh start`. Logs from `familiar-mcp-<id>` flow into
    the host log stream the same way the agent's logs do.
 
 ## `mcp.yml` reference
 
 Top-level shape: a YAML mapping of id → entry. The id (the YAML key) must match
 `^[a-z][a-z0-9]*$` (lowercase alphanumeric, leading letter, no hyphens or underscores) and is
-used as the container suffix (`ea-mcp-<id>`). The strict shape is required because every id
+used as the container suffix (`familiar-mcp-<id>`). The strict shape is required because every id
 doubles as a tools-DSL group name — see "Built-in groups" below.
 
 ### Per-entry fields
@@ -115,7 +115,7 @@ into this single `env` array so that npm/pypi/external entries use the same shap
 | --- | --- | --- | --- |
 | `disable` | boolean | `false` | When `true`, the container runs with `--network none`. |
 
-Two states: online (default, joins `ea-net`) or offline (`disable: true`). Hostname-level
+Two states: online (default, joins `familiar-net`) or offline (`disable: true`). Hostname-level
 allowlisting is deliberately not supported — docker has no native hostname-egress flag, and a
 forward-proxy sidecar is more infrastructure than the runtime wants to own. `disable: true` also
 makes the container unreachable from the agent's HTTP catalog calls; useful for stdio-only MCPs
@@ -123,7 +123,7 @@ only.
 
 > **Two-phase boot for offline npm/pypi.** When an `npm` or `pypi` entry has `disable: true`,
 > the bastion can't fetch the package from the run-phase container. On the first cold-spawn
-> after daemon start it runs a **prep container** with full network access (`ea-net`) and **no
+> after daemon start it runs a **prep container** with full network access (`familiar-net`) and **no
 > env vars / no user volumes**: `npx -y --package <pkg> -- node -e ""` for npm,
 > `uvx --from <pkg> python -c ""` for pypi. The package lands in the bind-mounted `/work`
 > cache; the phase-2 container then runs as declared (no network, env vars, volumes) and the
@@ -353,7 +353,7 @@ want every catalog change to break unrelated handlers.
   When the docker daemon is unreachable the command still prints the declared list and notes that
   live state couldn't be probed.
 - **Purge cached package mounts.** `./cli.sh mcp purge` removes every `tmp/mcp-mount-*` directory.
-  **Refuses while the daemon is up** (a live `ea-mcp-<id>` container could be reading from one);
+  **Refuses while the daemon is up** (a live `familiar-mcp-<id>` container could be reading from one);
   stop the daemon first with `./cli.sh stop`. Reports the number of directories removed and
   approximate bytes freed. `tmp/` itself is left in place so the daemon's next start doesn't fail
   on a missing parent.
@@ -391,15 +391,15 @@ want every catalog change to break unrelated handlers.
   ./cli.sh mcp call ms365 -- --login
   ```
   No `--name` is set on the docker invocation, so the call won't collide with a bastion-managed
-  `ea-mcp-<id>` container that may be running concurrently. The exit status of the docker child is
+  `familiar-mcp-<id>` container that may be running concurrently. The exit status of the docker child is
   propagated to the calling shell. `external` sources are refused (no container to run).
 
-- **Listing live MCPs directly.** `docker ps --filter name=ea-mcp-` shows every currently-spawned
+- **Listing live MCPs directly.** `docker ps --filter name=familiar-mcp-` shows every currently-spawned
   MCP child. Containers are **ephemeral**: they only exist while the bastion holds them open, and
   disappear after `idleTimeoutSeconds`.
 - **Logs.** The bastion logs every spawn / idle-reap / crash event in the host log stream. To see
-  an MCP child's own stdout/stderr while it is alive: `docker logs ea-mcp-<id>`.
-- **Container naming.** Every MCP runs as `ea-mcp-<id>`. Ids must match `^[a-z][a-z0-9]*$`.
+  an MCP child's own stdout/stderr while it is alive: `docker logs familiar-mcp-<id>`.
+- **Container naming.** Every MCP runs as `familiar-mcp-<id>`. Ids must match `^[a-z][a-z0-9]*$`.
 - **Multi-provider LLM URLs.** The bastion also handles `${BASTION_URL}/llm/<provider>/v1/*` for
   inference. Add more providers by adding their key under `inference.apiKeys.<provider>` in
   `config.yml`; common providers (featherless, groq, openai, anthropic, deepseek) ship with a

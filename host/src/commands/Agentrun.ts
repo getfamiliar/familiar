@@ -4,7 +4,7 @@ import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 
 /**
- * `ea agentrun <id> [--full]` — print one agentrun's full transcript:
+ * `cli.sh agentrun <id> [--full]` — print one agentrun's full transcript:
  * the row itself plus every persisted step (`stepresults`) in order.
  *
  * Built primarily to debug "the model said it would call a tool but

@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Logger } from "effective-assistant-shared";
+import type { Logger } from "@getfamiliar/shared";
 import type { Bastion, BastionModule } from "../bastion/Bastion.js";
 import { DockerMcpRegistryFactory } from "./factories/DockerMcpRegistryFactory.js";
 import { ExternalFactory } from "./factories/ExternalFactory.js";

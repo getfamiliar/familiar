@@ -1,4 +1,4 @@
-import type { Logger } from "effective-assistant-shared";
+import type { Logger } from "@getfamiliar/shared";
 import type { McpEntry } from "../McpEntry.js";
 import type { McpServerFactory } from "../McpServerFactory.js";
 import { HttpMcpTransport } from "../transports/HttpMcpTransport.js";

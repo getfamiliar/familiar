@@ -1,11 +1,11 @@
 import { defineCommand } from "citty";
-import { EventBus } from "effective-assistant-shared";
+import { EventBus } from "@getfamiliar/shared";
 import { bootstrap } from "../Bootstrap.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 
 /**
- * `ea event <topic> [payload] [--priority N]` — insert one event into
+ * `cli.sh event <topic> [payload] [--priority N]` — insert one event into
  * the bus-state DB and print the persisted row as JSON.
  *
  * Reuses `PostgresContainer` purely as a config provider — it doesn't

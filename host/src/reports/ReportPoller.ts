@@ -7,7 +7,7 @@ import {
     type PostgresConnection,
     StepResultBus,
     type StepResultRow,
-} from "effective-assistant-shared";
+} from "@getfamiliar/shared";
 
 /**
  * Sink that the {@link ReportPoller} drives. Both the daemon-side

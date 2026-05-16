@@ -1,9 +1,9 @@
 {
-    "name": "telegram",
+    "name": "@getfamiliar/plugin-telegram",
     "type": "module",
     "version": "0.0.1",
     "private": true,
-    "description": "Telegram host-side plugin: bridges a Telegram bot to the chat:telegram event/chatmessage pipeline.",
+    "description": "Familiar plugin: bridges a Telegram bot to the chat:telegram event/chatmessage pipeline.",
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "scripts": {
@@ -16,9 +16,9 @@
     "license": "MIT",
     "dependencies": {
         "citty": "^0.1.6",
-        "effective-assistant-shared": "*",
-        "grammy": "^1.30.0",
-        "transcribe-whisper": "*"
+        "@getfamiliar/plugin-transcribe-whisper": "*",
+        "@getfamiliar/shared": "*",
+        "grammy": "^1.30.0"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.4.12",

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { defineCommand } from "citty";
-import { createLogger, prettyStdoutStream } from "effective-assistant-shared";
+import { createLogger, prettyStdoutStream } from "@getfamiliar/shared";
 import { parse } from "yaml";
 import { bootstrap } from "../../Bootstrap.js";
 import { dockerCapture, dockerInteractive } from "../../DockerTools.js";
@@ -22,7 +22,7 @@ import {
 import { ensureRuntimeImage, mcpMountDirFor } from "../../mcp/RuntimeImages.js";
 
 /**
- * `ea mcp call <id> -- <args...>` — one-shot interactive
+ * `cli.sh mcp call <id> -- <args...>` — one-shot interactive
  * invocation of an MCP's runtime container that uses the *same*
  * docker invocation the bastion would build for the same `mcp.yml`
  * entry. Mount, env, `--user`, network, and the entry's `args:`
@@ -42,7 +42,7 @@ import { ensureRuntimeImage, mcpMountDirFor } from "../../mcp/RuntimeImages.js";
  * aren't misinterpreted as our own.
  *
  * Drops `--name` from the docker invocation so it doesn't collide
- * with the bastion's live `ea-mcp-<id>` container (the daemon may
+ * with the bastion's live `familiar-mcp-<id>` container (the daemon may
  * be running). `--rm` still cleans up the one-shot container.
  */
 export const mcpCallCommand = defineCommand({
@@ -175,7 +175,7 @@ function spawnAndExit(
 }
 
 /**
- * Best-effort probe: if the bastion's `ea-mcp-<id>` container is
+ * Best-effort probe: if the bastion's `familiar-mcp-<id>` container is
  * currently running, print a one-line warning that this call's
  * one-shot container will share `/work` with it. Doesn't refuse —
  * for the OAuth-setup use case the user wants to log in *while*
@@ -186,13 +186,13 @@ async function warnIfBastionAlive(id: string): Promise<void> {
         const result = await dockerCapture([
             "ps",
             "--filter",
-            `name=ea-mcp-${id}`,
+            `name=familiar-mcp-${id}`,
             "--format",
             "{{.Names}}",
         ]);
-        if (result.code === 0 && result.stdout.includes(`ea-mcp-${id}`)) {
+        if (result.code === 0 && result.stdout.includes(`familiar-mcp-${id}`)) {
             process.stderr.write(
-                `note: bastion-managed ea-mcp-${id} is currently running; this one-shot call will share its /work mount\n`,
+                `note: bastion-managed familiar-mcp-${id} is currently running; this one-shot call will share its /work mount\n`,
             );
         }
     } catch {

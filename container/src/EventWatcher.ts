@@ -4,7 +4,7 @@ import {
     type EventRow,
     type Logger,
     type PostgresConnection,
-} from "effective-assistant-shared";
+} from "@getfamiliar/shared";
 
 /**
  * Input-event watcher. Claims `pending` events into `running` and

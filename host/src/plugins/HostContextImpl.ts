@@ -21,7 +21,7 @@ import {
     type PostgresConnection,
     StepResultBus,
     type StepResultUnsubscribe,
-} from "effective-assistant-shared";
+} from "@getfamiliar/shared";
 import { inspectPidFile } from "../commands/pidfile.js";
 import type { PluginMcpService } from "../mcp/PluginMcpService.js";
 

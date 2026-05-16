@@ -4,7 +4,7 @@ import {
     EventBus,
     type Logger,
     type PostgresConnection,
-} from "effective-assistant-shared";
+} from "@getfamiliar/shared";
 import type { Bastion, BastionModule } from "../bastion/Bastion.js";
 import type { PluginToolsRegistry, RegisteredPluginTool } from "./ToolsRegistry.js";
 

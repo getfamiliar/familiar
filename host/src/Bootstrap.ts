@@ -27,7 +27,7 @@ export interface Bootstrap {
     readonly postgresDataDir: string;
     /**
      * Directory under `dataDir` that pino-roll writes daily-rotated
-     * `ea.YYYYMMDD.<n>.log` files into. Created on demand by the
+     * `familiar.YYYYMMDD.<n>.log` files into. Created on demand by the
      * daemon's `start` command.
      */
     readonly logsDir: string;
@@ -47,7 +47,7 @@ export interface Bootstrap {
     /**
      * Absolute host path of `shared/build/`. Bind-mounted into the
      * agent container at `/shared/build` (read-only) so the
-     * container resolves `effective-assistant-shared` against the
+     * container resolves `@getfamiliar/shared` against the
      * host's just-rebuilt artifacts. `cli.sh` already rebuilds
      * `shared/build/` before the daemon starts, so by the time the
      * agent container boots this path is fresh.

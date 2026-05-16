@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { defineCommand } from "citty";
-import { createLogger, prettyStdoutStream, renderMarkdown } from "effective-assistant-shared";
+import { createLogger, prettyStdoutStream, renderMarkdown } from "@getfamiliar/shared";
 import { bootstrap } from "../../Bootstrap.js";
 import { lintMcpConfigFile } from "../../mcp/McpConfigLoader.js";
 import { McpRegistry } from "../../mcp/McpRegistry.js";
@@ -15,16 +15,16 @@ import { isProcessAlive } from "../pidfile.js";
 const DAEMON_BASTION_LOOPBACK_URL = "http://127.0.0.1:8788";
 
 /**
- * `ea mcp functions [search]` — list every tool advertised by every
+ * `cli.sh mcp functions [search]` — list every tool advertised by every
  * declared MCP, with an optional case-insensitive substring filter
  * on tool name or description. Output is markdown, rendered with
  * `marked-terminal` when stdout is a TTY (same pipeline as
- * `ea report`).
+ * `cli.sh report`).
  *
  * Uses the same {@link PluginMcpService} plugins use at runtime, so
  * the listing matches what handlers see. Requires the daemon to be
  * running — bringing up a second bastion would collide on the
- * `ea-mcp-<id>` container names the daemon's gateway already owns.
+ * `familiar-mcp-<id>` container names the daemon's gateway already owns.
  */
 export const mcpFunctionsCommand = defineCommand({
     meta: {

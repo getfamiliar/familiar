@@ -9,7 +9,7 @@ import { lintConfigFile } from "./ConfigLinter.js";
 let scratch: string;
 
 beforeEach(() => {
-    scratch = mkdtempSync(path.join(tmpdir(), "ea-config-lint-"));
+    scratch = mkdtempSync(path.join(tmpdir(), "familiar-config-lint-"));
 });
 
 afterEach(() => {

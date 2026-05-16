@@ -1,6 +1,6 @@
-import type { EmitHandle, HostContext } from "effective-assistant-shared";
+import type { EmitHandle, HostContext } from "@getfamiliar/shared";
 import { Bot, type Context, GrammyError, HttpError } from "grammy";
-import { transcribeAudio } from "transcribe-whisper";
+import { transcribeAudio } from "@getfamiliar/plugin-transcribe-whisper";
 
 const TELEGRAM_CHANNEL = "telegram";
 const TELEGRAM_MESSAGE_LIMIT = 4096;

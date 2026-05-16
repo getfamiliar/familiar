@@ -1,6 +1,6 @@
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import type { ToolSet } from "ai";
-import { type Logger, sanitizeToolKey } from "effective-assistant-shared";
+import { type Logger, sanitizeToolKey } from "@getfamiliar/shared";
 
 /**
  * Configuration for {@link McpClientPool}. Built from the agent's env
@@ -193,7 +193,7 @@ export class McpClientPool {
         const url = `${this.config.bastionUrl.replace(/\/$/, "")}/mcp/${entry.id}/`;
         const client = await createMCPClient({
             transport: { type: "http", url },
-            clientName: "effective-assistant",
+            clientName: "familiar",
         });
         const tools = await client.tools();
         return { id: entry.id, title: entry.title, client, tools };
