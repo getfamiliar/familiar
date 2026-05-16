@@ -123,15 +123,25 @@ export interface SafeAddress {
 
 /**
  * Sanitize a Graph emailAddress wrapper. When the address shape is
- * safe, returns `{ name, address, rawAddress: null }`. When unsafe,
- * the address is replaced with {@link UNSAFE_ADDRESS_SENTINEL} and
- * the original is moved to `rawAddress` so the handler can flag the
- * mail without ever using the untrusted bytes as a path component.
+ * safe, returns `{ name, address, rawAddress: null }` with `address`
+ * **lower-cased** so that filename-keyed lookups (e.g.
+ * `mail/rules/<address>.md`) are unambiguous regardless of how the
+ * upstream system cased the bytes. SMTP defines the domain part as
+ * case-insensitive; the local part is technically case-sensitive but
+ * in practice every mainstream provider treats it as folded — and the
+ * one place this matters (filesystem lookups against user-authored
+ * rules files) is much better served by predictable lowercase keys
+ * than by RFC-strict preservation.
+ *
+ * When unsafe, the address is replaced with {@link UNSAFE_ADDRESS_SENTINEL}
+ * and the original is moved verbatim to `rawAddress` so the handler
+ * can flag the mail without ever using the untrusted bytes as a path
+ * component. `rawAddress` is NOT lowercased — it's audit data.
  */
 export function sanitizeAddress(input: { name?: string; address: string }): SafeAddress {
     const name = sanitizeDisplayName(input.name);
     if (isSafeEmailAddress(input.address)) {
-        return { name, address: input.address, rawAddress: null };
+        return { name, address: input.address.toLowerCase(), rawAddress: null };
     }
     return {
         name,

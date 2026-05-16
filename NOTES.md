@@ -10,6 +10,7 @@ MCP functions: keep or remove the renaming of "-"?
 
 ## For later
 
+- MS365: Enable / Disable Out of Office Notes
 - Protect the bastion port on the host? Maybe a simple basic auth?
 - Spotify MCP based on https://github.com/aome510/spotify-player
 

@@ -16,8 +16,10 @@
     },
     "license": "MIT",
     "dependencies": {
+        "@azure/msal-node": "^5.2.1",
         "citty": "^0.1.6",
-        "effective-assistant-shared": "*"
+        "effective-assistant-shared": "*",
+        "marked": "^18.0.3"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.4.12",

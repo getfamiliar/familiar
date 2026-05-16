@@ -9,38 +9,55 @@ export interface MailConfig {
 }
 
 /**
- * Per-provider config slice. Every provider (`o365`, future `gmail`,
- * `proton`, …) accepts the same shape; provider-specific keys land
- * here only when a concrete provider proves it needs them.
+ * The o365 provider's slice of `mail.o365.*`. Read by the provider at
+ * boot and by the send/draft tools at call time.
  */
-export interface ProviderConfig {
+export interface O365Config {
     /**
-     * When `true`, the initial watermark is set to "now" for every
-     * mailbox the first time it is observed — historical mail is
-     * ignored. Right setting for non-zero-inbox accounts. Default
-     * `false`, so the plugin walks the whole inbox once on first
-     * start of a fresh mailbox.
-     */
-    readonly onlyNew: boolean;
-    /**
-     * Optional whitelist of mailbox addresses (own or shared) the
-     * provider polls. When empty, every primary mailbox of every
-     * logged-in account is polled and shared mailboxes are not
-     * touched. When non-empty, only listed mailboxes are polled —
-     * across every logged-in account.
+     * Whitelist of mailbox addresses (own or shared) the provider
+     * polls. Empty → every primary mailbox of every logged-in account
+     * is polled; shared mailboxes are not touched. Non-empty → only
+     * listed mailboxes are polled across every logged-in account.
      */
     readonly mailboxes: readonly string[];
+    /**
+     * When `true`, the send-* tools dispatch immediately. When
+     * `false` (the default), every send becomes a draft instead — a
+     * safety net for the early-life agent.
+     */
+    readonly allowSend: boolean;
+    /**
+     * Recipient whitelist applied **only when {@link allowSend} is
+     * `true`**. Each entry is either a full address (`user@host`) or
+     * a domain anchor (`@host`); a recipient matches if its address
+     * equals an entry verbatim or shares a domain with an `@host`
+     * entry. Empty (default) → allowSend with no whitelist means
+     * "anything goes" once the master switch is on.
+     */
+    readonly recipientWhitelist: readonly string[];
+    /**
+     * Override the hardcoded multi-tenant client id. Empty string →
+     * use the project-default app. Plugin README explains the trust
+     * model and how to register an own app.
+     */
+    readonly clientId: string;
+    /**
+     * Override the OAuth authority tenant. Default `"common"` works
+     * for multi-tenant apps and accepts any work-or-school account.
+     * Use a tenant GUID for a single-tenant own app.
+     */
+    readonly tenantId: string;
 }
 
 const DEFAULT_POLLING_INTERVAL_MINUTES = 15;
 const DEFAULT_POLLING_BACKOFF_MINUTES = 1;
+const DEFAULT_TENANT_ID = "common";
 
 /**
  * Read plugin-wide options from `config.yml`. Never returns `null`:
  * defaults are operational (15-minute polling, 1-minute backoff), so
  * a missing `mail:` block is fine and means "use defaults." Real
- * enablement is gated by MCP availability + login state, not by the
- * config subtree's presence.
+ * enablement is gated by login state, not by the config subtree.
  */
 export function readMailConfig(ctx: HostContext): MailConfig {
     const interval = ctx.config.getNumber("mail.pollingInterval", DEFAULT_POLLING_INTERVAL_MINUTES);
@@ -56,21 +73,28 @@ export function readMailConfig(ctx: HostContext): MailConfig {
 }
 
 /**
- * Read a provider's config slice at `mail.<providerId>.*`. Returns a
+ * Read the o365 provider's slice at `mail.o365.*`. Returns a
  * populated defaults object when the subtree is absent or partial —
  * missing keys become defaults rather than disabling the provider.
  */
-export function getProviderConfig(ctx: HostContext, providerId: string): ProviderConfig {
-    const onlyNew = ctx.config.getBool(`mail.${providerId}.onlyNew`, false);
-    const raw = ctx.config.getArray(`mail.${providerId}.mailboxes`, []);
-    const mailboxes: string[] = [];
+export function readO365Config(ctx: HostContext): O365Config {
+    return {
+        mailboxes: readStringArray(ctx, "mail.o365.mailboxes"),
+        allowSend: ctx.config.getBool("mail.o365.allowSend", false) === true,
+        recipientWhitelist: readStringArray(ctx, "mail.o365.recipientWhitelist"),
+        clientId: ctx.config.getString("mail.o365.clientId", "") ?? "",
+        tenantId:
+            ctx.config.getString("mail.o365.tenantId", DEFAULT_TENANT_ID) ?? DEFAULT_TENANT_ID,
+    };
+}
+
+function readStringArray(ctx: HostContext, key: string): readonly string[] {
+    const raw = ctx.config.getArray(key, []);
+    const out: string[] = [];
     for (const entry of raw) {
         if (typeof entry === "string" && entry.length > 0) {
-            mailboxes.push(entry);
+            out.push(entry);
         }
     }
-    return {
-        onlyNew: typeof onlyNew === "boolean" ? onlyNew : false,
-        mailboxes,
-    };
+    return out;
 }

@@ -112,6 +112,11 @@ export class HostContextImpl implements HostContext {
             this.deps.mcp.getByPackage(pkg, source),
     };
 
+    readonly scratch = {
+        addFiles: (eventId: string, files: readonly EventFile[]): Promise<readonly string[]> =>
+            this.addScratchFiles(eventId, files),
+    };
+
     log(message: string): void {
         this.deps.log.info(message);
     }
@@ -307,6 +312,30 @@ export class HostContextImpl implements HostContext {
         void settled.catch(() => {});
 
         return { id: row.id, settled };
+    }
+
+    /**
+     * Stage additional files into `/scratch/<eventId>/` for an event
+     * that already exists. Mirrors the per-emit staging path used
+     * inside {@link emitAndAwait}, but is callable later — typically
+     * from a plugin tool that wants to drop fetched bytes (mail
+     * attachments, downloaded reports) into the running agentrun's
+     * scratch dir without round-tripping through `NewEvent.files`.
+     *
+     * The host's scratch dir is created if missing. Per-file basename
+     * validation matches the emit path. Same-name collisions overwrite
+     * — callers must pick unique names.
+     */
+    private async addScratchFiles(
+        eventId: string,
+        files: readonly EventFile[],
+    ): Promise<readonly string[]> {
+        if (typeof eventId !== "string" || eventId.length === 0) {
+            throw new Error("scratch.addFiles: eventId must be a non-empty string");
+        }
+        const targetDir = path.join(this.deps.scratchDir, eventId);
+        await stageEventFiles(targetDir, files);
+        return files.map((f) => `/scratch/${eventId}/${validateEventFileName(f.name)}`);
     }
 }
 

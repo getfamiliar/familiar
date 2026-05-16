@@ -1,35 +1,19 @@
 import type { CommandDef } from "citty";
-import type { EmitHandle, HostContext, McpClient, NewEvent } from "effective-assistant-shared";
-import type { MailConfig, ProviderConfig } from "../Config.js";
-import type { WatermarkStore } from "../Watermark.js";
+import type { EmitHandle, HostContext, NewEvent } from "effective-assistant-shared";
+import type { MailConfig } from "../Config.js";
 
 /**
- * Result of {@link MailProvider.isLoggedIn}. `detail` is a single
- * line of human-readable status (account emails, error message, …)
- * for the daemon log and the `status` CLI.
- */
-export interface LoginStatus {
-    readonly ok: boolean;
-    readonly detail: string;
-}
-
-/**
- * Everything a provider's {@link MailProvider.pollOnce} body needs.
- * The orchestration core (`MailDaemon`) builds one of these per
- * active provider and reuses it across polls.
+ * Inputs the orchestration core (`MailDaemon`) hands every active
+ * provider on each `pollOnce` call. Plugin-wide config, a scoped log,
+ * the emit callback. Provider-specific state (token caches, delta
+ * cursors, mailbox→login maps) lives on the provider instance itself
+ * — it's built up during {@link MailProvider.prepare} and reused
+ * across polls.
  */
 export interface MailProviderDeps {
     readonly ctx: HostContext;
-    /** The `mcp.yml` key the provider was matched to. */
-    readonly mcpKey: string;
-    /** Lazy-connect MCP SDK client; first method call opens the connection. */
-    readonly client: McpClient;
     /** Plugin-wide options (interval, backoff). */
     readonly mail: MailConfig;
-    /** This provider's slice of `mail.<providerId>.*`. */
-    readonly provider: ProviderConfig;
-    /** Shared watermark store; persists across daemon restarts. */
-    readonly watermark: WatermarkStore;
     /** Scoped logger — prepends "mail/<providerId>: " in the daemon log. */
     readonly log: (msg: string) => void;
     /** Emit a `NewEvent` through the host's `ctx.events.emit` path. */
@@ -37,10 +21,21 @@ export interface MailProviderDeps {
 }
 
 /**
- * Contract every concrete mail-MCP integration implements. Adding a
- * new provider (Gmail, Proton, IMAP, …) means dropping a new
- * implementation in `src/providers/<id>/` and registering it in
+ * Contract every concrete mail integration implements. Adding a new
+ * provider (Gmail, IMAP, …) means dropping a new implementation in
+ * `src/providers/<id>/` and registering it in
  * `src/providers/Registry.ts` — no edits to the orchestration core.
+ *
+ * Lifecycle ordering:
+ *
+ * 1. `prepare(ctx)` is called once at daemon start. The provider
+ *    validates its credentials (e.g. token caches), probes the
+ *    mailboxes it'll poll, and reports whether anything is actually
+ *    ready to run. Returns `false` to skip — the orchestration core
+ *    logs the reason and moves on to the next provider.
+ * 2. `pollOnce(deps)` is invoked repeatedly by the poll loop. Idempotent
+ *    by bus-level idempotency key.
+ * 3. `buildCommands(ctx)` is consulted once at CLI registration.
  */
 export interface MailProvider {
     /**
@@ -52,22 +47,35 @@ export interface MailProvider {
     /** Human-friendly name surfaced in logs and CLI output. */
     readonly displayName: string;
     /**
-     * The MCP npm/pypi package name (or docker image) the provider
-     * needs. Used by `MailDaemon` to find a matching `mcp.yml` entry
-     * via `ctx.mcp.getList()`; the actual `mcp.yml` key is free to
-     * be anything (e.g. `ms365`, `softeria-graph`, …).
+     * Async setup: validate credentials, probe targets, populate
+     * any provider-local caches. Returns a status object the
+     * orchestration core uses to decide whether to register this
+     * provider with the poll loop. Errors thrown from `prepare` are
+     * not fatal — they are logged and the provider is skipped, per
+     * the memory rule [[feedback_skip_broken_logins_over_exit]].
      */
-    readonly packageName: string;
-    /** Probe login state by calling the provider's auth-check tool. */
-    isLoggedIn(client: McpClient): Promise<LoginStatus>;
+    prepare(ctx: HostContext): Promise<MailProviderPrepareResult>;
     /** Run one poll pass for every configured/discovered mailbox. */
     pollOnce(deps: MailProviderDeps): Promise<void>;
     /**
      * Build the citty subcommand mounted under `./cli.sh mail <id>`.
-     * Accepts a nullable `mcpKey` so the subcommand is always
-     * registered (so `--help` still surfaces it); the command's leaf
-     * `run` prints an actionable error when the MCP is missing.
+     * The CLI lives alongside the poll loop, so `prepare` must have
+     * been called once before any subcommand body that touches
+     * provider state.
      */
     // biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
-    buildCommands(ctx: HostContext, mcpKey: string | null): CommandDef<any>;
+    buildCommands(ctx: HostContext): CommandDef<any>;
+}
+
+/**
+ * Outcome of {@link MailProvider.prepare}: ready-or-not, plus a
+ * human-readable status string for the daemon log. When `ok` is
+ * `false` the provider is dropped from the poll loop for this daemon
+ * run; the user fixes the cause (logging in, fixing config) and
+ * restarts the daemon to retry.
+ */
+export interface MailProviderPrepareResult {
+    readonly ok: boolean;
+    /** One-line summary suitable for the daemon log. */
+    readonly detail: string;
 }

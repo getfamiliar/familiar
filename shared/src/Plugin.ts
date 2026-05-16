@@ -4,7 +4,7 @@ import type { AgentRunRow } from "./AgentRun.js";
 import type { ChatFilter } from "./ChatMessage.js";
 import type { ChatHandler, ChatUnsubscribe } from "./ChatMessageBus.js";
 import type { ConfigService } from "./Config.js";
-import type { EventRow, NewEvent } from "./Event.js";
+import type { EventFile, EventRow, NewEvent } from "./Event.js";
 import type { Logger } from "./logging/Logger.js";
 import type { StepResultRow } from "./StepResult.js";
 
@@ -125,6 +125,34 @@ export interface HostContext {
      */
     readonly chat: {
         subscribe(filter: ChatFilter, handler: ChatHandler): Promise<ChatUnsubscribe>;
+    };
+    /**
+     * Per-event scratch directory operations. Each event the bus
+     * persists has a private scratch dir at `/scratch/<event-id>/`
+     * (bind-mounted into the agent container and every MCP container).
+     * Files staged via `NewEvent.files` land there at emit time; this
+     * surface lets plugin code *add* more files later, while an
+     * agentrun for that event is still running — typically from inside
+     * a {@link PluginTool} that fetches bytes on demand.
+     *
+     * Path resolution is host-side: callers pass the event id, the
+     * host writes under its own `scratchDir`. The directory is
+     * created if it doesn't exist yet (defensive — should always exist
+     * for events that were emitted with `files`).
+     */
+    readonly scratch: {
+        /**
+         * Stage one or more files into `/scratch/<eventId>/`. Same
+         * `EventFile` shape as `NewEvent.files`, same basename
+         * validation, same per-file atomic write. Returns the absolute
+         * agent-visible paths the files were written to (i.e.
+         * `/scratch/<eventId>/<name>`), in input order.
+         *
+         * Throws if a `name` fails validation (path separator, `..`,
+         * empty). Existing files with the same name are overwritten —
+         * caller is responsible for unique names.
+         */
+        addFiles(eventId: string, files: readonly EventFile[]): Promise<readonly string[]>;
     };
     /** Structured-ish log line. Future: scoped by plugin id, severity, etc. */
     readonly log: (message: string) => void;

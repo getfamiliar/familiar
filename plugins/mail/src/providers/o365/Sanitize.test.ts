@@ -71,6 +71,14 @@ describe("sanitizeAddress", () => {
         assert.equal(result.name, "Alice");
     });
 
+    it("lowercases mixed-case safe addresses so rules-file keys are unambiguous", () => {
+        const result = sanitizeAddress({ name: "Alice", address: "Alice.M@Example.COM" });
+        assert.equal(result.address, "alice.m@example.com");
+        assert.equal(result.rawAddress, null);
+        // Display name retains its original casing — only the address is normalized.
+        assert.equal(result.name, "Alice");
+    });
+
     it("replaces unsafe addresses with the sentinel and preserves raw", () => {
         const result = sanitizeAddress({
             name: "Evil",

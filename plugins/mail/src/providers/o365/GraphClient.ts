@@ -1,0 +1,368 @@
+/**
+ * Minimal Microsoft Graph REST client — just the surface the plugin
+ * needs (inbox delta, get message body, get attachments, draft, send,
+ * move). Built directly on `fetch` so there's nothing between us and
+ * the wire protocol: no SDK schema drift, no model mismatches against
+ * Featherless, no overhead from the official `@microsoft/microsoft-graph-
+ * client` package (which bundles its own auth flow we don't need).
+ *
+ * The client is stateless; the access token comes from a callback so
+ * one client instance can serve multiple `GraphAuth` accounts if
+ * needed — though in practice each `(login, mailbox)` poll path owns
+ * its own client + auth pair.
+ */
+const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
+
+/**
+ * Microsoft Graph's default message id format is **not stable across
+ * folder moves** — moving a mail from Inbox to Archive mints a new id
+ * for that message and the old one returns 404. The plugin caches
+ * message ids on event emit (delta poll) and reuses them later from
+ * agent tool calls, often after the triage handler has archived the
+ * mail; without immutable ids those tool calls fail with
+ * `ErrorItemNotFound`.
+ *
+ * Opting in via `Prefer: IdType="ImmutableId"` makes Graph return ids
+ * that survive moves. The header has to be sent on every request that
+ * either returns or consumes a message id — including the delta walk
+ * — so the client always sets it. Delta cursors created before this
+ * fix are invalid (Graph rejects mixed id types in delta); see
+ * `DeltaCursorStore` for the schema-version guard that drops them on
+ * load.
+ */
+const IMMUTABLE_ID_PREFER = 'IdType="ImmutableId"';
+
+/** Token provider — async because msal-node's `acquireTokenSilent` is async. */
+export type TokenProvider = () => Promise<string>;
+
+/**
+ * One inbox `delta` response from Graph. The shape mirrors the
+ * `value`/`@odata.nextLink`/`@odata.deltaLink` envelope Graph returns
+ * for `/users/{id}/mailFolders/inbox/messages/delta`. Either
+ * `nextLink` (more pages remaining) or `deltaLink` (page chain done,
+ * use this URL on the next poll) is set — never both.
+ */
+export interface DeltaPage {
+    readonly value: readonly GraphMailMessage[];
+    readonly nextLink: string | null;
+    readonly deltaLink: string | null;
+}
+
+/**
+ * Narrow projection of a Graph mail message. Only the fields the
+ * poll loop emits land here; anything else is dropped server-side via
+ * `$select`. Pulled here (rather than left in `O365Tools`) to keep the
+ * MCP-shaped legacy types separate from the new direct-Graph ones.
+ */
+export interface GraphMailMessage {
+    readonly id: string;
+    readonly internetMessageId: string;
+    readonly subject: string | null;
+    readonly receivedDateTime: string;
+    readonly bodyPreview: string;
+    readonly hasAttachments: boolean;
+    readonly from: { readonly emailAddress: { name?: string; address: string } } | null;
+    readonly toRecipients: ReadonlyArray<{ emailAddress: { name?: string; address: string } }>;
+    readonly ccRecipients: ReadonlyArray<{ emailAddress: { name?: string; address: string } }>;
+}
+
+/**
+ * Raw Graph attachment as returned by `?$expand=attachments(...)`.
+ * `contentBytes` is base64 when Graph inlines the bytes — only present
+ * for non-inline attachments under Graph's inline-bytes ceiling (~3 MB).
+ */
+export interface GraphAttachment {
+    readonly id: string;
+    readonly name: string;
+    readonly contentType: string;
+    readonly size: number;
+    readonly isInline: boolean;
+    readonly contentBytes?: string;
+}
+
+/** Recipient on a draft/send. `name` is optional. */
+export interface GraphRecipient {
+    readonly address: string;
+    readonly name?: string;
+}
+
+/** Either an HTML-bodied draft or a send payload. */
+export interface GraphOutgoing {
+    readonly subject: string;
+    /** HTML body — render markdown upstream via `renderMailHtml`. */
+    readonly bodyHtml: string;
+    readonly to: readonly GraphRecipient[];
+    readonly cc?: readonly GraphRecipient[];
+}
+
+/**
+ * Thrown when Graph returns a non-2xx response. The host-side log
+ * still carries the full URL + raw body for diagnosis; the
+ * agent-facing tool layer catches this and converts it into a
+ * structured `{ok:false, error:{...}}` payload before returning to
+ * the model (see `MailTools.ts`).
+ *
+ * 410 Gone on a delta URL is the documented "delta link expired,
+ * start over" signal — the poll loop catches it and drops the cursor.
+ */
+export class GraphError extends Error {
+    readonly status: number;
+    readonly url: string;
+    readonly body: string;
+    /** Graph's `error.code` if the body decoded as JSON; `null` otherwise. */
+    readonly code: string | null;
+    /** Graph's `error.message` if the body decoded as JSON; the raw text otherwise. */
+    readonly graphMessage: string;
+
+    constructor(status: number, url: string, body: string) {
+        const decoded = decodeGraphErrorBody(body);
+        super(
+            `Graph ${status} ${decoded.code ?? "error"}: ${decoded.message.slice(0, 500)} ` +
+                `(${url})`,
+        );
+        this.status = status;
+        this.url = url;
+        this.body = body;
+        this.code = decoded.code;
+        this.graphMessage = decoded.message;
+    }
+}
+
+/**
+ * Pull `{code, message}` out of a Graph error body if possible. Falls
+ * back to the raw body string when the response isn't JSON-shaped —
+ * Graph occasionally returns HTML on gateway errors.
+ */
+function decodeGraphErrorBody(body: string): { code: string | null; message: string } {
+    try {
+        const parsed = JSON.parse(body) as {
+            error?: { code?: unknown; message?: unknown };
+        };
+        const code = typeof parsed.error?.code === "string" ? parsed.error.code : null;
+        const message = typeof parsed.error?.message === "string" ? parsed.error.message : body;
+        return { code, message };
+    } catch {
+        return { code: null, message: body };
+    }
+}
+
+/**
+ * Direct Graph REST client. All Graph calls in the plugin go through
+ * here so there's exactly one place that knows the URL prefix, the
+ * auth header shape, and the error decoding rules.
+ */
+export class GraphClient {
+    private readonly tokenProvider: TokenProvider;
+
+    constructor(tokenProvider: TokenProvider) {
+        this.tokenProvider = tokenProvider;
+    }
+
+    /**
+     * Fetch one page of the inbox delta stream. Pass `deltaOrNextLink`
+     * to follow an existing cursor (next page or next poll cycle), or
+     * `null` for the first-ever poll of a mailbox — Graph then starts
+     * fresh from "now" with a fresh delta link in the final page.
+     *
+     * Fields are pinned via `$select` to keep payloads small. The
+     * `Prefer: outlook.body-content-type="text"` header makes Graph
+     * return plain-text body previews instead of HTML — we don't use
+     * the previews to render mail, only to feed the triage prompt.
+     */
+    async listInboxDelta(userId: string, deltaOrNextLink: string | null): Promise<DeltaPage> {
+        const url = deltaOrNextLink ?? this.buildInitialDeltaUrl(userId);
+        const response = await this.request("GET", url, {
+            preferTokens: ['outlook.body-content-type="text"'],
+        });
+        const json = (await response.json()) as {
+            value?: readonly GraphMailMessage[];
+            "@odata.nextLink"?: string;
+            "@odata.deltaLink"?: string;
+        };
+        return {
+            value: json.value ?? [],
+            nextLink: typeof json["@odata.nextLink"] === "string" ? json["@odata.nextLink"] : null,
+            deltaLink:
+                typeof json["@odata.deltaLink"] === "string" ? json["@odata.deltaLink"] : null,
+        };
+    }
+
+    /**
+     * Probe a mailbox by asking for its inbox folder id. Used at boot
+     * to map whitelisted mailbox addresses to the login that can
+     * actually read them. Returns the folder id on success; throws on
+     * 4xx (caller treats that as "this login can't reach this
+     * mailbox", not a fatal error).
+     */
+    async probeInbox(userId: string): Promise<string> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/mailFolders/inbox?$select=id`;
+        const response = await this.request("GET", url);
+        const json = (await response.json()) as { id?: string };
+        if (typeof json.id !== "string" || json.id.length === 0) {
+            throw new GraphError(200, url, "probeInbox: response missing `id`");
+        }
+        return json.id;
+    }
+
+    /** Fetch one message's body as plain text. */
+    async getMessageBodyText(userId: string, messageId: string): Promise<string> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}?$select=body`;
+        const response = await this.request("GET", url, {
+            preferTokens: ['outlook.body-content-type="text"'],
+        });
+        const json = (await response.json()) as {
+            body?: { content?: string; contentType?: string };
+        };
+        return json.body?.content ?? "";
+    }
+
+    /**
+     * Fetch every non-inline attachment for a message. Inline images
+     * are excluded because they live in the body's HTML and aren't
+     * user-facing files. The bytes come back base64; caller decodes
+     * and stages via `ctx.scratch.addFiles`.
+     */
+    async getAttachments(userId: string, messageId: string): Promise<readonly GraphAttachment[]> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/attachments?$filter=isInline eq false`;
+        const response = await this.request("GET", url);
+        const json = (await response.json()) as { value?: readonly GraphAttachment[] };
+        return json.value ?? [];
+    }
+
+    /**
+     * Create a draft reply / reply-all for an existing message. Graph
+     * mints the draft seeded with the right recipients and the quoted
+     * original; we PATCH the body after so the user-visible reply
+     * lands above the quote.
+     */
+    async createReplyDraft(
+        userId: string,
+        messageId: string,
+        replyAll: boolean,
+        bodyHtml: string,
+    ): Promise<{ id: string }> {
+        const op = replyAll ? "createReplyAll" : "createReply";
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/${op}`;
+        const created = (await this.request("POST", url).then((r) => r.json())) as { id?: string };
+        if (typeof created.id !== "string" || created.id.length === 0) {
+            throw new GraphError(200, url, `${op}: response missing draft id`);
+        }
+        await this.patchDraftBody(userId, created.id, bodyHtml);
+        return { id: created.id };
+    }
+
+    /**
+     * Create a brand-new draft message. Recipients, subject, and body
+     * are set in one POST — no follow-up PATCH needed because Graph's
+     * `POST /messages` accepts the full draft body inline.
+     */
+    async createDraft(userId: string, outgoing: GraphOutgoing): Promise<{ id: string }> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages`;
+        const created = (await this.request("POST", url, {
+            jsonBody: this.buildMessageBody(outgoing),
+        }).then((r) => r.json())) as { id?: string };
+        if (typeof created.id !== "string" || created.id.length === 0) {
+            throw new GraphError(200, url, "createDraft: response missing draft id");
+        }
+        return { id: created.id };
+    }
+
+    /**
+     * Send a reply / reply-all immediately. Mirrors `createReplyDraft`
+     * but uses the `reply`/`replyAll` action that posts the message
+     * without leaving a draft behind. The body must be the rendered
+     * HTML — markdown rendering happens upstream.
+     */
+    async sendReply(
+        userId: string,
+        messageId: string,
+        replyAll: boolean,
+        bodyHtml: string,
+    ): Promise<void> {
+        const op = replyAll ? "replyAll" : "reply";
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/${op}`;
+        await this.request("POST", url, {
+            jsonBody: {
+                comment: undefined,
+                message: { body: { contentType: "HTML", content: bodyHtml } },
+            },
+        });
+    }
+
+    /**
+     * Send a brand-new mail. Same shape as `createDraft` but uses
+     * Graph's `sendMail` action which composes and dispatches in one
+     * request.
+     */
+    async sendMail(userId: string, outgoing: GraphOutgoing): Promise<void> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/sendMail`;
+        await this.request("POST", url, {
+            jsonBody: { message: this.buildMessageBody(outgoing), saveToSentItems: true },
+        });
+    }
+
+    /**
+     * Move a message to one of the well-known folders Graph exposes.
+     * The folder ids come from {@link import("./Folders.js").FOLDER_IDS}.
+     */
+    async moveMessage(userId: string, messageId: string, folderId: string): Promise<void> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/move`;
+        await this.request("POST", url, { jsonBody: { destinationId: folderId } });
+    }
+
+    private buildInitialDeltaUrl(userId: string): string {
+        const select =
+            "id,internetMessageId,from,toRecipients,ccRecipients,subject,receivedDateTime,bodyPreview,hasAttachments";
+        return `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/mailFolders/inbox/messages/delta?$select=${encodeURIComponent(select)}`;
+    }
+
+    private async patchDraftBody(userId: string, draftId: string, bodyHtml: string): Promise<void> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(draftId)}`;
+        await this.request("PATCH", url, {
+            jsonBody: { body: { contentType: "HTML", content: bodyHtml } },
+        });
+    }
+
+    private buildMessageBody(outgoing: GraphOutgoing): Record<string, unknown> {
+        return {
+            subject: outgoing.subject,
+            body: { contentType: "HTML", content: outgoing.bodyHtml },
+            toRecipients: outgoing.to.map((r) => ({
+                emailAddress: r.name
+                    ? { address: r.address, name: r.name }
+                    : { address: r.address },
+            })),
+            ccRecipients: (outgoing.cc ?? []).map((r) => ({
+                emailAddress: r.name
+                    ? { address: r.address, name: r.name }
+                    : { address: r.address },
+            })),
+            isDraft: true,
+        };
+    }
+
+    private async request(
+        method: string,
+        url: string,
+        options?: { jsonBody?: unknown; preferTokens?: readonly string[] },
+    ): Promise<Response> {
+        const token = await this.tokenProvider();
+        const preferTokens = [IMMUTABLE_ID_PREFER, ...(options?.preferTokens ?? [])];
+        const headers: Record<string, string> = {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+            Prefer: preferTokens.join(", "),
+        };
+        let body: string | undefined;
+        if (options?.jsonBody !== undefined) {
+            headers["Content-Type"] = "application/json";
+            body = JSON.stringify(options.jsonBody);
+        }
+        const response = await fetch(url, { method, headers, body });
+        if (!response.ok) {
+            const text = await response.text().catch(() => "");
+            throw new GraphError(response.status, url, text);
+        }
+        return response;
+    }
+}

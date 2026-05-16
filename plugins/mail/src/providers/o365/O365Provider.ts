@@ -1,284 +1,307 @@
+import path from "node:path";
 import type { CommandDef } from "citty";
-import type { EventFile, HostContext, McpClient, NewEvent } from "effective-assistant-shared";
-import type { LoginStatus, MailProvider, MailProviderDeps } from "../MailProvider.js";
-import { buildO365Commands } from "./O365Commands.js";
+import type { EventFile, HostContext, NewEvent } from "effective-assistant-shared";
+import { readO365Config } from "../../Config.js";
+import type { MailProvider, MailProviderDeps, MailProviderPrepareResult } from "../MailProvider.js";
+import { flatAddress, formatAddress, isSafeEmailAddress } from "./AddressFormat.js";
+import { type AppRegistration, DEFAULT_APP } from "./AppRegistration.js";
+import { DeltaCursorStore } from "./DeltaCursorStore.js";
+import type { GraphAuth } from "./GraphAuth.js";
 import {
-    callJsonTool,
-    flatAddress,
-    formatAddress,
-    type GraphAccount,
-    type GraphAttachment,
+    type DeltaPage,
+    GraphClient,
+    GraphError,
     type GraphMailMessage,
-    isSafeEmailAddress,
-    type VerifyLoginResponse,
-} from "./O365Tools.js";
+    type GraphAttachment as GraphRawAttachment,
+} from "./GraphClient.js";
+import { LoginStore, loginDirectory } from "./LoginStore.js";
+import { buildO365Commands } from "./O365Commands.js";
 
-/** Max page size for `list-mail-messages` per poll iteration. */
-const PAGE_SIZE = 50;
-/** Hard ceiling on pages per (mailbox, poll) so a runaway backlog can't park the loop. */
-const MAX_PAGES_PER_POLL = 20;
-/** Fields requested via Graph `$select`. Keep narrow to keep MCP responses small. */
-const SELECT_FIELDS =
-    "id,internetMessageId,from,toRecipients,ccRecipients,subject,receivedDateTime,bodyPreview,hasAttachments";
-/**
- * `$expand=attachments(...)` value used by {@link fetchAttachments}.
- * Includes `contentBytes` so non-inline file attachments under Graph's
- * inline-bytes ceiling (~3 MB) come back base64-encoded in the same
- * call. The bytes never enter the event payload — they're decoded and
- * routed to the event's `/scratch/<event-id>/` dir via `NewEvent.files`,
- * which the host stages atomically with the INSERT. Metadata-only
- * fields (id, name, contentType, size, isInline) still feed the payload.
- */
-const ATTACHMENT_EXPAND = "attachments($select=id,name,contentType,size,isInline,contentBytes)";
-/** Graph caps bodyPreview at 255 chars; equals signal we hit the cap and the body has more. */
+/** Graph caps bodyPreview at 255 chars; equals → cap hit, more body upstream. */
 const BODY_PREVIEW_TRUNCATION_LENGTH = 255;
+/** Hard ceiling on delta pages per (mailbox, poll) so a runaway backlog can't park the loop. */
+const MAX_PAGES_PER_POLL = 50;
 
 /**
- * Microsoft 365 / Outlook mail provider, backed by Softeria's
- * `@softeria/ms-365-mcp-server`. Calls Graph through the MCP tools
- * (`verify-login`, `list-accounts`, `list-mail-messages`,
- * `list-shared-mailbox-messages`). One-direction: read inbox, emit
- * events. Sending / mark-read live in handler tools, not here.
+ * Microsoft 365 / Outlook mail provider. Owns its own auth (msal-node
+ * device-code cache files under `data/mail/o365/`), its own Graph
+ * client, and its own per-mailbox delta cursor store. No MCP in the
+ * picture: every Graph call goes direct from this host-side plugin.
+ *
+ * The login → mailboxes map is computed once in {@link prepare} and
+ * reused for every poll cycle; the user runs the daemon again to
+ * pick up a new login or a changed whitelist.
  */
 export class O365Provider implements MailProvider {
     readonly id = "o365";
     readonly displayName = "Microsoft 365";
-    readonly packageName = "@softeria/ms-365-mcp-server";
 
-    async isLoggedIn(client: McpClient): Promise<LoginStatus> {
-        try {
-            const result = await callJsonTool<VerifyLoginResponse>(client, "verify-login");
-            if (result.success === true) {
-                return {
-                    ok: true,
-                    detail: result.userData?.userPrincipalName ?? result.message,
-                };
+    private loginStore: LoginStore | null = null;
+    private cursorStore: DeltaCursorStore | null = null;
+    private mailboxMap: ReadonlyArray<PollTarget> = [];
+    private appRegistration: AppRegistration = DEFAULT_APP;
+
+    async prepare(ctx: HostContext): Promise<MailProviderPrepareResult> {
+        const config = readO365Config(ctx);
+        this.appRegistration = resolveAppRegistration(config);
+        this.loginStore = new LoginStore(loginDirectory(ctx.dataDir), this.appRegistration);
+        this.cursorStore = new DeltaCursorStore(
+            path.join(ctx.dataDir, "mail", "o365", "delta.json"),
+        );
+        await this.loginStore.refresh();
+        await this.cursorStore.load();
+
+        const tag = `mail/${this.id}`;
+        const log = (msg: string) => ctx.log(`${tag}: ${msg}`);
+
+        const validations = await this.loginStore.validateAll();
+        const valid: { upn: string; auth: GraphAuth }[] = [];
+        for (const v of validations) {
+            if (v.ok) {
+                log(`login ok: ${v.upn}`);
+                valid.push({ upn: v.upn, auth: v.auth });
+            } else {
+                log(`login failed for ${v.upn}: ${v.reason ?? "(no reason)"}; skipping`);
             }
-            return { ok: false, detail: result.message ?? "not logged in" };
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            return { ok: false, detail: message };
         }
+        if (valid.length === 0) {
+            return {
+                ok: false,
+                detail:
+                    "no usable o365 logins; run `./cli.sh mail o365 login` to add one " +
+                    "(or fix the failing logins above)",
+            };
+        }
+        this.mailboxMap = await buildMailboxMap(valid, config.mailboxes, log);
+        if (this.mailboxMap.length === 0) {
+            return {
+                ok: false,
+                detail: "no reachable mailboxes for any active login; nothing to poll",
+            };
+        }
+        const summary = this.mailboxMap
+            .map((t) => `${t.mailbox} via ${t.upn}${t.isShared ? " (shared)" : ""}`)
+            .join(", ");
+        return { ok: true, detail: `polling ${summary}` };
     }
 
     async pollOnce(deps: MailProviderDeps): Promise<void> {
-        const accounts = await listAccounts(deps.client);
-        if (accounts.length === 0) {
-            deps.log("no accounts returned by list-accounts; skipping poll");
+        if (!this.cursorStore || this.mailboxMap.length === 0) {
             return;
         }
-        const targets = await resolveMailboxes(deps, accounts);
-        for (const target of targets) {
+        for (const target of this.mailboxMap) {
             try {
-                await pollMailbox(deps, target);
+                await pollMailbox(deps, target, this.cursorStore);
             } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
-                deps.log(`mailbox ${target.mailbox} via ${target.account}: poll error: ${message}`);
+                deps.log(`mailbox ${target.mailbox} via ${target.upn}: poll error: ${message}`);
             }
         }
     }
 
     // biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
-    buildCommands(ctx: HostContext, mcpKey: string | null): CommandDef<any> {
-        return buildO365Commands(ctx, mcpKey, this);
+    buildCommands(ctx: HostContext): CommandDef<any> {
+        return buildO365Commands(ctx, this);
+    }
+
+    /**
+     * Expose the live login store so the CLI commands can list /
+     * validate / add-to-it without re-deriving the directory path.
+     * Returns a stub-instance store on first call before
+     * {@link prepare} ran (e.g. the `login` CLI command, which runs
+     * before any plugin lifecycle).
+     */
+    getLoginStore(ctx: HostContext): LoginStore {
+        if (this.loginStore) {
+            return this.loginStore;
+        }
+        const config = readO365Config(ctx);
+        this.appRegistration = resolveAppRegistration(config);
+        this.loginStore = new LoginStore(loginDirectory(ctx.dataDir), this.appRegistration);
+        return this.loginStore;
+    }
+
+    /** Snapshot of the active mailbox map, for CLI / debug output. */
+    get mailboxes(): ReadonlyArray<PollTarget> {
+        return this.mailboxMap;
+    }
+
+    /** The app registration currently in use (default or overridden). */
+    get registration(): AppRegistration {
+        return this.appRegistration;
     }
 }
 
-/** One concrete (account, mailbox) pair the poll loop walks. */
-interface PollTarget {
-    readonly account: string;
+/**
+ * One concrete (login, mailbox) tuple. The `auth` reference is the
+ * live `GraphAuth` token provider used by the poll loop.
+ */
+export interface PollTarget {
+    readonly upn: string;
+    readonly auth: GraphAuth;
     readonly mailbox: string;
     readonly isShared: boolean;
 }
 
 /**
- * Pull the list of currently authenticated accounts via the MCP
- * tool. ms365-mcp-server returns `{ accounts: [{ email, name,
- * isDefault }], count, tip }` (see github.com/softeria/ms-365-mcp-
- * server/blob/main/src/auth-tools.ts). We parse defensively and
- * drop any entry missing a safe-shaped `email`.
+ * Merge the optional config overrides into the default app registration.
+ * An empty `clientId` from config means "keep default" — the field is
+ * present in the example file but blank by default, so we don't want
+ * a placeholder string to nuke the working hardcoded app id.
  */
-async function listAccounts(client: McpClient): Promise<readonly GraphAccount[]> {
-    const result = await callJsonTool<{
-        accounts?: ReadonlyArray<{ email?: unknown; name?: unknown; isDefault?: unknown }>;
-    }>(client, "list-accounts");
-    const raw = result.accounts ?? [];
-    const out: GraphAccount[] = [];
-    for (const item of raw) {
-        const email = item?.email;
-        if (typeof email !== "string" || email.length === 0) {
+function resolveAppRegistration(config: ReturnType<typeof readO365Config>): AppRegistration {
+    return {
+        clientId: config.clientId.length > 0 ? config.clientId : DEFAULT_APP.clientId,
+        tenantId: config.tenantId.length > 0 ? config.tenantId : DEFAULT_APP.tenantId,
+    };
+}
+
+/**
+ * Decide which (login, mailbox) tuples to poll. Empty whitelist →
+ * every login's primary mailbox. Non-empty whitelist → only listed
+ * mailboxes; each listed address is probed against every valid login
+ * (`GET /users/{addr}/mailFolders/inbox?$select=id`), and the first
+ * login that can read it owns the mailbox.
+ *
+ * Every UPN and mailbox here is **lowercased** before it lands on a
+ * {@link PollTarget}: logins come from {@link GraphAuth} (already
+ * folded in `toSummary`), config-supplied mailboxes are folded
+ * explicitly. Downstream consumers (event payload, rules-file
+ * lookups, login-store keys) get the same form regardless of how the
+ * upstream system cased the bytes.
+ */
+async function buildMailboxMap(
+    logins: ReadonlyArray<{ upn: string; auth: GraphAuth }>,
+    whitelist: readonly string[],
+    log: (msg: string) => void,
+): Promise<readonly PollTarget[]> {
+    const safeLogins = logins
+        .filter((entry) => {
+            if (isSafeEmailAddress(entry.upn)) {
+                return true;
+            }
+            log(`login upn "${entry.upn}" rejected by address validator; skipping`);
+            return false;
+        })
+        .map((entry) => ({ upn: entry.upn.toLowerCase(), auth: entry.auth }));
+    if (safeLogins.length === 0) {
+        return [];
+    }
+
+    if (whitelist.length === 0) {
+        return safeLogins.map((entry) => ({
+            upn: entry.upn,
+            auth: entry.auth,
+            mailbox: entry.upn,
+            isShared: false,
+        }));
+    }
+
+    const out: PollTarget[] = [];
+    for (const requested of whitelist) {
+        if (!isSafeEmailAddress(requested)) {
+            log(`mailbox "${requested}" in config rejected by address validator; skipping`);
             continue;
         }
-        const name = typeof item.name === "string" && item.name.length > 0 ? item.name : null;
-        const isDefault = item.isDefault === true;
-        out.push({ email, name, isDefault });
+        const lower = requested.toLowerCase();
+        const ownerLogin = safeLogins.find((l) => l.upn === lower);
+        if (ownerLogin) {
+            out.push({
+                upn: ownerLogin.upn,
+                auth: ownerLogin.auth,
+                mailbox: ownerLogin.upn,
+                isShared: false,
+            });
+            continue;
+        }
+        const sharedOwner = await findReaderForShared(safeLogins, lower);
+        if (sharedOwner) {
+            out.push({
+                upn: sharedOwner.upn,
+                auth: sharedOwner.auth,
+                mailbox: lower,
+                isShared: true,
+            });
+        } else {
+            log(
+                `mailbox ${requested}: no active login can read it; ` +
+                    `skipping (check delegation in Outlook admin)`,
+            );
+        }
     }
     return out;
 }
 
-/**
- * Decide which (account, mailbox, isShared) tuples to poll this
- * cycle. Empty whitelist → every account's primary mailbox. Non-
- * empty whitelist → only listed mailboxes; if a listed address
- * matches an account, it's that account's primary, otherwise we
- * find the first account that can read it as a shared mailbox.
- *
- * Mailboxes that can't be reached are skipped with a log line; the
- * next poll retries from scratch in case access was granted late.
- */
-async function resolveMailboxes(
-    deps: MailProviderDeps,
-    accounts: readonly GraphAccount[],
-): Promise<readonly PollTarget[]> {
-    // Both `account` and `mailbox` may be embedded as filename
-    // components by a handler (e.g. `workspace/people/<addr>.md`),
-    // so reject anything that doesn't pass the strict address shape.
-    // Accounts come from the MCP (trusted source) but we still
-    // validate defensively; mailboxes come from user config and may
-    // not be well-formed.
-    const safeAccounts = accounts.filter((a) => {
-        if (isSafeEmailAddress(a.email)) {
-            return true;
-        }
-        deps.log(`account "${a.email}" rejected by address validator; skipping`);
-        return false;
-    });
-    const whitelist = deps.provider.mailboxes;
-    if (whitelist.length === 0) {
-        return safeAccounts.map((a) => ({
-            account: a.email,
-            mailbox: a.email,
-            isShared: false,
-        }));
-    }
-    const targets: PollTarget[] = [];
-    const accountSet = new Set(safeAccounts.map((a) => a.email.toLowerCase()));
-    for (const requested of whitelist) {
-        if (!isSafeEmailAddress(requested)) {
-            deps.log(`mailbox "${requested}" in config rejected by address validator; skipping`);
-            continue;
-        }
-        const lower = requested.toLowerCase();
-        if (accountSet.has(lower)) {
-            const account = safeAccounts.find((a) => a.email.toLowerCase() === lower);
-            if (account) {
-                targets.push({
-                    account: account.email,
-                    mailbox: account.email,
-                    isShared: false,
-                });
-            }
-            continue;
-        }
-        const owner = await findSharedMailboxOwner(deps.client, safeAccounts, requested);
-        if (owner) {
-            targets.push({ account: owner, mailbox: requested, isShared: true });
-        } else {
-            deps.log(
-                `mailbox ${requested}: no logged-in account can read it; skipping (run './cli.sh mail o365 list-mailboxes' to diagnose)`,
-            );
-        }
-    }
-    return targets;
-}
-
-/**
- * Find an account that can read a shared mailbox by probing each
- * with a 1-item `list-shared-mailbox-folder-messages` call. The
- * first account that doesn't error wins. Returns `null` when no
- * account can read it.
- */
-async function findSharedMailboxOwner(
-    client: McpClient,
-    accounts: readonly GraphAccount[],
+async function findReaderForShared(
+    logins: ReadonlyArray<{ upn: string; auth: GraphAuth }>,
     mailbox: string,
-): Promise<string | null> {
-    for (const account of accounts) {
+): Promise<{ upn: string; auth: GraphAuth } | null> {
+    for (const login of logins) {
+        const client = new GraphClient(() => login.auth.getAccessTokenSilent());
         try {
-            await callJsonTool<unknown>(client, "list-shared-mailbox-folder-messages", {
-                userId: mailbox,
-                mailFolderId: "inbox",
-                top: 1,
-                select: "id",
-            });
-            return account.email;
-        } catch {
-            // Try next account.
+            await client.probeInbox(mailbox);
+            return login;
+        } catch (err) {
+            if (err instanceof GraphError && err.status < 500) {
+            }
         }
     }
     return null;
 }
 
 /**
- * Walk one mailbox forward from its current watermark, emit one
- * event per message, and persist the new watermark when done. On
- * first run for a fresh mailbox honours the provider's `onlyNew`:
- * `true` → stamp watermark = now, exit; `false` → walk the whole
- * inbox.
+ * Walk one mailbox forward from its current delta cursor, emit one
+ * event per message, and persist the new delta link. On a 410 Gone
+ * the cursor is dropped and the next poll starts fresh from "now" —
+ * the bus-level idempotency-key dedup keeps re-walks safe.
  */
-async function pollMailbox(deps: MailProviderDeps, target: PollTarget): Promise<void> {
-    const watermark = deps.watermark.get("o365", target.account, target.mailbox);
-    if (watermark === null && deps.provider.onlyNew) {
-        const now = new Date().toISOString();
-        await deps.watermark.set("o365", target.account, target.mailbox, now);
-        deps.log(
-            `mailbox ${target.mailbox} via ${target.account}: onlyNew=true; watermark set to ${now}, no historical mail`,
-        );
-        return;
-    }
-
-    let nextFilter: string | null = watermark ? `receivedDateTime gt ${watermark}` : null;
+async function pollMailbox(
+    deps: MailProviderDeps,
+    target: PollTarget,
+    cursorStore: DeltaCursorStore,
+): Promise<void> {
+    const client = new GraphClient(() => target.auth.getAccessTokenSilent());
+    let cursor: string | null = cursorStore.get(target.upn, target.mailbox);
     let pages = 0;
-    let highestSeen: string | null = watermark;
+    let nextDeltaLink: string | null = null;
 
     while (pages < MAX_PAGES_PER_POLL) {
         pages += 1;
-        // Scope to the inbox explicitly. The non-folder list tools
-        // (`list-mail-messages`, `list-shared-mailbox-messages`) span
-        // every folder including Sent, Archive, and ancient sub-folders
-        // from years ago — which surfaces a flood of old mail on first
-        // poll. Graph supports well-known folder names; `"inbox"` is
-        // the canonical id for the user's primary inbox.
-        const args: Record<string, unknown> = {
-            mailFolderId: "inbox",
-            top: PAGE_SIZE,
-            orderby: "receivedDateTime asc",
-            select: SELECT_FIELDS,
-        };
-        if (nextFilter !== null) {
-            args.filter = nextFilter;
-        }
-        if (target.isShared) {
-            args.userId = target.mailbox;
-        }
-        const toolName = target.isShared
-            ? "list-shared-mailbox-folder-messages"
-            : "list-mail-folder-messages";
-        const response = await callJsonTool<{
-            value?: readonly GraphMailMessage[];
-            "@odata.nextLink"?: string;
-        }>(deps.client, toolName, args);
-        const messages = response.value ?? [];
-        if (messages.length === 0) {
-            break;
-        }
-        for (const message of messages) {
-            await emitMailEvent(deps, target, message);
-            if (highestSeen === null || message.receivedDateTime > highestSeen) {
-                highestSeen = message.receivedDateTime;
+        let page: DeltaPage;
+        try {
+            page = await client.listInboxDelta(target.mailbox, cursor);
+        } catch (err) {
+            if (err instanceof GraphError && err.status === 410) {
+                deps.log(
+                    `mailbox ${target.mailbox} via ${target.upn}: delta cursor expired (410); ` +
+                        `resetting and re-walking from now`,
+                );
+                await cursorStore.drop(target.upn, target.mailbox);
+                cursor = null;
+                continue;
             }
+            throw err;
         }
-        // Advance the filter for the next page using the latest
-        // receivedDateTime we just saw; this works even if the MCP
-        // doesn't expose nextLink continuation.
-        if (messages.length < PAGE_SIZE) {
+
+        for (const message of page.value) {
+            await emitMailEvent(deps, target, client, message);
+        }
+
+        if (page.deltaLink !== null) {
+            nextDeltaLink = page.deltaLink;
             break;
         }
-        nextFilter = `receivedDateTime gt ${highestSeen}`;
+        if (page.nextLink === null) {
+            // No more pages in this poll cycle and no fresh delta link —
+            // shouldn't happen for a healthy delta walk, but guard so we
+            // don't loop forever.
+            break;
+        }
+        cursor = page.nextLink;
     }
 
-    if (highestSeen !== null && highestSeen !== watermark) {
-        await deps.watermark.set("o365", target.account, target.mailbox, highestSeen);
+    if (nextDeltaLink !== null) {
+        await cursorStore.set(target.upn, target.mailbox, nextDeltaLink);
     }
 }
 
@@ -286,12 +309,9 @@ async function pollMailbox(deps: MailProviderDeps, target: PollTarget): Promise<
 async function emitMailEvent(
     deps: MailProviderDeps,
     target: PollTarget,
+    client: GraphClient,
     message: GraphMailMessage,
 ): Promise<void> {
-    // Every address that ends up in the payload goes through
-    // `flatAddress` → `sanitizeAddress`. The result has an `address`
-    // field that is ALWAYS safe to interpolate into a filesystem
-    // path (e.g. `workspace/people/<address>.md`) — see Sanitize.ts.
     const from = message.from
         ? flatAddress(message.from)
         : { name: null, address: "", rawAddress: null };
@@ -302,11 +322,9 @@ async function emitMailEvent(
     const prompt =
         `A new e-mail was received from ${fromDisplay} with subject "${subject}", see payload for metadata. ` +
         `The body starts with: ${preview}` +
-        (truncated
-            ? " Body is truncated. If needed get full body with get-mail-message tool."
-            : "");
+        (truncated ? " Body is truncated. Use the mail_fetch_body tool to get the full body." : "");
 
-    const fetched = await fetchAttachments(deps, target, message);
+    const fetched = await fetchAttachmentsForEvent(deps, target, client, message);
 
     const event: NewEvent = {
         topic: "mail:o365",
@@ -314,7 +332,7 @@ async function emitMailEvent(
         idempotencyKey: `mail:o365:${message.internetMessageId}`,
         payload: {
             provider: "o365",
-            account: target.account,
+            upn: target.upn,
             mailbox: target.mailbox,
             isShared: target.isShared,
             from,
@@ -325,141 +343,88 @@ async function emitMailEvent(
             messageId: message.id,
             internetMessageId: message.internetMessageId,
             hasAttachments: message.hasAttachments,
-            attachments: fetched === null ? null : fetched.metadata,
+            attachments: fetched?.metadata ?? null,
         },
         files: fetched?.files,
     };
     await deps.emit(event);
 }
 
-/**
- * Result of a successful attachment fetch: metadata to embed in the
- * event payload, plus decoded files to stage under
- * `/scratch/<event-id>/` via `NewEvent.files`. Files are only present
- * for non-inline attachments small enough that Graph inlined their
- * `contentBytes`; larger ones still appear in `metadata`, but the
- * handler will need to download them via the MCP if it wants the bytes.
- */
 interface FetchedAttachments {
-    readonly metadata: readonly GraphAttachment[];
+    readonly metadata: ReadonlyArray<{
+        id: string;
+        name: string;
+        contentType: string;
+        size: number;
+        isInline: boolean;
+    }>;
     readonly files: readonly EventFile[];
 }
 
-/**
- * Return the message's attachment metadata, and decoded bytes for any
- * file attachment small enough that Graph inlined `contentBytes`.
- * Three return shapes mirror the `hasAttachments`/`attachments` matrix
- * documented in the plugin README:
- *
- * - `{ metadata: [], files: [] }` — `message.hasAttachments === false`;
- *   no call made.
- * - `{ metadata: […], files: […] }` — fetch succeeded.
- * - `null` — fetch failed (throttling, transient Graph error). The
- *            handler can retry via the same MCP tool itself.
- *
- * The call goes through `get-shared-mailbox-message` for both own
- * and shared mailboxes — `userId` accepts the caller's own UPN, so
- * one path covers everything.
- */
-async function fetchAttachments(
+async function fetchAttachmentsForEvent(
     deps: MailProviderDeps,
     target: PollTarget,
+    client: GraphClient,
     message: GraphMailMessage,
 ): Promise<FetchedAttachments | null> {
     if (!message.hasAttachments) {
         return { metadata: [], files: [] };
     }
     try {
-        const response = await callJsonTool<{
-            attachments?: ReadonlyArray<{
-                id?: unknown;
-                name?: unknown;
-                contentType?: unknown;
-                size?: unknown;
-                isInline?: unknown;
-                contentBytes?: unknown;
-            }>;
-        }>(deps.client, "get-shared-mailbox-message", {
-            userId: target.mailbox,
-            messageId: message.id,
-            select: "id",
-            expand: ATTACHMENT_EXPAND,
-        });
-        return normalizeAttachments(response.attachments);
+        const raw = await client.getAttachments(target.mailbox, message.id);
+        return normalizeAttachments(raw);
     } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
         deps.log(
-            `attachment fetch for ${target.mailbox}/${message.id} failed: ${reason}; emitting with attachments=null`,
+            `attachment fetch for ${target.mailbox}/${message.id} failed: ${reason}; ` +
+                `emitting with attachments=null`,
         );
         return null;
     }
 }
 
-/**
- * Split the raw Graph attachments into payload metadata (always
- * present, bytes stripped) and stageable scratch files (only for
- * non-inline attachments whose `contentBytes` survived Graph's
- * inline-bytes ceiling). Defensive against the MCP carrying fields
- * we didn't ask for.
- *
- * Inline attachments (`isInline=true`, typically cid:-referenced
- * images embedded in the HTML body) are kept in metadata but not
- * staged — they aren't user-facing files the agent needs to act on.
- */
-function normalizeAttachments(
-    raw:
-        | ReadonlyArray<{
-              id?: unknown;
-              name?: unknown;
-              contentType?: unknown;
-              size?: unknown;
-              isInline?: unknown;
-              contentBytes?: unknown;
-          }>
-        | undefined,
-): FetchedAttachments {
-    if (!raw || raw.length === 0) {
+function normalizeAttachments(raw: readonly GraphRawAttachment[]): FetchedAttachments {
+    if (raw.length === 0) {
         return { metadata: [], files: [] };
     }
-    const metadata: GraphAttachment[] = [];
+    const meta: Array<{
+        id: string;
+        name: string;
+        contentType: string;
+        size: number;
+        isInline: boolean;
+    }> = [];
     const files: EventFile[] = [];
     const usedNames = new Set<string>();
     for (const item of raw) {
-        if (item === null || typeof item !== "object") {
+        if (item.id.length === 0 || item.name.length === 0) {
             continue;
         }
-        const id = typeof item.id === "string" ? item.id : "";
-        const name = typeof item.name === "string" ? item.name : "";
-        const contentType = typeof item.contentType === "string" ? item.contentType : "";
-        const size = typeof item.size === "number" ? item.size : 0;
-        const isInline = item.isInline === true;
-        if (id.length === 0 || name.length === 0) {
-            continue;
-        }
-        metadata.push({ id, name, contentType, size, isInline });
-        if (isInline) {
+        meta.push({
+            id: item.id,
+            name: item.name,
+            contentType: item.contentType,
+            size: item.size,
+            isInline: item.isInline,
+        });
+        if (item.isInline) {
             continue;
         }
         if (typeof item.contentBytes !== "string" || item.contentBytes.length === 0) {
             continue;
         }
-        const safeName = sanitizeAttachmentName(name, id, usedNames);
-        const contents = Buffer.from(item.contentBytes, "base64");
-        files.push({ name: safeName, contents });
+        const safeName = sanitizeAttachmentName(item.name, item.id, usedNames);
+        files.push({ name: safeName, contents: Buffer.from(item.contentBytes, "base64") });
     }
-    return { metadata, files };
+    return { metadata: meta, files };
 }
 
 /**
  * Make an attachment filename safe to land at `/scratch/<event-id>/`.
- *
  * The host's emit guard rejects any name containing `/`, `\`, or `..`
- * outright. To stay friendly for legitimate attachments — Graph can
- * return names like `Q3 Report.pdf` or `meeting (rev 2).docx` — we
- * replace separators with `_` rather than throw. Hidden-file leading
- * dots are stripped (no `..bashrc`-style ambushes). Empty results
- * fall back to `attachment-<id>`. Collisions within one emit get a
- * `(2)`/`(3)`/... suffix before the extension.
+ * outright. We replace separators with `_` and strip hidden-file
+ * leading dots; empty results fall back to `attachment-<id>`.
+ * Collisions get a `(2)`/`(3)`/… suffix before the extension.
  */
 function sanitizeAttachmentName(name: string, id: string, used: Set<string>): string {
     let cleaned = name.replace(/[/\\]/g, "_").replace(/^\.+/, "");
@@ -483,7 +448,6 @@ function sanitizeAttachmentName(name: string, id: string, used: Set<string>): st
             return candidate;
         }
     }
-    // Pathological: 1000 same-named attachments. Fall back to id-suffix.
     const fallback = `${stem}-${id.replace(/[/\\]/g, "_")}${ext}`;
     used.add(fallback);
     return fallback;

@@ -1,29 +1,17 @@
-import path from "node:path";
-import type { HostContext, McpInfo } from "effective-assistant-shared";
-import { getProviderConfig, readMailConfig } from "./Config.js";
+import type { HostContext } from "effective-assistant-shared";
+import { readMailConfig } from "./Config.js";
 import { MailPollLoop } from "./PollLoop.js";
-import type { MailProvider } from "./providers/MailProvider.js";
 import { providers } from "./providers/Registry.js";
-import { WatermarkStore } from "./Watermark.js";
 
 /**
- * Start the mail plugin: discover which providers are usable,
- * verify they're logged in, kick off polling for the ones that are.
- *
- * No early return on "missing config" — defaults are operational.
- * Real enablement is gated on (a) the provider's MCP being declared
- * in `mcp.yml` and (b) the user being logged in. Either gate
- * failing produces a warn-level log line and that provider is
- * skipped; other providers keep running.
- *
- * Returns a `stop` function the plugin host can call on shutdown.
+ * Start the mail plugin: ask every registered provider to prepare
+ * itself, register those that came up green with the poll loop. A
+ * provider that fails to prepare is logged and skipped — the daemon
+ * keeps running with whatever remains, per the memory rule
+ * [[feedback_skip_broken_logins_over_exit]].
  */
 export async function startMailDaemon(ctx: HostContext): Promise<void> {
     const mailConfig = readMailConfig(ctx);
-    const watermark = new WatermarkStore(path.join(ctx.dataDir, "mail", "watermarks.json"));
-    await watermark.load();
-
-    const installed = ctx.mcp.getList();
     const loop = new MailPollLoop(
         mailConfig.pollingIntervalMinutes,
         mailConfig.pollingBackoffMinutes,
@@ -33,44 +21,36 @@ export async function startMailDaemon(ctx: HostContext): Promise<void> {
     const skipped: string[] = [];
 
     for (const provider of providers) {
-        const mcpKey = findMcpKey(installed, provider.packageName);
         const tag = `mail/${provider.id}`;
         const scopedLog = (msg: string) => ctx.log(`${tag}: ${msg}`);
-
-        if (mcpKey === null) {
-            scopedLog(
-                `MCP not installed (looking for package "${provider.packageName}"); skipping`,
-            );
-            skipped.push(`${provider.id} (no MCP)`);
+        let result: Awaited<ReturnType<typeof provider.prepare>>;
+        try {
+            result = await provider.prepare(ctx);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            scopedLog(`prepare failed: ${message}; skipping`);
+            skipped.push(`${provider.id} (prepare threw)`);
             continue;
         }
-        const client = ctx.mcp.getByKey(mcpKey);
-        const login = await provider.isLoggedIn(client);
-        if (!login.ok) {
-            scopedLog(
-                `MCP found (${mcpKey}) but not logged in (${login.detail}). ` +
-                    `Run: ./cli.sh mcp call ${mcpKey} -- --login`,
-            );
-            skipped.push(`${provider.id} (not logged in)`);
+        if (!result.ok) {
+            scopedLog(`not registered: ${result.detail}`);
+            skipped.push(`${provider.id}`);
             continue;
         }
-        scopedLog(`logged in: ${login.detail}`);
+        scopedLog(result.detail);
         loop.register(provider, {
             ctx,
-            mcpKey,
-            client,
             mail: mailConfig,
-            provider: getProviderConfig(ctx, provider.id),
-            watermark,
             log: scopedLog,
             emit: (event) => ctx.events.emit(event),
         });
-        registered.push(`${provider.id} (${mcpKey})`);
+        registered.push(provider.id);
     }
 
     if (registered.length === 0) {
         ctx.log(
-            `mail: no providers active (skipped: ${skipped.join(", ") || "none"}); idle until an MCP is installed and logged in`,
+            `mail: no providers active (skipped: ${skipped.join(", ") || "none"}); ` +
+                `idle until a login is added`,
         );
     } else {
         ctx.log(
@@ -87,23 +67,4 @@ export async function startMailDaemon(ctx: HostContext): Promise<void> {
     // poll. If/when per-plugin shutdown lands, `loop.stop()` is the
     // entry point.
     void loop;
-}
-
-/**
- * Map a provider's `packageName` to a `mcp.yml` key. The user is
- * free to name their MCP key anything (e.g. `ms365`, `softeria`),
- * so we match by the npm/pypi package field — that's stable.
- */
-function findMcpKey(installed: readonly McpInfo[], packageName: string): string | null {
-    for (const info of installed) {
-        if (info.package === packageName) {
-            return info.key;
-        }
-    }
-    return null;
-}
-
-/** Pluck a provider by id; exported for use by the CLI command builder. */
-export function findProvider(id: string): MailProvider | undefined {
-    return providers.find((p) => p.id === id);
 }
