@@ -29,13 +29,19 @@ export function dockerExec(
     options: DockerExecOptions = {},
 ): Promise<void> {
     return new Promise((resolve, reject) => {
-        const proc = spawn("docker", [...args], { stdio: "ignore" });
+        const proc = spawn("docker", [...args], { stdio: ["ignore", "ignore", "pipe"] });
+        let stderr = "";
+        proc.stderr.on("data", (chunk: Buffer) => {
+            stderr += chunk.toString();
+        });
         proc.on("close", (code) => {
             if (code === 0 || options.allowFailure) {
                 resolve();
-            } else {
-                reject(new Error(`docker ${args.join(" ")} exited with code ${code}`));
+                return;
             }
+            const trimmed = stderr.trim();
+            const suffix = trimmed.length > 0 ? `: ${trimmed}` : "";
+            reject(new Error(`docker ${args.join(" ")} exited with code ${code}${suffix}`));
         });
         proc.on("error", reject);
     });

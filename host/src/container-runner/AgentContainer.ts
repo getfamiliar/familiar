@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+import type { Logger } from "effective-assistant-shared";
 import {
     dockerExec,
     hostGatewayArgs,
@@ -7,6 +9,28 @@ import {
 } from "../DockerTools.js";
 
 const CONTAINER_NAME = "ea-agent";
+
+/**
+ * Image tag for the long-running agent container. Built from
+ * `container/Dockerfile` on demand by {@link ensureAgentImage}.
+ */
+export const AGENT_IMAGE_TAG = "effective-agent";
+
+/**
+ * Build the agent container image if it isn't already up to date with
+ * its Dockerfile. Idempotent — docker's layer cache makes the
+ * no-change case fast, so calling this on every daemon start is cheap
+ * and fresh checkouts don't need a separate manual build step.
+ * Mirrors {@link ensureRuntimeImage} for MCP runtimes.
+ */
+export async function ensureAgentImage(log: Logger): Promise<void> {
+    // host/build/container-runner/AgentContainer.js lives three levels
+    // under the project root.
+    const projectRoot = resolve(import.meta.dirname, "../../..");
+    const dockerfile = `${projectRoot}/container/Dockerfile`;
+    log.info(`building ${AGENT_IMAGE_TAG} from ${dockerfile}`);
+    await dockerExec(["build", "-t", AGENT_IMAGE_TAG, "-f", dockerfile, projectRoot]);
+}
 
 /** Configuration for the single long-running agent container. */
 export interface AgentContainerConfig {

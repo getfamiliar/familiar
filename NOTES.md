@@ -40,5 +40,4 @@ Extreme:
   - docker
   - npm i
   - npm run build --workspaces --if-present (attention: does not resolve the order of dependencies, trying to build telegram before whisper etc. - AST based dependency resolution would be nice)
-  - ~/familiar/container/build.sh
   - Use node-linux or node-mac packages to create a native service

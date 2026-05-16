@@ -18,7 +18,7 @@ import { Bastion } from "../bastion/Bastion.js";
 import { buildProviders, ReverseProxy } from "../bastion/ReverseProxy.js";
 import { lintOrThrow } from "../config/ConfigLinter.js";
 import { HostConfigService } from "../config/ConfigService.js";
-import { AgentContainer } from "../container-runner/AgentContainer.js";
+import { AGENT_IMAGE_TAG, AgentContainer, ensureAgentImage } from "../container-runner/AgentContainer.js";
 import { CronjobScheduler } from "../cron/CronjobScheduler.js";
 import { ScratchGc } from "../cron/ScratchGc.js";
 import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools.js";
@@ -218,8 +218,10 @@ export const startCommand = defineCommand({
         // plugin daemon runs — guarantees first-call connects succeed.
         pluginHost.setBastionBaseUrl(bastion.loopbackUrl);
 
+        await ensureAgentImage(log);
+
         const container = new AgentContainer({
-            imageName: "effective-agent",
+            imageName: AGENT_IMAGE_TAG,
             dataPath: boot.dataDir,
             containerSrcPath: boot.containerSrcDir,
             sharedBuildPath: boot.sharedBuildDir,
