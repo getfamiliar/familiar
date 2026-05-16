@@ -23,19 +23,38 @@ function write(content: string): string {
 }
 
 describe("ConfigLinter — happy path", () => {
-    it("accepts a minimal valid config", () => {
+    it("accepts a minimal valid config with a native provider", () => {
         const file = write(`
 core:
   postgresPassword: secret
   defaultChatChannel: cli
 inference:
-  provider: featherless
-  defaultModel: zai-org/GLM-5.1
+  defaultProvider: openai
+  defaultModel: gpt-5
   apiKeys:
-    featherless: REAL_KEY
+    openai: REAL_KEY
 `);
         const result = lintConfigFile(file);
-        assert.equal(result.ok, true);
+        assert.equal(result.ok, true, `unexpected errors: ${JSON.stringify(result.errors)}`);
+        assert.deepEqual(result.errors, []);
+    });
+
+    it("accepts a minimal valid config with a custom provider", () => {
+        const file = write(`
+core:
+  postgresPassword: secret
+  defaultChatChannel: cli
+inference:
+  defaultProvider: featherless
+  defaultModel: zai-org/GLM-5.1
+  customProviders:
+    featherless:
+      baseUrl: https://api.featherless.ai
+      apiKey: REAL_KEY
+      type: openai-compatible
+`);
+        const result = lintConfigFile(file);
+        assert.equal(result.ok, true, `unexpected errors: ${JSON.stringify(result.errors)}`);
         assert.deepEqual(result.errors, []);
     });
 });
@@ -63,11 +82,11 @@ describe("ConfigLinter — failure modes", () => {
     });
 
     it("collects every missing required key in a single pass", () => {
-        const file = write("inference:\n  provider: featherless\n");
+        const file = write("inference: {}\n");
         const result = lintConfigFile(file);
         assert.equal(result.ok, false);
-        // Three keys missing: core.postgresPassword, core.defaultChatChannel,
-        // inference.defaultModel, inference.apiKeys.featherless.
+        // At minimum: core.postgresPassword, core.defaultChatChannel,
+        // inference.defaultProvider, inference.defaultModel are all missing.
         assert.equal(result.errors.length >= 3, true);
         assert.ok(
             result.errors.some((e) => e.includes("core.postgresPassword")),
@@ -75,20 +94,22 @@ describe("ConfigLinter — failure modes", () => {
         );
     });
 
-    it("flags inference.apiKeys.<provider> when provider is set but key missing", () => {
+    it("flags defaultProvider when it doesn't match a configured provider", () => {
         const file = write(`
 core:
   postgresPassword: secret
   defaultChatChannel: cli
 inference:
-  provider: featherless
-  defaultModel: zai-org/GLM-5.1
+  defaultProvider: openai
+  defaultModel: gpt-5
 `);
         const result = lintConfigFile(file);
         assert.equal(result.ok, false);
         assert.ok(
-            result.errors.some((e) => e.includes("inference.apiKeys.featherless")),
-            `expected api-key error in: ${JSON.stringify(result.errors)}`,
+            result.errors.some(
+                (e) => e.includes("inference.defaultProvider") && e.includes("openai"),
+            ),
+            `expected a defaultProvider mismatch error in: ${JSON.stringify(result.errors)}`,
         );
     });
 
@@ -99,13 +120,13 @@ core:
   defaultChatChannel: cli
   logRetentionDays: -3
 inference:
-  provider: featherless
-  defaultModel: zai-org/GLM-5.1
+  defaultProvider: openai
+  defaultModel: gpt-5
   apiKeys:
-    featherless: REAL_KEY
+    openai: REAL_KEY
 `);
         const result = lintConfigFile(file);
-        assert.equal(result.ok, true);
+        assert.equal(result.ok, true, `unexpected errors: ${JSON.stringify(result.errors)}`);
         assert.equal(
             result.warnings.some((w) => w.includes("logRetentionDays")),
             true,

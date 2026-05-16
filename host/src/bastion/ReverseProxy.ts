@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createWriteStream, mkdirSync, type WriteStream } from "node:fs";
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { join } from "node:path";
 import { PassThrough, type Transform } from "node:stream";
@@ -131,7 +131,7 @@ export class ReverseProxy implements BastionModule {
             replyError(res, 404, `unknown provider "${providerId}"`);
             return;
         }
-        this.forward(req, res, providerId, provider, upstreamPath);
+        this.forward(req, res, provider, upstreamPath);
     }
 
     /**
@@ -142,7 +142,6 @@ export class ReverseProxy implements BastionModule {
     private forward(
         req: IncomingMessage,
         res: ServerResponse,
-        providerId: string,
         provider: ProviderConfig,
         upstreamPath: string,
     ): void {
@@ -160,7 +159,8 @@ export class ReverseProxy implements BastionModule {
         provider.applyAuth(headers);
         headers.host = upstreamHost;
 
-        const capture = this.openCapture(providerId, req.method ?? "GET", upstreamPath, headers);
+        const fullUrl = `${url.origin}${path}`;
+        const capture = this.openCapture(req.method ?? "GET", fullUrl, headers);
 
         const upstream = httpsRequest(
             {
@@ -173,7 +173,7 @@ export class ReverseProxy implements BastionModule {
             (upstreamRes) => {
                 res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers);
                 if (capture !== undefined) {
-                    writeResponseHeader(capture.respFile, upstreamRes);
+                    const respBody = writeResponseHeader(capture.respFile, upstreamRes);
                     // Tap raw bytes from upstream → respTap → client.
                     // The capture file gets decompressed bytes when
                     // the response is gzip/deflate/br-encoded so the
@@ -189,17 +189,16 @@ export class ReverseProxy implements BastionModule {
                     );
                     if (decompressor !== null) {
                         decompressor.on("data", (chunk: Buffer) => {
-                            capture.respFile.write(chunk);
+                            respBody.write(chunk);
                         });
                         decompressor.on("end", () => {
-                            capture.respFile.end();
+                            respBody.end();
                         });
                         decompressor.on("error", (err) => {
                             this.config.log.error(
                                 `llm proxy capture ${capture.reqId} decompress error: ${err.message}`,
                             );
-                            capture.respFile.write(`\n[decompress error: ${err.message}]\n`);
-                            capture.respFile.end();
+                            respBody.abort(`decompress error: ${err.message}`);
                         });
                         respTap.on("data", (chunk: Buffer) => {
                             decompressor.write(chunk);
@@ -212,10 +211,10 @@ export class ReverseProxy implements BastionModule {
                         });
                     } else {
                         respTap.on("data", (chunk: Buffer) => {
-                            capture.respFile.write(chunk);
+                            respBody.write(chunk);
                         });
                         const closeRespFile = (): void => {
-                            capture.respFile.end();
+                            respBody.end();
                         };
                         respTap.on("end", closeRespFile);
                         respTap.on("close", closeRespFile);
@@ -224,8 +223,9 @@ export class ReverseProxy implements BastionModule {
                         this.config.log.error(
                             `llm proxy capture ${capture.reqId} response tap error: ${err.message}`,
                         );
-                        capture.respFile.end();
+                        respBody.abort(`response tap error: ${err.message}`);
                     });
+                    capture.respBody = respBody;
                     upstreamRes.pipe(respTap).pipe(res);
                 } else {
                     upstreamRes.pipe(res);
@@ -246,8 +246,12 @@ export class ReverseProxy implements BastionModule {
         upstream.on("error", (err) => {
             this.config.log.error(`llm proxy upstream error from ${upstreamHost}: ${err.message}`);
             if (capture !== undefined) {
-                capture.respFile.write(`\n[upstream error: ${err.message}]\n`);
-                capture.respFile.end();
+                if (capture.respBody !== undefined) {
+                    capture.respBody.abort(`upstream error: ${err.message}`);
+                } else {
+                    capture.respFile.write(`[upstream error: ${err.message}]\n`);
+                    capture.respFile.end();
+                }
             }
             if (!res.headersSent) {
                 res.writeHead(502, { "content-type": "text/plain" });
@@ -260,12 +264,13 @@ export class ReverseProxy implements BastionModule {
         });
 
         if (capture !== undefined) {
+            const reqBody = capture.reqBody;
             const reqTap = new PassThrough();
             reqTap.on("data", (chunk: Buffer) => {
-                capture.reqFile.write(chunk);
+                reqBody.write(chunk);
             });
             const closeReqFile = (): void => {
-                capture.reqFile.end();
+                reqBody.end();
             };
             reqTap.on("end", closeReqFile);
             reqTap.on("close", closeReqFile);
@@ -273,7 +278,7 @@ export class ReverseProxy implements BastionModule {
                 this.config.log.error(
                     `llm proxy capture ${capture.reqId} request tap error: ${err.message}`,
                 );
-                closeReqFile();
+                reqBody.abort(`request tap error: ${err.message}`);
             });
             req.pipe(reqTap).pipe(upstream);
         } else {
@@ -289,9 +294,8 @@ export class ReverseProxy implements BastionModule {
      * extra stream layer.
      */
     private openCapture(
-        providerId: string,
         method: string,
-        upstreamPath: string,
+        fullUrl: string,
         forwardedHeaders: Readonly<Record<string, string | string[]>>,
     ): CaptureHandles | undefined {
         if (this.config.captureModelHttpRequestBodies !== true) {
@@ -333,11 +337,10 @@ export class ReverseProxy implements BastionModule {
             }
             safeHeaders[k] = v;
         }
-        reqFile.write(
-            `# ${method} ${upstreamPath} → ${providerId}\n# headers: ${JSON.stringify(safeHeaders)}\n# body:\n`,
-        );
+        reqFile.write(formatHeaderBlock(`${method} ${fullUrl}`, safeHeaders));
+        const reqBody = new BodyCapture(reqFile, pickContentType(safeHeaders));
         this.config.log.info(`llm proxy capture ${reqId} → ${reqPath} / ${respPath}`);
-        return { reqId, reqFile, respFile };
+        return { reqId, reqFile, respFile, reqBody, respBody: undefined };
     }
 }
 
@@ -346,6 +349,15 @@ interface CaptureHandles {
     readonly reqId: string;
     readonly reqFile: WriteStream;
     readonly respFile: WriteStream;
+    readonly reqBody: BodyCapture;
+    /**
+     * Wrapper around the response body file. Created lazily once upstream
+     * headers arrive (so the wrapper knows the response content-type and
+     * can pretty-print JSON). Stays `undefined` if the upstream errors
+     * before sending a response — in which case the upstream-error path
+     * writes a plain error line straight to {@link respFile}.
+     */
+    respBody: BodyCapture | undefined;
 }
 
 /**
@@ -394,14 +406,139 @@ function pickDecompressor(
 }
 
 /**
- * Write a small status header to the response capture file before the
- * body bytes start arriving. Mirrors the request-side header so each
- * dump file is self-describing without needing to look up its sibling.
+ * Write an HTTP-style status line and headers to the response capture
+ * file before the body bytes start arriving, and return a {@link
+ * BodyCapture} that will receive the body chunks. Mirrors the
+ * request-side header so each dump file is self-describing without
+ * needing to look up its sibling.
  */
-function writeResponseHeader(file: WriteStream, upstreamRes: IncomingMessage): void {
-    file.write(
-        `# status: ${upstreamRes.statusCode ?? "?"}\n# headers: ${JSON.stringify(upstreamRes.headers)}\n# body:\n`,
-    );
+function writeResponseHeader(file: WriteStream, upstreamRes: IncomingMessage): BodyCapture {
+    const status = upstreamRes.statusCode ?? 0;
+    const message = upstreamRes.statusMessage ?? "";
+    const statusLine = message.length > 0 ? `HTTP/1.1 ${status} ${message}` : `HTTP/1.1 ${status}`;
+    file.write(formatHeaderBlock(statusLine, upstreamRes.headers));
+    return new BodyCapture(file, pickContentType(upstreamRes.headers));
+}
+
+/**
+ * Emit an HTTP-style header block: one request/status line, then one
+ * header per line (`name: value`, repeated for multi-valued headers),
+ * then a single blank line delimiting the body. The trailing newline
+ * before the body keeps the file parseable with anything that follows
+ * the same convention as a real HTTP message.
+ */
+function formatHeaderBlock(
+    firstLine: string,
+    headers: IncomingHttpHeaders | Record<string, string | string[] | undefined>,
+): string {
+    let out = `${firstLine}\n`;
+    for (const [name, value] of Object.entries(headers)) {
+        if (value === undefined) {
+            continue;
+        }
+        if (Array.isArray(value)) {
+            for (const v of value) {
+                out += `${name}: ${v}\n`;
+            }
+        } else {
+            out += `${name}: ${value}\n`;
+        }
+    }
+    out += "\n";
+    return out;
+}
+
+/**
+ * Pull the first `content-type` value out of a headers bag, normalized
+ * to a plain string. Returns the empty string when the header is
+ * missing — callers feed the result into {@link isJsonContentType},
+ * which treats `""` as "not JSON".
+ */
+function pickContentType(
+    headers: IncomingHttpHeaders | Record<string, string | string[] | undefined>,
+): string {
+    const raw = headers["content-type"];
+    if (raw === undefined) {
+        return "";
+    }
+    return Array.isArray(raw) ? (raw[0] ?? "") : raw;
+}
+
+/**
+ * Whether the given `content-type` value should make us buffer the body
+ * for pretty-printing. Matches plain `application/json` and any
+ * `application/*+json` subtype (e.g. `application/vnd.api+json`); the
+ * `;charset=...` suffix is tolerated. NDJSON and SSE are intentionally
+ * not buffered — each line is meant to stand on its own and arrival
+ * order matters for debug reading.
+ */
+function isJsonContentType(contentType: string): boolean {
+    const base = contentType.toLowerCase().split(";")[0]?.trim() ?? "";
+    return base === "application/json" || base.endsWith("+json");
+}
+
+/**
+ * Capture sink for a single request or response body. For JSON content
+ * types it buffers chunks in memory and pretty-prints the parsed value
+ * at {@link end}; for everything else it streams chunks straight to the
+ * file as they arrive (good for SSE and large opaque blobs). Errors
+ * mid-stream go through {@link abort}, which flushes any buffered raw
+ * bytes before appending the error marker so partial debug data isn't
+ * lost.
+ */
+class BodyCapture {
+    private readonly file: WriteStream;
+    private buffer: Buffer[] | null;
+    private finished = false;
+
+    constructor(file: WriteStream, contentType: string) {
+        this.file = file;
+        this.buffer = isJsonContentType(contentType) ? [] : null;
+    }
+
+    write(chunk: Buffer): void {
+        if (this.finished) {
+            return;
+        }
+        if (this.buffer !== null) {
+            this.buffer.push(chunk);
+            return;
+        }
+        this.file.write(chunk);
+    }
+
+    end(): void {
+        if (this.finished) {
+            return;
+        }
+        this.finished = true;
+        if (this.buffer !== null) {
+            const raw = Buffer.concat(this.buffer);
+            this.buffer = null;
+            try {
+                const parsed = JSON.parse(raw.toString("utf8"));
+                this.file.write(JSON.stringify(parsed, null, 2));
+                this.file.write("\n");
+            } catch {
+                this.file.write(raw);
+            }
+        }
+        this.file.end();
+    }
+
+    /** Flush any buffered bytes raw, append `[message]`, then close. */
+    abort(message: string): void {
+        if (this.finished) {
+            return;
+        }
+        this.finished = true;
+        if (this.buffer !== null && this.buffer.length > 0) {
+            this.file.write(Buffer.concat(this.buffer));
+        }
+        this.buffer = null;
+        this.file.write(`[${message}]\n`);
+        this.file.end();
+    }
 }
 
 /**
