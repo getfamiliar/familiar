@@ -174,7 +174,6 @@ function buildFileReadTool(): Tool<FileReadInput, FileReadOutput> {
             },
         }),
         execute: async (params) => {
-            console.error("file_read called with params:", params);
             const p = params.path;
             let absolute: string;
             try {
