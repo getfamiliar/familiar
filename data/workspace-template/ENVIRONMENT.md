@@ -47,9 +47,9 @@ The file paths are always relative to your workspace root, and you can use subdi
 **Only privileged runs can write to .md files**, to prevent accidental damage to handlers. All other files can be written by any run.
 
 
-Feel free to create new files to organize information as the task at hand instructs you to. Some best practices are documented in separate `recipes/` files:
+Feel free to create new files to organize information as the task at hand instructs you to. Reusable how-to recipes live in `skills/<name>/SKILL.md`. Each skill is a short markdown file you can read with `file_read` when the handler's task calls for it. Current skills:
 
-* `recipes/listfiles.md`: Keeping a list / table of things (for example, subscribed chat groups, open tasks, emails having arrived today)
+* `skills/listfiles/SKILL.md`: Keeping a list / table of things (for example, subscribed chat groups, open tasks, emails having arrived today)
 
 #### Per-event scratch files at `/scratch/<event-id>/`
 

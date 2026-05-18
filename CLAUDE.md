@@ -138,9 +138,32 @@ workspace/
       index.md              # overrides the parent index.md for this subtype
       analyze.md            # overrides the parent analyze.md
       ...
+  skills/                   # shared how-to recipes, referenced from handlers (see "Skills" below)
+    <name>/
+      SKILL.md
 ```
 
 Handler files are plain markdown. They are usually authored by the user but can be created and modified by privileged event handlers.
+
+#### Skills (shared recipes)
+
+When the same domain knowledge is needed across multiple handlers (e.g. "how to create a Jira issue properly" used by both `mail/` and `chat/` handlers), put it in a skill instead of duplicating it. A skill is a single markdown file at `skills/<name>/SKILL.md`. The folder layout matches the [Agent Skills](https://agentskills.io/) convention so a skill can later ship bundled resources (templates, example payloads) without restructuring.
+
+The file may start with optional `name` / `description` frontmatter for self-documentation:
+
+```markdown
+---
+name: jira-issue
+description: How to create a Jira issue (default project, due-date conventions, parent linking).
+---
+
+# How to create a Jira issue
+...
+```
+
+Handlers reference skills by path in prose — there is no `load_skill` tool and no automatic injection. Example: a handler can include *"Before creating a Jira issue, read `skills/jira-issue/SKILL.md` and follow it."* The agent reads it on demand with the existing `file_read` tool, the same way handlers already pull in `people/<sender>.md` or topic-specific rule files.
+
+Skills carry no tools and no privileges — they are pure context. They cannot grant capabilities the calling handler does not already have via its `tools` frontmatter.
 
 ### 3. Configuration and secrets (host, YAML)
 

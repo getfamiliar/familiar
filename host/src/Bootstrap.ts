@@ -98,6 +98,20 @@ export interface Bootstrap {
 }
 
 /**
+ * True when the daemon is running in dev mode, signalled by the
+ * `FAMILIAR_DEV` env var being `1` or `true` (case-insensitive).
+ * `cli.sh` reads the same variable to pick its rebuild policy and
+ * node flags; the host side uses it to raise the default log level
+ * and turn on the inference debug captures when the operator hasn't
+ * pinned them explicitly. Production (unset) is the default — deployed
+ * environments shouldn't have to opt out.
+ */
+export function isDevMode(): boolean {
+    const v = process.env.FAMILIAR_DEV?.toLowerCase();
+    return v === "1" || v === "true";
+}
+
+/**
  * Build the singleton {@link Bootstrap} object. The data directory is
  * resolved relative to the compiled JS location: `host/build/Bootstrap.js`
  * lives two levels under the project root, so `data/` is at

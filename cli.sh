@@ -22,6 +22,18 @@ if [ ! -f "${CONFIG_FILE}" ]; then
   exit 1
 fi
 
+# Returns 0 (true) when FAMILIAR_DEV is set to 1/true (case-insensitive).
+# In dev mode cli.sh rebuilds on any source-newer-than-artifact, runs node
+# with --enable-source-maps, and lets deprecation warnings through. In
+# production mode (the default) cli.sh builds only when the artifact is
+# missing and silences deprecation warnings via --no-deprecation.
+is_dev_mode() {
+  case "${FAMILIAR_DEV:-}" in
+    1|true|TRUE|True) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # Returns 0 (true) when any *.ts file under <pkg>/src is newer than
 # <pkg>/build/index.js, or when build/index.js doesn't exist yet.
 needs_rebuild() {
@@ -36,14 +48,23 @@ needs_rebuild() {
   return 1
 }
 
-if needs_rebuild "${SHARED}"; then
-  echo "Building shared..." >&2
-  (cd "${SHARED}" && npm run build >&2)
+build_pkg() {
+  local pkg="$1"
+  local label="$2"
+  echo "Building ${label}..." >&2
+  (cd "${pkg}" && npm run build >&2)
+}
+
+if is_dev_mode; then
+  if needs_rebuild "${SHARED}"; then build_pkg "${SHARED}" "shared"; fi
+  if needs_rebuild "${HOST}";   then build_pkg "${HOST}"   "host";   fi
+else
+  if [ ! -f "${SHARED}/build/index.js" ]; then build_pkg "${SHARED}" "shared"; fi
+  if [ ! -f "${HOST}/build/index.js"   ]; then build_pkg "${HOST}"   "host";   fi
 fi
 
-if needs_rebuild "${HOST}"; then
-  echo "Building host..." >&2
-  (cd "${HOST}" && npm run build >&2)
+if is_dev_mode; then
+  exec node --enable-source-maps "${HOST}/build/index.js" "$@"
+else
+  exec node --no-deprecation "${HOST}/build/index.js" "$@"
 fi
-
-exec node "${HOST}/build/index.js" "$@"

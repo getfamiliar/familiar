@@ -13,7 +13,7 @@ import {
     prettyStdoutStream,
 } from "@getfamiliar/shared";
 import type { Bootstrap } from "../Bootstrap.js";
-import { bootstrap } from "../Bootstrap.js";
+import { bootstrap, isDevMode } from "../Bootstrap.js";
 import { Bastion } from "../bastion/Bastion.js";
 import { buildProviders, ReverseProxy } from "../bastion/ReverseProxy.js";
 import { lintOrThrow } from "../config/ConfigLinter.js";
@@ -67,6 +67,12 @@ export const startCommand = defineCommand({
     async run({ args }) {
         const boot = bootstrap();
         const verbose = Boolean(args.verbose);
+        const dev = isDevMode();
+        // Dev mode raises the default log level so a `FAMILIAR_DEV=1
+        // ./cli.sh start` produces debug output without also typing
+        // `--verbose`. An explicit `--verbose` still wins (and in
+        // production is the only way to get debug).
+        const debugLogging = verbose || dev;
 
         // Lint first so a malformed config.yml fails with one clear
         // diagnostic instead of cascading per-call failures further
@@ -75,7 +81,7 @@ export const startCommand = defineCommand({
         // file sink) is built once we know logRetentionDays.
         const bootLog = createLogger({
             component: "host",
-            level: verbose ? "debug" : "info",
+            level: debugLogging ? "debug" : "info",
             streams: [process.stdout.isTTY ? prettyStdoutStream() : jsonStdoutStream()],
         });
         lintOrThrow(boot.configFile, bootLog);
@@ -95,7 +101,12 @@ export const startCommand = defineCommand({
         const defaultModel = config.getString("inference.defaultModel");
         const inferenceMaxRetries = config.getNumber("inference.maxRetries", 3);
         const agentTimeoutSeconds = config.getNumber("core.agentTimeout", 60);
-        const logSystemPrompt = config.getBool("core.logSystemPrompt", false);
+        // In dev mode, default the inference debug captures to on when
+        // the operator hasn't pinned a value in config.yml. Explicit
+        // `true`/`false` in config always wins; in production both
+        // default to `false` so handler iteration doesn't add load to
+        // a deployed daemon.
+        const logSystemPrompt = config.getBool("core.logSystemPrompt", undefined) ?? dev;
         // Touch the chat-channel default so a missing value fails the
         // daemon now rather than at first chat event.
         config.getString("core.defaultChatChannel");
@@ -118,7 +129,7 @@ export const startCommand = defineCommand({
             providerTypes[id] = "openai-compatible";
         }
 
-        const log = await buildDaemonLogger(boot, config, verbose);
+        const log = await buildDaemonLogger(boot, config, debugLogging);
 
         ensureDirs(boot);
 
@@ -145,10 +156,8 @@ export const startCommand = defineCommand({
             "inference.captureModelHttpRequestBodies",
             false,
         );
-        const captureRawStepResultToDatabase = config.getBool(
-            "inference.captureRawStepResultToDatabase",
-            false,
-        );
+        const captureRawStepResultToDatabase =
+            config.getBool("inference.captureRawStepResultToDatabase", undefined) ?? dev;
         const reverseProxy = new ReverseProxy({
             providers,
             log: log.child({ component: "reverse-proxy" }),
@@ -235,7 +244,7 @@ export const startCommand = defineCommand({
             logSystemPrompt,
             captureRawStepResultToDatabase,
             providerTypes,
-            verbose,
+            verbose: debugLogging,
         });
 
         await container.start();
