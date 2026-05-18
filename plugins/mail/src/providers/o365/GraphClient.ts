@@ -147,6 +147,19 @@ function decodeGraphErrorBody(body: string): { code: string | null; message: str
 }
 
 /**
+ * Convert the plugin's `GraphRecipient` shape to Graph's
+ * `{ emailAddress: { address, name? } }` wire shape. The `name` field
+ * is omitted when unset so we don't send empty strings.
+ */
+function mapGraphRecipients(
+    recipients: readonly GraphRecipient[],
+): ReadonlyArray<{ emailAddress: { address: string; name?: string } }> {
+    return recipients.map((r) => ({
+        emailAddress: r.name ? { address: r.address, name: r.name } : { address: r.address },
+    }));
+}
+
+/**
  * Direct Graph REST client. All Graph calls in the plugin go through
  * here so there's exactly one place that knows the URL prefix, the
  * auth header shape, and the error decoding rules.
@@ -302,6 +315,59 @@ export class GraphClient {
     }
 
     /**
+     * Create a draft that forwards an existing message. Graph's
+     * `createForward` action mints the draft with the quoted original
+     * and its attachments already attached, but does **not** accept
+     * recipients or a body in the initial POST — both are set via a
+     * follow-up PATCH on the draft (same shape as the reply path).
+     */
+    async createForwardDraft(
+        userId: string,
+        messageId: string,
+        to: readonly GraphRecipient[],
+        cc: readonly GraphRecipient[],
+        bodyHtml: string,
+    ): Promise<{ id: string }> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/createForward`;
+        const created = (await this.request("POST", url).then((r) => r.json())) as { id?: string };
+        if (typeof created.id !== "string" || created.id.length === 0) {
+            throw new GraphError(200, url, "createForward: response missing draft id");
+        }
+        const patchUrl = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(created.id)}`;
+        await this.request("PATCH", patchUrl, {
+            jsonBody: {
+                body: { contentType: "HTML", content: bodyHtml },
+                toRecipients: mapGraphRecipients(to),
+                ccRecipients: mapGraphRecipients(cc),
+            },
+        });
+        return { id: created.id };
+    }
+
+    /**
+     * Forward an existing message immediately. Graph's `forward` action
+     * accepts recipients inline (unlike `createForward`), and the
+     * `comment` field is rendered above the quoted original. We pass
+     * rendered HTML in `comment` — Outlook renders it correctly there.
+     */
+    async sendForward(
+        userId: string,
+        messageId: string,
+        to: readonly GraphRecipient[],
+        cc: readonly GraphRecipient[],
+        commentHtml: string,
+    ): Promise<void> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/forward`;
+        await this.request("POST", url, {
+            jsonBody: {
+                comment: commentHtml,
+                toRecipients: mapGraphRecipients(to),
+                ccRecipients: mapGraphRecipients(cc),
+            },
+        });
+    }
+
+    /**
      * Move a message to one of the well-known folders Graph exposes.
      * The folder ids come from {@link import("./Folders.js").FOLDER_IDS}.
      */
@@ -327,16 +393,8 @@ export class GraphClient {
         return {
             subject: outgoing.subject,
             body: { contentType: "HTML", content: outgoing.bodyHtml },
-            toRecipients: outgoing.to.map((r) => ({
-                emailAddress: r.name
-                    ? { address: r.address, name: r.name }
-                    : { address: r.address },
-            })),
-            ccRecipients: (outgoing.cc ?? []).map((r) => ({
-                emailAddress: r.name
-                    ? { address: r.address, name: r.name }
-                    : { address: r.address },
-            })),
+            toRecipients: mapGraphRecipients(outgoing.to),
+            ccRecipients: mapGraphRecipients(outgoing.cc ?? []),
             isDraft: true,
         };
     }

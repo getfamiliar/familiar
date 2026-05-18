@@ -75,6 +75,8 @@ export function buildMailTools(provider: O365Provider): readonly PluginTool[] {
         draftNewTool(provider),
         sendReplyTool(provider),
         sendNewTool(provider),
+        draftForwardTool(provider),
+        sendForwardTool(provider),
         moveTool(provider),
     ];
 }
@@ -353,6 +355,105 @@ function sendNewTool(
                     return { sent: false, draftId: draft.id, reason: gate.reason };
                 }
                 await client.sendMail(mailbox, outgoing);
+                return { sent: true };
+            }),
+    };
+}
+
+interface ForwardArgs {
+    readonly to: readonly string[];
+    readonly cc?: readonly string[];
+    readonly comment?: string;
+}
+
+function draftForwardTool(
+    provider: O365Provider,
+): PluginTool<ForwardArgs, { ok: true; drafted: true; draftId: string } | ToolFailure> {
+    return {
+        name: "draft_forward",
+        description:
+            "Create a draft forwarding the current mail to new recipients. The comment is " +
+            "markdown; the plugin renders it as HTML and places it above the quoted original. " +
+            "The original attachments are carried over by Graph.",
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["to"],
+            properties: {
+                to: { type: "array", items: { type: "string" } },
+                cc: { type: "array", items: { type: "string" } },
+                comment: {
+                    type: "string",
+                    description: "Optional markdown note above the forwarded content.",
+                },
+            },
+        },
+        execute: (args, callCtx) =>
+            runTool(async () => {
+                const { client, mailbox, messageId } = resolveMailEvent(
+                    provider,
+                    callCtx.event,
+                    callCtx.host,
+                );
+                const commentHtml = renderMailHtml(args.comment ?? "");
+                const draft = await client.createForwardDraft(
+                    mailbox,
+                    messageId,
+                    toRecipients(args.to),
+                    args.cc ? toRecipients(args.cc) : [],
+                    commentHtml,
+                );
+                return { drafted: true as const, draftId: draft.id };
+            }),
+    };
+}
+
+function sendForwardTool(
+    provider: O365Provider,
+): PluginTool<ForwardArgs, ({ ok: true } & SendReplyResult) | ToolFailure> {
+    return {
+        name: "send_forward",
+        description:
+            "Forward the current mail immediately. When allowSend is disabled or any recipient " +
+            "is outside the whitelist, the tool falls back to creating a draft and reports why. " +
+            "Original attachments are carried over by Graph.",
+        inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["to"],
+            properties: {
+                to: { type: "array", items: { type: "string" } },
+                cc: { type: "array", items: { type: "string" } },
+                comment: {
+                    type: "string",
+                    description: "Optional markdown note above the forwarded content.",
+                },
+            },
+        },
+        execute: (args, callCtx) =>
+            runTool<SendReplyResult>(async () => {
+                const { client, mailbox, messageId } = resolveMailEvent(
+                    provider,
+                    callCtx.event,
+                    callCtx.host,
+                );
+                const config = readO365Config(callCtx.host);
+                const recipients = [...args.to, ...(args.cc ?? [])];
+                const gate = checkSendGate(config, recipients);
+                const commentHtml = renderMailHtml(args.comment ?? "");
+                const to = toRecipients(args.to);
+                const cc = args.cc ? toRecipients(args.cc) : [];
+                if (!gate.allow) {
+                    const draft = await client.createForwardDraft(
+                        mailbox,
+                        messageId,
+                        to,
+                        cc,
+                        commentHtml,
+                    );
+                    return { sent: false, draftId: draft.id, reason: gate.reason };
+                }
+                await client.sendForward(mailbox, messageId, to, cc, commentHtml);
                 return { sent: true };
             }),
     };
