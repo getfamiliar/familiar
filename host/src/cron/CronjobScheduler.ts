@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { Cron } from "croner";
 import { EVENT_PRIORITY, type Logger, type NewEvent } from "@getfamiliar/shared";
+import { Cron } from "croner";
 import type { WorkspaceFile, WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
 import { type ParsedCron, parseCron } from "./CronExpression.js";
 

@@ -1,5 +1,5 @@
 export type {
-    AgentRunFilter,
+    AgentRunCallType,
     AgentRunPatch,
     AgentRunRow,
     AgentRunState,

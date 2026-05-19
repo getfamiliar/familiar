@@ -12,7 +12,8 @@
  * - `agentruns` is the assistant's response tree. Each row is one agent
  *   invocation. The container's input-event watcher inserts the root
  *   agentrun for each new event; child agentruns are spawned by the
- *   queue-next tool inside a running handler.
+ *   `queue_handler` (fire-and-forget) and `call_handler` (suspending)
+ *   tools inside a running handler.
  *
  * Four tables, five NOTIFY channels:
  *
@@ -106,10 +107,10 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS start_handler text;
 -- Privileged events originate from a trusted user-input source (operator
 -- at the local terminal via cli-chat, operator on Telegram). The flag
 -- propagates verbatim to the root agentrun and to every child agentrun
--- spawned via queue_run, so future system tools can gate risky reads /
--- writes (editing SOUL.md etc.) on whether the run descends from a
--- trusted input. Default false: any plugin that doesn't explicitly opt
--- in produces non-privileged events.
+-- spawned via queue_handler / call_handler, so future system tools can
+-- gate risky reads / writes (editing SOUL.md etc.) on whether the run
+-- descends from a trusted input. Default false: any plugin that doesn't
+-- explicitly opt in produces non-privileged events.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS privileged boolean NOT NULL DEFAULT false;
 
 CREATE INDEX IF NOT EXISTS events_state_priority_idx
@@ -139,8 +140,8 @@ CREATE TABLE IF NOT EXISTS agentruns (
 -- Safe no-op on fresh databases where the column already exists.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS result_text text;
 -- Inherited from the originating event (root agentrun) or parent
--- agentrun (children spawned via queue_run). See the matching ALTER on
--- the events table for the trust-model rationale.
+-- agentrun (children spawned via queue_handler / call_handler). See
+-- the matching ALTER on the events table for the trust-model rationale.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS privileged boolean NOT NULL DEFAULT false;
 -- Number of retry attempts already made on this agentrun. Bumped each
 -- time AgentRunner postpones the row due to a retryable inference
@@ -165,6 +166,25 @@ ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS model text;
 -- by the report layer's Agentrun Start section when the consumer
 -- opts into withDetails.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS system_prompt text;
+
+-- Distinguishes how a child agentrun was spawned.
+--   NULL     — root agentrun (created by the input-event watcher, no parent).
+--   'queued' — fire-and-forget child spawned via the \`queue_handler\` tool.
+--   'called' — synchronous child spawned via the \`call_handler\` tool; the
+--              parent is parked in state='waiting' until this row settles.
+-- The Scheduler reads this column to decide whether settling a row should
+-- wake a waiting parent.
+ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS calltype text;
+ALTER TABLE agentruns DROP CONSTRAINT IF EXISTS agentruns_calltype_format;
+ALTER TABLE agentruns ADD CONSTRAINT agentruns_calltype_format
+  CHECK (calltype IS NULL OR calltype IN ('queued','called'));
+
+-- Partial index for the "are all called children of $parent settled?"
+-- check the Scheduler runs after every 'called' child settles. Indexes
+-- only the rows that actually participate in the question.
+CREATE INDEX IF NOT EXISTS agentruns_parent_calltype_state_idx
+  ON agentruns (parent_agentrun_id, state)
+  WHERE calltype = 'called';
 
 -- Forward-compat: relax the topic CHECK constraint to allow arbitrarily
 -- deep \`a:b:c:…\` topics. CREATE TABLE IF NOT EXISTS above doesn't
@@ -345,7 +365,7 @@ SET state = CASE
   WHEN EXISTS (
     SELECT 1 FROM agentruns
     WHERE event_id = $1
-      AND state IN ('pending','running')
+      AND state IN ('pending','running','waiting')
       AND id <> $2
   ) THEN state
   WHEN $3 = 'failed' OR EXISTS (

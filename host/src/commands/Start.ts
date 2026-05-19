@@ -1,9 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { defineCommand } from "citty";
 import {
-    AgentRunBus,
     type ConfigService,
     createLogger,
     EventBus,
@@ -12,13 +10,18 @@ import {
     type LogStream,
     prettyStdoutStream,
 } from "@getfamiliar/shared";
+import { defineCommand } from "citty";
 import type { Bootstrap } from "../Bootstrap.js";
 import { bootstrap, isDevMode } from "../Bootstrap.js";
 import { Bastion } from "../bastion/Bastion.js";
 import { buildProviders, ReverseProxy } from "../bastion/ReverseProxy.js";
 import { lintOrThrow } from "../config/ConfigLinter.js";
 import { HostConfigService } from "../config/ConfigService.js";
-import { AGENT_IMAGE_TAG, AgentContainer, ensureAgentImage } from "../container-runner/AgentContainer.js";
+import {
+    AGENT_IMAGE_TAG,
+    AgentContainer,
+    ensureAgentImage,
+} from "../container-runner/AgentContainer.js";
 import { CronjobScheduler } from "../cron/CronjobScheduler.js";
 import { ScratchGc } from "../cron/ScratchGc.js";
 import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools.js";
@@ -200,20 +203,11 @@ export const startCommand = defineCommand({
             const bus = new EventBus(schemaConnection);
             await bus.installSchema();
             log.info("bus-state schema installed");
-            // Recover any agentruns left in `running` state by a
-            // previous daemon instance — they're orphaned (the
-            // claim filter only picks up `pending` rows) and would
-            // never finish without an explicit failure. The same
-            // pass recomputes parent event terminal states so
-            // emit-and-await callers don't hang either.
-            const recoveryBus = new AgentRunBus(schemaConnection);
-            const orphaned = await recoveryBus.failOrphanedRunning();
-            if (orphaned > 0) {
-                log.warn(
-                    { count: orphaned },
-                    "recovered orphaned agentruns from previous daemon run (state running → failed)",
-                );
-            }
+            // Orphan recovery (agentruns left in running/waiting,
+            // events left in running) is owned by the container's
+            // AgentrunScheduler — see container/src/recovery/AgentrunRecovery.ts.
+            // It runs before the first scheduling pass, so the host
+            // doesn't need to pre-clean.
         } finally {
             await schemaConnection.close();
         }

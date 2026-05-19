@@ -263,7 +263,8 @@ export interface HostContext {
  * execute} resolves with goes straight back to the model. The
  * `{ ok, result | error }` envelope on the wire is purely the
  * HTTP-layer error channel; agent-facing semantics match how MCP
- * tools and the built-in `queue_run` feel.
+ * tools and the built-in subagent tools (`queue_handler`,
+ * `call_handler`) feel.
  */
 export interface PluginTool<TInput = unknown, TOutput = unknown> {
     /**

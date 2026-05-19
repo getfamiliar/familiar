@@ -1,6 +1,6 @@
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
-import type { ToolSet } from "ai";
 import { type Logger, sanitizeToolKey } from "@getfamiliar/shared";
+import type { ToolSet } from "ai";
 
 /**
  * Configuration for {@link McpClientPool}. Built from the agent's env

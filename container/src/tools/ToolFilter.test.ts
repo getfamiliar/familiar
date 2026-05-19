@@ -15,7 +15,7 @@ const POOL = new Set([
     "atlassian_jira_get_issue",
     "atlassian_confluence_get_page",
     "send_chat",
-    "queue_run",
+    "queue_handler",
     "file_read",
     "file_write",
     "fs_ls",
@@ -24,7 +24,7 @@ const POOL = new Set([
 
 const SYSTEM_KEYS = new Set([
     "send_chat",
-    "queue_run",
+    "queue_handler",
     "file_read",
     "file_write",
     "fs_ls",

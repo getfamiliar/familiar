@@ -1,5 +1,5 @@
-import type { ModelMessage } from "ai";
 import type { ChatMessageBus } from "@getfamiliar/shared";
+import type { ModelMessage } from "ai";
 
 /**
  * Per-agentrun facade over {@link ChatMessageBus} that the

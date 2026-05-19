@@ -8,6 +8,16 @@
     },
     "main": "build/index.js",
     "types": "build/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./build/index.d.ts",
+            "default": "./build/index.js"
+        },
+        "./testing": {
+            "types": "./build/testing/index.d.ts",
+            "default": "./build/testing/index.js"
+        }
+    },
     "scripts": {
         "build": "tsc",
         "format": "biome format --write --config-path .. src/",

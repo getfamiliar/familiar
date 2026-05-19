@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import chokidar, { type FSWatcher } from "chokidar";
 import type { Logger } from "@getfamiliar/shared";
+import chokidar, { type FSWatcher } from "chokidar";
 import { parse as parseYaml } from "yaml";
 
 /**

@@ -1,6 +1,6 @@
+import type { Logger, McpInfo } from "@getfamiliar/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Logger, McpInfo } from "@getfamiliar/shared";
 import type { McpEntry } from "./McpEntry.js";
 import type { McpRegistry } from "./McpRegistry.js";
 

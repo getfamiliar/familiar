@@ -1,5 +1,8 @@
 import {
+    AgentRunBus,
+    ChatMessageBus,
     createLogger,
+    EventBus,
     jsonStdoutStream,
     type LogLevel,
     POSTGRES_DB,
@@ -7,12 +10,18 @@ import {
     POSTGRES_PORT,
     POSTGRES_USER,
     PostgresConnection,
+    StepResultBus,
 } from "@getfamiliar/shared";
-import { AgentrunWatcher } from "./AgentrunWatcher.js";
+import { AgentrunScheduler, subscribeAgentrunsChanges } from "./AgentrunScheduler.js";
+import { AgentRunner } from "./agent-runner/AgentRunner.js";
+import { ChatManager } from "./chat/ChatManager.js";
 import { EventWatcher } from "./EventWatcher.js";
+import { optionalEnvInt } from "./env.js";
 import { HandlerFile } from "./HandlerFile.js";
 import { McpClientPool } from "./mcp/McpClientPool.js";
 import { PluginToolsClient } from "./plugins/ToolsClient.js";
+import { AgentrunRecovery } from "./recovery/AgentrunRecovery.js";
+import { RealClock } from "./testing/MockClock.js";
 
 /**
  * Process-wide handler-header defaults. A handler can override any of
@@ -25,12 +34,10 @@ const HEADER_DEFAULTS = {
 };
 
 /**
- * Container entry point. Owns the postgres connection, spawns the
- * input-event watcher and the agentrun watcher off it, runs them
- * concurrently, and closes the connection on exit.
- *
- * SIGTERM/SIGINT abort both watchers; their loops exit cleanly and the
- * top-level `Promise.all` resolves.
+ * Container entry point. Owns the postgres connection, builds the
+ * AgentrunScheduler with all its dependencies wired from the
+ * environment, spawns the input-event watcher alongside it, and
+ * closes everything on SIGTERM / SIGINT.
  */
 async function main(): Promise<void> {
     const log = createLogger({
@@ -76,7 +83,32 @@ async function main(): Promise<void> {
     });
 
     const eventWatcher = new EventWatcher(connection, log);
-    const agentWatcher = new AgentrunWatcher(connection, log, mcpPool, pluginToolsClient);
+
+    const agentRunBus = new AgentRunBus(connection, log.child({ component: "agentrun-bus" }));
+    const eventBus = new EventBus(connection, log.child({ component: "event-bus" }));
+    const stepBus = new StepResultBus(connection, log.child({ component: "step-bus" }));
+    const chat = new ChatManager(new ChatMessageBus(connection));
+    const recovery = new AgentrunRecovery(connection, log.child({ component: "recovery" }));
+
+    const defaultTimeoutMs = (optionalEnvInt("AGENT_TIMEOUT_SECONDS") ?? 60) * 1000;
+    const retryCap = optionalEnvInt("INFERENCE_MAX_RETRIES") ?? 3;
+
+    const scheduler = new AgentrunScheduler({
+        agentRunBus,
+        eventBus,
+        stepBus,
+        log: log.child({ component: "agentrun-scheduler" }),
+        clock: RealClock,
+        runnerFactory: () => new AgentRunner(),
+        mcpPool,
+        pluginToolsClient,
+        chat,
+        recovery,
+        defaultTimeoutMs,
+        retryCap,
+        maxConcurrentExecuting: 1,
+        subscribeChanges: (handler) => subscribeAgentrunsChanges(connection, handler),
+    });
 
     const abortController = new AbortController();
     const shutdown = (signal: string) => {
@@ -89,7 +121,7 @@ async function main(): Promise<void> {
     try {
         await Promise.all([
             eventWatcher.run(abortController.signal),
-            agentWatcher.run(abortController.signal),
+            scheduler.start(abortController.signal),
         ]);
     } finally {
         await mcpPool.close();

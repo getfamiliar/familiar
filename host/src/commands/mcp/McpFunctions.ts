@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { defineCommand } from "citty";
 import { createLogger, prettyStdoutStream, renderMarkdown } from "@getfamiliar/shared";
+import { defineCommand } from "citty";
 import { bootstrap } from "../../Bootstrap.js";
 import { lintMcpConfigFile } from "../../mcp/McpConfigLoader.js";
 import { McpRegistry } from "../../mcp/McpRegistry.js";

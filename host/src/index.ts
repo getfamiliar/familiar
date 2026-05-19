@@ -1,5 +1,5 @@
-import { defineCommand, runMain } from "citty";
 import { createLogger, prettyStdoutStream } from "@getfamiliar/shared";
+import { defineCommand, runMain } from "citty";
 import { bootstrap } from "./Bootstrap.js";
 import { agentrunCommand } from "./commands/Agentrun.js";
 import { configCommand } from "./commands/Config.js";

@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { Cron } from "croner";
 import type { Logger } from "@getfamiliar/shared";
+import { Cron } from "croner";
 
 /**
  * 24 hours, in milliseconds. Subdirectories of `scratchDir` whose

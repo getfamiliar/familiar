@@ -1,5 +1,4 @@
 import { cpSync, existsSync } from "node:fs";
-import { defineCommand } from "citty";
 import type {
     AnyCommandDef,
     ConfigService,
@@ -7,6 +6,7 @@ import type {
     Logger,
     PostgresConnection,
 } from "@getfamiliar/shared";
+import { defineCommand } from "citty";
 import type { Bootstrap } from "../Bootstrap.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";

@@ -1,26 +1,22 @@
 import { APICallError } from "@ai-sdk/provider";
-import { type ModelMessage, stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
-import {
+import type {
     AgentRunBus,
-    type AgentRunRow,
-    ChatMessageBus,
+    AgentRunRow,
     EventBus,
-    type Logger,
-    type PostgresConnection,
-    StepResultBus,
+    Logger,
+    NewStepResult,
 } from "@getfamiliar/shared";
-import { ChatManager } from "../chat/ChatManager.js";
-import { optionalEnvBool, optionalEnvInt } from "../env.js";
+import { type ModelMessage, stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
+import type { ChatManager } from "../chat/ChatManager.js";
+import { optionalEnvBool } from "../env.js";
 import { HandlerFile } from "../HandlerFile.js";
-import type { McpClientPool } from "../mcp/McpClientPool.js";
 import { ModelFactory } from "../models/ModelFactory.js";
 import { buildPrompt, buildScratchListing, buildSystemPrompt } from "../PromptBuilder.js";
-import type { PluginToolsClient } from "../plugins/ToolsClient.js";
-import { createGroupLookup } from "../tools/ToolGroupLoader.js";
-import { ToolsFactory } from "../tools/ToolsFactory.js";
 import { fetchAncestorChain } from "./AgentRunLineage.js";
+import { AgentRunTimeoutError } from "./AgentRunTimeoutError.js";
 import { computeRetryDelay } from "./computeRetryDelay.js";
 import { formatInferenceError } from "./formatInferenceError.js";
+import { RetryableModelException } from "./RetryableModelException.js";
 import { synthesizeResultText } from "./synthesizeResultText.js";
 
 /**
@@ -32,39 +28,6 @@ import { synthesizeResultText } from "./synthesizeResultText.js";
 const CAPTURE_RAW_STEP_RESULT = optionalEnvBool("INFERENCE_CAPTURE_RAW_STEP_RESULT");
 
 /**
- * When `true`, every agentrun's resolved system prompt is persisted
- * onto the row so the report layer can surface it in the Agentrun
- * Start section under `--details`. Driven by `core.logSystemPrompt`
- * in `config.yml`. Off by default — system prompts are several KB
- * each and only helpful while debugging.
- */
-const LOG_SYSTEM_PROMPT = optionalEnvBool("INFERENCE_LOG_SYSTEM_PROMPT");
-
-/**
- * Sentinel returned from {@link AgentRunner.run} when the agent
- * call hit a retryable inference error (e.g. Featherless 503 "over
- * capacity") and the row was put back into `pending` with a future
- * `not_before`. AgentrunWatcher checks for this and skips the
- * normal `settle("done", ...)` path.
- */
-export const POSTPONED = Symbol("agentrun-postponed");
-export type RunOutcome = string | typeof POSTPONED;
-
-/**
- * One-shot runner for a single agentrun row.
- *
- * Construction is cheap and per-row by design: the runner reads the
- * handler markdown, builds a {@link ToolLoopAgent} configured from the
- * file's YAML header, runs it once, and is then thrown away. The
- * underlying `ToolLoopAgent` is itself a lightweight settings holder;
- * the heavier work (HTTP client, provider config) lives on the
- * `LanguageModel` returned by {@link ModelFactory.build}, which can be
- * cached behind that factory once a hot path emerges.
- *
- * Call site: {@link AgentrunWatcher.handle} does
- * `await new AgentRunner(row).run()` per claimed agentrun.
- */
-/**
  * Hard cap on the number of steps the agent loop may take per agentrun.
  * Prevents runaway tool-call loops with weak-tool-adherence models. The
  * SDK's own default is 20; we lower it to 15 until per-handler control
@@ -72,93 +35,138 @@ export type RunOutcome = string | typeof POSTPONED;
  */
 const MAX_STEPS_PER_RUN = 15;
 
+/**
+ * Narrow read-only view of {@link EventBus}. The runner only needs
+ * `getById` for the `isChat` gating in {@link PromptBuilder}.
+ */
+export type EventsView = Pick<EventBus, "getById">;
+
+/**
+ * Narrow read-only view of {@link AgentRunBus}. The runner only needs
+ * `getById` for {@link fetchAncestorChain}.
+ */
+export type AgentRunsView = Pick<AgentRunBus, "getById">;
+
+/**
+ * Per-run context the {@link AgentrunScheduler} supplies on every
+ * invocation of {@link AgentRunner.run}. Every effect that crosses
+ * the runner boundary (DB writes, parent suspension, step persistence,
+ * model stamping) goes through one of these callbacks; the runner
+ * itself stays pure and unaware of postgres.
+ */
+export interface AgentRunnerContext {
+    /** The agentrun this invocation is for. State is already `running`. */
+    readonly row: AgentRunRow;
+    /**
+     * Scheduler-owned abort signal. Fires on shutdown or per-agentrun
+     * timeout. The runner threads it into `agent.generate`. When
+     * `signal.aborted` and `signal.reason instanceof AgentRunTimeoutError`,
+     * the runner rethrows the timeout typed; for other reasons (e.g.
+     * a generic shutdown abort) the underlying SDK error is rethrown
+     * for the Scheduler to classify.
+     */
+    readonly signal: AbortSignal;
+    /**
+     * Build the tool set for this run from the handler's `tools:`
+     * expression. The Scheduler-provided closure threads in `bus`,
+     * `parent`, `mcpPool`, `pluginToolsClient`, and the per-row
+     * `waitForSubagent` callback so `call_handler` is wired with
+     * the right Scheduler hooks. The runner reads
+     * `handler.header.tools` and calls this once.
+     */
+    readonly buildTools: (toolsExpression: string | undefined) => Promise<ToolSet>;
+    /**
+     * Suspend the current run until the named child agentrun (and
+     * every other `calltype='called'` sibling) has settled. The real
+     * runner reaches this hook through the `call_handler` tool that
+     * `buildTools` returns; it's also exposed on the context so
+     * test runners can drive the same suspend semantics without
+     * going through the SDK + tool plumbing.
+     */
+    readonly waitForSubagent: (childId: string) => Promise<AgentRunRow>;
+    /** Read-only event lookup (for chat-vs-non-chat context assembly). */
+    readonly eventsView: EventsView;
+    /** Read-only agentrun lookup (for ancestor chain replay). */
+    readonly agentRunsView: AgentRunsView;
+    /** Chat-history facade for prompt assembly and `outputChat` reply. */
+    readonly chat: Pick<ChatManager, "fetchHistory" | "appendAssistantMessage">;
+    /**
+     * Persist one step. Called from the SDK's `onStepFinish`. The
+     * Scheduler's implementation forwards to `StepResultBus.add`.
+     */
+    readonly recordStep: (step: NewStepResult) => Promise<void>;
+    /**
+     * Stamp resolved model id (and optionally the system prompt) onto
+     * the agentrun row right after `ModelFactory.build`. The Scheduler
+     * forwards to `AgentRunBus.update`. Done before the first
+     * `agent.generate` call so the row is honest even if generate
+     * throws.
+     */
+    readonly stampModel: (model: string, systemPrompt: string | null) => Promise<void>;
+    /**
+     * Per-run logger child, pre-tagged with agentrun id / topic /
+     * handler. The runner adds further bindings for SDK-step diagnostics.
+     */
+    readonly log: Logger;
+}
+
+/**
+ * One-shot runner for a single agentrun row. Pure-ish: every effect
+ * that touches the database, the parent's lifecycle, or per-run
+ * scheduling state is delegated through the {@link AgentRunnerContext}
+ * callbacks. The runner itself reads the handler markdown, builds the
+ * `ToolLoopAgent`, drives one `agent.generate`, and returns the
+ * synthesised final text (or throws).
+ *
+ * Failure modes:
+ *
+ * - {@link RetryableModelException} — wraps a retryable inference
+ *   error (`APICallError.isRetryable === true`). Carries the
+ *   computed `delayMs` plus the per-handler `maxRetries` override
+ *   so the Scheduler can decide postpone-vs-fail.
+ * - {@link AgentRunTimeoutError} — `ctx.signal` was aborted with a
+ *   timeout reason; the SDK's abort path translates to this typed
+ *   exception so the Scheduler can settle with a clear message.
+ * - Other `Error` — anything non-retryable: handler load failures,
+ *   model construction errors, 4xx from the provider, SDK bugs.
+ *   The Scheduler settles `failed` with the formatted message.
+ */
 export class AgentRunner {
-    private readonly row: AgentRunRow;
-    private readonly steps: StepResultBus;
-    private readonly chat: ChatManager;
-    private readonly bus: AgentRunBus;
-    private readonly events: EventBus;
-    private readonly log: Logger;
-    private readonly mcpPool: McpClientPool;
-    private readonly pluginToolsClient: PluginToolsClient;
-    private stepStartedAt = 0;
-
-    constructor(
-        row: AgentRunRow,
-        connection: PostgresConnection,
-        log: Logger,
-        mcpPool: McpClientPool,
-        pluginToolsClient: PluginToolsClient,
-    ) {
-        this.row = row;
-        this.steps = new StepResultBus(connection);
-        this.chat = new ChatManager(new ChatMessageBus(connection));
-        this.bus = new AgentRunBus(connection, log);
-        this.events = new EventBus(connection);
-        this.log = log;
-        this.mcpPool = mcpPool;
-        this.pluginToolsClient = pluginToolsClient;
-    }
-
     /**
      * Resolve and parse the handler markdown for this agentrun, build a
      * {@link ToolLoopAgent} per the parsed header (model, temperature,
      * allowedTools), and run it once. Returns the agent's final text.
      *
-     * The handler body is passed as the agent's `instructions` (system
-     * prompt). The per-call user prompt is derived from the agentrun's
-     * `prompt` and `payload` fields.
-     *
-     * @param signal Optional abort signal threaded into
-     *   `ToolLoopAgent.generate` so an in-flight model call is
-     *   interrupted when the container shuts down.
-     * @throws If the handler file is missing or malformed, the model
-     *   cannot be constructed (e.g. unset env vars), or the agent loop
-     *   itself fails (including abort).
+     * @throws {RetryableModelException} for retryable inference errors.
+     * @throws {AgentRunTimeoutError} when `ctx.signal` aborts with a
+     *   timeout reason.
+     * @throws Generic Error for any non-retryable failure.
      */
-    async run(signal?: AbortSignal): Promise<RunOutcome> {
-        const handler = HandlerFile.load(this.row.topic, this.row.handler);
+    async run(ctx: AgentRunnerContext): Promise<string> {
+        const handler = HandlerFile.load(ctx.row.topic, ctx.row.handler);
         const { model, label: modelLabel } = ModelFactory.build(handler.header.model);
-        // Plugin tools are fetched per-agentrun: the catalog is small,
-        // the request is one loopback HTTP call, and lazy fetch dodges
-        // the boot-order race between the container coming up and host
-        // plugins finishing their `start(ctx)` hooks.
-        const pluginToolset = await this.pluginToolsClient.tools(this.row.eventId, this.row.id);
-        const tools = ToolsFactory.build({
-            chat: this.chat,
-            eventId: this.row.eventId,
-            toolsExpression: handler.header.tools,
-            groups: createGroupLookup(),
-            bus: this.bus,
-            parent: this.row,
-            mcpTools: this.mcpPool.tools(),
-            mcpKeysById: this.mcpPool.mcpKeysById(),
-            pluginTools: pluginToolset.tools,
-            pluginKeysById: pluginToolset.keysById,
-            log: this.log,
-        });
+
+        const tools = await ctx.buildTools(handler.header.tools);
         const toolNames = Object.keys(tools);
         const toolList =
             toolNames.length === 0
                 ? "(no tools)"
                 : `${toolNames.length} tools — ${toolNames.join(", ")}`;
-        this.log.info(`agentrun toolset resolved: ${toolList}`);
+        ctx.log.info(`agentrun toolset resolved: ${toolList}`);
+
         const systemPrompt = buildSystemPrompt(
             handler,
             toolNames,
-            this.row.topic,
-            this.row.privileged,
+            ctx.row.topic,
+            ctx.row.privileged,
         );
+
         // Stamp the resolved model — and, when the operator opted in
         // via core.logSystemPrompt, the resolved system prompt — on
-        // the row before invoking the agent. One UPDATE keeps the row
-        // honest (even if generate() throws) without a second write.
-        // Patch's `undefined` skip means the SQL only touches
-        // system_prompt when LOG_SYSTEM_PROMPT is on.
-        await this.bus.update(this.row.id, {
-            model: modelLabel,
-            systemPrompt: LOG_SYSTEM_PROMPT ? systemPrompt : undefined,
-        });
+        // the row before invoking the agent. Done through the Scheduler-
+        // owned callback so the runner stays bus-free.
+        const LOG_SYSTEM_PROMPT = optionalEnvBool("INFERENCE_LOG_SYSTEM_PROMPT");
+        await ctx.stampModel(modelLabel, LOG_SYSTEM_PROMPT ? systemPrompt : null);
 
         const agent = new ToolLoopAgent<never, ToolSet>({
             model,
@@ -166,15 +174,13 @@ export class AgentRunner {
             instructions: systemPrompt,
             temperature: handler.header.temperature,
             maxOutputTokens: handler.header.maxOutputTokens,
-            // Disable the SDK's blocking retry loop — we own retry
-            // policy via postpone() so a 5-minute backoff doesn't
-            // park the watcher slot. See the catch around `generate`
-            // below for the postpone-or-fail decision.
+            // The Scheduler owns retry policy via the RetryableModelException
+            // throw + postpone/settle decision. Disable the SDK's own
+            // retry loop so a 5-minute backoff doesn't park us.
             maxRetries: 0,
             stopWhen: stepCountIs(MAX_STEPS_PER_RUN),
             prepareStep: ({ stepNumber, messages }) => {
-                this.stepStartedAt = Date.now();
-                this.log.debug(
+                ctx.log.debug(
                     {
                         stepNumber,
                         messageCount: messages.length,
@@ -188,15 +194,11 @@ export class AgentRunner {
         // Gate context assembly on the originating event's `isChat`
         // flag. Chat events feed prior turns from `chatmessages`; every
         // other event (cron firings, mail ingestion, jira webhooks,
-        // queue_run descendants of those) feeds the agentrun lineage
-        // instead. Default-stamping put a chat channel on those events
-        // for `send_chat` routing, so the channel column alone is no
-        // longer a reliable "is this a chat" signal — `events.is_chat`
-        // is. A missing event row (shouldn't happen for a claimed
-        // agentrun) is treated as non-chat to fail safer.
-        const event = await this.events.getById(this.row.eventId);
+        // queue_handler / call_handler descendants of those) feeds the
+        // agentrun lineage instead.
+        const event = await ctx.eventsView.getById(ctx.row.eventId);
         const isChat = event?.isChat === true;
-        const scratchListing = buildScratchListing(this.row.eventId);
+        const scratchListing = buildScratchListing(ctx.row.eventId);
 
         let messages: ModelMessage[];
         let historyMessages = 0;
@@ -204,18 +206,16 @@ export class AgentRunner {
         let prompt: string;
 
         if (isChat) {
-            const history = await this.chat.fetchHistory(this.row.eventId);
-            // `chatmessages` carries rows linked to chat events, so a
-            // non-empty history is the unambiguous signal that the
-            // user's trailing turn is already in `messages` via that
-            // channel. EventWatcher writes the same text onto
-            // `row.prompt` for inspection purposes, but feeding it
-            // through buildPrompt as a user message here would inject
-            // it twice. Skip the seed prompt in that case; payload
-            // rendering still goes through either way, so structured
-            // supplementary data remains visible to the model.
-            const seedPrompt = history.length > 0 ? null : this.row.prompt;
-            prompt = buildPrompt(seedPrompt, this.row.payload, scratchListing);
+            const history = await ctx.chat.fetchHistory(ctx.row.eventId);
+            // A non-empty history means the user's trailing turn is
+            // already in `messages` via the chat-history channel.
+            // EventWatcher writes the same text onto `row.prompt` for
+            // inspection purposes, but feeding it through buildPrompt
+            // here would inject it twice. Skip the seed prompt in
+            // that case; payload rendering still goes through either
+            // way.
+            const seedPrompt = history.length > 0 ? null : ctx.row.prompt;
+            prompt = buildPrompt(seedPrompt, ctx.row.payload, scratchListing);
             messages = [...history];
             if (prompt.length > 0) {
                 messages.push({ role: "user", content: prompt });
@@ -226,12 +226,10 @@ export class AgentRunner {
             // lineage. Both `prompt` and `resultText` of each ancestor
             // are assistant-side artifacts here — the prompt was
             // written by the host emitter (cron, mail plugin) or by
-            // the parent agent's `queue_run`, never by a literal user.
-            // Tagging it `user` would falsely imply user authorship.
-            // Reasoning text from `stepresults` is intentionally
-            // omitted in v1; fold it in later (inline block or
-            // structured `reasoning` part) once it proves useful.
-            const ancestors = await fetchAncestorChain(this.bus, this.row.parentAgentrunId);
+            // the parent agent's `queue_handler` / `call_handler`,
+            // never by a literal user. Tagging it `user` would falsely
+            // imply user authorship.
+            const ancestors = await fetchAncestorChain(ctx.agentRunsView, ctx.row.parentAgentrunId);
             messages = [];
             for (const ancestor of ancestors) {
                 if (ancestor.prompt !== null && ancestor.prompt.trim().length > 0) {
@@ -244,9 +242,8 @@ export class AgentRunner {
             // The current run's prompt stays `user`-roled even though
             // it too is host- or parent-assistant-generated: the
             // conversational protocol expects a user turn last to cue
-            // the model to respond. This is a protocol convention, not
-            // a claim about authorship.
-            prompt = buildPrompt(this.row.prompt, this.row.payload, scratchListing);
+            // the model to respond.
+            prompt = buildPrompt(ctx.row.prompt, ctx.row.payload, scratchListing);
             if (prompt.length > 0) {
                 messages.push({ role: "user", content: prompt });
             }
@@ -254,14 +251,14 @@ export class AgentRunner {
         }
 
         const runStartedAt = Date.now();
-        this.log.debug(
+        ctx.log.debug(
             {
                 model: handler.header.model,
                 temperature: handler.header.temperature,
                 maxOutputTokens: handler.header.maxOutputTokens,
                 systemPrompt: systemPrompt,
                 prompt,
-                runPrompt: this.row.prompt,
+                runPrompt: ctx.row.prompt,
                 tools: toolNames,
                 contextSource: isChat ? "chat-history" : "agentrun-lineage",
                 historyMessages,
@@ -271,105 +268,48 @@ export class AgentRunner {
             "agent starting",
         );
 
-        // The SDK's blocking retry is already disabled via the
-        // ToolLoopAgent constructor (`maxRetries: 0` above). The
-        // catch below catches retryable errors and postpones the
-        // agentrun via `not_before`, freeing the slot for other rows;
-        // the watcher re-claims when the window opens. Cap
-        // precedence: handler YAML override → INFERENCE_MAX_RETRIES
-        // env (set by host from `inference.maxRetries`) → hardcoded
-        // fallback of 3.
-        const retryCap = handler.header.maxRetries ?? optionalEnvInt("INFERENCE_MAX_RETRIES") ?? 3;
-
-        // Hard timeout on a single generate() call. Three layers of
-        // defense, because empirical experience says the SDK's own
-        // abort handling can wedge:
-        //
-        //   1. `timeout: { totalMs }` to the SDK so it races its own
-        //      AbortController against its scheduler.
-        //   2. A linked AbortController of our own — fires when the
-        //      timeout elapses, signals the SDK to clean up.
-        //   3. `Promise.race` against a hard timeout-rejection
-        //      promise so the AWAIT itself rejects even if the SDK
-        //      never honours the abort. This is the load-bearing
-        //      guarantee: regardless of what the SDK does, the
-        //      catch below runs and the agentrun fails cleanly
-        //      after `core.agentTimeout` seconds.
-        //
-        // The orphaned generate continues in the background until it
-        // unwinds; the AbortController gives it a chance to do so
-        // gracefully, and the agentrun is already settled by then so
-        // its outcome doesn't matter.
-        const timeoutMs = (optionalEnvInt("AGENT_TIMEOUT_SECONDS") ?? 60) * 1000;
-        const timeoutController = new AbortController();
-        const linkedSignal = signal
-            ? AbortSignal.any([signal, timeoutController.signal])
-            : timeoutController.signal;
-        let timedOut = false;
-        let timer: NodeJS.Timeout | undefined;
-        const timeoutPromise = new Promise<never>((_, reject) => {
-            timer = setTimeout(() => {
-                timedOut = true;
-                const err = new Error(
-                    `agent generate timed out after ${timeoutMs} ms (configure via core.agentTimeout)`,
-                );
-                timeoutController.abort(err);
-                reject(err);
-            }, timeoutMs);
-        });
-
         let result: Awaited<ReturnType<typeof agent.generate>>;
         try {
-            try {
-                result = await Promise.race([
-                    agent.generate({
-                        messages,
-                        abortSignal: linkedSignal,
-                        timeout: { totalMs: timeoutMs },
-                        onStepFinish: (step) => this.recordStep(step),
-                    }),
-                    timeoutPromise,
-                ]);
-            } finally {
-                if (timer !== undefined) {
-                    clearTimeout(timer);
-                }
-            }
+            result = await agent.generate({
+                messages,
+                abortSignal: ctx.signal,
+                onStepFinish: (step) =>
+                    this.recordStep(ctx, step as Parameters<typeof this.recordStep>[1]),
+            });
         } catch (err) {
-            if (timedOut) {
-                throw new Error(
-                    `agent generate timed out after ${timeoutMs} ms (configure via core.agentTimeout)`,
-                );
+            // Timeout / shutdown classification. The Scheduler aborts
+            // the signal with a typed reason: `AgentRunTimeoutError`
+            // for budget exhaustion, anything else for shutdown.
+            if (ctx.signal.aborted) {
+                const reason = ctx.signal.reason;
+                if (reason instanceof AgentRunTimeoutError) {
+                    throw reason;
+                }
+                // Shutdown abort: rethrow the SDK error so the
+                // Scheduler can classify and settle `failed`.
+                throw err;
             }
             if (APICallError.isInstance(err) && err.isRetryable === true) {
-                if (this.row.retryCount < retryCap) {
-                    const delayMs = computeRetryDelay(err, this.row.retryCount);
-                    const runAfter = new Date(Date.now() + delayMs);
-                    const errorText = formatInferenceError(err);
-                    await this.bus.postpone(this.row.id, runAfter, errorText);
-                    this.log.warn(
-                        {
-                            retryAfterMs: delayMs,
-                            attempt: this.row.retryCount + 1,
-                            cap: retryCap,
-                            statusCode: err.statusCode,
-                            url: err.url,
-                        },
-                        "agentrun postponed, retryable inference error",
-                    );
-                    return POSTPONED;
-                }
-                this.log.warn(
-                    { cap: retryCap, statusCode: err.statusCode },
-                    "agentrun retry cap reached, failing",
+                const delayMs = computeRetryDelay(err, ctx.row.retryCount);
+                const errorText = formatInferenceError(err);
+                ctx.log.warn(
+                    {
+                        retryAfterMs: delayMs,
+                        attempt: ctx.row.retryCount + 1,
+                        handlerMaxRetriesOverride: handler.header.maxRetries,
+                        statusCode: err.statusCode,
+                        url: err.url,
+                    },
+                    "agent generate returned a retryable inference error",
                 );
+                throw new RetryableModelException(delayMs, errorText, handler.header.maxRetries);
             }
             throw err;
         }
 
         const finalText = synthesizeResultText(result);
 
-        this.log.debug(
+        ctx.log.debug(
             {
                 durationMs: Date.now() - runStartedAt,
                 steps: result.steps.length,
@@ -389,58 +329,53 @@ export class AgentRunner {
         // reasons; targeted reasons get a synthesized diagnostic via
         // synthesizeResultText so they always have something to post).
         if (handler.header.outputChat === true && finalText.trim().length > 0) {
-            await this.chat.appendAssistantMessage(this.row.eventId, finalText);
+            await ctx.chat.appendAssistantMessage(ctx.row.eventId, finalText);
         }
 
         return finalText;
     }
 
     /**
-     * Persist one step into `stepresults`. Awaited inside the SDK's
-     * `onStepFinish` so step writes are sequential and any insert
-     * failure aborts the current `generate` call.
+     * Translate one SDK step into a {@link NewStepResult} and hand it
+     * to the Scheduler-provided callback. Awaited inside the SDK's
+     * `onStepFinish` so any failure in the recording path aborts the
+     * current `generate` call.
      */
-    private async recordStep(step: {
-        readonly stepNumber: number;
-        readonly finishReason: string;
-        readonly rawFinishReason?: string;
-        readonly text: string;
-        readonly reasoningText: string | undefined;
-        readonly content?: ReadonlyArray<unknown>;
-        readonly warnings?: ReadonlyArray<unknown>;
-        readonly usage: {
-            readonly inputTokens?: number;
-            readonly outputTokens?: number;
-            readonly inputTokenDetails?: {
-                readonly noCacheTokens?: number;
-                readonly cacheReadTokens?: number;
-                readonly cacheWriteTokens?: number;
+    private async recordStep(
+        ctx: AgentRunnerContext,
+        step: {
+            readonly stepNumber: number;
+            readonly finishReason: string;
+            readonly rawFinishReason?: string;
+            readonly text: string;
+            readonly reasoningText: string | undefined;
+            readonly content?: ReadonlyArray<unknown>;
+            readonly warnings?: ReadonlyArray<unknown>;
+            readonly usage: {
+                readonly inputTokens?: number;
+                readonly outputTokens?: number;
+                readonly inputTokenDetails?: {
+                    readonly noCacheTokens?: number;
+                    readonly cacheReadTokens?: number;
+                    readonly cacheWriteTokens?: number;
+                };
+                readonly outputTokenDetails?: {
+                    readonly textTokens?: number;
+                    readonly reasoningTokens?: number;
+                };
             };
-            readonly outputTokenDetails?: {
-                readonly textTokens?: number;
-                readonly reasoningTokens?: number;
-            };
-        };
-        readonly toolCalls: unknown;
-        readonly toolResults: unknown;
-    }): Promise<void> {
-        const durationMs = this.stepStartedAt > 0 ? Date.now() - this.stepStartedAt : null;
-        // For unsuccessful finish reasons (`other`, `error`, `unknown`)
-        // dump the raw provider info at warn level so the operator
-        // can diagnose without enabling debug logging on the whole
-        // daemon. `content` carries every block the model emitted,
-        // including any blocks the SDK couldn't classify into
-        // text/tool-call/reasoning — exactly the bucket that turns
-        // into "other".
+            readonly toolCalls: unknown;
+            readonly toolResults: unknown;
+        },
+    ): Promise<void> {
         const isInconclusive =
             step.finishReason === "other" ||
             step.finishReason === "error" ||
             step.finishReason === "unknown";
         const logLevel: "warn" | "debug" = isInconclusive ? "warn" : "debug";
-        this.log[logLevel](
+        ctx.log[logLevel](
             {
                 stepNumber: step.stepNumber,
-                durationMs,
                 finishReason: step.finishReason,
                 rawFinishReason: step.rawFinishReason ?? null,
                 inputTokens: step.usage.inputTokens ?? null,
@@ -454,9 +389,9 @@ export class AgentRunner {
             },
             "step finished",
         );
-        await this.steps.add({
-            agentRunId: this.row.id,
-            eventId: this.row.eventId,
+        await ctx.recordStep({
+            agentRunId: ctx.row.id,
+            eventId: ctx.row.eventId,
             stepNumber: step.stepNumber,
             finishReason: step.finishReason,
             resultText: step.text || null,

@@ -4,14 +4,27 @@
  * Each agentrun is a single agent invocation that responds to (or
  * descends from) an `events` row. Transitions:
  *
- * - `pending`: just inserted; waiting for the agentrun watcher.
- * - `running`: claimed by the agentrun watcher (atomic
- *   `pending → running` via {@link AgentRunBus.claim}).
+ * - `pending`: ready to be picked by the {@link AgentrunScheduler}.
+ *   Either fresh (no in-memory runner) or a paused runner that has
+ *   been re-pended after its `call_handler` children all settled.
+ * - `running`: actively executing JS / making model calls. The
+ *   Scheduler holds an in-memory entry for this row.
+ * - `waiting`: parked inside a `call_handler` tool callback. The
+ *   in-memory runner is still alive but its `agent.generate()` is
+ *   awaiting the subagent. Moves back to `pending` once every
+ *   `calltype='called'` child of this row has settled.
  * - `done` / `failed`: terminal. Set by {@link AgentRunBus.settle},
  *   which also recomputes the parent event's terminal state in the
  *   same transaction.
  */
-export type AgentRunState = "pending" | "running" | "done" | "failed";
+export type AgentRunState = "pending" | "running" | "waiting" | "done" | "failed";
+
+/**
+ * How a child agentrun was spawned. `null` for root agentruns (those
+ * created by the input-event watcher in response to an event). See
+ * the matching SQL CHECK in `Schema.ts`.
+ */
+export type AgentRunCallType = "queued" | "called";
 
 /**
  * Shape of a row in the `agentruns` table after JSON-decoding from
@@ -84,12 +97,20 @@ export interface AgentRunRow {
     readonly error: string | null;
     /**
      * Inherited from the originating event (root agentrun) or the parent
-     * agentrun (children spawned via `queue_run`). `true` when the run
-     * descends from a trusted user-input source; `false` otherwise. Tools
-     * that gate risky behavior on the call site's trust level read this
-     * flag rather than rummaging through the event payload.
+     * agentrun (children spawned via `queue_handler` / `call_handler`).
+     * `true` when the run descends from a trusted user-input source;
+     * `false` otherwise. Tools that gate risky behavior on the call
+     * site's trust level read this flag rather than rummaging through
+     * the event payload.
      */
     readonly privileged: boolean;
+    /**
+     * How this agentrun was spawned. `null` for root agentruns;
+     * `'queued'` for children of `queue_handler` (fire-and-forget);
+     * `'called'` for children of `call_handler` (parent parks in
+     * `waiting` until this row settles).
+     */
+    readonly calltype: AgentRunCallType | null;
     /**
      * Number of retry attempts already made. Bumped each time
      * `AgentRunner` postpones the row due to a retryable inference
@@ -136,6 +157,12 @@ export interface NewAgentRun {
      * event (root agentrun) or parent agentrun (children).
      */
     readonly privileged?: boolean;
+    /**
+     * How this agentrun was spawned. Omitted / `null` for root rows
+     * inserted by the input-event watcher. Set to `'queued'` or
+     * `'called'` by the tool that spawned the child.
+     */
+    readonly calltype?: AgentRunCallType | null;
 }
 
 /** Patch shape for {@link AgentRunBus.update}. */
@@ -148,10 +175,5 @@ export interface AgentRunPatch {
     readonly priority?: number;
     readonly model?: string | null;
     readonly systemPrompt?: string | null;
-}
-
-/** Filter for {@link AgentRunBus.waitForNext}. */
-export interface AgentRunFilter {
-    readonly topics?: readonly string[];
-    readonly states?: readonly AgentRunState[];
+    readonly calltype?: AgentRunCallType | null;
 }

@@ -134,6 +134,9 @@ export function renderAgentrunStart(run: AgentRunRow, options: AgentrunStartOpti
     lines.push(`| Handler | \`${run.topic}/${run.handler}\` |`);
     lines.push(`| Model | ${run.model ?? "—"} |`);
     lines.push(`| Parent Agentrun | ${run.parentAgentrunId ?? "—"} |`);
+    if (run.calltype !== null) {
+        lines.push(`| Call Type | ${run.calltype} |`);
+    }
     if (run.retryCount > 0) {
         lines.push(`| Retry Count | ${run.retryCount} |`);
     }

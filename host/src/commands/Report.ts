@@ -1,5 +1,5 @@
-import { defineCommand } from "citty";
 import { AgentRunBus, EventBus, renderMarkdown, StepResultBus } from "@getfamiliar/shared";
+import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";

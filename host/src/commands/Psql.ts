@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { defineCommand } from "citty";
 import { POSTGRES_DB, POSTGRES_HOST, POSTGRES_USER } from "@getfamiliar/shared";
+import { defineCommand } from "citty";
 
 /**
  * `cli.sh psql` — drop into an interactive `psql` shell inside the

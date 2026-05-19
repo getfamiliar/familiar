@@ -1,8 +1,9 @@
-import type { ToolSet } from "ai";
 import type { AgentRunBus, AgentRunRow, Logger } from "@getfamiliar/shared";
+import type { ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
+import { buildCallHandlerTool, type WaitForSubagent } from "./callHandler.js";
 import { buildFsTools } from "./fs.js";
-import { buildQueueRunTool } from "./queueRun.js";
+import { buildQueueHandlerTool } from "./queueHandler.js";
 import { buildSendChatTool } from "./sendChat.js";
 import {
     evaluate,
@@ -15,7 +16,7 @@ import {
 /** Inputs the {@link AgentRunner} threads into the factory per agentrun. */
 export interface ToolsFactoryContext {
     /** Chat history facade. When omitted, the `send_chat` tool is not registered. */
-    readonly chat?: ChatManager;
+    readonly chat?: Pick<ChatManager, "fetchHistory" | "appendAssistantMessage">;
     /** Parent event id for the running agentrun; closed over by chat-aware tools. */
     readonly eventId?: string;
     /**
@@ -33,10 +34,21 @@ export interface ToolsFactoryContext {
      * work without it.
      */
     readonly groups?: GroupLookup;
-    /** Agentrun bus; required to register `queue_run`. */
+    /** Agentrun bus; required to register `queue_handler` / `call_handler`. */
     readonly bus?: AgentRunBus;
-    /** The currently-running agentrun row; closed over by `queue_run`. */
+    /**
+     * The currently-running agentrun row; closed over by both
+     * `queue_handler` and `call_handler` for parent inheritance.
+     */
     readonly parent?: AgentRunRow;
+    /**
+     * Scheduler-provided callback that, given a freshly-inserted
+     * child agentrun id, suspends the parent until the child settles
+     * and resolves with the child's terminal row. When supplied (and
+     * `bus` + `parent` are also present), `call_handler` is registered;
+     * without it, only `queue_handler` is available.
+     */
+    readonly waitForSubagent?: WaitForSubagent;
     /**
      * MCP-derived tools, namespaced as `${id}_${toolName}` by the
      * {@link McpClientPool}. Filtered through the same expression
@@ -81,19 +93,21 @@ export interface ToolsFactoryContext {
  * Builds the tool set the {@link import("../agent-runner/AgentRunner").AgentRunner}
  * hands to the Vercel AI SDK's tool-loop agent.
  *
- * **One pool, one filter.** System tools (`send_chat`, `queue_run`,
- * `file_*`, `fs_*`) and MCP tools (`${id}_${name}`) are merged into
- * a single available set. The handler's `tools:` expression — or,
- * when omitted, the implicit `system` default — decides what
- * survives.
+ * **One pool, one filter.** System tools (`send_chat`,
+ * `queue_handler`, `call_handler`, `file_*`, `fs_*`) and MCP tools
+ * (`${id}_${name}`) are merged into a single available set. The
+ * handler's `tools:` expression — or, when omitted, the implicit
+ * `system` default — decides what survives.
  *
  * Built-in groups visible from any expression:
  *
  * - `all` — every key in the available pool.
  * - `system` — just the system-tool keys registered for *this*
  *   agentrun. Conditional registrations (`send_chat` only when chat
- *   context is present, `queue_run` only when bus + parent are
- *   present) are reflected here automatically.
+ *   context is present, `queue_handler` / `call_handler` only when
+ *   bus + parent are present, with `call_handler` further requiring
+ *   the Scheduler's `waitForSubagent` callback) are reflected here
+ *   automatically.
  * - `mcp` — just the MCP-tool keys.
  * - `none` — empty set; lets a child handler override its parent's
  *   `tools:` to nothing under the replace-merge rule.
@@ -111,7 +125,14 @@ export class ToolsFactory {
             systemTools.send_chat = buildSendChatTool(context.chat, context.eventId);
         }
         if (context.bus && context.parent) {
-            systemTools.queue_run = buildQueueRunTool(context.bus, context.parent);
+            systemTools.queue_handler = buildQueueHandlerTool(context.bus, context.parent);
+            if (context.waitForSubagent) {
+                systemTools.call_handler = buildCallHandlerTool(
+                    context.bus,
+                    context.parent,
+                    context.waitForSubagent,
+                );
+            }
         }
         if (context.parent) {
             // Filesystem tools are always available; the writing tools

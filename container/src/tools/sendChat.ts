@@ -18,7 +18,7 @@ interface SendChatInput {
  * tool result the model sees in the next step.
  */
 export function buildSendChatTool(
-    chat: ChatManager,
+    chat: Pick<ChatManager, "appendAssistantMessage">,
     eventId: string,
 ): Tool<SendChatInput, { ok: true }> {
     return tool<SendChatInput, { ok: true }>({

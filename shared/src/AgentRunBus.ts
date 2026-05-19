@@ -1,5 +1,5 @@
 import type {
-    AgentRunFilter,
+    AgentRunCallType,
     AgentRunPatch,
     AgentRunRow,
     AgentRunState,
@@ -31,6 +31,7 @@ interface RawAgentRunRow {
     result_text: string | null;
     error: string | null;
     privileged: boolean;
+    calltype: string | null;
     retry_count: number;
     not_before: Date | null;
     model: string | null;
@@ -45,9 +46,15 @@ interface RawAgentRunRow {
  * from) an `events` row.
  *
  * Uses an injected {@link PostgresConnection} for pool + LISTEN access;
- * does not own connection lifecycle. Mirrors {@link EventBus} in shape:
- * `add` / `update` / `claim` / `waitAndClaim` / `waitForNext`. Listens
- * on `agentruns_changed`, which fires on INSERT and on state UPDATE.
+ * does not own connection lifecycle.
+ *
+ * The bus is purely a CRUD surface — no claim queue, no in-process
+ * blocking primitive. The {@link import("@getfamiliar/container").AgentrunScheduler}
+ * is the sole authority on which row runs next and is guaranteed
+ * singleton inside the container, so a postgres-side claim queue
+ * (`FOR UPDATE SKIP LOCKED`) would be overkill. The Scheduler reads
+ * eligible pending rows via {@link listEligible} and writes lifecycle
+ * transitions via {@link update} / {@link settle} / {@link postpone}.
  *
  * The terminal write goes through {@link settle}, which transitions the
  * agentrun to `done` / `failed` *and* recomputes the parent event's
@@ -58,15 +65,6 @@ interface RawAgentRunRow {
 export class AgentRunBus {
     private readonly connection: PostgresConnection;
     private readonly log: Logger | undefined;
-    private notifyWaiters: Array<() => void> = [];
-    private listenInstalled = false;
-    private readonly listenHandler: NotificationHandler = (payload) => {
-        this.log?.debug({ channel: AGENTRUNS_CHANNEL, payload }, "NOTIFY agentruns_changed");
-        const waiters = this.notifyWaiters.splice(0);
-        for (const wake of waiters) {
-            wake();
-        }
-    };
 
     constructor(connection: PostgresConnection, log?: Logger) {
         this.connection = connection;
@@ -86,13 +84,13 @@ export class AgentRunBus {
      * Insert a new agentrun and return the persisted row.
      *
      * @throws If the underlying FK / check constraints reject the row
-     *   (unknown `eventId`, malformed `topic`).
+     *   (unknown `eventId`, malformed `topic`, invalid `calltype`).
      */
     async add(run: NewAgentRun): Promise<AgentRunRow> {
         const result = await this.connection.getPool().query<RawAgentRunRow>(
             `INSERT INTO agentruns
-                (event_id, parent_agentrun_id, topic, handler, priority, state, prompt, payload, privileged)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+                (event_id, parent_agentrun_id, topic, handler, priority, state, prompt, payload, privileged, calltype)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
              RETURNING *`,
             [
                 run.eventId,
@@ -104,6 +102,7 @@ export class AgentRunBus {
                 run.prompt ?? null,
                 JSON.stringify(run.payload ?? {}),
                 run.privileged ?? false,
+                run.calltype ?? null,
             ],
         );
         return mapRow(result.rows[0]);
@@ -152,6 +151,10 @@ export class AgentRunBus {
             sets.push(`system_prompt = $${n++}`);
             values.push(patch.systemPrompt);
         }
+        if (patch.calltype !== undefined) {
+            sets.push(`calltype = $${n++}`);
+            values.push(patch.calltype);
+        }
 
         values.push(id);
         const idParam = `$${n}`;
@@ -159,101 +162,6 @@ export class AgentRunBus {
         await this.connection
             .getPool()
             .query(`UPDATE agentruns SET ${sets.join(", ")} WHERE id = ${idParam}`, values);
-    }
-
-    /**
-     * Atomically transition the highest-priority agentrun in `fromState`
-     * to `toState` and return the updated row. Race-safe across multiple
-     * concurrent workers via `FOR UPDATE SKIP LOCKED`.
-     *
-     * Returns `undefined` if no row is in `fromState`. Non-blocking — for
-     * blocking semantics, use {@link waitAndClaim}.
-     */
-    async claim(
-        fromState: AgentRunState,
-        toState: AgentRunState,
-    ): Promise<AgentRunRow | undefined> {
-        // The `not_before IS NULL OR not_before <= now()` predicate
-        // skips agentruns that AgentRunner postponed after a retryable
-        // inference error. They stay `pending` but invisible to the
-        // claim until their re-run window opens, freeing the watcher
-        // slot for other rows in the meantime.
-        const result = await this.connection.getPool().query<RawAgentRunRow>(
-            `UPDATE agentruns
-             SET state = $1, updated_at = now()
-             WHERE id = (
-               SELECT id FROM agentruns
-               WHERE state = $2
-                 AND (not_before IS NULL OR not_before <= now())
-               ORDER BY priority DESC, id ASC
-               FOR UPDATE SKIP LOCKED
-               LIMIT 1
-             )
-             RETURNING *`,
-            [toState, fromState],
-        );
-        return result.rows.length > 0 ? mapRow(result.rows[0]) : undefined;
-    }
-
-    /**
-     * Block until an agentrun in `fromState` is available, then
-     * atomically claim it (transition to `toState`) and return it.
-     *
-     * @throws If aborted via `signal`.
-     */
-    async waitAndClaim(
-        fromState: AgentRunState,
-        toState: AgentRunState,
-        signal?: AbortSignal,
-    ): Promise<AgentRunRow> {
-        await this.ensureListening();
-
-        for (;;) {
-            if (signal?.aborted) {
-                throw new Error("waitAndClaim aborted");
-            }
-
-            const row = await this.claim(fromState, toState);
-            if (row) {
-                return row;
-            }
-
-            // If any postponed rows exist, wake up at the earliest
-            // `not_before` so the postponed row gets re-checked even
-            // when no NOTIFY arrives in the meantime. Otherwise wait
-            // for NOTIFY indefinitely (the existing pattern).
-            const next = await this.nextEligibleAt();
-            const maxWaitMs = next === null ? undefined : Math.max(0, next.getTime() - Date.now());
-            await this.waitForNotification(signal, maxWaitMs);
-        }
-    }
-
-    /**
-     * Block until an agentrun matching `filter` is in the table. Returns
-     * the highest-priority such row (FIFO within priority).
-     *
-     * Read-only; for the multi-consumer queue pattern use
-     * {@link waitAndClaim}.
-     *
-     * @throws If aborted via `signal`.
-     */
-    async waitForNext(filter: AgentRunFilter = {}, signal?: AbortSignal): Promise<AgentRunRow> {
-        await this.ensureListening();
-
-        for (;;) {
-            if (signal?.aborted) {
-                throw new Error("waitForNext aborted");
-            }
-
-            const row = await this.queryOne(filter);
-            if (row) {
-                return row;
-            }
-
-            const next = await this.nextEligibleAt();
-            const maxWaitMs = next === null ? undefined : Math.max(0, next.getTime() - Date.now());
-            await this.waitForNotification(signal, maxWaitMs);
-        }
     }
 
     /**
@@ -316,14 +224,56 @@ export class AgentRunBus {
     }
 
     /**
-     * Fetch one agentrun by id, or `undefined` when missing. Mirrors
-     * {@link EventBus.getById}.
+     * Fetch one agentrun by id, or `undefined` when missing.
      */
     async getById(id: string): Promise<AgentRunRow | undefined> {
         const result = await this.connection
             .getPool()
             .query<RawAgentRunRow>(`SELECT * FROM agentruns WHERE id = $1`, [id]);
         return result.rows.length > 0 ? mapRow(result.rows[0]) : undefined;
+    }
+
+    /**
+     * Fetch every agentrun in `state='pending'` whose `not_before` window
+     * has opened, in dispatch order (`priority desc, id asc`). The
+     * {@link AgentrunScheduler} calls this once per scheduling pass.
+     *
+     * Returns an empty array when nothing is ready. The Scheduler then
+     * waits on its NOTIFY subscription or a parked `not_before` timer
+     * before re-checking.
+     */
+    async listEligible(): Promise<readonly AgentRunRow[]> {
+        const result = await this.connection.getPool().query<RawAgentRunRow>(
+            `SELECT * FROM agentruns
+             WHERE state = 'pending'
+               AND (not_before IS NULL OR not_before <= now())
+             ORDER BY priority DESC, id ASC`,
+        );
+        return result.rows.map(mapRow);
+    }
+
+    /**
+     * `true` when every `calltype='called'` child of `parentId` is in
+     * a terminal state (`done` / `failed`). Used by the Scheduler
+     * after a called child settles, to decide whether the parent can
+     * leave `waiting` and go back to `pending`.
+     *
+     * Returns `true` when there are no called children at all (the
+     * trivially-vacuous case); the Scheduler still owns the "should
+     * we actually re-pend this parent?" decision and only invokes
+     * this method when at least one called child has just settled.
+     */
+    async areAllCalledChildrenSettled(parentId: string): Promise<boolean> {
+        const result = await this.connection.getPool().query<{ exists: boolean }>(
+            `SELECT EXISTS (
+               SELECT 1 FROM agentruns
+               WHERE parent_agentrun_id = $1
+                 AND calltype = 'called'
+                 AND state NOT IN ('done','failed')
+             ) AS exists`,
+            [parentId],
+        );
+        return result.rows[0]?.exists === false;
     }
 
     /**
@@ -357,69 +307,13 @@ export class AgentRunBus {
     }
 
     /**
-     * Sweep agentruns left in `running` state by a previous daemon
-     * instance and settle them as `failed` with a clear marker. The
-     * watcher's claim filter is `state='pending'`, so a row stuck in
-     * `running` (because the daemon died mid-`agent.generate`) is
-     * orphaned forever without this — the agentrun never finishes,
-     * the parent event never settles, and any plugin awaiting that
-     * event waits indefinitely.
-     *
-     * Two SQL writes in sequence:
-     *   1. UPDATE every `running` agentrun → `failed` with the
-     *      orphan-recovery error message.
-     *   2. UPDATE every `running` event whose tree has no remaining
-     *      pending/running agentruns to its terminal state (`failed`
-     *      if any failed, else `done`). Mirrors the per-row logic in
-     *      `EVENT_TERMINAL_UPDATE_SQL` but in bulk.
-     *
-     * Returns the count of agentruns that were transitioned. Safe
-     * to call on every daemon start; a no-op when nothing's stuck.
-     */
-    async failOrphanedRunning(): Promise<number> {
-        const pool = this.connection.getPool();
-        const message = "daemon was restarted while this agentrun was running";
-        const runs = await pool.query<{ id: string }>(
-            `UPDATE agentruns
-             SET state = 'failed',
-                 error = COALESCE(error, $1),
-                 updated_at = now()
-             WHERE state = 'running'
-             RETURNING id`,
-            [message],
-        );
-        if (runs.rowCount === 0) {
-            return 0;
-        }
-        await pool.query(
-            `UPDATE events
-             SET state = CASE
-               WHEN EXISTS (
-                 SELECT 1 FROM agentruns
-                 WHERE event_id = events.id
-                   AND state IN ('pending', 'running')
-               ) THEN state
-               WHEN EXISTS (
-                 SELECT 1 FROM agentruns
-                 WHERE event_id = events.id
-                   AND state = 'failed'
-               ) THEN 'failed'
-               ELSE 'done'
-             END,
-             updated_at = now()
-             WHERE state = 'running'`,
-        );
-        return runs.rowCount ?? 0;
-    }
-
-    /**
      * Postpone an agentrun after a retryable inference error.
      * Returns the row to `pending`, bumps `retry_count`, sets
      * `not_before` to the supplied timestamp, and records the latest
      * attempt's error text. The existing `agentruns_changed` UPDATE
-     * trigger fires on the state write so any watcher waiting on
-     * NOTIFY wakes up — it just won't be able to claim the row again
-     * until `not_before` passes.
+     * trigger fires on the state write so a NOTIFY-subscribed
+     * Scheduler wakes up — it just won't include the row in
+     * {@link listEligible} until `not_before` passes.
      *
      * Throws if the row is missing (mirrors {@link settle}).
      */
@@ -440,24 +334,6 @@ export class AgentRunBus {
     }
 
     /**
-     * Earliest `not_before` among `pending` agentruns whose window
-     * hasn't opened yet. Returns `null` when nothing is parked.
-     * Used by {@link waitAndClaim} to put a ceiling on the wait so
-     * a postponed row gets re-checked even if no new INSERT or
-     * state update wakes the listener.
-     */
-    async nextEligibleAt(): Promise<Date | null> {
-        const result = await this.connection.getPool().query<{ next: Date | null }>(
-            `SELECT MIN(not_before) AS next
-             FROM agentruns
-             WHERE state = 'pending'
-               AND not_before IS NOT NULL
-               AND not_before > now()`,
-        );
-        return result.rows[0]?.next ?? null;
-    }
-
-    /**
      * Subscribe to {@link AGENTRUNS_CHANNEL}. The notification payload
      * (`<event_id>:<id>`) is parsed, the row is fetched by id, and
      * `handler` is invoked with it. Fires on both INSERT and state
@@ -468,6 +344,12 @@ export class AgentRunBus {
      * subscriber doesn't break others on the same channel.
      *
      * Returns a disposer; call it to unlisten. Idempotent.
+     *
+     * The {@link AgentrunScheduler} subscribes via
+     * {@link PostgresConnection.listen} directly (it only needs a
+     * "something changed" wake hint, not full row fetches); this
+     * helper exists for host-side consumers like
+     * `HostContext.events.emit`'s `onAgentRun` callback.
      */
     async listen(
         handler: (row: AgentRunRow) => void | Promise<void>,
@@ -534,85 +416,6 @@ export class AgentRunBus {
             );
         }
     }
-
-    /** Subscribe this bus's wake-handler to {@link AGENTRUNS_CHANNEL}. */
-    private async ensureListening(): Promise<void> {
-        if (this.listenInstalled) {
-            return;
-        }
-        this.listenInstalled = true;
-        await this.connection.listen(AGENTRUNS_CHANNEL, this.listenHandler);
-    }
-
-    /**
-     * Resolve as soon as the next NOTIFY arrives, `signal` aborts, or
-     * `maxWaitMs` elapses (when supplied). The timeout exists so a
-     * watcher waiting on a postponed row's `not_before` wakes up to
-     * re-check eligibility even if no INSERT or state update fires
-     * NOTIFY in the meantime.
-     */
-    private waitForNotification(signal?: AbortSignal, maxWaitMs?: number): Promise<void> {
-        return new Promise((resolve, reject) => {
-            let timer: NodeJS.Timeout | undefined;
-            const wake = () => {
-                if (timer) {
-                    clearTimeout(timer);
-                }
-                if (signal) {
-                    signal.removeEventListener("abort", onAbort);
-                }
-                resolve();
-            };
-            const onAbort = () => {
-                if (timer) {
-                    clearTimeout(timer);
-                }
-                this.notifyWaiters = this.notifyWaiters.filter((w) => w !== wake);
-                reject(new Error("waitForNext aborted"));
-            };
-
-            this.notifyWaiters.push(wake);
-            if (signal) {
-                signal.addEventListener("abort", onAbort, { once: true });
-            }
-            if (maxWaitMs !== undefined && maxWaitMs >= 0) {
-                timer = setTimeout(() => {
-                    this.notifyWaiters = this.notifyWaiters.filter((w) => w !== wake);
-                    if (signal) {
-                        signal.removeEventListener("abort", onAbort);
-                    }
-                    resolve();
-                }, maxWaitMs);
-            }
-        });
-    }
-
-    /** Single SELECT for the highest-priority matching agentrun. */
-    private async queryOne(filter: AgentRunFilter): Promise<AgentRunRow | undefined> {
-        const states = filter.states ?? ["pending"];
-        const conditions: string[] = ["state = ANY($1)"];
-        const values: unknown[] = [states];
-        let n = 2;
-
-        if (filter.topics && filter.topics.length > 0) {
-            conditions.push(`topic = ANY($${n++})`);
-            values.push(filter.topics);
-        }
-
-        // Mirror `claim`'s not_before gating so blocking observers
-        // (waitForNext) don't return rows that aren't yet eligible.
-        conditions.push("(not_before IS NULL OR not_before <= now())");
-
-        const result = await this.connection.getPool().query<RawAgentRunRow>(
-            `SELECT * FROM agentruns
-             WHERE ${conditions.join(" AND ")}
-             ORDER BY priority DESC, id ASC
-             LIMIT 1`,
-            values,
-        );
-
-        return result.rows.length > 0 ? mapRow(result.rows[0]) : undefined;
-    }
 }
 
 /**
@@ -635,6 +438,10 @@ function mapRow(raw: RawAgentRunRow): AgentRunRow {
         resultText: raw.result_text,
         error: raw.error,
         privileged: raw.privileged,
+        calltype:
+            raw.calltype === "queued" || raw.calltype === "called"
+                ? (raw.calltype as AgentRunCallType)
+                : null,
         retryCount: raw.retry_count,
         notBefore: raw.not_before,
         model: raw.model,

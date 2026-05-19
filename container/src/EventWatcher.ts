@@ -16,7 +16,8 @@ import {
  *
  * This watcher does no handler resolution and runs no agent code; it
  * only routes input events to the agentrun queue. Markdown loading and
- * `queue_next` resolution live in {@link AgentrunWatcher}.
+ * subagent resolution (`queue_handler`, `call_handler`) live in the
+ * {@link AgentrunScheduler}.
  *
  * **Crash window** (intentional, fix in a later pass): if the process
  * dies between the event claim and the agentrun insert, the event is

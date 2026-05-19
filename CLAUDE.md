@@ -50,7 +50,7 @@ The system splits into two trust zones: a **host** that holds credentials and or
                           LISTEN/NOTIFY              │
                                   │                  │
 ┌─────────────────────────────── CONTAINER ───────────────────────────┐
-│  Input-event watcher, agentrun watcher                              │
+│  Input-event watcher, agentrun scheduler                              │
 │  Plugin container-side code mounted in (MCPs)                       │
 │  Workspace (markdown files: handlers, workflows,                    │
 │   people, projects, plugin-specific knowledge)                      │
@@ -69,12 +69,17 @@ The system splits into two trust zones: a **host** that holds credentials and or
 
 ### Container responsibilities
 
-The container runs two pull-based watchers against the bus state database:
+The container runs a pull-based input watcher and an `AgentrunScheduler`:
 
 - **Input-event watcher.** Watches the `events` table for new rows in `pending`, atomically claims them (`pending → running`), and inserts a root `agentruns` row pointing at `<topic>/index.md` in the workspace. After that the input event is no longer of interest to the watcher; the event's terminal state is set reactively when its agentrun tree settles.
-- **Agentrun watcher.** Watches the `agentruns` table for `pending` rows, atomically claims one (`pending → running`), resolves its handler markdown file, runs it via the agent runner, and settles it (`done`/`failed`). On terminal write the parent event's state is recomputed in the same transaction. **One agentrun runs at a time** for now (one supervisor slot on Featherless); per-model parallelism is a deferred open question.
+- **`AgentrunScheduler`.** Single in-process authority on which agentrun runs next. Holds an in-memory map of active runners (executing vs. paused), picks eligible `pending` rows preferring resume candidates, owns per-run timeouts and retry / failure classification, and is the *only* writer of agentrun lifecycle state. Concurrency is gated on the count of *executing* (non-paused) runners; the default `maxConcurrentExecuting=1` matches the single Featherless Pro slot. Per-model parallelism is a future filter on the same picker.
 
-A handler can queue follow-up agentruns by handler basename via a tool call (`queue_next("analyze", payload)`). This produces an arbitrary, branching workflow tree rooted at `<topic>/index.md` instead of a fixed pipeline.
+A handler can spawn **subagents** in two ways:
+
+- `queue_handler({handler, topic?, prompt?, payload?})` — fire-and-forget. The new agentrun runs after the current one; the caller does not see its result.
+- `call_handler({handler, topic?, prompt?, payload?})` — suspending. The current run is parked (state `waiting`) while the subagent executes; when it settles, the tool returns the subagent's final text as `resultText` (or its error if it failed) so the parent can react. The Scheduler genuinely frees the parent's execution slot during the wait — other agentruns can interleave.
+
+Both inherit `event_id` and `privileged` from the parent; `topic` defaults to the parent's when omitted. This produces an arbitrary, branching workflow tree rooted at `<topic>/index.md` instead of a fixed pipeline. The same suspend/resume mechanism will back the approval gate (see open question #1).
 
 The container has no direct network access except through the MCP gateway. It has no credentials. It can read and write its workspace and the bus state database.
 
@@ -84,9 +89,9 @@ A canonical event lifecycle:
 
 1. **Host plugin** detects something in the world (e.g. new mail via IMAP IDLE) and calls a standardized event ingestion API on the host.
 2. **Host** writes the event to the `events` table with a globally unique idempotency key. Topic matches `\w+(:\w+)*` (e.g. `mail:new`, `chat:telegram:group:reaction`). `NOTIFY events_new` wakes the container.
-3. **Container's input-event watcher** atomically claims the event (`pending → running`) and inserts a root `agentruns` row for it, with `handler=event.startHandler ?? 'index'` and `topic` copied from the event. `NOTIFY agentruns_changed` wakes the agentrun watcher.
-4. **Agentrun watcher** claims the row (`pending → running`), resolves the handler markdown file (see "Handler resolution"), and runs an agent session against it. The handler's content is the prompt; the agent has MCP tools and the `queue_next` tool.
-5. **Inside the handler**, the agent decides what to do next. It may call MCP tools, edit workspace files, and call `queue_next(handler, payload)` to spawn child agentruns (e.g. `index.md` triages, then queues `analyze` and `respond`). Each child is another `agentruns` row with `parent_agentrun_id` set to the spawning row and `event_id` propagated.
+3. **Container's input-event watcher** atomically claims the event (`pending → running`) and inserts a root `agentruns` row for it, with `handler=event.startHandler ?? 'index'` and `topic` copied from the event. `NOTIFY agentruns_changed` wakes the agentrun scheduler.
+4. **`AgentrunScheduler`** picks the row (`pending → running`), resolves the handler markdown file (see "Handler resolution"), and runs an agent session against it. The handler's content is the prompt; the agent has MCP tools plus the `queue_handler` / `call_handler` subagent tools.
+5. **Inside the handler**, the agent decides what to do next. It may call MCP tools, edit workspace files, and spawn subagents via `queue_handler` (fire-and-forget) or `call_handler` (suspend-and-await) — e.g. `index.md` triages, queues `respond`, and calls `analyze` to react to its summary. Each child is another `agentruns` row with `parent_agentrun_id` set to the spawning row, `event_id` propagated, and `calltype` set to `'queued'` or `'called'`.
 6. **For risky writes**, the handler proposes a **pending action** through the approval gate. The agentrun **suspends** until the user responds, then resumes and continues. Suspend/resume mechanics are TBD — see open questions.
 7. **When the agentrun finishes**, `AgentRunBus.settle()` writes its terminal state and, in the same transaction, recomputes the parent event's state via `EVENT_TERMINAL_UPDATE_SQL`: the event flips to `done` once no `pending`/`running` agentruns remain for it, or `failed` if any agentrun in the tree failed. `NOTIFY events_state` lets host plugins react to the final outcome (e.g. send a chat reply back to the user).
 8. **Consequence events** (a write that triggers another world change) re-enter step 1 as fresh events with a new id. There is no global causation chain across events; lineage *within* an event lives on `agentruns.parent_agentrun_id`. Producers can pass parent context in the new event's payload if needed.
@@ -98,11 +103,11 @@ The agentrun's `topic` and `handler` fields determine which markdown file to loa
 1. Try `workspace/chat/telegram/analyze.md`.
 2. Fall back to `workspace/chat/analyze.md`.
 
-The override applies uniformly to all handlers, not just `index`. Validation happens at `queue_next` time: the tool resolves the path and refuses to queue if neither file exists, so the calling agent gets a synchronous error.
+The override applies uniformly to all handlers, not just `index`. Validation happens at subagent-spawn time: both `queue_handler` and `call_handler` resolve the path and refuse if neither file exists, so the calling agent gets a synchronous error.
 
 ### Safety mechanisms
 
-- **Tree-depth limit on agentrun lineage.** The `parent_agentrun_id` chain has a maximum depth (default 3, configurable). Past that, `queue_next` refuses to spawn and the user is notified. Prevents runaway loops.
+- **Tree-depth limit on agentrun lineage.** The `parent_agentrun_id` chain has a maximum depth (default 3, configurable). Past that, the subagent tools refuse to spawn and the user is notified. Prevents runaway loops.
 - **Tool budget per agent invocation.** Each agentrun has a hard tool-call limit (default 15). Exceeding it terminates the run as `failed` and logs the failure. Protects against models that loop on weaker tool-calling adherence.
 
 ## Storage layers
@@ -116,7 +121,7 @@ Postgres database, owned by the host. Both host and container access it via the 
 - `events` — `id`, `topic` (CHECK against `\w+(:\w+)*`), `priority`, `state` (`pending|running|done|failed`), `payload`, `idempotency_key`, timestamps. Immutable record of "the world said this happened". State transitions are bookkeeping — nothing wakes on them except host-side completion waiters via `NOTIFY events_state`.
 - `agentruns` — `id`, `event_id` (FK), `parent_agentrun_id` (self-FK, null for root), `topic`, `handler`, `priority`, `state` (`pending|running|done|failed`), `prompt`, `payload`, `result`, `error`, timestamps. The assistant's response tree per event.
 
-Three NOTIFY channels: `events_new` (INSERT into events; wakes the input-event watcher), `events_state` (state UPDATE on events; for host-side completion waiters), `agentruns_changed` (INSERT and state UPDATE on agentruns; wakes the agentrun watcher).
+Three NOTIFY channels: `events_new` (INSERT into events; wakes the input-event watcher), `events_state` (state UPDATE on events; for host-side completion waiters), `agentruns_changed` (INSERT and state UPDATE on agentruns; wakes the agentrun scheduler).
 
 Planned but not yet implemented: `pending_actions` (approval gate), `scheduled_triggers` (one-shot triggers from workflows, e.g. "30 min before this meeting"), `audit_log`.
 
@@ -295,7 +300,7 @@ Each handler's markdown file declares which model the agent runs under. The heav
 
 To keep things simple for now:
 
-- The agentrun watcher processes **one agentrun at a time**, FIFO within priority. Priority is inherited from the parent event (set by the host plugin that ingested the event).
+- The agentrun scheduler processes **one agentrun at a time**, FIFO within priority. Priority is inherited from the parent event (set by the host plugin that ingested the event).
 - Lightweight handlers (V4 Flash) currently share the same single-slot watcher. Per-model concurrency limits — letting Flash handlers run in parallel with one heavy handler — are deferred until the bottleneck actually bites.
 
 The provider boundary is abstracted. The model client interface allows swapping Featherless, DeepSeek-API direct, Anthropic, etc., without changes to handler code or watcher logic. This is important both for cost control and for long-term resilience as open-weight models evolve.
@@ -335,7 +340,7 @@ The following are deliberately deferred but should be addressed during implement
 
 1. **Suspend/resume mechanics for agentruns awaiting user feedback.** When a handler proposes a pending action — or otherwise asks the user a question — the agentrun has to wait for a response that may take seconds or hours. Does the watcher slot stay parked on the suspended agentrun (simple but burns the single slot for the duration), or does the agentrun get persisted to disk and re-scheduled when the response lands (requires re-hydrating agent + tool state)? Same question for general user-feedback prompts, not just approval gates.
 2. **A successor to the old "rules" concept.** Earlier designs had user-authored event-driven rules (`workspace/<plugin>/rules/`) with a two-stage retrieval helper. That mechanism is dropped for now — handler files cover the same surface less directly. Some way for the user to add cross-cutting reactive behavior without editing a topic's handler is still wanted; shape TBD.
-3. **Per-model concurrency limits.** The agentrun watcher is single-slot today. Letting lightweight handlers run in parallel with one heavy handler is straightforward (model column on `agentruns`, watcher claim filter), but only worth the complexity once the single slot is actually a bottleneck.
+3. **Per-model concurrency limits.** The agentrun scheduler is single-slot today. Letting lightweight handlers run in parallel with one heavy handler is straightforward (model column on `agentruns`, watcher claim filter), but only worth the complexity once the single slot is actually a bottleneck.
 4. **Diff/merge on plugin updates** — when a plugin update brings new defaults but the user has customized their copy, present a diff and let the user choose. Even better: let the LLM handle the merge in a guided dialogue.
 5. **Web UI for workspace inspection and audit log browsing** — useful for debugging and understanding system behavior.
 6. **Eval harness** — a way to replay events against the system and measure handler quality. Critical for confidently swapping models or tuning prompts.
@@ -343,8 +348,8 @@ The following are deliberately deferred but should be addressed during implement
 ## Implementation order suggestion
 
 1. **Bus state schema and access** — done: `events` and `agentruns` tables, `EventBus` and `AgentRunBus` clients in `shared/`, reactive event-terminal logic via `EVENT_TERMINAL_UPDATE_SQL`.
-2. **Container watchers** — input-event watcher (events `pending → running`, spawns root agentrun) and agentrun watcher (agentruns `pending → running → done|failed`, runs handler markdown via the agent runner). The current `TriageWatcher.ts` is a stub for the input-event watcher; replace it next.
-3. **Handler resolution + `queue_next` tool** — workspace path resolver with sub-topic override fallback, plus the in-handler tool that queues child agentruns by basename and validates at queue time.
+2. **Container watchers** — input-event watcher (events `pending → running`, spawns root agentrun) and agentrun scheduler (agentruns `pending → running → done|failed`, runs handler markdown via the agent runner). The current `TriageWatcher.ts` is a stub for the input-event watcher; replace it next.
+3. **Handler resolution + subagent tools** — workspace path resolver with sub-topic override fallback, plus the in-handler `queue_handler` (fire-and-forget) and `call_handler` (suspending) tools that spawn child agentruns by basename and validate at spawn time.
 4. **Plugin loader and lifecycle** — host-side plugin loading, manifest parsing, container mount of `mcps/`, `workspace-template/` copy on first install.
 5. **Logging service** — centralized structured logging.
 6. **Approval gate** — `pending_actions` table, suspend/resume mechanics (per the open question above), notification push (start with Telegram or simple web UI), response handling.
@@ -381,7 +386,7 @@ The `data/` folder is the persistent host-side storage. Layout:
 - **host/src/db/**: Postgres lifecycle. `PostgresContainer` runs `postgres:16-alpine`, picks a free loopback port, joins `familiar-net`, and waits for `pg_isready`. Hardcoded user / database: `POSTGRES_USER=familiar`, `POSTGRES_DB=familiar`; the password is sourced from `core.postgresPassword` in `config/config.yml`. Container code reaches the DB at `familiar-postgres:5432`; host code at `127.0.0.1:<port>` (port from `data/.postgres-port`).
 - **container/**: Docker container definition for the agent runtime. Long-running; built once, started by the host daemon and reused across all tasks.
   - Base image: `node:24-slim`. Currently no LLM SDK is installed — Featherless integration is the next step.
-  - `src/TriageWatcher.ts` is a placeholder for the input-event watcher (claims events `pending → running`, currently just marks them done). The real input-event watcher and the new agentrun watcher land in the next plan.
+  - `src/TriageWatcher.ts` is a placeholder for the input-event watcher (claims events `pending → running`, currently just marks them done). The real input-event watcher and the new agentrun scheduler land in the next plan.
   - Runs as non-root `node` user.
   - Docker build context is the project root (not `container/`), so `shared/` is available during image build.
   - Both `container/src/` and `shared/build/` are bind-mounted into the running container (read-only), so source edits in either package take effect on the next daemon restart without an image rebuild. `cli.sh` keeps `shared/build/` fresh before the daemon starts. The agent image itself is (re)built on every `./cli.sh start` via `ensureAgentImage` — docker's layer cache makes the no-change case fast, and `container/Dockerfile` or `package.json` changes are picked up automatically.
