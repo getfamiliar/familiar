@@ -3,6 +3,9 @@
   "type": "module",
   "version": "0.0.1",
   "description": "Familiar — long-running agent container that consumes events from the bus-state postgres.",
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "index.js",
   "scripts": {
     "build": "tsc",

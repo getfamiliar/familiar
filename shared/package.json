@@ -3,6 +3,9 @@
     "type": "module",
     "version": "0.0.1",
     "description": "Familiar — shared types and bus-state client between host and container.",
+    "publishConfig": {
+        "access": "public"
+    },
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "scripts": {

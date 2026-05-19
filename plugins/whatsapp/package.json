@@ -4,6 +4,9 @@
     "version": "0.0.1",
     "private": true,
     "description": "Familiar plugin: read-only WhatsApp group observer that pairs the user's account as a linked device and emits chat:whatsapp:group events.",
+    "publishConfig": {
+        "access": "public"
+    },
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "scripts": {

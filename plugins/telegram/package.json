@@ -4,6 +4,9 @@
     "version": "0.0.1",
     "private": true,
     "description": "Familiar plugin: bridges a Telegram bot to the chat:telegram event/chatmessage pipeline.",
+    "publishConfig": {
+        "access": "public"
+    },
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "scripts": {

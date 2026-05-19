@@ -3,6 +3,9 @@
     "version": "0.0.1",
     "private": true,
     "description": "Familiar root workspace — your personal AI assistant. Loyal. Local. Markdown. The actual code lives in shared/, host/, container/, and plugins/<name>/. The host-side bastion (LLM proxy + MCP gateway) lives under host/src/bastion/.",
+    "publishConfig": {
+        "access": "public"
+    },
     "workspaces": [
         "shared",
         "host",

@@ -4,6 +4,9 @@
     "version": "0.0.1",
     "private": true,
     "description": "Familiar plugin: emits chat:cli events from the command line.",
+    "publishConfig": {
+        "access": "public"
+    },
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "scripts": {

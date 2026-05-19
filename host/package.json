@@ -3,6 +3,9 @@
   "type": "module",
   "version": "0.0.1",
   "description": "Familiar — host application.",
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "build/index.js",
   "scripts": {
     "build": "tsc",
