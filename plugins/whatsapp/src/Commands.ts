@@ -1,7 +1,7 @@
+import type { HostContext } from "@getfamiliar/shared";
 import { Boom } from "@hapi/boom";
 import makeWASocket, { DisconnectReason, type WASocket } from "@whiskeysockets/baileys";
 import { type CommandDef, defineCommand } from "citty";
-import type { HostContext } from "@getfamiliar/shared";
 import qrcodeTerminal from "qrcode-terminal";
 import { clearAuth, loadAuth } from "./Auth.js";
 import { buildBaileysLogger, resolveWaVersion } from "./WhatsAppDaemon.js";

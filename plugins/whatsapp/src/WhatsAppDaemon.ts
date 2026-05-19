@@ -1,3 +1,4 @@
+import type { HostContext } from "@getfamiliar/shared";
 import { Boom } from "@hapi/boom";
 import makeWASocket, {
     DisconnectReason,
@@ -6,13 +7,51 @@ import makeWASocket, {
     type WAMessage,
     type WASocket,
 } from "@whiskeysockets/baileys";
-import type { HostContext } from "@getfamiliar/shared";
 import { clearAuth, loadAuth, type WhatsAppAuth } from "./Auth.js";
 
 const TOPIC = "chat:whatsapp:group";
 const GROUP_JID_SUFFIX = "@g.us";
 const RECONNECT_BACKOFF_MIN_MS = 1000;
 const RECONNECT_BACKOFF_MAX_MS = 5 * 60 * 1000;
+
+/**
+ * Read-only handle on the live baileys socket. Tools that need to call
+ * server-side WhatsApp operations (e.g. `whatsapp_mark_read`) reach the
+ * socket through this — the daemon owns the connection's lifecycle and
+ * publishes the current socket here. `current()` returns `null` while
+ * the daemon is reconnecting or before pairing, so callers must
+ * tolerate a missing socket and surface a sensible error to the agent
+ * instead of crashing.
+ */
+export interface WhatsAppSocketRegistry {
+    /** Currently connected socket, or `null` when offline / reconnecting. */
+    current(): WASocket | null;
+}
+
+/**
+ * Daemon-side view of the registry: in addition to reading, the daemon
+ * updates the current socket on every connect/disconnect.
+ */
+interface MutableSocketRegistry extends WhatsAppSocketRegistry {
+    set(sock: WASocket | null): void;
+}
+
+/**
+ * Build a fresh socket registry. The plugin manifest constructs one at
+ * module load and shares it between {@link startWhatsAppDaemon} (which
+ * mutates it) and the tools factory (which only reads). Keeping the
+ * registry minimal — no events, no history — means the tool layer never
+ * accidentally holds a stale socket past a reconnect.
+ */
+export function createSocketRegistry(): MutableSocketRegistry {
+    let sock: WASocket | null = null;
+    return {
+        current: () => sock,
+        set: (next) => {
+            sock = next;
+        },
+    };
+}
 /**
  * `userAgent` advertised to the WhatsApp servers when this device
  * registers. Showing up in the user's "Linked devices" UI as
@@ -93,7 +132,10 @@ function renderLogObject(obj: unknown): string {
  * `./cli.sh whatsapp link` once to pair, and from then on every
  * `./cli.sh start` re-uses the persisted creds without prompting.
  */
-export async function startWhatsAppDaemon(ctx: HostContext): Promise<void> {
+export async function startWhatsAppDaemon(
+    ctx: HostContext,
+    registry: MutableSocketRegistry,
+): Promise<void> {
     const auth = await loadAuth(ctx);
     if (!auth.hasExistingCreds) {
         ctx.log("whatsapp not linked yet; run `./cli.sh whatsapp link` to pair this device");
@@ -113,7 +155,7 @@ export async function startWhatsAppDaemon(ctx: HostContext): Promise<void> {
     }
     // Long-lived; never resolves under normal operation. Detach so the
     // host's `startDaemons` chain doesn't block on it.
-    void runConnectionLoop(ctx, auth);
+    void runConnectionLoop(ctx, auth, registry);
 }
 
 /**
@@ -122,14 +164,18 @@ export async function startWhatsAppDaemon(ctx: HostContext): Promise<void> {
  * `loggedOut`, wipes auth and exits the loop — the user must re-link
  * the device before another connection makes sense.
  */
-async function runConnectionLoop(ctx: HostContext, auth: WhatsAppAuth): Promise<void> {
+async function runConnectionLoop(
+    ctx: HostContext,
+    auth: WhatsAppAuth,
+    registry: MutableSocketRegistry,
+): Promise<void> {
     const allowlist = parseGroupAllowlist(ctx.config.getArray("whatsapp.groupAllowlist", null));
     if (allowlist) {
         ctx.log(`whatsapp group allowlist: ${allowlist.join(", ")}`);
     }
     let backoffMs = RECONNECT_BACKOFF_MIN_MS;
     while (true) {
-        const reason = await runConnection(ctx, auth, allowlist);
+        const reason = await runConnection(ctx, auth, allowlist, registry);
         if (reason === "loggedOut") {
             ctx.log(
                 "whatsapp logged out (device removed from phone); clearing auth and stopping. Run `./cli.sh whatsapp link` to re-pair.",
@@ -156,6 +202,7 @@ async function runConnection(
     ctx: HostContext,
     auth: WhatsAppAuth,
     allowlist: readonly string[] | null,
+    registry: MutableSocketRegistry,
 ): Promise<"loggedOut" | string> {
     const version = await resolveWaVersion(ctx);
     const sock = makeWASocket({
@@ -166,6 +213,7 @@ async function runConnection(
         logger: buildBaileysLogger(ctx),
     });
     sock.ev.on("creds.update", auth.saveCreds);
+    registry.set(sock);
 
     const groupNameCache = new Map<string, string | null>();
     sock.ev.on("messages.upsert", async ({ messages, type }) => {
@@ -191,6 +239,7 @@ async function runConnection(
                 return;
             }
             if (update.connection === "close") {
+                registry.set(null);
                 const err = update.lastDisconnect?.error;
                 const statusCode = extractStatusCode(err);
                 if (statusCode === DisconnectReason.loggedOut) {

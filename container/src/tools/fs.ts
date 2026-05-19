@@ -1,8 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { AgentRunRow } from "@getfamiliar/shared";
 import type { Tool, ToolSet } from "ai";
 import { jsonSchema, tool } from "ai";
-import type { AgentRunRow } from "@getfamiliar/shared";
 import { HandlerFile } from "../HandlerFile.js";
 
 /**
@@ -719,11 +719,206 @@ function buildGrepTool(): Tool<GrepInput, GrepOutput> {
     });
 }
 
+interface FsRemoveInput {
+    readonly path: string;
+}
+
+interface FsRemoveSkip {
+    readonly path: string;
+    readonly reason: string;
+}
+
+type FsRemoveOutput =
+    | {
+          readonly ok: true;
+          readonly removed: readonly string[];
+          readonly skipped: readonly FsRemoveSkip[];
+      }
+    | { readonly ok: false; readonly error: string };
+
+/**
+ * Glob meta characters that mark a path segment as a pattern rather
+ * than a literal. `**` is checked separately as a substring.
+ */
+const GLOB_META = /[*?[]/;
+
+/**
+ * Decide whether a workspace-relative input is a glob pattern *and*
+ * confined to the basename. Returns:
+ *
+ * - `{ kind: "literal" }` — no wildcards anywhere; treat as a single
+ *   path and `unlink` it directly.
+ * - `{ kind: "wildcard" }` — wildcards present only in the last
+ *   segment, no `**` anywhere; safe to expand with `fs.glob` without
+ *   recursing into subdirectories.
+ * - `{ kind: "invalid", error }` — wildcards in a non-last segment, or
+ *   `**` anywhere; rejected with a message the model can act on.
+ *
+ * Splitting is done on the *original* input string before path
+ * resolution because `path.resolve` collapses segments and would hide
+ * a `chat/*\/foo.txt`-style escape.
+ */
+function classifyRemovePattern(
+    input: string,
+): { kind: "literal" } | { kind: "wildcard" } | { kind: "invalid"; error: string } {
+    if (input.includes("**")) {
+        return {
+            kind: "invalid",
+            error: "recursive globs (`**`) are not allowed; fs_remove only matches files in one directory",
+        };
+    }
+    const segments = input.split("/");
+    const lastIndex = segments.length - 1;
+    for (let i = 0; i < lastIndex; i++) {
+        if (GLOB_META.test(segments[i])) {
+            return {
+                kind: "invalid",
+                error: "wildcards are only allowed in the file basename, not in directory segments",
+            };
+        }
+    }
+    return GLOB_META.test(segments[lastIndex]) ? { kind: "wildcard" } : { kind: "literal" };
+}
+
+/**
+ * Build the `fs_remove` tool. Removes a single file (literal path) or
+ * every file matching a basename-scoped glob (e.g. `chat/digests/*.jsonl`).
+ *
+ * Hard constraints — enforced by {@link classifyRemovePattern}:
+ *
+ * - Never deletes directories. A literal directory path errors out; a
+ *   wildcard that happens to match a subdirectory entry skips it with a
+ *   reason instead of failing the whole call.
+ * - No recursion. `**` is rejected outright and dirname segments may
+ *   not contain glob meta, so an expansion can only touch files in one
+ *   literal directory.
+ * - Privilege gate. `.md` files and anything under `workspace/toolgroups/`
+ *   require a privileged run, exactly matching `file_write` / `file_append`.
+ *   In the wildcard branch, gated matches are skipped (so a cleanup over
+ *   a mixed directory still removes what it's allowed to); in the literal
+ *   branch, a gated target fails the call so the model gets an explicit
+ *   refusal.
+ */
+function buildFsRemoveTool(parent: AgentRunRow): Tool<FsRemoveInput, FsRemoveOutput> {
+    return tool<FsRemoveInput, FsRemoveOutput>({
+        description:
+            "Remove a file from the workspace. The `path` may be a single " +
+            "workspace-relative file (e.g. `chat/digests/2026-05.jsonl`), or " +
+            "a glob whose wildcards are confined to the basename (e.g. " +
+            "`chat/digests/*.jsonl`). Directory segments must be literal; `**` " +
+            "is rejected. Never deletes directories — a directory match is " +
+            "skipped (wildcard branch) or rejected (literal branch). Markdown " +
+            "(.md) deletions and anything under `workspace/toolgroups/` require " +
+            "a privileged run, same as `file_write`. Scratch paths " +
+            "(`/scratch/<event-id>/...`) are accepted for per-event cleanup.",
+        inputSchema: jsonSchema<FsRemoveInput>({
+            type: "object",
+            additionalProperties: false,
+            required: ["path"],
+            properties: {
+                path: {
+                    type: "string",
+                    description:
+                        "Workspace-relative file path or basename-scoped glob. " +
+                        "Wildcards (`*`, `?`, `[...]`) allowed only in the last " +
+                        "segment; `**` and wildcards in directory segments are rejected.",
+                },
+            },
+        }),
+        execute: async ({ path: p }) => {
+            const classification = classifyRemovePattern(p);
+            if (classification.kind === "invalid") {
+                return { ok: false, error: classification.error };
+            }
+
+            let absolute: string;
+            try {
+                absolute = resolveWorkspacePath(p);
+            } catch (err) {
+                return { ok: false, error: err instanceof Error ? err.message : String(err) };
+            }
+
+            if (classification.kind === "literal") {
+                if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
+                    return privilegeRefusal();
+                }
+                let stat: Awaited<ReturnType<typeof fs.lstat>>;
+                try {
+                    stat = await fs.lstat(absolute);
+                } catch (err) {
+                    const code = (err as NodeJS.ErrnoException).code;
+                    if (code === "ENOENT") {
+                        return { ok: false, error: `file not found: ${p}` };
+                    }
+                    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+                }
+                if (stat.isDirectory()) {
+                    return {
+                        ok: false,
+                        error: `path is a directory; fs_remove does not delete directories: ${p}`,
+                    };
+                }
+                try {
+                    await fs.unlink(absolute);
+                } catch (err) {
+                    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+                }
+                return { ok: true, removed: [p], skipped: [] };
+            }
+
+            const root = HandlerFile.getWorkspaceRoot();
+            const isAbsolutePattern = path.isAbsolute(p.trim());
+            const globCwd = isAbsolutePattern ? "/" : root;
+            const removed: string[] = [];
+            const skipped: FsRemoveSkip[] = [];
+            const refusalText = privilegeRefusal().error;
+
+            try {
+                for await (const dirent of fs.glob(p, { cwd: globCwd, withFileTypes: true })) {
+                    const matchAbs = path.join(dirent.parentPath, dirent.name);
+                    // Scratch patterns report absolute paths back; workspace
+                    // patterns report relative-to-root, matching what the
+                    // model passed in.
+                    const matchRel = isAbsolutePattern ? matchAbs : path.relative(root, matchAbs);
+                    if (!dirent.isFile()) {
+                        skipped.push({
+                            path: matchRel,
+                            reason: dirent.isDirectory()
+                                ? "is a directory"
+                                : "is not a regular file",
+                        });
+                        continue;
+                    }
+                    if (requiresPrivilegedWrite(matchAbs) && !parent.privileged) {
+                        skipped.push({ path: matchRel, reason: refusalText });
+                        continue;
+                    }
+                    try {
+                        await fs.unlink(matchAbs);
+                        removed.push(matchRel);
+                    } catch (err) {
+                        skipped.push({
+                            path: matchRel,
+                            reason: err instanceof Error ? err.message : String(err),
+                        });
+                    }
+                }
+            } catch (err) {
+                return { ok: false, error: err instanceof Error ? err.message : String(err) };
+            }
+
+            removed.sort();
+            skipped.sort((a, b) => a.path.localeCompare(b.path));
+            return { ok: true, removed, skipped };
+        },
+    });
+}
+
 /**
  * Bundle all filesystem-shaped tools for one agentrun. The writing
- * tools (`file_write`, `file_str_replace`, `file_append`) close over
- * `parent.privileged` so the `.md` gate is decided once at registration
- * time and the model's tool calls can't bypass it.
+ * tools (`file_write`, `file_str_replace`, `file_append`, `fs_remove`)
+ * close over `parent.privileged` so the `.md` gate is decided once at
+ * registration time and the model's tool calls can't bypass it.
  */
 export function buildFsTools(parent: AgentRunRow): ToolSet {
     return {
@@ -734,5 +929,6 @@ export function buildFsTools(parent: AgentRunRow): ToolSet {
         fs_ls: buildLsTool(),
         fs_glob: buildGlobTool(),
         fs_grep: buildGrepTool(),
+        fs_remove: buildFsRemoveTool(parent),
     };
 }
