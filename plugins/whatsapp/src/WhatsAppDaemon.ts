@@ -1,4 +1,4 @@
-import type { HostContext } from "@getfamiliar/shared";
+import { EVENT_PRIORITY, type HostContext } from "@getfamiliar/shared";
 import { Boom } from "@hapi/boom";
 import makeWASocket, {
     DisconnectReason,
@@ -303,6 +303,7 @@ async function handleIncomingMessage(
         await ctx.events.emit({
             topic: TOPIC,
             isChat: false,
+            priority: EVENT_PRIORITY.ASYNC,
             idempotencyKey: `whatsapp:${messageId}`,
             prompt,
             payload: {

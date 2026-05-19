@@ -9,6 +9,7 @@ export { AgentRunBus } from "./AgentRunBus.js";
 export type { ChatFilter, ChatMessage, ChatRole, NewChatMessage } from "./ChatMessage.js";
 export { type ChatHandler, ChatMessageBus, type ChatUnsubscribe } from "./ChatMessageBus.js";
 export type { ConfigService } from "./Config.js";
+export { EVENT_PRIORITY } from "./Event.js";
 export type {
     EventFile,
     EventFilter,

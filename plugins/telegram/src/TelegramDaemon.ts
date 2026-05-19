@@ -1,4 +1,4 @@
-import type { EmitHandle, HostContext } from "@getfamiliar/shared";
+import { type EmitHandle, EVENT_PRIORITY, type HostContext } from "@getfamiliar/shared";
 import { Bot, type Context, GrammyError, HttpError } from "grammy";
 import { transcribeAudio } from "@getfamiliar/plugin-transcribe-whisper";
 
@@ -326,6 +326,7 @@ async function emitChatEvent(
         handle = await em.ctx.events.emit({
             topic: "chat:telegram",
             isChat: true,
+            priority: EVENT_PRIORITY.CHAT,
             preferredChatChannelId: TELEGRAM_CHANNEL,
             idempotencyKey: `telegram:${updateId}`,
             prompt: text,

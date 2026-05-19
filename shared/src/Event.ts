@@ -17,6 +17,21 @@
 export type EventState = "pending" | "running" | "done" | "failed";
 
 /**
+ * Standard priority tiers for events. Higher = processed first.
+ * Producers should pick one of these rather than passing a bare number,
+ * unless they have a specific reason. The SQL default for `events.priority`
+ * is 50, matching `EVENT_PRIORITY.ASYNC`.
+ */
+export const EVENT_PRIORITY = {
+    /** Direct user chat (telegram, cli-chat). Preempts async work. */
+    CHAT: 100,
+    /** Asynchronous external input — mail, group chat. Matches the SQL default. */
+    ASYNC: 50,
+    /** Cron-driven background work. Yields to chat and async. */
+    BACKGROUND: 10,
+} as const;
+
+/**
  * Shape of a row in the `events` table after JSON-decoding from postgres.
  * The numeric `id` is kept as a string because postgres `bigint` exceeds
  * JavaScript's safe integer range.

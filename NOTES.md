@@ -1,7 +1,4 @@
 Quick Fixes:
-* Why no email sorting today?
-* Whatsapp mark as read
-* Handler for whatsapp digests: clear files so everything since last digest is covered
 * Priorities als Constants aus shared: CHAT=100, ASYNC=50, BACKGROUND=10
 
 Features:
@@ -9,12 +6,15 @@ Features:
 * Compression
 * Calendar Plugin
 * Besseres Reporting Format
-* Self-Reflection Tools: List of events, report to the model feature
+* Self-Reflection Tools: List of events, event report, plugin status, system status 
 * Tool Result Offloading in temp files
 
 Reflect and learn from things when memory plugin is ready:
 * Mail Digest
 * ...
+
+Neues CLI Tool: `logs`
+* `logs tail` tails the current data/logs/ log file but pretty prints the JSON objects in it.
 
 MCP functions: keep or remove the renaming of "-"?
 

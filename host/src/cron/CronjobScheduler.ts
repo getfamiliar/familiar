@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { Cron } from "croner";
-import type { Logger, NewEvent } from "@getfamiliar/shared";
+import { EVENT_PRIORITY, type Logger, type NewEvent } from "@getfamiliar/shared";
 import type { WorkspaceFile, WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
 import { type ParsedCron, parseCron } from "./CronExpression.js";
 
@@ -145,7 +145,7 @@ export class CronjobScheduler {
             topic: target.topic,
             startHandler: target.startHandler,
             prompt: "The cronjob has fired",
-            priority: 50,
+            priority: EVENT_PRIORITY.BACKGROUND,
             privileged: false,
         };
         try {

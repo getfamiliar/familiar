@@ -1,5 +1,10 @@
 import { createInterface, type Interface } from "node:readline";
-import { type HostContext, renderMarkdown, type StepResultRow } from "@getfamiliar/shared";
+import {
+    EVENT_PRIORITY,
+    type HostContext,
+    renderMarkdown,
+    type StepResultRow,
+} from "@getfamiliar/shared";
 
 const CLI_CHANNEL = "cli";
 const PROMPT = "> ";
@@ -74,6 +79,7 @@ export async function runRepl(ctx: HostContext): Promise<void> {
                     {
                         topic: "chat:cli",
                         isChat: true,
+                        priority: EVENT_PRIORITY.CHAT,
                         preferredChatChannelId: CLI_CHANNEL,
                         prompt: line,
                         // The REPL only runs at the operator's local

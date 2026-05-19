@@ -1,5 +1,10 @@
 import path from "node:path";
-import type { EventFile, HostContext, NewEvent } from "@getfamiliar/shared";
+import {
+    EVENT_PRIORITY,
+    type EventFile,
+    type HostContext,
+    type NewEvent,
+} from "@getfamiliar/shared";
 import type { CommandDef } from "citty";
 import { readO365Config } from "../../Config.js";
 import type { MailProvider, MailProviderDeps, MailProviderPrepareResult } from "../MailProvider.js";
@@ -336,6 +341,7 @@ async function emitMailEvent(
     const event: NewEvent = {
         topic: "mail:o365",
         prompt,
+        priority: EVENT_PRIORITY.ASYNC,
         idempotencyKey: `mail:o365:${message.internetMessageId}`,
         payload: {
             provider: "o365",
