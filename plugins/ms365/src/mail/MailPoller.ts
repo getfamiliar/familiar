@@ -1,65 +1,78 @@
 import path from "node:path";
 import {
+    type EmitHandle,
     EVENT_PRIORITY,
     type EventFile,
     type HostContext,
     type NewEvent,
 } from "@getfamiliar/shared";
-import type { CommandDef } from "citty";
-import { readO365Config } from "../../Config.js";
-import type { MailProvider, MailProviderDeps, MailProviderPrepareResult } from "../MailProvider.js";
-import { flatAddress, formatAddress, isSafeEmailAddress } from "./AddressFormat.js";
-import { type AppRegistration, DEFAULT_APP } from "./AppRegistration.js";
-import { DeltaCursorStore } from "./DeltaCursorStore.js";
-import type { GraphAuth } from "./GraphAuth.js";
+import type { GraphAuth } from "../auth/GraphAuth.js";
+import type { LoginStore } from "../auth/LoginStore.js";
+import type { Ms365MailConfig } from "../Config.js";
 import {
     type DeltaPage,
     GraphClient,
     GraphError,
     type GraphMailMessage,
     type GraphAttachment as GraphRawAttachment,
-} from "./GraphClient.js";
-import { LoginStore, loginDirectory } from "./LoginStore.js";
-import { buildO365Commands } from "./O365Commands.js";
+} from "../graph/GraphClient.js";
+import { flatAddress, formatAddress, isSafeEmailAddress } from "./AddressFormat.js";
+import { DeltaCursorStore } from "./DeltaCursorStore.js";
 
 /** Graph caps bodyPreview at 255 chars; equals → cap hit, more body upstream. */
 const BODY_PREVIEW_TRUNCATION_LENGTH = 255;
 /** Hard ceiling on delta pages per (mailbox, poll) so a runaway backlog can't park the loop. */
 const MAX_PAGES_PER_POLL = 50;
 
+/** Inputs the daemon hands the poller at construction. */
+export interface MailPollerOptions {
+    readonly ctx: HostContext;
+    readonly mail: Ms365MailConfig;
+    readonly logins: LoginStore;
+    readonly log: (msg: string) => void;
+    readonly emit: (event: NewEvent) => Promise<EmitHandle>;
+}
+
 /**
- * Microsoft 365 / Outlook mail provider. Owns its own auth (msal-node
- * device-code cache files under `data/mail/o365/`), its own Graph
- * client, and its own per-mailbox delta cursor store. No MCP in the
- * picture: every Graph call goes direct from this host-side plugin.
+ * Mail polling worker for Microsoft 365. Owns its own per-mailbox
+ * delta cursor store. No interface, no provider abstraction —
+ * mail-over-Graph is the only mail this plugin will ever speak.
  *
  * The login → mailboxes map is computed once in {@link prepare} and
  * reused for every poll cycle; the user runs the daemon again to
  * pick up a new login or a changed whitelist.
  */
-export class O365Provider implements MailProvider {
-    readonly id = "o365";
-    readonly displayName = "Microsoft 365";
+export class MailPoller {
+    private readonly opts: MailPollerOptions;
+    private readonly cursorStore: DeltaCursorStore;
+    private readonly mailboxMap: ReadonlyArray<PollTarget>;
 
-    private loginStore: LoginStore | null = null;
-    private cursorStore: DeltaCursorStore | null = null;
-    private mailboxMap: ReadonlyArray<PollTarget> = [];
-    private appRegistration: AppRegistration = DEFAULT_APP;
+    private constructor(
+        opts: MailPollerOptions,
+        cursorStore: DeltaCursorStore,
+        mailboxMap: ReadonlyArray<PollTarget>,
+    ) {
+        this.opts = opts;
+        this.cursorStore = cursorStore;
+        this.mailboxMap = mailboxMap;
+    }
 
-    async prepare(ctx: HostContext): Promise<MailProviderPrepareResult> {
-        const config = readO365Config(ctx);
-        this.appRegistration = resolveAppRegistration(config);
-        this.loginStore = new LoginStore(loginDirectory(ctx.dataDir), this.appRegistration);
-        this.cursorStore = new DeltaCursorStore(
-            path.join(ctx.dataDir, "mail", "o365", "delta.json"),
+    /**
+     * Validate the logins the daemon already loaded, build the
+     * mailbox map, prepare the cursor store. Returns `null` when
+     * there's nothing usable to poll (no valid logins, no reachable
+     * mailboxes) — daemon logs the reason and stays idle. Per the
+     * memory rule [[feedback_skip_broken_logins_over_exit]], partial
+     * failures are skipped rather than fatal.
+     */
+    static async prepare(opts: MailPollerOptions): Promise<MailPoller | null> {
+        const { ctx, logins, log, mail } = opts;
+        const cursorStore = new DeltaCursorStore(
+            path.join(ctx.dataDir, "ms365", "mail", "delta.json"),
         );
-        await this.loginStore.refresh();
-        await this.cursorStore.load();
+        await cursorStore.load();
 
-        const tag = `mail/${this.id}`;
-        const log = (msg: string) => ctx.log(`${tag}: ${msg}`);
-
-        const validations = await this.loginStore.validateAll();
+        const validations = await logins.validateAll();
         const valid: { upn: string; auth: GraphAuth }[] = [];
         for (const v of validations) {
             if (v.ok) {
@@ -70,70 +83,36 @@ export class O365Provider implements MailProvider {
             }
         }
         if (valid.length === 0) {
-            return {
-                ok: false,
-                detail:
-                    "no usable o365 logins; run `./cli.sh mail o365 login` to add one " +
+            log(
+                "mail: no usable ms365 logins; run `./cli.sh ms365 login` " +
                     "(or fix the failing logins above)",
-            };
+            );
+            return null;
         }
-        this.mailboxMap = await buildMailboxMap(valid, config.mailboxes, log);
-        if (this.mailboxMap.length === 0) {
-            return {
-                ok: false,
-                detail: "no reachable mailboxes for any active login; nothing to poll",
-            };
+        const mailboxMap = await buildMailboxMap(valid, mail.mailboxes, log);
+        if (mailboxMap.length === 0) {
+            log("mail: no reachable mailboxes for any active login; nothing to poll");
+            return null;
         }
-        const summary = this.mailboxMap
+        const summary = mailboxMap
             .map((t) => `${t.mailbox} via ${t.upn}${t.isShared ? " (shared)" : ""}`)
             .join(", ");
-        return { ok: true, detail: `polling ${summary}` };
+        log(`mail: polling ${summary}`);
+        return new MailPoller(opts, cursorStore, mailboxMap);
     }
 
-    async pollOnce(deps: MailProviderDeps): Promise<void> {
-        if (!this.cursorStore || this.mailboxMap.length === 0) {
-            return;
-        }
+    /** Run one poll pass for every mapped mailbox. */
+    async pollOnce(): Promise<void> {
         for (const target of this.mailboxMap) {
             try {
-                await pollMailbox(deps, target, this.cursorStore);
+                await pollMailbox(this.opts, target, this.cursorStore);
             } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
-                deps.log(`mailbox ${target.mailbox} via ${target.upn}: poll error: ${message}`);
+                this.opts.log(
+                    `mailbox ${target.mailbox} via ${target.upn}: poll error: ${message}`,
+                );
             }
         }
-    }
-
-    // biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
-    buildCommands(ctx: HostContext): CommandDef<any> {
-        return buildO365Commands(ctx, this);
-    }
-
-    /**
-     * Expose the live login store so the CLI commands can list /
-     * validate / add-to-it without re-deriving the directory path.
-     * Returns a stub-instance store on first call before
-     * {@link prepare} ran (e.g. the `login` CLI command, which runs
-     * before any plugin lifecycle).
-     */
-    getLoginStore(ctx: HostContext): LoginStore {
-        if (this.loginStore) {
-            return this.loginStore;
-        }
-        const config = readO365Config(ctx);
-        this.appRegistration = resolveAppRegistration(config);
-        this.loginStore = new LoginStore(loginDirectory(ctx.dataDir), this.appRegistration);
-        return this.loginStore;
-    }
-
-    /** Snapshot of the active mailbox map, for CLI / debug output. */
-    get mailboxes(): ReadonlyArray<PollTarget> {
-        return this.mailboxMap;
-    }
-
-    /** The app registration currently in use (default or overridden). */
-    get registration(): AppRegistration {
-        return this.appRegistration;
     }
 }
 
@@ -146,19 +125,6 @@ export interface PollTarget {
     readonly auth: GraphAuth;
     readonly mailbox: string;
     readonly isShared: boolean;
-}
-
-/**
- * Merge the optional config overrides into the default app registration.
- * An empty `clientId` from config means "keep default" — the field is
- * present in the example file but blank by default, so we don't want
- * a placeholder string to nuke the working hardcoded app id.
- */
-function resolveAppRegistration(config: ReturnType<typeof readO365Config>): AppRegistration {
-    return {
-        clientId: config.clientId.length > 0 ? config.clientId : DEFAULT_APP.clientId,
-        tenantId: config.tenantId.length > 0 ? config.tenantId : DEFAULT_APP.tenantId,
-    };
 }
 
 /**
@@ -261,7 +227,7 @@ async function findReaderForShared(
  * the bus-level idempotency-key dedup keeps re-walks safe.
  */
 async function pollMailbox(
-    deps: MailProviderDeps,
+    opts: MailPollerOptions,
     target: PollTarget,
     cursorStore: DeltaCursorStore,
 ): Promise<void> {
@@ -277,7 +243,7 @@ async function pollMailbox(
             page = await client.listInboxDelta(target.mailbox, cursor);
         } catch (err) {
             if (err instanceof GraphError && err.status === 410) {
-                deps.log(
+                opts.log(
                     `mailbox ${target.mailbox} via ${target.upn}: delta cursor expired (410); ` +
                         `resetting and re-walking from now`,
                 );
@@ -293,10 +259,10 @@ async function pollMailbox(
                 // Delta tombstone for a message that left the inbox between
                 // polls. No body/recipients to emit; just acknowledge and move on.
                 const reason = message["@removed"].reason ?? "removed";
-                deps.log(`mailbox ${target.mailbox}: skipped tombstone ${message.id} (${reason})`);
+                opts.log(`mailbox ${target.mailbox}: skipped tombstone ${message.id} (${reason})`);
                 continue;
             }
-            await emitMailEvent(deps, target, client, message);
+            await emitMailEvent(opts, target, client, message);
         }
 
         if (page.deltaLink !== null) {
@@ -319,7 +285,7 @@ async function pollMailbox(
 
 /** Build the NewEvent for one message and hand it to the host. */
 async function emitMailEvent(
-    deps: MailProviderDeps,
+    opts: MailPollerOptions,
     target: PollTarget,
     client: GraphClient,
     message: GraphMailMessage,
@@ -334,17 +300,19 @@ async function emitMailEvent(
     const prompt =
         `A new e-mail was received from ${fromDisplay} with subject "${subject}", see payload for metadata. ` +
         `The body starts with: ${preview}` +
-        (truncated ? " Body is truncated. Use the mail_fetch_body tool to get the full body." : "");
+        (truncated
+            ? " Body is truncated. Use the ms365_fetch_body tool to get the full body."
+            : "");
 
-    const fetched = await fetchAttachmentsForEvent(deps, target, client, message);
+    const fetched = await fetchAttachmentsForEvent(opts, target, client, message);
 
     const event: NewEvent = {
-        topic: "mail:o365",
+        topic: "mail:ms365",
         prompt,
         priority: EVENT_PRIORITY.ASYNC,
-        idempotencyKey: `mail:o365:${message.internetMessageId}`,
+        idempotencyKey: `mail:ms365:${message.internetMessageId}`,
         payload: {
-            provider: "o365",
+            provider: "ms365",
             upn: target.upn,
             mailbox: target.mailbox,
             isShared: target.isShared,
@@ -360,7 +328,7 @@ async function emitMailEvent(
         },
         files: fetched?.files,
     };
-    await deps.emit(event);
+    await opts.emit(event);
 }
 
 interface FetchedAttachments {
@@ -375,7 +343,7 @@ interface FetchedAttachments {
 }
 
 async function fetchAttachmentsForEvent(
-    deps: MailProviderDeps,
+    opts: MailPollerOptions,
     target: PollTarget,
     client: GraphClient,
     message: GraphMailMessage,
@@ -388,7 +356,7 @@ async function fetchAttachmentsForEvent(
         return normalizeAttachments(raw);
     } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
-        deps.log(
+        opts.log(
             `attachment fetch for ${target.mailbox}/${message.id} failed: ${reason}; ` +
                 `emitting with attachments=null`,
         );

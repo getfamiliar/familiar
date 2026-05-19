@@ -1,9 +1,9 @@
 /**
  * Microsoft Entra ID (formerly Azure AD) app registration used for
- * device-code login against Graph. The plugin ships with a hard-coded
- * **multi-tenant Public Client** app the project owns; users with
- * tighter compliance needs can override `clientId` / `tenantId` via
- * `mail.o365.clientId` / `mail.o365.tenantId` in `config.yml`.
+ * device-code login against Microsoft Graph. The plugin ships with a
+ * hard-coded **multi-tenant Public Client** app the project owns;
+ * users with tighter compliance needs can override `clientId` /
+ * `tenantId` via `ms365.clientId` / `ms365.tenantId` in `config.yml`.
  *
  * The owner of a multi-tenant Public Client app cannot read tenant
  * data — tokens are minted against the user's home tenant and stay on
@@ -45,9 +45,9 @@ export const DEFAULT_APP: AppRegistration = {
  * refresh token msal-node caches; without it every silent-acquire
  * eventually fails.
  *
- * Scope set is fixed across own-and-shared mailbox access so one
- * cached login covers both — there is no per-feature consent split.
- * `MailboxSettings.ReadWrite` is included now for a future
+ * Scope set covers mail (own + shared) today. Calendar scopes will be
+ * appended here so a single login covers both features once calendar
+ * lands. `MailboxSettings.ReadWrite` is included now for a future
  * out-of-office automation that needs read+write on mailbox settings.
  */
 export const GRAPH_SCOPES: readonly string[] = [

@@ -1,5 +1,5 @@
 import cliChat from "@getfamiliar/plugin-cli-chat";
-import mail from "@getfamiliar/plugin-mail";
+import ms365 from "@getfamiliar/plugin-ms365";
 import telegram from "@getfamiliar/plugin-telegram";
 import transcribeWhisper from "@getfamiliar/plugin-transcribe-whisper";
 import whatsapp from "@getfamiliar/plugin-whatsapp";
@@ -17,7 +17,7 @@ import type { PluginManifest } from "@getfamiliar/shared";
  */
 export const plugins: readonly PluginManifest[] = [
     cliChat,
-    mail,
+    ms365,
     telegram,
     transcribeWhisper,
     whatsapp,

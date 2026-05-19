@@ -8,8 +8,8 @@ import {
 
 /**
  * Pure address-formatting helpers used by both the polling loop and
- * the send/draft tools. Kept apart from MCP- or HTTP-specific code so
- * the sanitizer surface stays usable from any caller.
+ * the send/draft tools. Kept apart from HTTP-specific code so the
+ * sanitizer surface stays usable from any caller.
  */
 
 /**

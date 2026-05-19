@@ -19,7 +19,7 @@
   "license": "MIT",
   "dependencies": {
     "@getfamiliar/plugin-cli-chat": "*",
-    "@getfamiliar/plugin-mail": "*",
+    "@getfamiliar/plugin-ms365": "*",
     "@getfamiliar/plugin-telegram": "*",
     "@getfamiliar/plugin-transcribe-whisper": "*",
     "@getfamiliar/plugin-whatsapp": "*",

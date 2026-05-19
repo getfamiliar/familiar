@@ -1,9 +1,9 @@
 {
-    "name": "@getfamiliar/plugin-mail",
+    "name": "@getfamiliar/plugin-ms365",
     "type": "module",
     "version": "0.0.1",
     "private": true,
-    "description": "Familiar plugin: polls one or more mail MCPs (Microsoft 365 today) and emits an event per new mail.",
+    "description": "Familiar plugin: Microsoft 365 integration via direct Graph calls. Mail today, calendar next.",
     "publishConfig": {
         "access": "public"
     },

@@ -348,7 +348,7 @@ The following are deliberately deferred but should be addressed during implement
 4. **Plugin loader and lifecycle** — host-side plugin loading, manifest parsing, container mount of `mcps/`, `workspace-template/` copy on first install.
 5. **Logging service** — centralized structured logging.
 6. **Approval gate** — `pending_actions` table, suspend/resume mechanics (per the open question above), notification push (start with Telegram or simple web UI), response handling.
-7. **First real plugin** — mail plugin end to end as the reference implementation: IMAP IDLE in host, `mail/index.md` (and optionally `mail/new/index.md`) handlers in workspace-template, MCP for mail operations behind the gateway.
+7. **First real plugin** — ms365 plugin end to end as the reference implementation: msal-node device-code login in the host, `mail/index.md` (and optionally `mail/ms365/index.md`) handlers in the workspace, direct Microsoft Graph calls from host-side plugin tools.
 8. **Cron scheduler** — host-side scanning of handler frontmatter for `cron:` fields,
    live re-evaluation on file change, event emission on firing. *(Implemented:
    `host/src/cron/`, `host/src/workspace/WorkspaceWatcher.ts`.)*

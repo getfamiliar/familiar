@@ -24,8 +24,9 @@ interface CursorFileShape {
 
 /**
  * On-disk store of the latest `@odata.deltaLink` per (upn, mailbox).
- * Persisted as JSON at `data/mail/o365/delta.json`. Atomic writes via
- * tmp file + rename so a crashed write never leaves a partial file.
+ * Persisted as JSON at `data/ms365/mail/delta.json`. Atomic writes
+ * via tmp file + rename so a crashed write never leaves a partial
+ * file.
  *
  * Storage shape (one nested object per UPN; keys are mailbox
  * addresses):

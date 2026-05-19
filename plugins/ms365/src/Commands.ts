@@ -1,57 +1,46 @@
 import path from "node:path";
 import type { HostContext } from "@getfamiliar/shared";
 import { type CommandDef, defineCommand } from "citty";
-import { readO365Config } from "../../Config.js";
-import { type AppRegistration, DEFAULT_APP } from "./AppRegistration.js";
-import { GraphAuth } from "./GraphAuth.js";
-import { loginDirectory } from "./LoginStore.js";
-import type { O365Provider } from "./O365Provider.js";
+import { GraphAuth } from "./auth/GraphAuth.js";
+import { LoginStore, loginDirectory } from "./auth/LoginStore.js";
+import { readMs365AuthConfig, readMs365MailConfig, resolveAppRegistration } from "./Config.js";
 
 /**
- * Build the `./cli.sh mail o365` subcommand tree: `status` and
- * `login`. Both work whether the daemon is running or not — they talk
- * directly to Microsoft Graph using the host-side token caches, no
- * bastion / MCP involvement.
+ * Build the `./cli.sh ms365` subcommand tree: `status`, `login`, and
+ * `logout`. All three work whether the daemon is running or not — they
+ * talk directly to Microsoft Graph using the host-side token caches,
+ * no bastion / MCP involvement. Each command is mounted as a
+ * subcommand of the plugin's root by the host's CLI loader, so the
+ * returned array is flat (no extra wrapper command).
  */
-export function buildO365Commands(
-    ctx: HostContext,
-    provider: O365Provider,
-    // biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
-): CommandDef<any> {
-    return defineCommand({
-        meta: {
-            name: provider.id,
-            description: `${provider.displayName} mail integration.`,
-        },
-        subCommands: {
-            status: statusCommand(ctx, provider),
-            login: loginCommand(ctx, provider),
-            logout: logoutCommand(ctx, provider),
-        },
-    });
+// biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
+export function buildMs365Commands(ctx: HostContext): readonly CommandDef<any>[] {
+    return [statusCommand(ctx), loginCommand(ctx), logoutCommand(ctx)];
+}
+
+function makeLoginStore(ctx: HostContext): LoginStore {
+    const auth = readMs365AuthConfig(ctx);
+    return new LoginStore(loginDirectory(ctx.dataDir), resolveAppRegistration(auth));
 }
 
 function statusCommand(
     ctx: HostContext,
-    provider: O365Provider,
     // biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
 ): CommandDef<any> {
     return defineCommand({
         meta: {
             name: "status",
-            description: `Show ${provider.displayName} logins and configured mailboxes.`,
+            description: "Show Microsoft 365 logins and configured mailboxes.",
         },
         async run() {
-            const store = provider.getLoginStore(ctx);
+            const store = makeLoginStore(ctx);
             await store.refresh();
             const validations = await store.validateAll();
             if (validations.length === 0) {
-                process.stdout.write(
-                    `No ${provider.displayName} logins yet. Run: ./cli.sh mail o365 login\n`,
-                );
+                process.stdout.write("No Microsoft 365 logins yet. Run: ./cli.sh ms365 login\n");
                 return;
             }
-            process.stdout.write(`${provider.displayName} logins:\n`);
+            process.stdout.write("Microsoft 365 logins:\n");
             for (const v of validations) {
                 if (v.ok) {
                     process.stdout.write(
@@ -63,21 +52,21 @@ function statusCommand(
                     process.stdout.write(`  ✗ ${v.upn}: ${v.reason ?? "(no reason)"}\n`);
                 }
             }
-            const config = readO365Config(ctx);
-            if (config.mailboxes.length === 0) {
+            const mail = readMs365MailConfig(ctx);
+            if (mail.mailboxes.length === 0) {
                 process.stdout.write(
-                    "\nMailboxes: (none configured) — primary mailbox of each login is polled.\n",
+                    "\nMail mailboxes: (none configured) — primary mailbox of each login is polled.\n",
                 );
             } else {
-                process.stdout.write("\nConfigured mailboxes (from config.yml):\n");
-                for (const m of config.mailboxes) {
+                process.stdout.write("\nConfigured mail mailboxes (from config.yml):\n");
+                for (const m of mail.mailboxes) {
                     process.stdout.write(`  - ${m}\n`);
                 }
             }
             process.stdout.write(
-                `\nallowSend: ${config.allowSend ? "true" : "false"}` +
-                    (config.allowSend && config.recipientWhitelist.length > 0
-                        ? ` (whitelist: ${config.recipientWhitelist.join(", ")})`
+                `\nmail.allowSend: ${mail.allowSend ? "true" : "false"}` +
+                    (mail.allowSend && mail.recipientWhitelist.length > 0
+                        ? ` (whitelist: ${mail.recipientWhitelist.join(", ")})`
                         : "") +
                     "\n",
             );
@@ -87,22 +76,18 @@ function statusCommand(
 
 function loginCommand(
     ctx: HostContext,
-    provider: O365Provider,
     // biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
 ): CommandDef<any> {
     return defineCommand({
         meta: {
             name: "login",
-            description: `Run device-code login for ${provider.displayName}.`,
+            description: "Run device-code login for Microsoft 365.",
         },
         async run() {
-            const config = readO365Config(ctx);
-            const registration: AppRegistration = {
-                clientId: config.clientId.length > 0 ? config.clientId : DEFAULT_APP.clientId,
-                tenantId: config.tenantId.length > 0 ? config.tenantId : DEFAULT_APP.tenantId,
-            };
+            const authConfig = readMs365AuthConfig(ctx);
+            const registration = resolveAppRegistration(authConfig);
 
-            const store = provider.getLoginStore(ctx);
+            const store = makeLoginStore(ctx);
             await store.refresh();
             const existing = store.list();
             if (existing.length > 0) {
@@ -143,13 +128,12 @@ function loginCommand(
 
 function logoutCommand(
     ctx: HostContext,
-    provider: O365Provider,
     // biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
 ): CommandDef<any> {
     return defineCommand({
         meta: {
             name: "logout",
-            description: `Remove ${provider.displayName} login(s). Omit UPN to remove all.`,
+            description: "Remove Microsoft 365 login(s). Omit UPN to remove all.",
         },
         args: {
             upn: {
@@ -159,7 +143,7 @@ function logoutCommand(
             },
         },
         async run({ args }) {
-            const store = provider.getLoginStore(ctx);
+            const store = makeLoginStore(ctx);
             await store.refresh();
             const logins = store.list();
             const requestedUpn = typeof args.upn === "string" ? args.upn : undefined;

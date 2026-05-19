@@ -1,9 +1,9 @@
-import type { EventRow, PluginTool, PluginToolCallContext } from "@getfamiliar/shared";
-import { readO365Config } from "../../Config.js";
+import type { EventRow, PluginTool } from "@getfamiliar/shared";
+import { getActiveLogins } from "../auth/ActiveLogins.js";
+import { readMs365MailConfig } from "../Config.js";
+import { GraphClient, GraphError, type GraphRecipient } from "../graph/GraphClient.js";
 import { FOLDER_IDS, type FolderAlias, isFolderAlias } from "./Folders.js";
-import { GraphClient, GraphError, type GraphRecipient } from "./GraphClient.js";
 import { renderMailHtml } from "./MailHtml.js";
-import type { O365Provider } from "./O365Provider.js";
 
 /**
  * Structured failure envelope returned to the agent when a Graph call
@@ -57,27 +57,27 @@ async function runTool<TResult extends object>(
 }
 
 /**
- * Build the six agent-facing mail tools the o365 provider contributes.
- * Each tool resolves its mail-event context from the originating
- * `EventRow.payload` — the agent never passes message ids or mailbox
- * addresses; it can only ever act on the mail the current agentrun is
- * reacting to.
+ * Build the agent-facing mail tools. Each tool resolves its
+ * mail-event context from the originating `EventRow.payload` — the
+ * agent never passes message ids or mailbox addresses; it can only
+ * ever act on the mail the current agentrun is reacting to.
  *
- * The provider reference is captured at construction time so the
- * tools share its `LoginStore` and stay coherent with the daemon's
- * mailbox map.
+ * Tools resolve the live `LoginStore` from the module-scoped active
+ * pointer the daemon set during `start`; the host registers tools
+ * only after `start` resolves, so the pointer is populated by the
+ * time the agent could possibly call one.
  */
-export function buildMailTools(provider: O365Provider): readonly PluginTool[] {
+export function buildMailTools(): readonly PluginTool[] {
     return [
-        fetchBodyTool(provider),
-        fetchAttachmentsTool(provider),
-        draftReplyTool(provider),
-        draftNewTool(provider),
-        sendReplyTool(provider),
-        sendNewTool(provider),
-        draftForwardTool(provider),
-        sendForwardTool(provider),
-        moveTool(provider),
+        fetchBodyTool(),
+        fetchAttachmentsTool(),
+        draftReplyTool(),
+        draftNewTool(),
+        sendReplyTool(),
+        sendNewTool(),
+        draftForwardTool(),
+        sendForwardTool(),
+        moveTool(),
     ];
 }
 
@@ -90,30 +90,31 @@ interface MailEventContext {
 }
 
 /**
- * Pull the (`upn`, `mailbox`, `messageId`) tuple the o365 emitter
- * stamped on every `mail:o365` event, look up the matching `GraphAuth`
- * in the provider's `LoginStore`, and assemble a Graph client bound
- * to that login. Throws a clear error if any piece is missing — the
- * agent's tool-call surface should never get past these checks unless
- * the event was genuinely produced by the o365 plugin.
+ * Pull the (`upn`, `mailbox`, `messageId`) tuple the poller stamped
+ * on every `mail:ms365` event, look up the matching `GraphAuth` in
+ * the active `LoginStore`, and assemble a Graph client bound to that
+ * login. Throws a clear error if any piece is missing — the agent's
+ * tool-call surface should never get past these checks unless the
+ * event was genuinely produced by the ms365 mail poller.
  */
-function resolveMailEvent(
-    provider: O365Provider,
-    event: EventRow,
-    host: PluginToolCallContext["host"],
-): MailEventContext {
+function resolveMailEvent(event: EventRow): MailEventContext {
     const payload = event.payload;
     if (payload === null || typeof payload !== "object") {
-        throw new Error("event.payload is missing — mail tools require a mail:o365 event");
+        throw new Error("event.payload is missing — mail tools require a mail:ms365 event");
     }
     const upn = readPayloadString(payload, "upn");
     const mailbox = readPayloadString(payload, "mailbox");
     const messageId = readPayloadString(payload, "messageId");
-    const store = provider.getLoginStore(host);
+    const store = getActiveLogins();
+    if (!store) {
+        throw new Error(
+            "no active ms365 logins; run `./cli.sh ms365 login` and restart the daemon",
+        );
+    }
     const auth = store.byUpn(upn);
     if (!auth) {
         throw new Error(
-            `no active o365 login for ${upn}; run \`./cli.sh mail o365 login\` to add one`,
+            `no active ms365 login for ${upn}; run \`./cli.sh ms365 login\` to add one`,
         );
     }
     const client = new GraphClient(() => auth.getAccessTokenSilent());
@@ -128,9 +129,10 @@ function readPayloadString(payload: object, key: string): string {
     return value;
 }
 
-function fetchBodyTool(
-    provider: O365Provider,
-): PluginTool<Record<string, never>, { ok: true; body: string } | ToolFailure> {
+function fetchBodyTool(): PluginTool<
+    Record<string, never>,
+    { ok: true; body: string } | ToolFailure
+> {
     return {
         name: "fetch_body",
         description:
@@ -139,20 +141,17 @@ function fetchBodyTool(
         inputSchema: { type: "object", additionalProperties: false, properties: {} },
         execute: (_args, callCtx) =>
             runTool(async () => {
-                const { client, mailbox, messageId } = resolveMailEvent(
-                    provider,
-                    callCtx.event,
-                    callCtx.host,
-                );
+                const { client, mailbox, messageId } = resolveMailEvent(callCtx.event);
                 const body = await client.getMessageBodyText(mailbox, messageId);
                 return { body };
             }),
     };
 }
 
-function fetchAttachmentsTool(
-    provider: O365Provider,
-): PluginTool<Record<string, never>, { ok: true; paths: readonly string[] } | ToolFailure> {
+function fetchAttachmentsTool(): PluginTool<
+    Record<string, never>,
+    { ok: true; paths: readonly string[] } | ToolFailure
+> {
     return {
         name: "fetch_attachments",
         description:
@@ -162,11 +161,7 @@ function fetchAttachmentsTool(
         inputSchema: { type: "object", additionalProperties: false, properties: {} },
         execute: (_args, callCtx) =>
             runTool(async () => {
-                const { client, mailbox, messageId } = resolveMailEvent(
-                    provider,
-                    callCtx.event,
-                    callCtx.host,
-                );
+                const { client, mailbox, messageId } = resolveMailEvent(callCtx.event);
                 const attachments = await client.getAttachments(mailbox, messageId);
                 const files = attachments
                     .filter((a) => typeof a.contentBytes === "string" && a.contentBytes.length > 0)
@@ -188,9 +183,10 @@ interface DraftReplyArgs {
     readonly replyAll?: boolean;
 }
 
-function draftReplyTool(
-    provider: O365Provider,
-): PluginTool<DraftReplyArgs, { ok: true; drafted: true; draftId: string } | ToolFailure> {
+function draftReplyTool(): PluginTool<
+    DraftReplyArgs,
+    { ok: true; drafted: true; draftId: string } | ToolFailure
+> {
     return {
         name: "draft_reply",
         description:
@@ -210,11 +206,7 @@ function draftReplyTool(
         },
         execute: (args, callCtx) =>
             runTool(async () => {
-                const { client, mailbox, messageId } = resolveMailEvent(
-                    provider,
-                    callCtx.event,
-                    callCtx.host,
-                );
+                const { client, mailbox, messageId } = resolveMailEvent(callCtx.event);
                 const html = renderMailHtml(args.body);
                 const draft = await client.createReplyDraft(
                     mailbox,
@@ -234,9 +226,10 @@ interface DraftNewArgs {
     readonly body: string;
 }
 
-function draftNewTool(
-    provider: O365Provider,
-): PluginTool<DraftNewArgs, { ok: true; drafted: true; draftId: string } | ToolFailure> {
+function draftNewTool(): PluginTool<
+    DraftNewArgs,
+    { ok: true; drafted: true; draftId: string } | ToolFailure
+> {
     return {
         name: "draft_new",
         description:
@@ -255,7 +248,7 @@ function draftNewTool(
         },
         execute: (args, callCtx) =>
             runTool(async () => {
-                const { client, mailbox } = resolveMailEvent(provider, callCtx.event, callCtx.host);
+                const { client, mailbox } = resolveMailEvent(callCtx.event);
                 const html = renderMailHtml(args.body);
                 const draft = await client.createDraft(mailbox, {
                     subject: args.subject,
@@ -274,9 +267,10 @@ interface SendReplyResult {
     readonly reason?: string;
 }
 
-function sendReplyTool(
-    provider: O365Provider,
-): PluginTool<DraftReplyArgs, ({ ok: true } & SendReplyResult) | ToolFailure> {
+function sendReplyTool(): PluginTool<
+    DraftReplyArgs,
+    ({ ok: true } & SendReplyResult) | ToolFailure
+> {
     return {
         name: "send_reply",
         description:
@@ -294,12 +288,8 @@ function sendReplyTool(
         },
         execute: (args, callCtx) =>
             runTool<SendReplyResult>(async () => {
-                const { client, mailbox, messageId } = resolveMailEvent(
-                    provider,
-                    callCtx.event,
-                    callCtx.host,
-                );
-                const config = readO365Config(callCtx.host);
+                const { client, mailbox, messageId } = resolveMailEvent(callCtx.event);
+                const config = readMs365MailConfig(callCtx.host);
                 const recipients = collectReplyRecipients(callCtx.event, args.replyAll === true);
                 const gate = checkSendGate(config, recipients);
                 const html = renderMailHtml(args.body);
@@ -318,9 +308,7 @@ function sendReplyTool(
     };
 }
 
-function sendNewTool(
-    provider: O365Provider,
-): PluginTool<DraftNewArgs, ({ ok: true } & SendReplyResult) | ToolFailure> {
+function sendNewTool(): PluginTool<DraftNewArgs, ({ ok: true } & SendReplyResult) | ToolFailure> {
     return {
         name: "send_new",
         description:
@@ -339,8 +327,8 @@ function sendNewTool(
         },
         execute: (args, callCtx) =>
             runTool<SendReplyResult>(async () => {
-                const { client, mailbox } = resolveMailEvent(provider, callCtx.event, callCtx.host);
-                const config = readO365Config(callCtx.host);
+                const { client, mailbox } = resolveMailEvent(callCtx.event);
+                const config = readMs365MailConfig(callCtx.host);
                 const recipients = [...args.to, ...(args.cc ?? [])];
                 const gate = checkSendGate(config, recipients);
                 const html = renderMailHtml(args.body);
@@ -366,9 +354,10 @@ interface ForwardArgs {
     readonly comment?: string;
 }
 
-function draftForwardTool(
-    provider: O365Provider,
-): PluginTool<ForwardArgs, { ok: true; drafted: true; draftId: string } | ToolFailure> {
+function draftForwardTool(): PluginTool<
+    ForwardArgs,
+    { ok: true; drafted: true; draftId: string } | ToolFailure
+> {
     return {
         name: "draft_forward",
         description:
@@ -390,11 +379,7 @@ function draftForwardTool(
         },
         execute: (args, callCtx) =>
             runTool(async () => {
-                const { client, mailbox, messageId } = resolveMailEvent(
-                    provider,
-                    callCtx.event,
-                    callCtx.host,
-                );
+                const { client, mailbox, messageId } = resolveMailEvent(callCtx.event);
                 const commentHtml = renderMailHtml(args.comment ?? "");
                 const draft = await client.createForwardDraft(
                     mailbox,
@@ -408,9 +393,10 @@ function draftForwardTool(
     };
 }
 
-function sendForwardTool(
-    provider: O365Provider,
-): PluginTool<ForwardArgs, ({ ok: true } & SendReplyResult) | ToolFailure> {
+function sendForwardTool(): PluginTool<
+    ForwardArgs,
+    ({ ok: true } & SendReplyResult) | ToolFailure
+> {
     return {
         name: "send_forward",
         description:
@@ -432,12 +418,8 @@ function sendForwardTool(
         },
         execute: (args, callCtx) =>
             runTool<SendReplyResult>(async () => {
-                const { client, mailbox, messageId } = resolveMailEvent(
-                    provider,
-                    callCtx.event,
-                    callCtx.host,
-                );
-                const config = readO365Config(callCtx.host);
+                const { client, mailbox, messageId } = resolveMailEvent(callCtx.event);
+                const config = readMs365MailConfig(callCtx.host);
                 const recipients = [...args.to, ...(args.cc ?? [])];
                 const gate = checkSendGate(config, recipients);
                 const commentHtml = renderMailHtml(args.comment ?? "");
@@ -463,9 +445,7 @@ interface MoveArgs {
     readonly folder: FolderAlias;
 }
 
-function moveTool(
-    provider: O365Provider,
-): PluginTool<MoveArgs, { ok: true; moved: true; folder: string } | ToolFailure> {
+function moveTool(): PluginTool<MoveArgs, { ok: true; moved: true; folder: string } | ToolFailure> {
     return {
         name: "move",
         description: "Move the current mail to a folder. Allowed folders: inbox, archive, trash.",
@@ -484,11 +464,7 @@ function moveTool(
                         `folder must be one of inbox|archive|trash, got: ${args.folder}`,
                     );
                 }
-                const { client, mailbox, messageId } = resolveMailEvent(
-                    provider,
-                    callCtx.event,
-                    callCtx.host,
-                );
+                const { client, mailbox, messageId } = resolveMailEvent(callCtx.event);
                 await client.moveMessage(mailbox, messageId, FOLDER_IDS[args.folder]);
                 return { moved: true as const, folder: args.folder };
             }),
@@ -513,7 +489,7 @@ function toRecipients(addresses: readonly string[]): GraphRecipient[] {
  * first offending recipient so the agent can surface it to the user.
  */
 function checkSendGate(
-    config: ReturnType<typeof readO365Config>,
+    config: ReturnType<typeof readMs365MailConfig>,
     recipients: readonly string[],
 ): { allow: true } | { allow: false; reason: string } {
     if (!config.allowSend) {
@@ -521,7 +497,7 @@ function checkSendGate(
             allow: false,
             reason:
                 "allowSend is false in config; created a draft instead. " +
-                "Set mail.o365.allowSend to true in config.yml to enable direct sending.",
+                "Set ms365.mail.allowSend to true in config.yml to enable direct sending.",
         };
     }
     if (config.recipientWhitelist.length === 0) {
@@ -538,7 +514,7 @@ function checkSendGate(
             allow: false,
             reason:
                 `recipient ${recipient} is not in the recipientWhitelist; created a draft instead. ` +
-                "Add the address or its @domain to mail.o365.recipientWhitelist to permit direct sending.",
+                "Add the address or its @domain to ms365.mail.recipientWhitelist to permit direct sending.",
         };
     }
     return { allow: true };

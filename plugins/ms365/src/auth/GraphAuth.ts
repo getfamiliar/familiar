@@ -24,7 +24,7 @@ export interface AccountSummary {
 
 /**
  * Per-UPN MSAL wrapper. Owns one `PublicClientApplication` against a
- * single token-cache file (`data/mail/o365/<upn>.json`, mode 0o600).
+ * single token-cache file (`data/ms365/auth/<upn>.json`, mode 0o600).
  *
  * Two acquire paths:
  *
@@ -34,7 +34,7 @@ export interface AccountSummary {
  *   [[feedback_skip_broken_logins_over_exit]]).
  * - {@link loginByDeviceCode} — runs the device-code flow against the
  *   configured app, awaits user completion, writes the cache atomically.
- *   Only called from the CLI's `mail o365 login` subcommand.
+ *   Only called from the CLI's `ms365 login` subcommand.
  *
  * The cache file is the source of truth: deleting it logs the user out
  * for that UPN. `LoginStore` enumerates files in the directory to
@@ -128,7 +128,7 @@ export class GraphAuth {
         const account = await this.findAccount();
         if (!account) {
             throw new Error(
-                `no account in token cache ${this.cachePath} — run \`./cli.sh mail o365 login\``,
+                `no account in token cache ${this.cachePath} — run \`./cli.sh ms365 login\``,
             );
         }
         this.cachedAccount = account;

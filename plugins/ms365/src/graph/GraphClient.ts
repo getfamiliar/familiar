@@ -9,7 +9,8 @@
  * The client is stateless; the access token comes from a callback so
  * one client instance can serve multiple `GraphAuth` accounts if
  * needed — though in practice each `(login, mailbox)` poll path owns
- * its own client + auth pair.
+ * its own client + auth pair. Calendar additions will share the same
+ * client surface once they land.
  */
 const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
 
@@ -51,8 +52,7 @@ export interface DeltaPage {
 /**
  * Narrow projection of a Graph mail message. Only the fields the
  * poll loop emits land here; anything else is dropped server-side via
- * `$select`. Pulled here (rather than left in `O365Tools`) to keep the
- * MCP-shaped legacy types separate from the new direct-Graph ones.
+ * `$select`.
  */
 export interface GraphMailMessage {
     readonly id: string;
@@ -377,7 +377,7 @@ export class GraphClient {
 
     /**
      * Move a message to one of the well-known folders Graph exposes.
-     * The folder ids come from {@link import("./Folders.js").FOLDER_IDS}.
+     * The folder ids come from {@link import("../mail/Folders.js").FOLDER_IDS}.
      */
     async moveMessage(userId: string, messageId: string, folderId: string): Promise<void> {
         const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/move`;

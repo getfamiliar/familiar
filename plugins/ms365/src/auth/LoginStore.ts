@@ -17,9 +17,10 @@ export interface LoginValidation {
 }
 
 /**
- * Filesystem-backed registry of all currently-known o365 logins.
+ * Filesystem-backed registry of all currently-known Microsoft 365
+ * logins.
  *
- * Source of truth is the directory `data/mail/o365/`: one
+ * Source of truth is the directory `data/ms365/auth/`: one
  * `<upn>.json` file per logged-in account, written by msal-node's
  * cache plugin (see {@link GraphAuth}). The store enumerates files at
  * construction, lazily instantiates `GraphAuth` instances against
@@ -27,8 +28,8 @@ export interface LoginValidation {
  * boot to weed out logins whose refresh token has died.
  *
  * Adding a login is just "write the cache file" — typically through
- * `GraphAuth.loginByDeviceCode()` from the `mail o365 login` CLI
- * command. Removing a login means deleting the file.
+ * `GraphAuth.loginByDeviceCode()` from the `ms365 login` CLI command.
+ * Removing a login means deleting the file.
  */
 export class LoginStore {
     private readonly directory: string;
@@ -61,11 +62,6 @@ export class LoginStore {
         const next = new Map<string, GraphAuth>();
         for (const entry of entries) {
             if (!entry.endsWith(".json") || entry.endsWith(".tmp")) {
-                continue;
-            }
-            // Reserved filename owned by `DeltaCursorStore` — same directory,
-            // not a login cache.
-            if (entry === "delta.json") {
                 continue;
             }
             // The on-disk filename may carry mixed-case UPN bytes from
@@ -108,7 +104,7 @@ export class LoginStore {
     }
 
     /**
-     * Register a brand-new login. Called from the `mail o365 login`
+     * Register a brand-new login. Called from the `ms365 login`
      * CLI after `GraphAuth.loginByDeviceCode()` writes the cache file.
      * Idempotent — re-registering the same UPN replaces the entry.
      */
@@ -161,9 +157,9 @@ export class LoginStore {
 }
 
 /**
- * Resolve the on-disk login directory for the plugin: `<dataDir>/mail/o365/`.
+ * Resolve the on-disk login directory for the plugin: `<dataDir>/ms365/auth/`.
  * Centralised so both the daemon and the CLI agree on the layout.
  */
 export function loginDirectory(dataDir: string): string {
-    return path.join(dataDir, "mail", "o365");
+    return path.join(dataDir, "ms365", "auth");
 }
