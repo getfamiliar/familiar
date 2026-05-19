@@ -1,14 +1,20 @@
+
+
 Features:
 * Wakeups / Alerts per Datenbank bauen
 * Compression
-* Calendar Plugin
+* Calendar Plugin - kompletter rewrite des mail plugins 
+* True bash
 * Besseres Reporting Format
 * Self-Reflection Tools: List of events, event report, plugin status, system status 
 * Tool Call Offloading in temp files
 
+
 Reflect and learn from things when memory plugin is ready:
 * Mail Digest
 * ...
+
+
 
 Neues CLI Tool: `logs`
 * `logs tail` tails the current data/logs/ log file but pretty prints the JSON objects in it.

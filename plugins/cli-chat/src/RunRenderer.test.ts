@@ -51,6 +51,7 @@ function makeRun(overrides: Partial<AgentRunRow> = {}): AgentRunRow {
         resultText: null,
         error: null,
         privileged: true,
+        calltype: null,
         retryCount: 0,
         notBefore: null,
         model: null,
