@@ -1,6 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
+    AgentRunBus,
+    type AgentRunUnsubscribe,
     type ChatFilter,
     type ChatHandler,
     ChatMessageBus,
@@ -173,9 +175,15 @@ export class HostContextImpl implements HostContext {
      * Errors thrown inside the callback are caught and logged so a
      * buggy subscriber can't break the emit.
      *
-     * If the INSERT itself fails, both listeners are torn down and the
-     * outer promise rejects. Once the handle is returned, the caller
-     * owns awaiting `settled` (or attaching a `.catch`); listener
+     * When `options.onAgentRun` is provided, an additional LISTEN on
+     * `agentruns_changed` is installed (also before the INSERT) and the
+     * callback is invoked for every agentrun row insert or state
+     * transition whose `event_id` matches. Same error-swallowing
+     * contract as `onStep`.
+     *
+     * If the INSERT itself fails, every installed listener is torn down
+     * and the outer promise rejects. Once the handle is returned, the
+     * caller owns awaiting `settled` (or attaching a `.catch`); listener
      * teardown is anchored on `settled` resolving or rejecting.
      */
     private async emitAndAwait(event: NewEvent, options?: EmitOptions): Promise<EmitHandle> {
@@ -227,6 +235,28 @@ export class HostContextImpl implements HostContext {
             });
         }
 
+        let agentRunUnsubscribe: AgentRunUnsubscribe | undefined;
+        const onAgentRun = options?.onAgentRun;
+        if (onAgentRun) {
+            const agentRunBus = new AgentRunBus(conn);
+            agentRunUnsubscribe = await agentRunBus.listen(async (row) => {
+                if (row.eventId !== waitedFor) {
+                    return;
+                }
+                try {
+                    await onAgentRun(row);
+                } catch (err) {
+                    this.deps.log.error(
+                        {
+                            agentRunId: row.id,
+                            err: err instanceof Error ? err.message : String(err),
+                        },
+                        "events.emit onAgentRun callback error",
+                    );
+                }
+            });
+        }
+
         let row: Awaited<ReturnType<EventBus["add"]>>;
         let stagedScratchDir: string | undefined;
         try {
@@ -268,6 +298,9 @@ export class HostContextImpl implements HostContext {
             if (stepUnsubscribe) {
                 await stepUnsubscribe();
             }
+            if (agentRunUnsubscribe) {
+                await agentRunUnsubscribe();
+            }
             await conn.unlisten(EVENTS_STATE_CHANNEL, handler);
             throw err;
         }
@@ -297,6 +330,9 @@ export class HostContextImpl implements HostContext {
             } finally {
                 if (stepUnsubscribe) {
                     await stepUnsubscribe();
+                }
+                if (agentRunUnsubscribe) {
+                    await agentRunUnsubscribe();
                 }
                 await conn.unlisten(EVENTS_STATE_CHANNEL, handler);
             }

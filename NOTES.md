@@ -1,13 +1,10 @@
-Quick Fixes:
-* Priorities als Constants aus shared: CHAT=100, ASYNC=50, BACKGROUND=10
-
 Features:
 * Wakeups / Alerts per Datenbank bauen
 * Compression
 * Calendar Plugin
 * Besseres Reporting Format
 * Self-Reflection Tools: List of events, event report, plugin status, system status 
-* Tool Result Offloading in temp files
+* Tool Call Offloading in temp files
 
 Reflect and learn from things when memory plugin is ready:
 * Mail Digest

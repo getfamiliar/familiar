@@ -21,7 +21,9 @@
  * - `events_state` — fires on state UPDATE on `events`. Lets host-side
  *   plugins wait for a specific event to settle.
  * - `agentruns_changed` — fires on INSERT and on state UPDATE on
- *   `agentruns`. Wakes the agentrun watcher.
+ *   `agentruns`. Wakes the agentrun watcher. Payload format is
+ *   `<event_id>:<id>` so subscribers can route on event_id without a
+ *   JOIN.
  * - `stepresults_new` — fires on INSERT into `stepresults`. Lets host-side
  *   subscribers (e.g. `HostContext.events.emit`'s `onStep` callback) tail
  *   per-step audit rows as the agent loop produces them. Payload format
@@ -269,7 +271,10 @@ CREATE TRIGGER events_state_trg
 
 CREATE OR REPLACE FUNCTION agentruns_notify_changed() RETURNS trigger AS $$
 BEGIN
-  PERFORM pg_notify('${AGENTRUNS_CHANNEL}', NEW.state);
+  PERFORM pg_notify(
+    '${AGENTRUNS_CHANNEL}',
+    NEW.event_id::text || ':' || NEW.id::text
+  );
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

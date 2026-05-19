@@ -9,6 +9,13 @@ import type { Logger } from "./logging/Logger.js";
 import type { NotificationHandler, PostgresConnection } from "./PostgresConnection.js";
 import { AGENTRUNS_CHANNEL, EVENT_TERMINAL_UPDATE_SQL, SCHEMA_SQL } from "./Schema.js";
 
+/**
+ * Disposer returned by {@link AgentRunBus.listen}. Calling it
+ * unsubscribes the handler from the underlying NOTIFY channel.
+ * Idempotent: calling more than once is safe.
+ */
+export type AgentRunUnsubscribe = () => Promise<void>;
+
 /** Raw row shape returned by the SELECT. `pg` returns bigints as strings. */
 interface RawAgentRunRow {
     id: string;
@@ -448,6 +455,66 @@ export class AgentRunBus {
                AND not_before > now()`,
         );
         return result.rows[0]?.next ?? null;
+    }
+
+    /**
+     * Subscribe to {@link AGENTRUNS_CHANNEL}. The notification payload
+     * (`<event_id>:<id>`) is parsed, the row is fetched by id, and
+     * `handler` is invoked with it. Fires on both INSERT and state
+     * UPDATE — callers that only care about one transition must filter
+     * on `row.state` themselves.
+     *
+     * Errors thrown by `handler` are caught and logged so one bad
+     * subscriber doesn't break others on the same channel.
+     *
+     * Returns a disposer; call it to unlisten. Idempotent.
+     */
+    async listen(
+        handler: (row: AgentRunRow) => void | Promise<void>,
+    ): Promise<AgentRunUnsubscribe> {
+        const wrapper: NotificationHandler = (payload) => {
+            this.log?.debug({ channel: AGENTRUNS_CHANNEL, payload }, "NOTIFY agentruns_changed");
+            void this.dispatchNotification(payload, handler);
+        };
+        await this.connection.listen(AGENTRUNS_CHANNEL, wrapper);
+
+        let disposed = false;
+        return async () => {
+            if (disposed) {
+                return;
+            }
+            disposed = true;
+            await this.connection.unlisten(AGENTRUNS_CHANNEL, wrapper);
+        };
+    }
+
+    /**
+     * Inner notification dispatcher for {@link listen}. Parses the
+     * channel payload (`<event_id>:<id>`), fetches the row by id, and
+     * invokes the handler — catching and logging any error from the
+     * handler itself.
+     */
+    private async dispatchNotification(
+        payload: string,
+        handler: (row: AgentRunRow) => void | Promise<void>,
+    ): Promise<void> {
+        const colon = payload.indexOf(":");
+        if (colon < 0) {
+            return;
+        }
+        const id = payload.slice(colon + 1);
+        try {
+            const row = await this.getById(id);
+            if (!row) {
+                return;
+            }
+            await handler(row);
+        } catch (err) {
+            this.log?.error(
+                { id, err: err instanceof Error ? err.message : String(err) },
+                "AgentRunBus listen handler error",
+            );
+        }
     }
 
     /** Subscribe this bus's wake-handler to {@link AGENTRUNS_CHANNEL}. */

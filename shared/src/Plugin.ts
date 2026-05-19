@@ -52,6 +52,16 @@ export interface EmitOptions {
      * overhead).
      */
     readonly onStep?: (step: StepResultRow) => void | Promise<void>;
+    /**
+     * Fired whenever an `agentruns` row tied to this event is inserted
+     * or transitions state. Receives the current {@link AgentRunRow} —
+     * callers that only care about a specific transition must filter
+     * on `row.state` themselves. Errors thrown by the callback are
+     * caught and logged so a buggy subscriber can't break the emit.
+     * When omitted, no `agentruns_changed` LISTEN is registered (zero
+     * overhead).
+     */
+    readonly onAgentRun?: (row: AgentRunRow) => void | Promise<void>;
 }
 
 /**
