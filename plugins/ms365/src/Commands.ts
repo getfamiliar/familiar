@@ -4,6 +4,8 @@ import { type CommandDef, defineCommand } from "citty";
 import { GraphAuth } from "./auth/GraphAuth.js";
 import { LoginStore, loginDirectory } from "./auth/LoginStore.js";
 import { readMs365AuthConfig, readMs365MailConfig, resolveAppRegistration } from "./Config.js";
+import { calendarTypeOf, ownerNameOf } from "./calendar/Mapping.js";
+import { GraphClient } from "./graph/GraphClient.js";
 
 /**
  * Build the `./cli.sh ms365` subcommand tree: `status`, `login`, and
@@ -15,7 +17,66 @@ import { readMs365AuthConfig, readMs365MailConfig, resolveAppRegistration } from
  */
 // biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
 export function buildMs365Commands(ctx: HostContext): readonly CommandDef<any>[] {
-    return [statusCommand(ctx), loginCommand(ctx), logoutCommand(ctx)];
+    return [statusCommand(ctx), loginCommand(ctx), logoutCommand(ctx), calCommand(ctx)];
+}
+
+/**
+ * `./cli.sh ms365 cal list` — discover and print every calendar each
+ * active login can reach. Operates entirely host-side (no agent
+ * involvement), so the daemon does not need to be running.
+ */
+function calCommand(
+    ctx: HostContext,
+    // biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
+): CommandDef<any> {
+    return defineCommand({
+        meta: {
+            name: "cal",
+            description: "Calendar subcommands (list).",
+        },
+        subCommands: {
+            list: defineCommand({
+                meta: {
+                    name: "list",
+                    description: "List every calendar visible to each active login.",
+                },
+                async run() {
+                    const store = makeLoginStore(ctx);
+                    await store.refresh();
+                    const validations = await store.validateAll();
+                    const okLogins = validations.filter((v) => v.ok);
+                    if (okLogins.length === 0) {
+                        process.stdout.write(
+                            "No active Microsoft 365 logins. Run `./cli.sh ms365 login` first.\n",
+                        );
+                        return;
+                    }
+                    for (const v of okLogins) {
+                        process.stdout.write(`\n${v.upn}\n`);
+                        const client = new GraphClient(() => v.auth.getAccessTokenSilent());
+                        try {
+                            const calendars = await client.listCalendars(v.upn);
+                            if (calendars.length === 0) {
+                                process.stdout.write("  (no calendars visible)\n");
+                                continue;
+                            }
+                            for (const c of calendars) {
+                                const type = calendarTypeOf(c, v.upn);
+                                const owner = ownerNameOf(c, type);
+                                const tag = type === "own" ? "own" : `shared (${owner ?? "?"})`;
+                                const def = c.isDefaultCalendar ? " [default]" : "";
+                                process.stdout.write(`  - ${c.name} — ${tag}${def}\n`);
+                                process.stdout.write(`      uniqueKey: ${c.id}\n`);
+                            }
+                        } catch (err) {
+                            const reason = err instanceof Error ? err.message : String(err);
+                            process.stdout.write(`  (listing failed: ${reason})\n`);
+                        }
+                    }
+                },
+            }),
+        },
+    });
 }
 
 function makeLoginStore(ctx: HostContext): LoginStore {

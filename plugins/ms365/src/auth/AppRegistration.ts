@@ -60,6 +60,9 @@ export const GRAPH_SCOPES: readonly string[] = [
     "Mail.Send.Shared",
     "MailboxFolder.Read",
     "MailboxSettings.ReadWrite",
+    "Calendars.ReadWrite",
+    "Calendars.ReadWrite.Shared",
+    "OnlineMeetings.ReadWrite",
     "offline_access",
     "User.Read",
 ];

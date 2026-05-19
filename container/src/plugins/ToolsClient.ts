@@ -26,6 +26,14 @@ export interface PluginToolsClientConfig {
  */
 interface CatalogEntry {
     readonly key: string;
+    /**
+     * Plugin id this tool belongs to, or the reserved string `"core"`
+     * for host-owned tools registered without a plugin-id prefix
+     * (e.g. the `cal_*` calendar tools). Used to bucket keys into the
+     * DSL group map so a handler's `tools: core` resolves to every
+     * host-owned tool.
+     */
+    readonly pluginId: string;
     readonly description: string;
     readonly inputSchema: object;
 }
@@ -82,15 +90,12 @@ export class PluginToolsClient {
                 inputSchema: jsonSchema(entry.inputSchema),
                 execute: async (args: unknown) => this.invoke(entry.key, args, eventId, agentrunId),
             });
-            const pluginId = pluginIdFromKey(entry.key);
-            if (pluginId !== undefined) {
-                let set = keysById.get(pluginId);
-                if (set === undefined) {
-                    set = new Set();
-                    keysById.set(pluginId, set);
-                }
-                set.add(entry.key);
+            let set = keysById.get(entry.pluginId);
+            if (set === undefined) {
+                set = new Set();
+                keysById.set(entry.pluginId, set);
             }
+            set.add(entry.key);
         }
         const frozen = new Map<string, ReadonlySet<string>>();
         for (const [id, keys] of keysById) {
@@ -120,12 +125,18 @@ export class PluginToolsClient {
                 item !== null &&
                 typeof item === "object" &&
                 typeof (item as { key?: unknown }).key === "string" &&
+                typeof (item as { pluginId?: unknown }).pluginId === "string" &&
                 typeof (item as { description?: unknown }).description === "string" &&
                 typeof (item as { inputSchema?: unknown }).inputSchema === "object" &&
                 (item as { inputSchema?: unknown }).inputSchema !== null
             ) {
                 const e = item as CatalogEntry;
-                out.push({ key: e.key, description: e.description, inputSchema: e.inputSchema });
+                out.push({
+                    key: e.key,
+                    pluginId: e.pluginId,
+                    description: e.description,
+                    inputSchema: e.inputSchema,
+                });
             }
         }
         return out;
@@ -166,19 +177,4 @@ export class PluginToolsClient {
         this.config.log.warn({ tool: key, error }, "plugin tool error");
         throw new Error(error);
     }
-}
-
-/**
- * Recover the plugin id from a tool key. The host registry guarantees
- * `${pluginId}_${sanitizedToolName}` with the plugin id matching
- * `IDENT_PATTERN` (lowercase alnum, leading letter) — so the segment
- * up to the first `_` is the plugin id. Returns `undefined` for
- * pathological keys that don't fit the shape; the caller skips them.
- */
-function pluginIdFromKey(key: string): string | undefined {
-    const underscoreIdx = key.indexOf("_");
-    if (underscoreIdx <= 0) {
-        return undefined;
-    }
-    return key.slice(0, underscoreIdx);
 }

@@ -6,6 +6,25 @@ export type {
     NewAgentRun,
 } from "./AgentRun.js";
 export { AgentRunBus, type AgentRunUnsubscribe } from "./AgentRunBus.js";
+export type {
+    CalendarApi,
+    CalendarAttachmentMeta,
+    CalendarAttendee,
+    CalendarEventRow,
+    CalendarEventType,
+    CalendarImportance,
+    CalendarProvider,
+    CalendarResponseStatus,
+    CalendarRow,
+    CalendarSensitivity,
+    CalendarShowAs,
+    CalendarType,
+    CreateEventInput,
+    FindEventsQuery,
+    NewCalendarEvent,
+    UpdateEventInput,
+    UpsertCalendarInput,
+} from "./Calendar.js";
 export type { ChatFilter, ChatMessage, ChatRole, NewChatMessage } from "./ChatMessage.js";
 export { type ChatHandler, ChatMessageBus, type ChatUnsubscribe } from "./ChatMessageBus.js";
 export type { ConfigService } from "./Config.js";
@@ -66,6 +85,7 @@ export type { NewStepResult, StepResultRow } from "./StepResult.js";
 export { StepResultBus, type StepResultUnsubscribe } from "./StepResultBus.js";
 export {
     ALL_GROUP_NAME,
+    CORE_GROUP_NAME,
     IDENT_PATTERN,
     MCP_GROUP_NAME,
     NONE_GROUP_NAME,
@@ -73,3 +93,4 @@ export {
     SYSTEM_GROUP_NAME,
     sanitizeToolKey,
 } from "./ToolDsl.js";
+export { runTool, type ToolFailure, type ToolFailureAdaptor } from "./ToolFailure.js";

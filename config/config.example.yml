@@ -37,6 +37,18 @@ core:
   # a handler, off again after.
   # logSystemPrompt: false
 
+  # User's preferred IANA timezone — used by every plugin / tool
+  # that turns clock-walltime into ISO timestamps. Falls back to the
+  # host system timezone when unset.
+  # timezone: Europe/Berlin
+
+  # Default calendar the agent writes new events into when
+  # cal_create_event is invoked without an explicit calendar_id.
+  # Accepts a calendar name ("Calendar") or a qualified form
+  # ("ms365:Calendar") when two providers share a calendar name.
+  # If unset, defaults to the first default calendar the system finds.
+  # defaultCalendar: Calendar
+
 inference:
   # Provider id used when a handler does not put a provider prefix on
   # its `model` frontmatter field. Must match either an entry under
@@ -121,16 +133,27 @@ inference:
 #   groupAllowlist:
 #     - "1203....@g.us"
 
-# Microsoft 365 plugin (mail today, calendar next). All keys are
-# optional — defaults are operational, so a fresh install just needs
-# at least one cached login (run `./cli.sh ms365 login` to add one).
-# See plugins/ms365/README.md for the full guide.
+# Microsoft 365 plugin (mail + calendar). All keys are optional —
+# defaults are operational, so a fresh install just needs at least
+# one cached login (run `./cli.sh ms365 login` to add one). See
+# plugins/ms365/README.md for the full guide.
 # ms365:
 #   clientId: ""             # override the bundled multi-tenant app id (own-app registration)
 #   tenantId: common         # override OAuth tenant — `common` accepts any work-or-school account
 #   mail:
+#     enabled: true          # master switch; false disables polling + ms365_* mail tools
 #     mailboxes: []          # empty = every logged-in account's primary inbox
 #     allowSend: false       # false = every send becomes a draft; flip to true to enable direct sending
 #     recipientWhitelist: [] # when allowSend=true: each entry is either a full address or `@domain`
 #     pollingInterval: 15    # minutes between polls
 #     pollingBackoff: 1      # minutes; base of exponential backoff on poll errors
+#   calendar:
+#     enabled: true          # master switch; false disables polling + the ms365 cal_* provider
+#     calendars: []          # empty = primary calendar only; otherwise list of calendar display names to subscribe to
+#     allowAttendees: false  # when false, attendees passed to cal_create_event are silently dropped
+#     defaultReminderMinutesBeforeStart: 15
+#     pollingInterval: 15    # minutes between delta polls
+#     pollingBackoff: 1      # minutes; base of exponential backoff on poll errors
+#     refreshCron: "every sunday at 03:00"  # full re-walk via scan-generation tag (drops stale rows)
+#     lookbackDays: 365      # delta window: how far back to surface events
+#     lookaheadDays: 730     # delta window: how far ahead to surface events

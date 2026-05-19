@@ -1,59 +1,40 @@
-import type { EventRow, PluginTool } from "@getfamiliar/shared";
+import {
+    type EventRow,
+    type PluginTool,
+    runTool as runToolBase,
+    type ToolFailure,
+} from "@getfamiliar/shared";
 import { getActiveLogins } from "../auth/ActiveLogins.js";
 import { readMs365MailConfig } from "../Config.js";
 import { GraphClient, GraphError, type GraphRecipient } from "../graph/GraphClient.js";
 import { FOLDER_IDS, type FolderAlias, isFolderAlias } from "./Folders.js";
 import { renderMailHtml } from "./MailHtml.js";
 
-/**
- * Structured failure envelope returned to the agent when a Graph call
- * errors. Keeping the shape uniform across every tool means the agent
- * never has to parse free text — a single `ok: false` arm carries the
- * Graph status code, the Graph error code (`ErrorItemNotFound`, …),
- * and the human-readable message. Non-Graph exceptions (programming
- * bugs, missing logins) still surface as `{ok:false, error:{...}}`
- * with `status: 0` and `code: "ToolError"` so the agent's parsing
- * code can stay shape-stable.
- */
-export interface ToolFailure {
-    readonly ok: false;
-    readonly error: {
-        readonly status: number;
-        readonly code: string;
-        readonly message: string;
-    };
-}
+export type { ToolFailure };
 
 /**
- * Run a tool body and normalise its return shape. Success bodies are
- * augmented with `ok: true`; `GraphError` becomes a `ToolFailure`
- * carrying Graph's own status and code; any other throw becomes a
- * generic `ToolFailure` with `status: 0`. The agent's tool-call decoder
- * always sees one of two shapes.
+ * Adapt a thrown {@link GraphError} into the shared `ToolFailure`
+ * envelope: Graph's HTTP status, its `error.code`, and the decoded
+ * `error.message` flow through verbatim so the agent can route on
+ * `ErrorItemNotFound` etc. without parsing free text. Non-Graph
+ * exceptions fall through to the generic `{status: 0, code: "ToolError"}`
+ * arm inside `runToolBase`.
  */
-async function runTool<TResult extends object>(
-    body: () => Promise<TResult>,
-): Promise<({ ok: true } & TResult) | ToolFailure> {
-    try {
-        const result = await body();
-        return { ok: true, ...result };
-    } catch (err) {
-        if (err instanceof GraphError) {
-            return {
-                ok: false,
-                error: {
-                    status: err.status,
-                    code: err.code ?? "GraphError",
-                    message: err.graphMessage,
-                },
-            };
-        }
-        const message = err instanceof Error ? err.message : String(err);
+function graphErrorAdaptor(err: unknown): { status: number; code: string; message: string } | null {
+    if (err instanceof GraphError) {
         return {
-            ok: false,
-            error: { status: 0, code: "ToolError", message },
+            status: err.status,
+            code: err.code ?? "GraphError",
+            message: err.graphMessage,
         };
     }
+    return null;
+}
+
+function runTool<TResult extends object>(
+    body: () => Promise<TResult>,
+): Promise<({ ok: true } & TResult) | ToolFailure> {
+    return runToolBase(body, graphErrorAdaptor);
 }
 
 /**

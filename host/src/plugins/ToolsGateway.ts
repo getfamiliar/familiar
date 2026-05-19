@@ -107,9 +107,12 @@ export class PluginToolsGateway implements BastionModule {
             replyError(res, 405, "GET /plugin-tools/ only");
             return;
         }
-        const catalog = this.config.registry
-            .list()
-            .map((t) => ({ key: t.key, description: t.description, inputSchema: t.inputSchema }));
+        const catalog = this.config.registry.list().map((t) => ({
+            key: t.key,
+            pluginId: t.pluginId,
+            description: t.description,
+            inputSchema: t.inputSchema,
+        }));
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(catalog));
     }

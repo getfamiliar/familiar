@@ -3,6 +3,7 @@ import path from "node:path";
 import {
     AgentRunBus,
     type AgentRunUnsubscribe,
+    type CalendarApi,
     type ChatFilter,
     type ChatHandler,
     ChatMessageBus,
@@ -76,6 +77,12 @@ export interface HostContextImplDeps {
      * client cache and closes connections on host shutdown.
      */
     mcp: PluginMcpService;
+    /**
+     * Shared singleton that backs `ctx.calendar`. One instance per
+     * host process — owns the provider registry and the postgres
+     * accessors for the `calendars` + `calendar_events` tables.
+     */
+    calendar: CalendarApi;
 }
 
 /**
@@ -113,6 +120,10 @@ export class HostContextImpl implements HostContext {
         getByPackage: (pkg: string, source?: string): McpClient =>
             this.deps.mcp.getByPackage(pkg, source),
     };
+
+    get calendar(): CalendarApi {
+        return this.deps.calendar;
+    }
 
     readonly scratch = {
         addFiles: (eventId: string, files: readonly EventFile[]): Promise<readonly string[]> =>

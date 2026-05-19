@@ -1,5 +1,6 @@
 import { definePlugin } from "@getfamiliar/shared";
 import { buildMs365Commands } from "./Commands.js";
+import { readMs365MailConfig } from "./Config.js";
 import { startMs365Daemon } from "./Ms365Daemon.js";
 import { buildMailTools } from "./mail/MailTools.js";
 
@@ -25,7 +26,12 @@ export default definePlugin({
     id: "ms365",
     host: {
         start: (ctx) => startMs365Daemon(ctx),
-        tools: () => buildMailTools(),
+        // Mail tools register only when the feature is enabled. The
+        // calendar surface lives behind the core `cal_*` tools, which
+        // dispatch through the registered provider — that registration
+        // is conditional on `ms365.calendar.enabled` inside the daemon,
+        // so no extra gate is needed here.
+        tools: (ctx) => (readMs365MailConfig(ctx).enabled ? buildMailTools() : []),
         commands: (ctx) => buildMs365Commands(ctx),
     },
 });

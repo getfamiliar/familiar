@@ -340,6 +340,82 @@ DROP TRIGGER IF EXISTS chatmessages_new_trg ON chatmessages;
 CREATE TRIGGER chatmessages_new_trg
   AFTER INSERT ON chatmessages
   FOR EACH ROW EXECUTE FUNCTION chatmessages_notify_new();
+
+-- ───────── calendars + calendar_events ─────────
+--
+-- Plugin-agnostic calendar data layer. \`calendars\` lists every
+-- subscription (own or shared) any provider plugin (ms365, future
+-- google/caldav) has surfaced; \`calendar_events\` stores every
+-- instance. Providers persist every occurrence of a recurring
+-- series independently (no master-expansion in core).
+--
+-- Identity:
+--   * \`calendars.unique_key\` is the provider's stable id. Uniqueness
+--     within \`(plugin_id, unique_key)\` lets multiple providers
+--     coexist.
+--   * \`calendar_events.id\` is provider-prefixed (e.g. \`ms365:<graph-id>\`)
+--     so collisions across providers are impossible by construction.
+--
+-- Refresh reconciliation uses a scan-generation tag: a refresh walk
+-- bumps \`calendars.scan_generation\`, upserts every event in window
+-- with the new value, then DELETEs events whose generation is older
+-- than the calendar's current value.
+
+CREATE TABLE IF NOT EXISTS calendars (
+  id              bigserial PRIMARY KEY,
+  plugin_id       text NOT NULL,
+  unique_key      text NOT NULL,
+  name            text NOT NULL,
+  type            text NOT NULL CHECK (type IN ('own','shared')),
+  owner_name      text,
+  scan_generation int  NOT NULL DEFAULT 0,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (plugin_id, unique_key)
+);
+
+-- The provider's own "default calendar" flag (Graph's
+-- \`isDefaultCalendar\`). Used by \`CalendarService.resolveDefaultCalendar\`
+-- as the fallback when \`core.defaultCalendar\` is unset — we pick the
+-- first registered calendar (lowest id) flagged here. Added via
+-- ALTER so existing databases don't need a schema reset.
+ALTER TABLE calendars ADD COLUMN IF NOT EXISTS is_default smallint NOT NULL DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS calendars_plugin_id_idx ON calendars (plugin_id);
+
+CREATE TABLE IF NOT EXISTS calendar_events (
+  id                  text PRIMARY KEY,
+  calendar_id         bigint NOT NULL REFERENCES calendars(id) ON DELETE CASCADE,
+  series_master_id    text,
+  type                text NOT NULL CHECK (type IN ('singleInstance','occurrence','exception','seriesMaster')),
+  subject             text,
+  start_dt            text NOT NULL,
+  end_dt              text NOT NULL,
+  event_tz            text,
+  is_all_day          smallint NOT NULL DEFAULT 0,
+  is_cancelled        smallint NOT NULL DEFAULT 0,
+  show_as             text,
+  sensitivity         text,
+  importance          text,
+  location            text,
+  is_online_meeting   smallint NOT NULL DEFAULT 0,
+  online_meeting_url  text,
+  organizer_name      text,
+  organizer_email     text,
+  response_status     text,
+  attendees_json      jsonb,
+  body                text,
+  attachments         jsonb,
+  scan_generation     int  NOT NULL,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS calendar_events_window_idx
+  ON calendar_events (calendar_id, start_dt);
+CREATE INDEX IF NOT EXISTS calendar_events_series_idx
+  ON calendar_events (series_master_id);
+CREATE INDEX IF NOT EXISTS calendar_events_generation_idx
+  ON calendar_events (calendar_id, scan_generation);
 `;
 
 /**

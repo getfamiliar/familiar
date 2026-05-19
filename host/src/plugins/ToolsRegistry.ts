@@ -1,4 +1,5 @@
 import {
+    CORE_GROUP_NAME,
     type HostContext,
     IDENT_PATTERN,
     type Logger,
@@ -127,6 +128,46 @@ export class PluginToolsRegistry {
             });
         }
         this.pluginIds.add(pluginId);
+    }
+
+    /**
+     * Register core (host-owned) tools — `cal_*` today, and future
+     * non-plugin-scoped tools (approval-gate, system-introspection,
+     * …). Bare-name keys (no plugin prefix) so the agent calls them
+     * as `cal_get_events` rather than `core_cal_get_events`. The
+     * `pluginId` stamp is the reserved string `"core"` so the
+     * existing DSL filter machinery handles them uniformly with
+     * `tools: core`.
+     *
+     * Re-callable (idempotent on key collision: throws), so the
+     * caller can register the calendar tools and later, when a new
+     * core surface lands, register those too. Each *individual*
+     * tool key still has to be unique across the whole registry.
+     */
+    registerCoreTools(hostContext: HostContext, tools: readonly PluginTool[]): void {
+        if (tools.length === 0) {
+            return;
+        }
+        const coreLog = this.log.child({ plugin: CORE_GROUP_NAME });
+        for (const tool of tools) {
+            const key = sanitizeToolKey(tool.name);
+            if (this.tools.has(key)) {
+                throw new Error(
+                    `core tool "${tool.name}" sanitizes to key "${key}" which is already ` +
+                        "registered (collision with a plugin tool?).",
+                );
+            }
+            this.tools.set(key, {
+                pluginId: CORE_GROUP_NAME,
+                toolName: tool.name,
+                key,
+                description: tool.description,
+                inputSchema: tool.inputSchema,
+                hostContext,
+                log: coreLog,
+                execute: tool.execute.bind(tool),
+            });
+        }
     }
 
     /** Snapshot of every registered tool, in insertion order. */

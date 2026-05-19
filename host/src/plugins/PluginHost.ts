@@ -6,8 +6,13 @@ import type {
     Logger,
     PostgresConnection,
 } from "@getfamiliar/shared";
+import { EventBus } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import type { Bootstrap } from "../Bootstrap.js";
+import { CalendarRegistry } from "../calendar/CalendarRegistry.js";
+import { CalendarService } from "../calendar/CalendarService.js";
+import { CalendarStore } from "../calendar/CalendarStore.js";
+import { buildCalendarTools } from "../calendar/CalendarTools.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
@@ -43,6 +48,7 @@ export class PluginHost {
     private readonly config: ConfigService;
     private readonly mcpRegistry: McpRegistry;
     private readonly mcpService: PluginMcpService;
+    private readonly calendarService: CalendarService;
     private toolsRegistry: PluginToolsRegistry | undefined;
     private bastionBaseUrl: string = DEFAULT_BASTION_BASE_URL;
     private connection: PostgresConnection | undefined;
@@ -57,6 +63,14 @@ export class PluginHost {
             registry: this.mcpRegistry,
             bastionBaseUrl: this.bastionBaseUrl,
             log: log.child({ component: "plugin-mcp" }),
+        });
+        const calendarStore = new CalendarStore(() => this.ensureConnection());
+        this.calendarService = new CalendarService({
+            store: calendarStore,
+            registry: new CalendarRegistry(),
+            events: async () => new EventBus(await this.ensureConnection()),
+            config: this.config,
+            log: log.child({ component: "calendar" }),
         });
     }
 
@@ -94,6 +108,16 @@ export class PluginHost {
      */
     get mcp(): PluginMcpService {
         return this.mcpService;
+    }
+
+    /**
+     * The shared calendar service backing every plugin's
+     * `ctx.calendar`. Exposed so daemon-owned host services that build
+     * their own {@link HostContextImpl} (cron scheduler, etc.) can
+     * reach the same registry and DB layer the plugins already use.
+     */
+    get calendar(): CalendarService {
+        return this.calendarService;
     }
 
     /**
@@ -217,7 +241,16 @@ export class PluginHost {
                 this.toolsRegistry.register(plugin.id, ctx, tools);
             }
         }
+        // Core tools (`cal_*`, future approval-gate prompts) land
+        // after every plugin's `start` so any provider that registered
+        // via `ctx.calendar.registerProvider` is reachable from the
+        // first tool call.
         if (this.toolsRegistry) {
+            const coreCtx = this.context("core");
+            const coreTools = buildCalendarTools(this.calendarService, {
+                scratchDir: this.boot.scratchDir,
+            });
+            this.toolsRegistry.registerCoreTools(coreCtx, coreTools);
             const registered = this.toolsRegistry.list();
             if (registered.length > 0) {
                 this.log.info(
@@ -257,6 +290,7 @@ export class PluginHost {
             scratchDir: this.boot.scratchDir,
             pidFile: this.boot.pidFile,
             mcp: this.mcpService,
+            calendar: this.calendarService,
         });
     }
 

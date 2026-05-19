@@ -132,4 +132,45 @@ inference:
             true,
         );
     });
+
+    it("warns (not errors) on an unrecognised IANA timezone", () => {
+        const file = write(`
+core:
+  postgresPassword: secret
+  defaultChatChannel: cli
+  timezone: Europe/Berln
+inference:
+  defaultProvider: openai
+  defaultModel: gpt-5
+  apiKeys:
+    openai: REAL_KEY
+`);
+        const result = lintConfigFile(file);
+        assert.equal(result.ok, true, `unexpected errors: ${JSON.stringify(result.errors)}`);
+        assert.ok(
+            result.warnings.some((w) => w.includes("core.timezone") && w.includes("Europe/Berln")),
+            `expected a timezone warning in: ${JSON.stringify(result.warnings)}`,
+        );
+    });
+
+    it("accepts a valid IANA timezone without warning", () => {
+        const file = write(`
+core:
+  postgresPassword: secret
+  defaultChatChannel: cli
+  timezone: Europe/Berlin
+inference:
+  defaultProvider: openai
+  defaultModel: gpt-5
+  apiKeys:
+    openai: REAL_KEY
+`);
+        const result = lintConfigFile(file);
+        assert.equal(result.ok, true);
+        assert.equal(
+            result.warnings.some((w) => w.includes("core.timezone")),
+            false,
+            `unexpected timezone warning in: ${JSON.stringify(result.warnings)}`,
+        );
+    });
 });

@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { getCoreTimezone } from "./env.js";
 import { HandlerFile } from "./HandlerFile.js";
 
 /**
@@ -122,7 +123,7 @@ export function buildSystemPrompt(
  */
 function buildRuntimeSection(handler: HandlerFile, topic: string, privileged: boolean): string {
     const lines = [
-        `- Current time: ${new Date().toISOString()}`,
+        `- Current time: ${formatRuntimeTime(new Date(), getCoreTimezone())}`,
         `- Event topic: \`${topic}\``,
         `- Handler file: \`${handler.relativePath}\``,
     ];
@@ -333,4 +334,42 @@ function truncate(value: string, max: number): string {
         return value;
     }
     return `${value.slice(0, max)}\n…[truncated, original ${value.length} chars]`;
+}
+
+/**
+ * Format a `Date` for the agent system prompt's "Current time" line:
+ * `Friday, 2026-05-19T18:43:12 in timezone Europe/Berlin`.
+ *
+ * Weekday name + ISO-like local time + the IANA tz label, all
+ * relative to `timezone`. Built from `Intl.DateTimeFormat.formatToParts`
+ * so we control the separators directly — the locale-default
+ * formatter inserts AM/PM and locale punctuation we don't want.
+ *
+ * Exported so unit tests can pin the format against a fixed date and
+ * timezone.
+ */
+export function formatRuntimeTime(date: Date, timezone: string): string {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        weekday: "long",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+    }).formatToParts(date);
+    const lookup = new Map(parts.map((p) => [p.type, p.value]));
+    const weekday = lookup.get("weekday") ?? "";
+    const year = lookup.get("year") ?? "";
+    const month = lookup.get("month") ?? "";
+    const day = lookup.get("day") ?? "";
+    // `hour: '2-digit'` with `hour12: false` can yield "24" at midnight
+    // on some implementations; normalise to "00".
+    const rawHour = lookup.get("hour") ?? "";
+    const hour = rawHour === "24" ? "00" : rawHour;
+    const minute = lookup.get("minute") ?? "";
+    const second = lookup.get("second") ?? "";
+    return `${weekday}, ${year}-${month}-${day}T${hour}:${minute}:${second} in timezone ${timezone}`;
 }

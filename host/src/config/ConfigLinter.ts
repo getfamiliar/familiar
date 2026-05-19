@@ -76,6 +76,8 @@ export function lintConfigFile(path: string): ConfigLintResult {
     optionalPositiveInt(config, "core.logRetentionDays", warnings);
     optionalPositiveInt(config, "core.agentTimeout", warnings);
     optionalBool(config, "core.logSystemPrompt", warnings);
+    optionalIanaTimezone(config, "core.timezone", warnings);
+    optionalString(config, "core.defaultCalendar", warnings);
     optionalNonNegativeInt(config, "inference.maxRetries", warnings);
     optionalBool(config, "inference.captureModelHttpRequestBodies", warnings);
     optionalBool(config, "inference.captureRawStepResultToDatabase", warnings);
@@ -262,6 +264,51 @@ function optionalBool(root: Record<string, unknown>, path: string, warnings: str
     }
     if (typeof value !== "boolean") {
         warnings.push(`${path} should be a boolean (got ${describe(value)}).`);
+    }
+}
+
+/**
+ * Validate that an optional path, when present, is a non-empty
+ * string. Records a warning if malformed; accessors fall back to
+ * their default at read time, so this is not a hard error.
+ */
+function optionalString(root: Record<string, unknown>, path: string, warnings: string[]): void {
+    const value = readPath(root, path);
+    if (value === undefined) {
+        return;
+    }
+    if (typeof value !== "string" || value.length === 0) {
+        warnings.push(`${path} should be a non-empty string (got ${describe(value)}).`);
+    }
+}
+
+/**
+ * Validate that an optional path, when present, is a string accepted
+ * by `Intl.DateTimeFormat` as an IANA timezone. Catches typos
+ * (`Europe/Berln`, `UTC+1`) at lint time so the daemon starts with a
+ * predictable timezone for calendar tooling.
+ */
+function optionalIanaTimezone(
+    root: Record<string, unknown>,
+    path: string,
+    warnings: string[],
+): void {
+    const value = readPath(root, path);
+    if (value === undefined) {
+        return;
+    }
+    if (typeof value !== "string" || value.length === 0) {
+        warnings.push(
+            `${path} should be a non-empty IANA timezone string (got ${describe(value)}).`,
+        );
+        return;
+    }
+    try {
+        new Intl.DateTimeFormat("en-US", { timeZone: value });
+    } catch {
+        warnings.push(
+            `${path}: "${value}" is not a recognised IANA timezone (e.g. "Europe/Berlin").`,
+        );
     }
 }
 

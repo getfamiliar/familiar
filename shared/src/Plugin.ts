@@ -1,6 +1,7 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CommandDef } from "citty";
 import type { AgentRunRow } from "./AgentRun.js";
+import type { CalendarApi } from "./Calendar.js";
 import type { ChatFilter } from "./ChatMessage.js";
 import type { ChatHandler, ChatUnsubscribe } from "./ChatMessageBus.js";
 import type { ConfigService } from "./Config.js";
@@ -220,6 +221,16 @@ export interface HostContext {
      * after the daemon starts can therefore take seconds; subsequent
      * calls within the idle window are milliseconds.
      */
+    /**
+     * Shared calendar data layer. Plugins that act as calendar
+     * providers register a {@link CalendarProvider} during `start()`
+     * via `ctx.calendar.registerProvider(provider)` and then feed the
+     * cache through `upsertCalendar` / `addEvent`. Plugins that just
+     * read calendars (notifications, summaries) use the read side
+     * (`findEvents`, `getEvent`, `resolveDefaultCalendar`). The core
+     * `cal_*` agent tools dispatch through the same interface.
+     */
+    readonly calendar: CalendarApi;
     readonly mcp: {
         /**
          * Snapshot of every MCP declared in `mcp.yml` as `{ key, source,

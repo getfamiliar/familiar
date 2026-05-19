@@ -15,6 +15,17 @@
 const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
 
 /**
+ * Fixed `$select` list used for every calendar event fetch (delta,
+ * get-by-id). Kept in one place so the poller and the create-event
+ * path return the same projection — `Mapping.fromGraph` then handles
+ * exactly these fields and nothing else.
+ */
+const CALENDAR_EVENT_SELECT =
+    "id,subject,start,end,originalStartTimeZone,isAllDay,isCancelled,showAs," +
+    "sensitivity,importance,location,isOnlineMeeting,onlineMeeting,organizer," +
+    "responseStatus,attendees,body,hasAttachments,seriesMasterId,type";
+
+/**
  * Microsoft Graph's default message id format is **not stable across
  * folder moves** — moving a mail from Inbox to Archive mints a new id
  * for that message and the old one returns 404. The plugin caches
@@ -35,6 +46,81 @@ const IMMUTABLE_ID_PREFER = 'IdType="ImmutableId"';
 
 /** Token provider — async because msal-node's `acquireTokenSilent` is async. */
 export type TokenProvider = () => Promise<string>;
+
+/**
+ * Narrow projection of a Graph calendar. Only the fields the poller
+ * needs to seed the local `calendars` row; anything else is dropped
+ * server-side via `$select`.
+ */
+export interface GraphCalendar {
+    readonly id: string;
+    readonly name: string;
+    readonly isDefaultCalendar?: boolean;
+    /** True when this is a calendar the signed-in user owns. */
+    readonly canEdit?: boolean;
+    readonly owner?: { readonly name?: string; readonly address?: string } | null;
+}
+
+/**
+ * Narrow projection of a Graph calendar event. Mirrors the fields we
+ * persist in `calendar_events`; `@removed` is preserved as a tombstone
+ * marker on delta walks (cancellation / deletion). Times come back as
+ * `{dateTime, timeZone}` pairs.
+ */
+export interface GraphCalendarEvent {
+    readonly id: string;
+    readonly subject?: string | null;
+    readonly start?: { dateTime: string; timeZone: string } | null;
+    readonly end?: { dateTime: string; timeZone: string } | null;
+    readonly originalStartTimeZone?: string | null;
+    readonly isAllDay?: boolean;
+    readonly isCancelled?: boolean;
+    readonly showAs?: string | null;
+    readonly sensitivity?: string | null;
+    readonly importance?: string | null;
+    readonly location?: { displayName?: string } | null;
+    readonly isOnlineMeeting?: boolean;
+    readonly onlineMeeting?: { joinUrl?: string } | null;
+    readonly organizer?: { emailAddress?: { name?: string; address?: string } } | null;
+    readonly responseStatus?: { response?: string } | null;
+    readonly attendees?: ReadonlyArray<{
+        type?: string;
+        status?: { response?: string };
+        emailAddress?: { name?: string; address?: string };
+    }>;
+    readonly body?: { content?: string; contentType?: string } | null;
+    readonly hasAttachments?: boolean;
+    readonly seriesMasterId?: string | null;
+    /** 'singleInstance' | 'occurrence' | 'exception' | 'seriesMaster'. */
+    readonly type?: string | null;
+    readonly "@removed"?: { readonly reason?: string };
+}
+
+/** One page of the calendar-view delta endpoint. */
+export interface CalendarDeltaPage {
+    readonly value: readonly GraphCalendarEvent[];
+    readonly nextLink: string | null;
+    readonly deltaLink: string | null;
+}
+
+/** Body shape for create-event. Only the fields we drive from the tool surface. */
+export interface GraphCalendarEventCreate {
+    readonly subject: string;
+    readonly start: { dateTime: string; timeZone: string };
+    readonly end: { dateTime: string; timeZone: string };
+    readonly body?: { contentType: "HTML"; content: string };
+    readonly location?: { displayName: string };
+    readonly attendees?: ReadonlyArray<{
+        type: "required" | "optional";
+        emailAddress: { address: string; name?: string };
+    }>;
+    readonly showAs?: string;
+    readonly sensitivity?: string;
+    readonly reminderMinutesBeforeStart?: number;
+    readonly isReminderOn?: boolean;
+    readonly isOnlineMeeting?: boolean;
+    readonly onlineMeetingProvider?: string;
+}
 
 /**
  * One inbox `delta` response from Graph. The shape mirrors the
@@ -382,6 +468,153 @@ export class GraphClient {
     async moveMessage(userId: string, messageId: string, folderId: string): Promise<void> {
         const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/move`;
         await this.request("POST", url, { jsonBody: { destinationId: folderId } });
+    }
+
+    /**
+     * List every calendar the signed-in user can see — both owned and
+     * shared. Used by `cal list` and by the calendar poller's startup
+     * discovery pass.
+     */
+    async listCalendars(userId: string): Promise<readonly GraphCalendar[]> {
+        const select = "id,name,canEdit,owner,isDefaultCalendar";
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/calendars?$select=${encodeURIComponent(select)}`;
+        const response = await this.request("GET", url);
+        const json = (await response.json()) as { value?: readonly GraphCalendar[] };
+        return json.value ?? [];
+    }
+
+    /**
+     * Walk the `calendarView/delta` stream for one calendar. On the
+     * initial walk pass `deltaOrNextLink: null` and the start /
+     * end pair; subsequent calls follow whatever link the prior page
+     * returned (next-page or deltaLink). A 410 Gone signals the cursor
+     * expired and the caller must restart from the window.
+     */
+    async listCalendarViewDelta(
+        userId: string,
+        calendarId: string,
+        startDateTime: string,
+        endDateTime: string,
+        deltaOrNextLink: string | null,
+    ): Promise<CalendarDeltaPage> {
+        const url =
+            deltaOrNextLink ??
+            this.buildInitialCalendarDeltaUrl(userId, calendarId, startDateTime, endDateTime);
+        const response = await this.request("GET", url, {
+            preferTokens: ['outlook.timezone="UTC"'],
+        });
+        const json = (await response.json()) as {
+            value?: readonly GraphCalendarEvent[];
+            "@odata.nextLink"?: string;
+            "@odata.deltaLink"?: string;
+        };
+        return {
+            value: json.value ?? [],
+            nextLink: typeof json["@odata.nextLink"] === "string" ? json["@odata.nextLink"] : null,
+            deltaLink:
+                typeof json["@odata.deltaLink"] === "string" ? json["@odata.deltaLink"] : null,
+        };
+    }
+
+    /** Fetch one calendar event by id with the same projection the poller uses. */
+    async getCalendarEvent(userId: string, eventId: string): Promise<GraphCalendarEvent> {
+        const select = CALENDAR_EVENT_SELECT;
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/events/${encodeURIComponent(eventId)}?$select=${encodeURIComponent(select)}`;
+        const response = await this.request("GET", url, {
+            preferTokens: ['outlook.timezone="UTC"', 'outlook.body-content-type="text"'],
+        });
+        return (await response.json()) as GraphCalendarEvent;
+    }
+
+    /**
+     * Create a fresh event on a calendar. Returns the created event in
+     * the same projection the poller would persist, so the caller can
+     * upsert it without a follow-up GET.
+     */
+    async createCalendarEvent(
+        userId: string,
+        calendarId: string,
+        body: GraphCalendarEventCreate,
+    ): Promise<GraphCalendarEvent> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/calendars/${encodeURIComponent(calendarId)}/events`;
+        const response = await this.request("POST", url, {
+            jsonBody: body,
+            preferTokens: ['outlook.timezone="UTC"'],
+        });
+        return (await response.json()) as GraphCalendarEvent;
+    }
+
+    /**
+     * Apply a partial update to an existing event. Graph treats the
+     * body as a sparse patch — only fields present here are mutated;
+     * everything else stays as it was. Returns the post-patch event
+     * in the same projection the poller / create path uses.
+     */
+    async updateCalendarEvent(
+        userId: string,
+        eventId: string,
+        body: Partial<GraphCalendarEventCreate>,
+    ): Promise<GraphCalendarEvent> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/events/${encodeURIComponent(eventId)}`;
+        const response = await this.request("PATCH", url, {
+            jsonBody: body,
+            preferTokens: ['outlook.timezone="UTC"'],
+        });
+        return (await response.json()) as GraphCalendarEvent;
+    }
+
+    /** Delete an event by id. Idempotent: 404 still propagates as `GraphError`. */
+    async deleteCalendarEvent(userId: string, eventId: string): Promise<void> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/events/${encodeURIComponent(eventId)}`;
+        await this.request("DELETE", url);
+    }
+
+    /**
+     * Inline-attach a file (≤3MB) to an event. Larger uploads require
+     * a `createUploadSession` flow that is out of scope for v1.
+     */
+    async addEventAttachment(
+        userId: string,
+        eventId: string,
+        name: string,
+        contents: Buffer,
+        contentType = "application/octet-stream",
+    ): Promise<void> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/events/${encodeURIComponent(eventId)}/attachments`;
+        await this.request("POST", url, {
+            jsonBody: {
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                name,
+                contentType,
+                contentBytes: contents.toString("base64"),
+            },
+        });
+    }
+
+    /** Fetch every attachment for an event. Bytes come back base64. */
+    async getEventAttachments(
+        userId: string,
+        eventId: string,
+    ): Promise<readonly GraphAttachment[]> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/events/${encodeURIComponent(eventId)}/attachments`;
+        const response = await this.request("GET", url);
+        const json = (await response.json()) as { value?: readonly GraphAttachment[] };
+        return json.value ?? [];
+    }
+
+    private buildInitialCalendarDeltaUrl(
+        userId: string,
+        calendarId: string,
+        startDateTime: string,
+        endDateTime: string,
+    ): string {
+        const select = CALENDAR_EVENT_SELECT;
+        const params = new URLSearchParams({
+            startDateTime,
+            endDateTime,
+            $select: select,
+        });
+        return `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/calendars/${encodeURIComponent(calendarId)}/calendarView/delta?${params.toString()}`;
     }
 
     private buildInitialDeltaUrl(userId: string): string {

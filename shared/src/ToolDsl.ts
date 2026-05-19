@@ -23,6 +23,13 @@ export const MCP_GROUP_NAME = "mcp";
 export const NONE_GROUP_NAME = "none";
 
 /**
+ * Built-in group: host-side tools the core ships (`cal_*`,
+ * eventually approval-gate prompts, etc.). Registered without a
+ * plugin-id prefix, so a handler enables them via `tools: core`.
+ */
+export const CORE_GROUP_NAME = "core";
+
+/**
  * Names the evaluator handles before any user lookup. Re-defining
  * one of these in `workspace/toolgroups/<name>.txt` is silently
  * shadowed; using one as an MCP id in `mcp.yml` is rejected by the
@@ -33,6 +40,7 @@ export const RESERVED_GROUP_NAMES: ReadonlySet<string> = new Set([
     SYSTEM_GROUP_NAME,
     MCP_GROUP_NAME,
     NONE_GROUP_NAME,
+    CORE_GROUP_NAME,
 ]);
 
 /**

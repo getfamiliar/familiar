@@ -28,6 +28,14 @@ export interface Ms365AuthConfig {
  */
 export interface Ms365MailConfig {
     /**
+     * Master kill switch for the mail feature. `true` (default) →
+     * the poller starts and the `ms365_*` mail tools are registered.
+     * `false` → the daemon skips mail entirely (no polls, no tools)
+     * regardless of login state. Use this to keep ms365 logins
+     * around for calendar while silencing mail.
+     */
+    readonly enabled: boolean;
+    /**
      * Whitelist of mailbox addresses (own or shared) the poller
      * walks. Empty → every primary mailbox of every logged-in account
      * is polled; shared mailboxes are not touched. Non-empty → only
@@ -59,6 +67,65 @@ const DEFAULT_POLLING_INTERVAL_MINUTES = 15;
 const DEFAULT_POLLING_BACKOFF_MINUTES = 1;
 const DEFAULT_TENANT_ID = "common";
 
+const DEFAULT_CALENDAR_REMINDER_MINUTES = 15;
+const DEFAULT_CALENDAR_LOOKBACK_DAYS = 365;
+const DEFAULT_CALENDAR_LOOKAHEAD_DAYS = 730;
+// friendly-node-cron silently drops a bare "3am" suffix and parses
+// "every sunday at 3am" as midnight — so we use the unambiguous
+// colon-separated form which yields the correct 03:00 schedule.
+const DEFAULT_CALENDAR_REFRESH_CRON = "every sunday at 03:00";
+
+/**
+ * The calendar feature's slice at `ms365.calendar.*`. Read by the
+ * calendar poller at boot and by the create-event tool at call time.
+ *
+ * Like `Ms365MailConfig`, every value has a working default; a
+ * missing `ms365:` block leaves the plugin operational on conservative
+ * settings (primary calendar only, attendees silently dropped from
+ * create-event, weekly Sunday refresh).
+ */
+export interface Ms365CalendarConfig {
+    /**
+     * Master kill switch for the calendar feature. `true` (default)
+     * → the poller starts, the provider registers, and the `cal_*`
+     * tools can dispatch to ms365. `false` → no poller, no provider
+     * registration, and the calendar tools will fail closed for any
+     * ms365-backed calendar (the cache for those rows persists but
+     * goes stale).
+     */
+    readonly enabled: boolean;
+    /**
+     * Calendar names to subscribe to. Empty → primary calendar only.
+     * Match is case-insensitive on the Graph `name` field; unknown
+     * names are silently skipped (logged once at startup).
+     */
+    readonly calendars: readonly string[];
+    /**
+     * When `false`, attendees passed to `cal_create_event` are
+     * silently dropped before hitting Graph — the agent's
+     * tool result still surfaces a `note: "attendees dropped: …"`
+     * so the model doesn't believe invitations went out.
+     */
+    readonly allowAttendees: boolean;
+    /** Default reminder window for events created via `cal_create_event`. */
+    readonly defaultReminderMinutesBeforeStart: number;
+    /** Minutes between successful incremental polls. */
+    readonly pollingIntervalMinutes: number;
+    /** Base (minutes) of the exponential-backoff schedule on poll errors. */
+    readonly pollingBackoffMinutes: number;
+    /**
+     * Friendly-cron expression for the periodic full re-walk that
+     * reconciles deletions via the scan-generation tag. Default
+     * `"every sunday at 3am"` matches a typical low-traffic window;
+     * raise or lower per environment.
+     */
+    readonly refreshCron: string;
+    /** Delta window: how far back to surface events. Default 365 days. */
+    readonly lookbackDays: number;
+    /** Delta window: how far ahead to surface events. Default 730 days. */
+    readonly lookaheadDays: number;
+}
+
 /**
  * Read the shared auth slice at `ms365.*`. Returns a populated
  * defaults object when the subtree is absent — missing keys become
@@ -88,6 +155,7 @@ export function readMs365MailConfig(ctx: HostContext): Ms365MailConfig {
         DEFAULT_POLLING_BACKOFF_MINUTES,
     );
     return {
+        enabled: ctx.config.getBool("ms365.mail.enabled", true) !== false,
         mailboxes: readStringArray(ctx, "ms365.mail.mailboxes"),
         allowSend: ctx.config.getBool("ms365.mail.allowSend", false) === true,
         recipientWhitelist: readStringArray(ctx, "ms365.mail.recipientWhitelist"),
@@ -97,6 +165,63 @@ export function readMs365MailConfig(ctx: HostContext): Ms365MailConfig {
                 : DEFAULT_POLLING_INTERVAL_MINUTES,
         pollingBackoffMinutes:
             typeof backoff === "number" && backoff > 0 ? backoff : DEFAULT_POLLING_BACKOFF_MINUTES,
+    };
+}
+
+/**
+ * Read the calendar feature's slice at `ms365.calendar.*`. Returns a
+ * populated defaults object when the subtree is absent or partial.
+ */
+export function readMs365CalendarConfig(ctx: HostContext): Ms365CalendarConfig {
+    const interval = ctx.config.getNumber(
+        "ms365.calendar.pollingInterval",
+        DEFAULT_POLLING_INTERVAL_MINUTES,
+    );
+    const backoff = ctx.config.getNumber(
+        "ms365.calendar.pollingBackoff",
+        DEFAULT_POLLING_BACKOFF_MINUTES,
+    );
+    const reminder = ctx.config.getNumber(
+        "ms365.calendar.defaultReminderMinutesBeforeStart",
+        DEFAULT_CALENDAR_REMINDER_MINUTES,
+    );
+    const lookbackRaw = ctx.config.getNumber(
+        "ms365.calendar.lookbackDays",
+        DEFAULT_CALENDAR_LOOKBACK_DAYS,
+    );
+    const lookaheadRaw = ctx.config.getNumber(
+        "ms365.calendar.lookaheadDays",
+        DEFAULT_CALENDAR_LOOKAHEAD_DAYS,
+    );
+    const refreshCron =
+        ctx.config.getString("ms365.calendar.refreshCron", DEFAULT_CALENDAR_REFRESH_CRON) ??
+        DEFAULT_CALENDAR_REFRESH_CRON;
+    return {
+        enabled: ctx.config.getBool("ms365.calendar.enabled", true) !== false,
+        calendars: readStringArray(ctx, "ms365.calendar.calendars"),
+        allowAttendees: ctx.config.getBool("ms365.calendar.allowAttendees", false) === true,
+        defaultReminderMinutesBeforeStart:
+            typeof reminder === "number" && reminder >= 0
+                ? reminder
+                : DEFAULT_CALENDAR_REMINDER_MINUTES,
+        pollingIntervalMinutes:
+            typeof interval === "number" && interval > 0
+                ? interval
+                : DEFAULT_POLLING_INTERVAL_MINUTES,
+        pollingBackoffMinutes:
+            typeof backoff === "number" && backoff > 0 ? backoff : DEFAULT_POLLING_BACKOFF_MINUTES,
+        refreshCron:
+            typeof refreshCron === "string" && refreshCron.length > 0
+                ? refreshCron
+                : DEFAULT_CALENDAR_REFRESH_CRON,
+        lookbackDays:
+            typeof lookbackRaw === "number" && lookbackRaw > 0
+                ? Math.floor(lookbackRaw)
+                : DEFAULT_CALENDAR_LOOKBACK_DAYS,
+        lookaheadDays:
+            typeof lookaheadRaw === "number" && lookaheadRaw > 0
+                ? Math.floor(lookaheadRaw)
+                : DEFAULT_CALENDAR_LOOKAHEAD_DAYS,
     };
 }
 

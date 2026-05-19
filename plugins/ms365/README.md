@@ -1,9 +1,15 @@
 # Microsoft 365 plugin
 
-Polls one or more Microsoft 365 mailboxes via direct Microsoft Graph calls (no
-MCP — see `memory/project_ms365_mcp_incompatible.md` for the rationale) and
-emits an event per new mail. Calendar support is on the roadmap and will live
-alongside mail in this plugin, sharing the same auth and Graph client.
+Polls one or more Microsoft 365 mailboxes and calendars via direct Microsoft
+Graph calls (no MCP — see `memory/project_ms365_mcp_incompatible.md` for the
+rationale). Mail polling emits a `mail:ms365` event per new mail; calendar
+polling feeds the core `calendar_events` table the plugin-agnostic `cal_*`
+agent tools read from, and emits a `calendar:new` event when an event the
+poller hasn't seen before shows up.
+
+**Calendar scope**: the plugin supports the user's own calendars and shared
+calendars they have delegated access to. Group calendars and team / Microsoft
+365 Group calendars are **not supported** (a different Graph surface).
 
 The plugin runs on operational defaults — no `ms365:` block in `config.yml` is
 required. Real enablement is gated on at least one cached login under
@@ -137,6 +143,9 @@ same set.
 | `Mail.Send.Shared`             | Same, on behalf of a shared mailbox.                                                   |
 | `MailboxFolder.Read`           | Resolve the well-known folder ids (`inbox`, `archive`, `deleteditems`) used by `ms365_move`. |
 | `MailboxSettings.ReadWrite`    | Reserved for an upcoming out-of-office automation that reads and updates auto-reply settings. |
+| `Calendars.ReadWrite`          | Read events from the user's own calendars during delta polling; create new events via `cal_create_event`. |
+| `Calendars.ReadWrite.Shared`   | Same, for calendars shared with the user (delegated access).                          |
+| `OnlineMeetings.ReadWrite`     | Populate `onlineMeeting.joinUrl` on Teams meetings created via `cal_create_event` with `is_videocall: true`. |
 
 ### 2. Log in
 
@@ -215,7 +224,9 @@ project. To register your own Entra ID Public Client app:
    **Delegated permissions**, add every scope from the "App scopes" table
    above (`email`, `User.Read`, `offline_access`, `Mail.Read`,
    `Mail.Read.Shared`, `Mail.ReadWrite`, `Mail.ReadWrite.Shared`, `Mail.Send`,
-   `Mail.Send.Shared`, `MailboxFolder.Read`, `MailboxSettings.ReadWrite`).
+   `Mail.Send.Shared`, `MailboxFolder.Read`, `MailboxSettings.ReadWrite`,
+   `Calendars.ReadWrite`, `Calendars.ReadWrite.Shared`,
+   `OnlineMeetings.ReadWrite`).
    Click **Grant admin consent** if your tenant requires it.
 6. Put the values into `config.yml`:
 
@@ -234,6 +245,7 @@ project. To register your own Entra ID Public Client app:
 ./cli.sh ms365 status         # logins, mailboxes, send gate
 ./cli.sh ms365 login          # add a new account via device-code
 ./cli.sh ms365 logout [upn]   # remove one or all logins
+./cli.sh ms365 cal list       # list every calendar each active login can reach
 ```
 
 All subcommands work without the daemon — they talk to Microsoft Graph
@@ -245,8 +257,51 @@ directly using the host-side token cache.
 |---------------------------------------|----------|------------------------------------------------------------------------------------|
 | `ms365.clientId`                      | bundled  | Entra ID app id; override to use your own registration.                            |
 | `ms365.tenantId`                      | `common` | OAuth authority tenant.                                                            |
+| `ms365.mail.enabled`                  | `true`   | Master switch for the mail feature. `false` skips polling and unregisters the `ms365_*` mail tools. |
 | `ms365.mail.mailboxes`                | `[]`     | Whitelist; empty = every logged-in account's primary mailbox.                      |
 | `ms365.mail.allowSend`                | `false`  | `false` → every `ms365_send_*` becomes a draft.                                    |
 | `ms365.mail.recipientWhitelist`       | `[]`     | Allowed addresses or `@domain` anchors when `allowSend=true`.                      |
 | `ms365.mail.pollingInterval`          | 15       | Minutes between successful polls.                                                  |
 | `ms365.mail.pollingBackoff`           | 1        | Minutes; base of exponential backoff on poll errors. Cap = `pollingInterval × 4`.  |
+| `ms365.calendar.enabled`              | `true`   | Master switch for the calendar feature. `false` skips polling and does not register the ms365 calendar provider. |
+| `ms365.calendar.calendars`            | `[]`     | Calendar names to subscribe to. Empty = primary calendar only.                     |
+| `ms365.calendar.allowAttendees`       | `false`  | When `false`, attendees on `cal_create_event` are silently dropped.                |
+| `ms365.calendar.defaultReminderMinutesBeforeStart` | 15 | Default reminder window for events the agent creates.                            |
+| `ms365.calendar.pollingInterval`      | 15       | Minutes between incremental delta polls.                                           |
+| `ms365.calendar.pollingBackoff`       | 1        | Minutes; base of exponential backoff on poll errors.                               |
+| `ms365.calendar.refreshCron`          | `every sunday at 03:00` | Friendly-cron expression for the full re-walk that reconciles deletions. |
+| `ms365.calendar.lookbackDays`         | 365      | Delta window: how far back the poller surfaces events.                             |
+| `ms365.calendar.lookaheadDays`        | 730      | Delta window: how far ahead the poller surfaces events.                            |
+
+## Calendar — the agent's surface
+
+Calendar events the plugin discovers flow into the core `calendar_events`
+table; agents reach them through the plugin-agnostic `cal_*` tools
+(`cal_get_events`, `cal_get_event`, `cal_get_event_attachments`,
+`cal_create_event`, `cal_update_event`, `cal_delete_event`,
+`cal_attach_file`). Those tools are registered host-side under the DSL group
+`core`; a handler enables them via `tools: core` in its frontmatter.
+
+`cal_update_event({id, patch})` accepts a sparse patch — only fields present
+on `patch` get changed, everything else stays as Graph had it. Same field set
+as `cal_create_event` except `is_videocall` (toggling online-meeting state
+on an existing event is brittle across providers, so v1 callers recreate
+the event instead). When `ms365.calendar.allowAttendees=false` and the patch
+mentions `attendees`, the list is silently cleared before reaching Graph —
+mirroring the create-event gate.
+
+`cal_delete_event({id})` calls Graph first; the local cache row is removed
+only after the provider confirms, so a transient failure leaves the cache
+untouched.
+
+`cal_create_event` accepts a minimal `{subject, start, end}` invocation plus
+optional `body` (markdown), `location`, `attendees` (bare email or
+`{email, name?}`), `showAs`, `sensitivity`, `reminderMinutesBeforeStart`,
+inline `attachments` (≤3MB each), `calendar_id` (name or `pluginId:name`,
+defaults to `core.defaultCalendar`), and `is_videocall: true` to request a
+Teams meeting (maps onto `isOnlineMeeting + onlineMeetingProvider:
+teamsForBusiness` in the Graph payload, so the response carries a `joinUrl`).
+
+When `ms365.calendar.allowAttendees` is `false`, the plugin silently drops
+the `attendees` list before hitting Graph and surfaces a `note` field in the
+tool's result so the model understands no invitations went out.

@@ -129,6 +129,13 @@ export interface AgentContainerConfig {
      * a single switch turns up detail across both processes.
      */
     readonly verbose: boolean;
+    /**
+     * Operator's preferred IANA timezone (`core.timezone` from
+     * `config.yml`). Forwarded as `CORE_TIMEZONE` and consumed by
+     * the system-prompt builder's "Current time" line. Empty string
+     * → the container falls back to its system timezone.
+     */
+    readonly coreTimezone: string;
 }
 
 /**
@@ -194,6 +201,8 @@ export class AgentContainer {
             `INFERENCE_CAPTURE_RAW_STEP_RESULT=${this.config.captureRawStepResultToDatabase}`,
             "-e",
             `INFERENCE_LOG_SYSTEM_PROMPT=${this.config.logSystemPrompt}`,
+            "-e",
+            `CORE_TIMEZONE=${this.config.coreTimezone}`,
             "-e",
             `FAMILIAR_LOG_LEVEL=${this.config.verbose ? "debug" : "info"}`,
             "-v",

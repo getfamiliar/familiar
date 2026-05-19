@@ -44,3 +44,19 @@ export function optionalEnvInt(name: string): number | undefined {
 export function optionalEnvBool(name: string): boolean {
     return process.env[name] === "true";
 }
+
+/**
+ * Resolve the user's preferred IANA timezone. The host forwards
+ * `core.timezone` (validated at lint time) as `CORE_TIMEZONE`; when
+ * unset or blank we fall back to whatever
+ * `Intl.DateTimeFormat().resolvedOptions().timeZone` reports for the
+ * container's system tz. Used by the system-prompt builder to give
+ * the agent a wall-clock view of "now" with weekday and zone label.
+ */
+export function getCoreTimezone(): string {
+    const fromEnv = process.env.CORE_TIMEZONE;
+    if (typeof fromEnv === "string" && fromEnv.trim().length > 0) {
+        return fromEnv;
+    }
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}

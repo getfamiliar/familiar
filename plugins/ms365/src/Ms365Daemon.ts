@@ -1,7 +1,14 @@
 import type { HostContext } from "@getfamiliar/shared";
 import { setActiveLogins } from "./auth/ActiveLogins.js";
 import { LoginStore, loginDirectory } from "./auth/LoginStore.js";
-import { readMs365AuthConfig, readMs365MailConfig, resolveAppRegistration } from "./Config.js";
+import {
+    readMs365AuthConfig,
+    readMs365CalendarConfig,
+    readMs365MailConfig,
+    resolveAppRegistration,
+} from "./Config.js";
+import { CalendarPoller } from "./calendar/CalendarPoller.js";
+import { Ms365CalendarProvider } from "./calendar/Ms365CalendarProvider.js";
 import { MailPoller } from "./mail/MailPoller.js";
 
 /**
@@ -16,41 +23,90 @@ import { MailPoller } from "./mail/MailPoller.js";
 export async function startMs365Daemon(ctx: HostContext): Promise<void> {
     const auth = readMs365AuthConfig(ctx);
     const mail = readMs365MailConfig(ctx);
+    const calendar = readMs365CalendarConfig(ctx);
     const log = (msg: string) => ctx.log(`ms365: ${msg}`);
 
     const logins = new LoginStore(loginDirectory(ctx.dataDir), resolveAppRegistration(auth));
     await logins.refresh();
     setActiveLogins(logins);
 
-    const poller = await MailPoller.prepare({
-        ctx,
-        mail,
-        logins,
-        log,
-        emit: (event) => ctx.events.emit(event),
-    });
+    if (!mail.enabled) {
+        log("mail: disabled via ms365.mail.enabled=false; skipping");
+    } else {
+        const mailPoller = await MailPoller.prepare({
+            ctx,
+            mail,
+            logins,
+            log,
+            emit: (event) => ctx.events.emit(event),
+        });
+        if (mailPoller === null) {
+            log("mail: not active; idle until a login is added");
+        } else {
+            log(`mail: registered; polling every ${mail.pollingIntervalMinutes}m`);
+            runPollLoop(
+                (): Promise<void> => mailPoller.pollOnce(),
+                mail.pollingIntervalMinutes,
+                mail.pollingBackoffMinutes,
+                "mail",
+                log,
+            );
+        }
+    }
 
-    if (poller === null) {
-        log("mail: not active; idle until a login is added");
+    if (!calendar.enabled) {
+        log("calendar: disabled via ms365.calendar.enabled=false; skipping");
         return;
     }
 
-    log(`mail: registered; polling every ${mail.pollingIntervalMinutes}m`);
-    runPollLoop(poller, mail.pollingIntervalMinutes, mail.pollingBackoffMinutes, log);
+    // Register the calendar provider before the poller starts, so a
+    // tool call that arrives during the initial seed walk still
+    // resolves to a registered provider (writes are rare during boot
+    // but the wiring should be safe regardless).
+    ctx.calendar.registerProvider(
+        new Ms365CalendarProvider({
+            config: ctx.config,
+            calendarApi: ctx.calendar,
+            calendarConfig: calendar,
+        }),
+    );
+
+    const calendarPoller = await CalendarPoller.prepare({
+        ctx,
+        calendarConfig: calendar,
+        logins,
+        calendarApi: ctx.calendar,
+        log,
+        refreshExpression: calendar.refreshCron,
+    });
+
+    if (calendarPoller === null) {
+        log("calendar: not active; idle until a login + calendar are reachable");
+        return;
+    }
+
+    log(`calendar: registered; polling every ${calendar.pollingIntervalMinutes}m`);
+    runPollLoop(
+        () => calendarPoller.pollOnce(),
+        calendar.pollingIntervalMinutes,
+        calendar.pollingBackoffMinutes,
+        "calendar",
+        log,
+    );
+    calendarPoller.startRefreshCron(log);
 }
 
 /**
- * Per-poller setTimeout supervisor. Same backoff math as the old
- * `MailPollLoop` but reduced to one target since we no longer juggle
- * a list of providers: success → poll again after the interval,
- * failure → exponential backoff capped at 4× the interval. Timers
- * are unref'd so an idle poller doesn't keep the daemon alive on its
- * own.
+ * Per-poller setTimeout supervisor. Same backoff math for both mail
+ * and calendar polling: success → poll again after the interval,
+ * failure → exponential backoff capped at 4× the interval. Timers are
+ * unref'd so an idle poller doesn't keep the daemon alive on its own.
  */
 function runPollLoop(
-    poller: MailPoller,
+    pollOnce: () => Promise<void>,
     intervalMinutes: number,
     backoffMinutes: number,
+    label: string,
     log: (msg: string) => void,
 ): void {
     const intervalMs = intervalMinutes * 60_000;
@@ -67,7 +123,7 @@ function runPollLoop(
 
     const tick = async (): Promise<void> => {
         try {
-            await poller.pollOnce();
+            await pollOnce();
             failures = 0;
             schedule(intervalMs);
         } catch (err) {
@@ -76,7 +132,7 @@ function runPollLoop(
             const exp = Math.min(2 ** (failures - 1), 1024);
             const delay = Math.min(backoffBaseMs * exp, backoffCapMs);
             log(
-                `mail: poll error (#${failures}): ${message}; next try in ${Math.round(delay / 60_000)}m`,
+                `${label}: poll error (#${failures}): ${message}; next try in ${Math.round(delay / 60_000)}m`,
             );
             schedule(delay);
         }

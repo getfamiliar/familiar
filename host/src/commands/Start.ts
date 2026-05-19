@@ -110,6 +110,10 @@ export const startCommand = defineCommand({
         // default to `false` so handler iteration doesn't add load to
         // a deployed daemon.
         const logSystemPrompt = config.getBool("core.logSystemPrompt", undefined) ?? dev;
+        // Operator's preferred timezone. Empty when unset; the agent
+        // container falls back to its own system tz, matching how the
+        // host plugins fall back via getCoreTimezone().
+        const coreTimezone = config.getString("core.timezone", "") ?? "";
         // Touch the chat-channel default so a missing value fails the
         // daemon now rather than at first chat event.
         config.getString("core.defaultChatChannel");
@@ -239,6 +243,7 @@ export const startCommand = defineCommand({
             captureRawStepResultToDatabase,
             providerTypes,
             verbose: debugLogging,
+            coreTimezone,
         });
 
         await container.start();
@@ -266,6 +271,7 @@ export const startCommand = defineCommand({
             scratchDir: boot.scratchDir,
             pidFile: boot.pidFile,
             mcp: pluginHost.mcp,
+            calendar: pluginHost.calendar,
         });
         const workspaceWatcher = new WorkspaceWatcher({
             workspaceDir: boot.workspaceDir,
