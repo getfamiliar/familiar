@@ -193,6 +193,24 @@ export class EventBus {
     }
 
     /**
+     * Fetch the most recently created N event rows, newest first. Used by
+     * `./cli.sh report list` to surface recent bus activity for operators
+     * looking for an event id to inspect with `report event <id>`.
+     *
+     * @param limit Maximum number of rows to return. Must be a positive integer.
+     * @returns Up to `limit` event rows ordered by descending `(created_at, id)`.
+     */
+    async listLatest(limit: number): Promise<EventRow[]> {
+        const result = await this.connection.getPool().query<RawEventRow>(
+            `SELECT * FROM events
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT $1`,
+            [limit],
+        );
+        return result.rows.map(mapRow);
+    }
+
+    /**
      * Patch one or more fields on an existing event by id. Always bumps
      * `updated_at`. No-op if `patch` contains no recognized fields.
      */

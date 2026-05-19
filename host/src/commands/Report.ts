@@ -161,6 +161,106 @@ const reportEventCommand = defineCommand({
     },
 });
 
+const PROMPT_PREVIEW_CHARS = 100;
+
+/**
+ * Render one cell of the prompt column: collapse newlines/tabs to single
+ * spaces so the row stays on one line, then truncate to
+ * {@link PROMPT_PREVIEW_CHARS} and append `…` when the original was longer.
+ *
+ * @param prompt The full prompt text from the event row.
+ * @returns A single-line, length-bounded preview string.
+ */
+function renderPromptPreview(prompt: string): string {
+    const flat = prompt.replace(/\s+/g, " ").trim();
+    if (flat.length <= PROMPT_PREVIEW_CHARS) {
+        return flat;
+    }
+    return `${flat.slice(0, PROMPT_PREVIEW_CHARS)}…`;
+}
+
+/**
+ * Write a left-aligned, space-padded table to stdout. Column widths are
+ * derived from the longest cell (or header) per column. Mirrors the
+ * formatting used by `cron list` so operators see a consistent table
+ * style across the CLI.
+ *
+ * @param headers Column header labels.
+ * @param rows One string tuple per row; each row must have `headers.length` cells.
+ */
+function printTable(headers: readonly string[], rows: readonly (readonly string[])[]): void {
+    const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((row) => row[i].length)));
+    const fmt = (row: readonly string[]) =>
+        row
+            .map((cell, i) => cell.padEnd(widths[i]))
+            .join("  ")
+            .trimEnd();
+    process.stdout.write(`${fmt(headers)}\n`);
+    for (const row of rows) {
+        process.stdout.write(`${fmt(row)}\n`);
+    }
+}
+
+/**
+ * `cli.sh report list [-n N]` — print a table of the last N events
+ * (default 10), newest first. Columns: ID, TOPIC, HANDLER, STATE,
+ * PROMPT (first 128 chars). Intended as the entry point to find an
+ * event id to drill into with `report event <id>`.
+ */
+const reportListCommand = defineCommand({
+    meta: {
+        name: "list",
+        description: "List the most recent N events (default 10) as a table.",
+    },
+    args: {
+        n: {
+            type: "string",
+            alias: "n",
+            description: "Maximum number of events to list (default 10).",
+            default: "10",
+        },
+    },
+    async run({ args }) {
+        const limit = Number.parseInt(args.n, 10);
+        if (!Number.isFinite(limit) || limit <= 0) {
+            process.stderr.write(`Invalid -n value: ${args.n} (expected positive integer).\n`);
+            process.exit(1);
+        }
+
+        const boot = bootstrap();
+        const config = new HostConfigService(boot.configFile);
+        const password = config.getString("core.postgresPassword");
+
+        const postgres = new PostgresContainer({
+            dataPath: boot.dataDir,
+            portFilePath: boot.postgresPortFile,
+            password,
+        });
+        const connection = postgres.getConnection();
+
+        try {
+            const events = new EventBus(connection);
+            const rows = await events.listLatest(limit);
+
+            if (rows.length === 0) {
+                process.stdout.write("No events found.\n");
+                return;
+            }
+
+            const tableRows = rows.map((row) => [
+                row.id,
+                row.topic,
+                row.startHandler ?? "index",
+                row.state,
+                renderPromptPreview(row.prompt),
+            ]);
+            printTable(["ID", "TOPIC", "HANDLER", "STATE", "PROMPT"], tableRows);
+        } finally {
+            await connection.close();
+        }
+    },
+});
+
 /** Parent command for the `report` subtree. */
 export const reportCommand = defineCommand({
     meta: {
@@ -170,5 +270,6 @@ export const reportCommand = defineCommand({
     subCommands: {
         tail: reportTailCommand,
         event: reportEventCommand,
+        list: reportListCommand,
     },
 });

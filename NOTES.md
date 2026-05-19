@@ -1,6 +1,16 @@
-Alternativen Modellprovider testen: Synthetic.new - wie Featherless, 30€ / Monat, scheinbar zuverlässiger
-Wakeups / Alerts per Datenbank bauen
-hostname limits in mcp.yml parsen
+Quick Fixes:
+* Why no email sorting today?
+* Whatsapp mark as read
+* Handler for whatsapp digests: clear files so everything since last digest is covered
+* Priorities als Constants aus shared: CHAT=100, ASYNC=50, BACKGROUND=10
+
+Features:
+* Wakeups / Alerts per Datenbank bauen
+* Compression
+* Calendar Plugin
+* Besseres Reporting Format
+* Self-Reflection Tools: List of events, report to the model feature
+* Tool Result Offloading in temp files
 
 Reflect and learn from things when memory plugin is ready:
 * Mail Digest
@@ -8,12 +18,16 @@ Reflect and learn from things when memory plugin is ready:
 
 MCP functions: keep or remove the renaming of "-"?
 
+## Refactoring
+
+* cli.sh replacen mit `npx familiar`, die prechecks über den npm hook prepublishOnly laufen lassen. Gleichheit zwischen dev und prod sicherstellen.
+
 ## For later
 
 - MS365: Enable / Disable Out of Office Notes
 - Protect the bastion port on the host? Maybe a simple basic auth?
 - Spotify MCP based on https://github.com/aome510/spotify-player
-
+- Alternativen Modellprovider testen: Synthetic.new - wie Featherless, 30€ / Monat, scheinbar zuverlässiger
 
 ## Workspace Linter
 
