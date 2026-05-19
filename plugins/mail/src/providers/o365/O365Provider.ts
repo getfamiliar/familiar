@@ -1,6 +1,6 @@
 import path from "node:path";
-import type { CommandDef } from "citty";
 import type { EventFile, HostContext, NewEvent } from "@getfamiliar/shared";
+import type { CommandDef } from "citty";
 import { readO365Config } from "../../Config.js";
 import type { MailProvider, MailProviderDeps, MailProviderPrepareResult } from "../MailProvider.js";
 import { flatAddress, formatAddress, isSafeEmailAddress } from "./AddressFormat.js";
@@ -284,6 +284,13 @@ async function pollMailbox(
         }
 
         for (const message of page.value) {
+            if (message["@removed"]) {
+                // Delta tombstone for a message that left the inbox between
+                // polls. No body/recipients to emit; just acknowledge and move on.
+                const reason = message["@removed"].reason ?? "removed";
+                deps.log(`mailbox ${target.mailbox}: skipped tombstone ${message.id} (${reason})`);
+                continue;
+            }
             await emitMailEvent(deps, target, client, message);
         }
 
@@ -336,8 +343,8 @@ async function emitMailEvent(
             mailbox: target.mailbox,
             isShared: target.isShared,
             from,
-            to: message.toRecipients.map(flatAddress),
-            cc: message.ccRecipients.map(flatAddress),
+            to: (message.toRecipients ?? []).map(flatAddress),
+            cc: (message.ccRecipients ?? []).map(flatAddress),
             subject,
             date: message.receivedDateTime,
             messageId: message.id,

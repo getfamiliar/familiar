@@ -1,5 +1,5 @@
-import type { CommandDef } from "citty";
 import type { EmitHandle, HostContext, NewEvent } from "@getfamiliar/shared";
+import type { CommandDef } from "citty";
 import type { MailConfig } from "../Config.js";
 
 /**

@@ -1,5 +1,5 @@
-import { type CommandDef, defineCommand } from "citty";
 import type { HostContext } from "@getfamiliar/shared";
+import { type CommandDef, defineCommand } from "citty";
 import { providers } from "./providers/Registry.js";
 
 /**

@@ -64,6 +64,14 @@ export interface GraphMailMessage {
     readonly from: { readonly emailAddress: { name?: string; address: string } } | null;
     readonly toRecipients: ReadonlyArray<{ emailAddress: { name?: string; address: string } }>;
     readonly ccRecipients: ReadonlyArray<{ emailAddress: { name?: string; address: string } }>;
+    /**
+     * Present on delta tombstones — items returned for messages that left
+     * the inbox between polls (deleted, moved). Tombstones carry only `id`
+     * plus this marker; body, recipients, and `internetMessageId` are
+     * omitted. Callers must filter these out before treating an item as
+     * a real message.
+     */
+    readonly "@removed"?: { readonly reason?: string };
 }
 
 /**

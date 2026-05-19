@@ -63,6 +63,11 @@ export class LoginStore {
             if (!entry.endsWith(".json") || entry.endsWith(".tmp")) {
                 continue;
             }
+            // Reserved filename owned by `DeltaCursorStore` — same directory,
+            // not a login cache.
+            if (entry === "delta.json") {
+                continue;
+            }
             // The on-disk filename may carry mixed-case UPN bytes from
             // an older login (pre-lowercase-normalization); the
             // in-memory key is always folded so lookups by UPN are
