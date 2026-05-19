@@ -14,12 +14,17 @@
         "format": "biome format --write --config-path ../.. src/",
         "format:check": "biome format --config-path ../.. src/",
         "lint": "biome lint --config-path ../.. src/",
-        "check": "biome check --config-path ../.. src/"
+        "check": "biome check --config-path ../.. src/",
+        "test": "tsx --test 'src/**/*.test.ts'"
     },
     "license": "MIT",
     "dependencies": {
+        "@getfamiliar/shared": "*",
+        "@inquirer/core": "^10.3.2",
+        "@inquirer/prompts": "^7.0.0",
+        "chalk": "^5.4.1",
         "citty": "^0.1.6",
-        "@getfamiliar/shared": "*"
+        "ora": "^8.1.0"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.4.12",

@@ -83,7 +83,7 @@ The container has no direct network access except through the MCP gateway. It ha
 A canonical event lifecycle:
 
 1. **Host plugin** detects something in the world (e.g. new mail via IMAP IDLE) and calls a standardized event ingestion API on the host.
-2. **Host** writes the event to the `events` table with a globally unique idempotency key. Topic matches `\w+(:\w+)?` (e.g. `mail:new`). `NOTIFY events_new` wakes the container.
+2. **Host** writes the event to the `events` table with a globally unique idempotency key. Topic matches `\w+(:\w+)*` (e.g. `mail:new`, `chat:telegram:group:reaction`). `NOTIFY events_new` wakes the container.
 3. **Container's input-event watcher** atomically claims the event (`pending → running`) and inserts a root `agentruns` row for it, with `handler=event.startHandler ?? 'index'` and `topic` copied from the event. `NOTIFY agentruns_changed` wakes the agentrun watcher.
 4. **Agentrun watcher** claims the row (`pending → running`), resolves the handler markdown file (see "Handler resolution"), and runs an agent session against it. The handler's content is the prompt; the agent has MCP tools and the `queue_next` tool.
 5. **Inside the handler**, the agent decides what to do next. It may call MCP tools, edit workspace files, and call `queue_next(handler, payload)` to spawn child agentruns (e.g. `index.md` triages, then queues `analyze` and `respond`). Each child is another `agentruns` row with `parent_agentrun_id` set to the spawning row and `event_id` propagated.
@@ -113,7 +113,7 @@ Three distinct storage layers, each with a clear purpose and owner.
 
 Postgres database, owned by the host. Both host and container access it via the shared `EventBus` / `AgentRunBus` clients in `shared/`. Two tables today:
 
-- `events` — `id`, `topic` (CHECK against `\w+(:\w+)?`), `priority`, `state` (`pending|running|done|failed`), `payload`, `idempotency_key`, timestamps. Immutable record of "the world said this happened". State transitions are bookkeeping — nothing wakes on them except host-side completion waiters via `NOTIFY events_state`.
+- `events` — `id`, `topic` (CHECK against `\w+(:\w+)*`), `priority`, `state` (`pending|running|done|failed`), `payload`, `idempotency_key`, timestamps. Immutable record of "the world said this happened". State transitions are bookkeeping — nothing wakes on them except host-side completion waiters via `NOTIFY events_state`.
 - `agentruns` — `id`, `event_id` (FK), `parent_agentrun_id` (self-FK, null for root), `topic`, `handler`, `priority`, `state` (`pending|running|done|failed`), `prompt`, `payload`, `result`, `error`, timestamps. The assistant's response tree per event.
 
 Three NOTIFY channels: `events_new` (INSERT into events; wakes the input-event watcher), `events_state` (state UPDATE on events; for host-side completion waiters), `agentruns_changed` (INSERT and state UPDATE on agentruns; wakes the agentrun watcher).
@@ -223,7 +223,7 @@ A plugin may emit events on any number of topics and usually ships default handl
 Declares:
 
 - Plugin id (`[a-z0-9-]+`), version
-- Event topics produced (with payload schema), each matching `\w+(:\w+)?`
+- Event topics produced (with payload schema), each matching `\w+(:\w+)*`
 - MCPs required (with required scopes)
 - MCPs provided (optional)
 - Cronjobs and daemons (with schedule and entry points)

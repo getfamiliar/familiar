@@ -498,14 +498,32 @@ export class AgentRunBus {
         payload: string,
         handler: (row: AgentRunRow) => void | Promise<void>,
     ): Promise<void> {
+        // Payload format: `<event_id>:<agent_run_id>` (see Schema.ts
+        // `agentruns_notify_changed`). A malformed payload is a
+        // strong signal that the deployed trigger function is out of
+        // sync with the source — surface it loudly instead of
+        // silently dropping notifications and leaving the caller's
+        // spinner stuck forever.
         const colon = payload.indexOf(":");
         if (colon < 0) {
+            const warning = `AgentRunBus: malformed ${AGENTRUNS_CHANNEL} payload (no colon): "${payload}" — is the agentruns_notify_changed trigger function out of date? Restart the daemon to reinstall the schema.`;
+            if (this.log) {
+                this.log.warn({ payload }, warning);
+            } else {
+                console.warn(warning);
+            }
             return;
         }
         const id = payload.slice(colon + 1);
         try {
             const row = await this.getById(id);
             if (!row) {
+                const warning = `AgentRunBus: no agentrun found for id="${id}" (payload="${payload}") — stale or malformed NOTIFY payload?`;
+                if (this.log) {
+                    this.log.warn({ id, payload }, warning);
+                } else {
+                    console.warn(warning);
+                }
                 return;
             }
             await handler(row);

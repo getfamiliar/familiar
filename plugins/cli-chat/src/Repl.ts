@@ -1,372 +1,381 @@
-import { createInterface, type Interface } from "node:readline";
+import path from "node:path";
 import {
     EVENT_PRIORITY,
+    HandlerCatalog,
     type HostContext,
-    renderMarkdown,
-    type StepResultRow,
+    type NewEvent,
 } from "@getfamiliar/shared";
+import chalk from "chalk";
+import { chatPrompt } from "./ChatPrompt.js";
+import { CLI_CHAT_BUILTINS, type ParsedInput, parseInput } from "./InputParser.js";
+import { RunRenderer } from "./RunRenderer.js";
 
 const CLI_CHANNEL = "cli";
-const PROMPT = "> ";
-const DRAIN_TIMEOUT_MS = 30_000;
-const ANSI_GREY = "\x1b[90m";
-const ANSI_RED = "\x1b[31m";
-const ANSI_CYAN = "\x1b[36m";
-const ANSI_RESET = "\x1b[0m";
-const ANSI_CLEAR_LINE = "\r\x1b[2K";
-const ANSI_CURSOR_UP = "\x1b[1A";
+const ANSI_CLEAR_SCREEN = "\x1b[2J\x1b[H";
 
 /**
- * Run the cli-chat REPL until the user exits.
+ * Run the cli-chat REPL until the user exits (`/exit`, Ctrl-C, or
+ * EOF). One turn at a time: show prompt → emit event → render the
+ * spinner-driven run progress → render the final assistant message
+ * → loop.
  *
- * Layout invariant:
- *   ... permanent output ...
- *   [optional grey thinking line]
- *   > <input buffer>
- *
- * Concurrency: each user line kicks off `ctx.events.emit(...)` without
- * awaiting; multiple in-flight emits coexist (HostContextImpl filters
- * its `onStep` callback by event id). The `ctx.chat.subscribe` opened
- * here lasts the whole session, so assistant replies stream in as they
- * arrive — including the replay of any messages undelivered from
- * earlier sessions.
- *
- * Exit triggers (all converge on the same shutdown path):
- *   - `/exit` typed at the prompt
- *   - Ctrl-D / EOF (readline `close`)
- *   - Ctrl-C / SIGINT (readline `SIGINT` → we trigger close)
- *
- * Shutdown drains in-flight emits with a 30 s timeout. Agentruns the
- * server is still running keep running; the CLI just stops waiting
- * for them.
+ * Concurrent in-flight messages (the previous REPL's "type next while
+ * the last is processing" behaviour) are intentionally dropped: the
+ * new layout has a single spinner anchored to the active agentrun,
+ * which doesn't compose with a live input buffer underneath. If we
+ * need concurrency back later it should be a separate mode.
  */
 export async function runRepl(ctx: HostContext): Promise<void> {
     const isTty = process.stdout.isTTY === true;
-    const rl = createInterface({
-        input: process.stdin,
-        output: process.stdout,
-        prompt: PROMPT,
-        terminal: isTty,
-    });
-
-    // Register rl handlers synchronously, BEFORE any await: piped stdin
-    // (`echo … | cli-chat`) starts flowing as soon as createInterface
-    // attaches its internal listeners; if we awaited subscribe first
-    // we would miss the line/close events that have already fired.
-    const renderer = new LineRenderer(rl, isTty);
-    const inFlight = new Set<Promise<unknown>>();
-    let rlClosed = false;
+    const catalog = new HandlerCatalog(path.join(ctx.dataDir, "workspace"));
 
     if (isTty) {
+        const owl = supportsUtf8() ? "🦉 " : "";
         process.stdout.write(
-            `${ANSI_GREY}Welcome to the assistant chat. Type "exit", "/exit", or press Ctrl+C to end the chat.${ANSI_RESET}\n\n`,
+            chalk.gray(
+                `${owl}Welcome to the familiar chat. Type "/exit" or press CTRL+C to end the chat.\n\n`,
+            ),
         );
     }
 
-    const submit = (rawLine: string): void => {
-        const line = rawLine.trim();
-        if (line.length === 0) {
-            return;
-        }
-        if (line === "/exit" || line === "exit") {
-            rl.close();
-            return;
-        }
-        renderer.setThinking("Sending event…");
-        const promise = (async () => {
+    const sessionAbort = new AbortController();
+    const onSigint = () => sessionAbort.abort();
+    process.on("SIGINT", onSigint);
+
+    // In-memory only, scoped to this REPL session. Up/Down inside the
+    // prompt walks through these in submission order, oldest first.
+    const history: string[] = [];
+
+    try {
+        while (!sessionAbort.signal.aborted) {
+            const handlerPaths = (await catalog.list()).map((h) => h.slashPath);
+
+            let raw: string;
             try {
-                const handle = await ctx.events.emit(
+                raw = await chatPrompt(
                     {
-                        topic: "chat:cli",
-                        isChat: true,
-                        priority: EVENT_PRIORITY.CHAT,
-                        preferredChatChannelId: CLI_CHANNEL,
-                        prompt: line,
-                        // The REPL only runs at the operator's local
-                        // terminal, so chat:cli messages are trusted
-                        // user input.
-                        privileged: true,
+                        builtins: CLI_CHAT_BUILTINS,
+                        handlerPaths,
+                        history,
                     },
-                    {
-                        onStep: (step) => {
-                            renderer.setThinking(formatStepLine(step));
-                        },
-                    },
+                    { signal: sessionAbort.signal },
                 );
-                renderer.setThinking(`Sent event #${handle.id}, preparing to think…`);
-                // Drop result_text: the reply is delivered as a chat
-                // message via subscribe, so printing result_text here
-                // would just duplicate it.
-                await handle.settled;
-                renderer.clearThinking();
             } catch (err) {
-                renderer.clearThinking();
-                renderer.printError(err instanceof Error ? err.message : String(err));
+                if (sessionAbort.signal.aborted || isAbortError(err)) {
+                    break;
+                }
+                throw err;
             }
-        })().finally(() => {
-            inFlight.delete(promise);
-        });
-        inFlight.add(promise);
-    };
 
-    const userExit = new Promise<void>((resolve) => {
-        rl.on("line", (line) => {
-            renderer.recolorJustEntered(line);
-            submit(line);
-            if (!rlClosed) {
-                rl.prompt();
+            const trimmedRaw = raw.trim();
+            if (trimmedRaw.length > 0 && history[history.length - 1] !== trimmedRaw) {
+                history.push(trimmedRaw);
             }
-        });
-        rl.on("SIGINT", () => {
-            rl.close();
-        });
-        rl.on("close", () => {
-            rlClosed = true;
-            resolve();
-        });
-    });
 
+            const parsed = parseInput(raw);
+            if (parsed.kind === "builtin") {
+                if (parsed.command === "/exit") {
+                    break;
+                }
+                if (parsed.command === "/clear") {
+                    if (isTty) {
+                        process.stdout.write(ANSI_CLEAR_SCREEN);
+                    }
+                    continue;
+                }
+            }
+            if (parsed.kind === "handler") {
+                if (parsed.prompt.length === 0) {
+                    continue;
+                }
+                await runTurn(ctx, catalog, parsed, sessionAbort.signal, isTty);
+            }
+        }
+    } finally {
+        process.off("SIGINT", onSigint);
+    }
+}
+
+/**
+ * Best-effort check for terminal UTF-8 support, used to decide
+ * whether the welcome banner can carry the owl emoji. The Node
+ * runtime doesn't expose terminal capabilities directly, so we look
+ * at the standard POSIX locale variables (`LC_ALL` > `LC_CTYPE` >
+ * `LANG`). If any of them mentions UTF-8 we assume the terminal can
+ * render multi-byte glyphs; otherwise we play it safe and skip the
+ * emoji.
+ */
+function supportsUtf8(): boolean {
+    const locale = process.env.LC_ALL ?? process.env.LC_CTYPE ?? process.env.LANG ?? "";
+    return /utf-?8/i.test(locale);
+}
+
+/**
+ * Process one user turn end-to-end: validate the handler (if any),
+ * open the chat subscription, emit, drive the {@link RunRenderer}
+ * from the emit callbacks, and tear everything down when the event
+ * settles or the user hits Ctrl-C.
+ */
+async function runTurn(
+    ctx: HostContext,
+    catalog: HandlerCatalog,
+    parsed: Extract<ParsedInput, { kind: "handler" }>,
+    sessionSignal: AbortSignal,
+    isTty: boolean,
+): Promise<void> {
+    if (parsed.topic !== undefined && parsed.startHandler !== undefined) {
+        const resolved = await catalog.resolve(parsed.topic, parsed.startHandler);
+        if (!resolved) {
+            process.stdout.write(
+                chalk.red(
+                    `[error] no handler found for topic="${parsed.topic}" handler="${parsed.startHandler}"\n`,
+                ),
+            );
+            return;
+        }
+    }
+
+    const renderer = new RunRenderer(isTty);
     const unsubscribe = await ctx.chat.subscribe(
         { channelId: CLI_CHANNEL, role: "assistant" },
         async (m) => {
-            // On a TTY, render markdown to ANSI styling so headings,
-            // lists, code blocks, and inline emphasis come through
-            // formatted — same treatment Report.ts gives its output.
-            // Off-TTY (piped, redirected) keep the raw markdown so
-            // it round-trips cleanly through grep / files. Trailing
-            // newline turns into a blank visual separator below the
-            // assistant message (printAbove appends \n).
-            const body = isTty ? renderMarkdown(m.textContent) : m.textContent;
-            renderer.printAbove(`${body}\n`);
+            renderer.chatAnswer(m.textContent);
             return true;
         },
     );
 
-    if (!rlClosed) {
-        rl.prompt();
-    }
-    await userExit;
-    renderer.afterRl();
-
-    if (inFlight.size > 0) {
-        renderer.printPlain(`Draining ${inFlight.size} in-flight message(s)…`);
-        const drain = Promise.allSettled([...inFlight]);
-        const timeout = new Promise<"timeout">((resolve) =>
-            setTimeout(() => resolve("timeout"), DRAIN_TIMEOUT_MS),
-        );
-        const result = await Promise.race([drain, timeout]);
-        if (result === "timeout" && inFlight.size > 0) {
-            ctx.log(`cli-chat REPL exit: ${inFlight.size} agentrun(s) still running server-side`);
-        }
-    }
-    await unsubscribe();
-}
-
-/**
- * Encapsulates all stdout writes for the REPL. Maintains the layout
- * invariant by tracking whether a thinking line is currently rendered
- * just above the prompt.
- *
- * Two flavors:
- * - TTY mode: ANSI escapes to clear and rewrite the prompt (and the
- *   line above it) on every state transition.
- * - Non-TTY mode: append-only plain output. `setThinking` becomes
- *   one-line-per-step; `clearThinking` is a no-op.
- */
-export class LineRenderer {
-    private readonly rl: Interface;
-    private readonly isTty: boolean;
-    /** Desired thinking content. `null` means "no thinking line should be drawn". */
-    private thinkingText: string | null = null;
-    /**
-     * Whether a thinking line is currently ON SCREEN. Tracked separately
-     * from {@link thinkingText} so a fresh `setThinking` (with no prior
-     * line on screen) does not try to erase the permanent content
-     * above the prompt.
-     */
-    private thinkingOnScreen = false;
-    private rlClosed = false;
-
-    constructor(rl: Interface, isTty: boolean) {
-        this.rl = rl;
-        this.isTty = isTty;
-    }
-
-    /** Mark that readline has closed; switch to plain stdout writes. */
-    afterRl(): void {
-        this.rlClosed = true;
-    }
-
-    /** Plain unconditional write — used during shutdown / drain. */
-    printPlain(text: string): void {
-        process.stdout.write(`${text}\n`);
-    }
-
-    /** Print a permanent line above the prompt (and above any thinking). */
-    printAbove(text: string): void {
-        if (!this.isTty || this.rlClosed) {
-            this.printPlain(text);
-            return;
-        }
-        this.clearPromptArea();
-        process.stdout.write(`${text}\n`);
-        this.redrawPromptArea();
-    }
-
-    /**
-     * Re-render the line readline just echoed (`> message`) in cyan,
-     * followed by a blank visual separator. Called from the readline
-     * `line` handler — at that point cursor is on the line below the
-     * just-typed input, so we step up, clear, and rewrite.
-     *
-     * If a thinking line was on screen before the user pressed enter
-     * its position is now stale (we just inserted a blank below it
-     * without erasing it). We invalidate the on-screen flag so the
-     * next `setThinking` redraws cleanly rather than erasing the
-     * blank separator. The stale grey line stays in scrollback —
-     * acceptable noise.
-     */
-    recolorJustEntered(line: string): void {
-        if (!this.isTty || this.rlClosed) {
-            return;
-        }
-        process.stdout.write(`${ANSI_CURSOR_UP}${ANSI_CLEAR_LINE}`);
-        process.stdout.write(`${ANSI_CYAN}${PROMPT}${line}${ANSI_RESET}\n\n`);
-        this.thinkingOnScreen = false;
-    }
-
-    /** Print an error in red above the prompt. */
-    printError(text: string): void {
-        if (!this.isTty || this.rlClosed) {
-            this.printPlain(`[error] ${text}`);
-            return;
-        }
-        this.printAbove(`${ANSI_RED}[error] ${text}${ANSI_RESET}`);
-    }
-
-    /** Replace the grey thinking line with `text`, or render it for the first time. */
-    setThinking(text: string): void {
-        if (!this.isTty || this.rlClosed) {
-            // Non-TTY: emit each step as a plain line, never erased.
-            process.stdout.write(`[thinking] ${text}\n`);
-            return;
-        }
-        this.thinkingText = text;
-        this.clearPromptArea();
-        this.redrawPromptArea();
-    }
-
-    /** Clear the grey thinking line if one is rendered. */
-    clearThinking(): void {
-        if (!this.isTty || this.rlClosed) {
-            return;
-        }
-        if (this.thinkingText === null) {
-            return;
-        }
-        this.thinkingText = null;
-        this.clearPromptArea();
-        this.redrawPromptArea();
-    }
-
-    /**
-     * Erase the prompt line (and the thinking line above it if one
-     * was actually drawn there). After this call the cursor sits at
-     * column 0 of the topmost erased line, ready for new content.
-     */
-    private clearPromptArea(): void {
-        process.stdout.write(ANSI_CLEAR_LINE);
-        if (this.thinkingOnScreen) {
-            process.stdout.write(`${ANSI_CURSOR_UP}${ANSI_CLEAR_LINE}`);
-            this.thinkingOnScreen = false;
-        }
-    }
-
-    /**
-     * Redraw the thinking line (if `thinkingText` is set) and the
-     * readline prompt with the user's preserved input buffer. Updates
-     * {@link thinkingOnScreen} to match what we just drew.
-     */
-    private redrawPromptArea(): void {
-        if (this.thinkingText !== null) {
-            const truncated = truncate(this.thinkingText, terminalWidth());
-            process.stdout.write(`${ANSI_GREY}${truncated}${ANSI_RESET}\n`);
-            this.thinkingOnScreen = true;
-        }
-        process.stdout.write(this.rl.getPrompt());
-        // Re-render the user's buffer. We put the cursor at end of
-        // input; mid-string editing during a streaming step will jump
-        // to the end. Acceptable for now.
-        process.stdout.write(this.rl.line);
-    }
-}
-
-/**
- * Render a {@link StepResultRow} as a one-line "thinking" summary.
- * Pure function — no IO, no readline — so it's unit-coverable.
- *
- * Reasoning text (chain-of-thought from extended-thinking models) is
- * surfaced whenever it's present, even alongside tool calls or text —
- * it tends to be the most useful per-step signal. Tool names or the
- * step's plain text follow as a secondary segment, joined with `·`.
- * `send_chat`'s text is intentionally not echoed because it arrives
- * separately via the chat subscription.
- */
-export function formatStepLine(step: StepResultRow): string {
-    const prefix = `↻ step ${step.stepNumber + 1}`;
-    const toolNames = extractToolNames(step.toolCalls);
-    const reasoning = step.reasoningText?.trim();
-    const text = step.resultText?.trim();
-
-    const parts: string[] = [];
-    if (reasoning && reasoning.length > 0) {
-        parts.push(truncate(reasoning, 100));
-    }
-    if (toolNames.length > 0) {
-        parts.push(`tools: ${toolNames.join(", ")}`);
-    } else if (text && text.length > 0) {
-        parts.push(`"${truncate(text, 80)}"`);
-    }
-    if (parts.length === 0) {
-        parts.push(step.finishReason);
-    }
-    return `${prefix} • ${parts.join(" · ")}`;
-}
-
-/**
- * Pull `toolName` strings out of a step's `toolCalls` payload. The
- * shape is opaque to us (typed `unknown` upstream); we defensively
- * accept anything array-shaped with `toolName: string` entries.
- */
-function extractToolNames(toolCalls: unknown): string[] {
-    if (!Array.isArray(toolCalls)) {
-        return [];
-    }
-    const names: string[] = [];
-    for (const tc of toolCalls) {
-        if (tc && typeof tc === "object") {
-            const name = (tc as { toolName?: unknown }).toolName;
-            if (typeof name === "string") {
-                names.push(name);
+    const debug = process.env.CLI_CHAT_DEBUG === "1";
+    let sawAgentRun = false;
+    try {
+        const newEvent = buildNewEvent(parsed);
+        const handle = await ctx.events.emit(newEvent, {
+            onAgentRun: (row) => {
+                sawAgentRun = true;
+                if (debug) {
+                    process.stderr.write(
+                        `[cli-chat debug] onAgentRun #${row.id} state=${row.state} model=${row.model ?? "-"}\n`,
+                    );
+                }
+                renderer.agentRun(row);
+            },
+            onStep: (step) => {
+                if (debug) {
+                    process.stderr.write(
+                        `[cli-chat debug] onStep #${step.id} agentrun=${step.agentRunId} finish=${step.finishReason}\n`,
+                    );
+                }
+                renderer.step(step);
+            },
+        });
+        renderer.eventQueued(handle.id);
+        // Surface a hint when the container appears unresponsive: if
+        // no agentrun NOTIFY arrived after a few seconds, the spinner
+        // is stuck on "message queued as event #X" and the operator
+        // has no obvious clue why. Most common cause is the daemon
+        // not running or the agent container not picking up events.
+        const watchdog = setTimeout(() => {
+            if (!sawAgentRun) {
+                process.stderr.write(
+                    chalk.yellow(
+                        "[cli-chat] no agentrun observed yet — is `./cli.sh start` running and the agent container picking up events?\n",
+                    ),
+                );
             }
-        }
-    }
-    return names;
-}
+        }, 5_000);
+        watchdog.unref();
 
-/** Collapse whitespace and truncate with an ellipsis if needed. */
-function truncate(s: string, max: number): string {
-    const collapsed = s.trim().replace(/\s+/g, " ");
-    if (collapsed.length <= max) {
-        return collapsed;
+        // Wire Ctrl-C: if the user aborts mid-run, stop the spinner
+        // and bail. The server-side agentrun keeps going — we just
+        // stop watching.
+        const abortPromise = new Promise<"aborted">((resolve) => {
+            const onAbort = () => {
+                sessionSignal.removeEventListener("abort", onAbort);
+                resolve("aborted");
+            };
+            if (sessionSignal.aborted) {
+                resolve("aborted");
+            } else {
+                sessionSignal.addEventListener("abort", onAbort);
+            }
+        });
+        const result = await Promise.race([
+            handle.settled.then(() => "done" as const).catch((e) => ({ failed: e })),
+            abortPromise,
+        ]);
+
+        clearTimeout(watchdog);
+        if (result === "aborted") {
+            renderer.stop();
+            return;
+        }
+        if (typeof result === "object" && "failed" in result) {
+            const message =
+                result.failed instanceof Error ? result.failed.message : String(result.failed);
+            renderer.failed(message);
+            return;
+        }
+        renderer.done();
+    } finally {
+        await unsubscribe();
     }
-    return `${collapsed.slice(0, Math.max(1, max - 1))}…`;
 }
 
 /**
- * Current terminal width, with a safe fallback. Read on every render
- * so a SIGWINCH-driven resize takes effect immediately.
+ * Build the {@link NewEvent} for an outgoing turn. Plain prompts
+ * default to `topic: chat:cli` and let the input-event watcher pick
+ * `index.md`; direct handler calls carry the parsed topic +
+ * startHandler verbatim. All cli-chat events run as `privileged`
+ * because the operator at the local terminal is fully trusted.
  */
-function terminalWidth(): number {
-    return process.stdout.columns ?? 80;
+function buildNewEvent(parsed: Extract<ParsedInput, { kind: "handler" }>): NewEvent {
+    if (parsed.topic === undefined || parsed.startHandler === undefined) {
+        return {
+            topic: "chat:cli",
+            isChat: true,
+            priority: EVENT_PRIORITY.CHAT,
+            preferredChatChannelId: CLI_CHANNEL,
+            prompt: parsed.prompt,
+            privileged: true,
+        };
+    }
+    return {
+        topic: parsed.topic,
+        startHandler: parsed.startHandler,
+        // Direct handler calls are not "chat messages from the user"
+        // — they're operator-triggered runs. Skipping `isChat` keeps
+        // the prompt off chatmessages and the spawned agentrun reads
+        // the prompt straight from `event.prompt`.
+        isChat: false,
+        priority: EVENT_PRIORITY.CHAT,
+        preferredChatChannelId: CLI_CHANNEL,
+        prompt: parsed.prompt.length > 0 ? parsed.prompt : `(handler invoked from cli-chat)`,
+        privileged: true,
+    };
+}
+
+/**
+ * Inquirer's `createPrompt` rejects in two distinct shapes depending
+ * on how the prompt ended:
+ *
+ *   - `AbortPromptError` — the `signal` we passed in fired.
+ *   - `ExitPromptError`  — the user hit Ctrl-C; inquirer's internal
+ *                          SIGINT handler beats ours to the rejection
+ *                          and throws "User force closed the prompt
+ *                          with SIGINT".
+ *
+ * Both mean "user wants out of the prompt", and we always want them
+ * to break the REPL loop quietly without a stack trace. We can't
+ * import the error classes without pulling more of inquirer's
+ * surface, so detect by `name`.
+ */
+function isAbortError(err: unknown): boolean {
+    if (!(err instanceof Error)) {
+        return false;
+    }
+    return err.name === "AbortPromptError" || err.name === "ExitPromptError";
+}
+
+/**
+ * One-shot mode: `./cli.sh cli-chat "<message>"`. Parses, validates,
+ * emits a single event, and either renders the full RunRenderer
+ * output or — with `returnOnly` — just prints the final assistant
+ * text once the event settles.
+ */
+export async function runOneShot(
+    ctx: HostContext,
+    message: string,
+    options: { readonly returnOnly: boolean },
+): Promise<number> {
+    const isTty = process.stdout.isTTY === true;
+    const catalog = new HandlerCatalog(path.join(ctx.dataDir, "workspace"));
+    const parsed = parseInput(message);
+
+    if (parsed.kind === "builtin") {
+        process.stderr.write(`builtin commands like ${parsed.command} are REPL-only\n`);
+        return 2;
+    }
+    if (parsed.prompt.length === 0 && parsed.topic === undefined) {
+        process.stderr.write("empty message\n");
+        return 2;
+    }
+
+    if (parsed.topic !== undefined && parsed.startHandler !== undefined) {
+        const resolved = await catalog.resolve(parsed.topic, parsed.startHandler);
+        if (!resolved) {
+            process.stderr.write(
+                `no handler found for topic="${parsed.topic}" handler="${parsed.startHandler}"\n`,
+            );
+            return 1;
+        }
+    }
+
+    if (options.returnOnly) {
+        return runOneShotReturnOnly(ctx, parsed);
+    }
+
+    const renderer = new RunRenderer(isTty);
+    const unsubscribe = await ctx.chat.subscribe(
+        { channelId: CLI_CHANNEL, role: "assistant" },
+        async (m) => {
+            renderer.chatAnswer(m.textContent);
+            return true;
+        },
+    );
+    try {
+        const handle = await ctx.events.emit(buildNewEvent(parsed), {
+            onAgentRun: (row) => renderer.agentRun(row),
+            onStep: (step) => renderer.step(step),
+        });
+        renderer.eventQueued(handle.id);
+        try {
+            await handle.settled;
+            renderer.done();
+            return 0;
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            renderer.failed(message);
+            return 1;
+        }
+    } finally {
+        await unsubscribe();
+    }
+}
+
+/**
+ * `--return` mode: silent spinner-free run that prints only the final
+ * assistant text to stdout once the event settles. The "final" text
+ * is the last assistant chat message we saw before `handle.settled`
+ * resolved; if the agentrun produced no chat message we fall back to
+ * the event's `result_text` (the same value `handle.settled` resolves
+ * with).
+ */
+async function runOneShotReturnOnly(
+    ctx: HostContext,
+    parsed: Extract<ParsedInput, { kind: "handler" }>,
+): Promise<number> {
+    let lastChatText: string | undefined;
+    const unsubscribe = await ctx.chat.subscribe(
+        { channelId: CLI_CHANNEL, role: "assistant" },
+        async (m) => {
+            lastChatText = m.textContent;
+            return true;
+        },
+    );
+    try {
+        const handle = await ctx.events.emit(buildNewEvent(parsed));
+        try {
+            const resultText = await handle.settled;
+            const output = lastChatText ?? resultText;
+            if (output && output.length > 0) {
+                process.stdout.write(output.endsWith("\n") ? output : `${output}\n`);
+            }
+            return 0;
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            process.stderr.write(`event failed: ${message}\n`);
+            return 1;
+        }
+    } finally {
+        await unsubscribe();
+    }
 }
