@@ -117,6 +117,23 @@ export class LoginStore {
     }
 
     /**
+     * Delete the cache file for `upn` and forget the in-memory entry.
+     * Case-folded lookup, mirroring {@link byUpn} / {@link add}.
+     * Returns `true` if a cache file was removed, `false` if no login
+     * was registered for that UPN.
+     */
+    async remove(upn: string): Promise<boolean> {
+        const key = upn.toLowerCase();
+        const auth = this.auths.get(key);
+        if (!auth) {
+            return false;
+        }
+        await fs.unlink(auth.cacheFile);
+        this.auths.delete(key);
+        return true;
+    }
+
+    /**
      * Probe every known login with a silent token acquire. Failures
      * are reported in the result — never thrown — so the daemon can
      * log and skip per the memory rule

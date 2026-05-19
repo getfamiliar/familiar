@@ -26,6 +26,7 @@ export function buildO365Commands(
         subCommands: {
             status: statusCommand(ctx, provider),
             login: loginCommand(ctx, provider),
+            logout: logoutCommand(ctx, provider),
         },
     });
 }
@@ -136,6 +137,65 @@ function loginCommand(
             const finalAuth = new GraphAuth(finalPath, registration);
             store.add(summary.upn, finalAuth);
             process.stdout.write(`  Token cache: ${finalPath}\n`);
+        },
+    });
+}
+
+function logoutCommand(
+    ctx: HostContext,
+    provider: O365Provider,
+    // biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
+): CommandDef<any> {
+    return defineCommand({
+        meta: {
+            name: "logout",
+            description: `Remove ${provider.displayName} login(s). Omit UPN to remove all.`,
+        },
+        args: {
+            upn: {
+                type: "positional",
+                required: false,
+                description: "UPN to log out. Omit to log out all accounts.",
+            },
+        },
+        async run({ args }) {
+            const store = provider.getLoginStore(ctx);
+            await store.refresh();
+            const logins = store.list();
+            const requestedUpn = typeof args.upn === "string" ? args.upn : undefined;
+
+            if (requestedUpn) {
+                const auth = store.byUpn(requestedUpn);
+                if (!auth) {
+                    process.stderr.write(`error: not logged in as ${requestedUpn}\n`);
+                    if (logins.length === 0) {
+                        process.stderr.write("Known logins: (none)\n");
+                    } else {
+                        process.stderr.write("Known logins:\n");
+                        for (const { upn } of logins) {
+                            process.stderr.write(`  - ${upn}\n`);
+                        }
+                    }
+                    process.exitCode = 1;
+                    return;
+                }
+                const cachePath = auth.cacheFile;
+                await store.remove(requestedUpn);
+                process.stdout.write(`✓ Logged out ${requestedUpn.toLowerCase()}\n`);
+                process.stdout.write(`  Removed: ${cachePath}\n`);
+                return;
+            }
+
+            if (logins.length === 0) {
+                process.stdout.write("No logins to remove.\n");
+                return;
+            }
+
+            for (const { upn } of logins) {
+                await store.remove(upn);
+                process.stdout.write(`✓ Logged out ${upn}\n`);
+            }
+            process.stdout.write(`Removed ${logins.length} login(s).\n`);
         },
     });
 }
