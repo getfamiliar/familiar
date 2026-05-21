@@ -179,7 +179,7 @@ function searchTool(deps: MailToolsDeps): PluginTool<SearchArgs, string> {
             "`hasAttachments:true` work too); `contact` (matches sender, To, or " +
             "Cc — single address); `after` / `before` (YYYY-MM-DD or " +
             "YYYY-MM-DDTHH:mm:ss in your `core.timezone`, inclusive bounds at " +
-            "day resolution); `folder` (inbox|archive|trash); `plugin` (e.g. " +
+            "day resolution); `folder` (inbox|archive|trash|sent); `plugin` (e.g. " +
             "`ms365`) to pin one provider; `mailbox` to pin one address (works " +
             "even for unpolled mailboxes a login can reach); `limit` to cap " +
             "the number of hits (defaults to 10, hard maximum 100). Returns up to that many " +
@@ -208,7 +208,13 @@ function searchTool(deps: MailToolsDeps): PluginTool<SearchArgs, string> {
                         "Inclusive upper bound in your `core.timezone` " +
                         "(YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss).",
                 },
-                folder: { type: "string", enum: ["inbox", "archive", "trash"] },
+                folder: {
+                    type: "string",
+                    enum: ["inbox", "archive", "trash", "sent"],
+                    description:
+                        "Restrict the search to one folder. `sent` is search-only — " +
+                        "use `mail_move` for inbox/archive/trash transitions.",
+                },
                 plugin: {
                     type: "string",
                     description: "Restrict the search to one registered provider (e.g. 'ms365').",
@@ -687,7 +693,12 @@ function moveTool(deps: MailToolsDeps): PluginTool<MoveArgs, object> {
         },
         execute: (args, callCtx) =>
             runJsonTool(async () => {
-                if (!isMailFolder(args.folder)) {
+                // `isMailFolder` accepts `sent` (it's a valid MailFolder for
+                // search), but `mail_move` deliberately does not — sending
+                // arbitrary mails into the Sent folder is not a workflow
+                // the agent should drive. The JSON-schema enum already
+                // gates this; the explicit check below is defense-in-depth.
+                if (!isMailFolder(args.folder) || args.folder === "sent") {
                     throw new ToolError(
                         "BadFolder",
                         `folder must be one of inbox|archive|trash, got: ${args.folder}`,
@@ -799,7 +810,7 @@ function resolveSender(
 }
 
 function isMailFolder(value: unknown): value is MailFolder {
-    return value === "inbox" || value === "archive" || value === "trash";
+    return value === "inbox" || value === "archive" || value === "trash" || value === "sent";
 }
 
 /**

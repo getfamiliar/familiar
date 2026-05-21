@@ -13,7 +13,7 @@ import {
 import { getActiveLogins } from "../auth/ActiveLogins.js";
 import type { LoginStore } from "../auth/LoginStore.js";
 import { GraphClient, GraphError, type GraphRecipient } from "../graph/GraphClient.js";
-import { FOLDER_IDS } from "./Folders.js";
+import { FOLDER_IDS, FolderAliasResolver } from "./Folders.js";
 import type { MailboxTarget } from "./MailboxMap.js";
 import { buildMailHit } from "./MessageShape.js";
 
@@ -205,7 +205,25 @@ export class Ms365MailProvider implements MailProvider {
                     folderId,
                     remaining,
                 );
+                // When the query pinned a folder, every hit is in that
+                // folder by construction — skip the per-mailbox lookup.
+                // Otherwise build a resolver lazily; the first hit pays
+                // the warm-up cost (three Graph round-trips), every
+                // subsequent hit in this mailbox is a Map.get.
+                const folderResolver =
+                    query.folder !== undefined
+                        ? null
+                        : new FolderAliasResolver((wellKnownName) =>
+                              client
+                                  .getWellKnownFolderId(target.mailbox, wellKnownName)
+                                  .catch(() => null),
+                          );
                 for (const message of messages) {
+                    const folder = query.folder
+                        ? query.folder
+                        : await (folderResolver as FolderAliasResolver).resolve(
+                              message.parentFolderId,
+                          );
                     hits.push(
                         buildMailHit({
                             message,
@@ -216,6 +234,7 @@ export class Ms365MailProvider implements MailProvider {
                             // signals "not fetched", matching the poller's
                             // failed-fetch convention.
                             attachments: message.hasAttachments ? null : [],
+                            folder,
                         }),
                     );
                     if (hits.length >= query.limit) {

@@ -1,6 +1,7 @@
 import { buildMailId, type MailAttachmentMeta, type MailSearchHit } from "@getfamiliar/shared";
 import type { GraphMailMessage } from "../graph/GraphClient.js";
 import { flatAddress } from "./AddressFormat.js";
+import type { ResolvedFolderAlias } from "./Folders.js";
 import { MS365_MAIL_PROVIDER_ID } from "./Ms365MailProvider.js";
 
 /**
@@ -25,8 +26,17 @@ export function buildMailHit(args: {
     readonly mailbox: string;
     readonly isShared: boolean;
     readonly attachments: readonly MailAttachmentMeta[] | null;
+    /**
+     * Folder alias the agent should see for this hit. The caller
+     * supplies it because folder resolution lives at the call boundary:
+     * the poller passes `"inbox"` (it only walks the inbox folder),
+     * and `mail_search` either echoes the agent's `folder` filter when
+     * one was supplied or runs a per-mailbox lookup against
+     * `message.parentFolderId` otherwise.
+     */
+    readonly folder: ResolvedFolderAlias;
 }): MailSearchHit {
-    const { message, mailbox, isShared, attachments } = args;
+    const { message, mailbox, isShared, attachments, folder } = args;
     const from = message.from
         ? flatAddress(message.from)
         : { name: null, address: "", rawAddress: null };
@@ -41,5 +51,6 @@ export function buildMailHit(args: {
         internetMessageId: message.internetMessageId,
         hasAttachments: message.hasAttachments,
         attachments,
+        folder,
     };
 }

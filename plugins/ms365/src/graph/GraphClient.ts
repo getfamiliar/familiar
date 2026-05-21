@@ -147,6 +147,13 @@ export interface GraphMailMessage {
     readonly receivedDateTime: string;
     readonly bodyPreview: string;
     readonly hasAttachments: boolean;
+    /**
+     * Opaque id of the mail folder this message currently lives in.
+     * Always populated for real messages — both the search `$select` and
+     * the delta `$select` request it. Absent only on tombstones (where
+     * `@removed` is set and the rest of the projection is empty).
+     */
+    readonly parentFolderId?: string;
     readonly from: { readonly emailAddress: { name?: string; address: string } } | null;
     readonly toRecipients: ReadonlyArray<{ emailAddress: { name?: string; address: string } }>;
     readonly ccRecipients: ReadonlyArray<{ emailAddress: { name?: string; address: string } }>;
@@ -325,11 +332,32 @@ export class GraphClient {
      * mailbox", not a fatal error).
      */
     async probeInbox(userId: string): Promise<string> {
-        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/mailFolders/inbox?$select=id`;
+        return this.getWellKnownFolderId(userId, "inbox");
+    }
+
+    /**
+     * Resolve a Graph well-known mail folder name (`inbox`, `archive`,
+     * `deleteditems`, …) to the opaque folder id for one mailbox.
+     * Graph's well-known names work as path components in API URLs but
+     * never appear in message payloads — `parentFolderId` is always the
+     * opaque id. Used by `FolderAliasResolver` to build a reverse map.
+     *
+     * Returns the opaque id on success. Throws {@link GraphError} on
+     * 4xx — most commonly when the mailbox doesn't expose this
+     * well-known folder (some tenants don't surface `archive`); the
+     * caller treats that as "no mapping for this alias" and proceeds
+     * with the other two.
+     */
+    async getWellKnownFolderId(userId: string, wellKnownName: string): Promise<string> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/mailFolders/${encodeURIComponent(wellKnownName)}?$select=id`;
         const response = await this.request("GET", url);
         const json = (await response.json()) as { id?: string };
         if (typeof json.id !== "string" || json.id.length === 0) {
-            throw new GraphError(200, url, "probeInbox: response missing `id`");
+            throw new GraphError(
+                200,
+                url,
+                `getWellKnownFolderId(${wellKnownName}): response missing \`id\``,
+            );
         }
         return json.id;
     }
@@ -390,7 +418,7 @@ export class GraphClient {
             return [];
         }
         const select =
-            "id,internetMessageId,from,toRecipients,ccRecipients,subject,receivedDateTime,bodyPreview,hasAttachments";
+            "id,internetMessageId,from,toRecipients,ccRecipients,subject,receivedDateTime,bodyPreview,hasAttachments,parentFolderId";
         const pageSize = Math.min(limit, 100);
         const path = folderId
             ? `/users/${encodeURIComponent(userId)}/mailFolders/${encodeURIComponent(folderId)}/messages`
@@ -743,7 +771,7 @@ export class GraphClient {
 
     private buildInitialDeltaUrl(userId: string): string {
         const select =
-            "id,internetMessageId,from,toRecipients,ccRecipients,subject,receivedDateTime,bodyPreview,hasAttachments";
+            "id,internetMessageId,from,toRecipients,ccRecipients,subject,receivedDateTime,bodyPreview,hasAttachments,parentFolderId";
         return `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/mailFolders/inbox/messages/delta?$select=${encodeURIComponent(select)}`;
     }
 

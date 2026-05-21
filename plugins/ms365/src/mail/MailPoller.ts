@@ -173,6 +173,9 @@ async function emitMailEvent(
         mailbox: target.mailbox,
         isShared: target.isShared,
         attachments: fetched?.metadata ?? null,
+        // The poller walks `/mailFolders/inbox/messages/delta` only, so
+        // every emitted message is by construction in the inbox.
+        folder: "inbox",
     });
 
     const event: NewEvent = {

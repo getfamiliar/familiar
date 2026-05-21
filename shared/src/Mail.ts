@@ -21,7 +21,7 @@
  * `INBOX`, `[Gmail]/All Mail`, `[Gmail]/Trash`).
  */
 
-export type MailFolder = "inbox" | "archive" | "trash";
+export type MailFolder = "inbox" | "archive" | "trash" | "sent";
 
 /**
  * One downloaded attachment. The core tool stages these into the
@@ -107,6 +107,15 @@ export interface MailSearchHit {
     readonly internetMessageId: string;
     readonly hasAttachments: boolean;
     readonly attachments: readonly MailAttachmentMeta[] | null;
+    /**
+     * Folder the hit currently lives in, using the same vocabulary the
+     * agent passes to `mail_search`'s `folder` argument and `mail_move`:
+     * one of the three known aliases (`inbox` / `archive` / `trash`) or
+     * `other` for anything else (custom user folders the agent doesn't
+     * have a verb for today). `null` only when the provider couldn't
+     * resolve the folder for a given hit.
+     */
+    readonly folder: MailFolder | "other" | null;
 }
 
 /**
