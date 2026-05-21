@@ -20,8 +20,10 @@
     "license": "MIT",
     "dependencies": {
         "@azure/msal-node": "^5.2.1",
+        "@getfamiliar/shared": "*",
+        "@types/luxon": "^3.7.1",
         "citty": "^0.1.6",
-        "@getfamiliar/shared": "*"
+        "luxon": "^3.7.2"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.4.12",

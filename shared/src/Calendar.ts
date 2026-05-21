@@ -92,10 +92,12 @@ export interface CalendarAttachmentMeta {
 }
 
 /**
- * Persisted shape of a calendar event row. Times stay as ISO-8601
- * strings (UTC) — postgres timestamptz would be wrong here because
- * the agent / user reasoning about "8am Monday" cares about
- * `eventTz`, not when our row was inserted.
+ * Persisted shape of a calendar event row. **Internal storage truth;
+ * the agent never sees this directly.** Read tools (`cal_get_events`,
+ * `cal_get_event`) and `calendar:{new,update,delete}` bus payloads
+ * project through `renderEventForAgent` in the host first — the agent
+ * sees an `AgentEventView` whose `start` / `end` are wall-clock strings
+ * in `core.timezone`. Storage stays canonical UTC.
  */
 export interface CalendarEventRow {
     /**
@@ -111,9 +113,17 @@ export interface CalendarEventRow {
     readonly seriesMasterId: string | null;
     readonly type: CalendarEventType;
     readonly subject: string | null;
+    /** UTC ISO-8601 with trailing `Z`. Canonical storage form. */
     readonly startDt: string;
+    /** UTC ISO-8601 with trailing `Z`. Canonical storage form. */
     readonly endDt: string;
-    /** IANA timezone the event was scheduled in. */
+    /**
+     * Original IANA timezone the event was authored in (e.g. the user
+     * typed "8am Berlin"). Carried separately from `startDt`/`endDt`
+     * for round-tripping writes back to providers; not consulted by
+     * the agent-facing renderer, which always projects into
+     * `core.timezone`.
+     */
     readonly eventTz: string | null;
     readonly isAllDay: boolean;
     readonly isCancelled: boolean;
@@ -168,8 +178,14 @@ export interface NewCalendarEvent {
 /**
  * Standardized payload of a `calendar:{new,update,delete}:<pluginId>`
  * bus event. Every calendar plugin emits this same shape via
- * {@link CalendarApi.emitCalendarEvent} so downstream handlers don't
- * need to know which provider produced the change.
+ * `CalendarService.emitFromRow` so downstream handlers don't need to
+ * know which provider produced the change.
+ *
+ * **Time fields are rendered in `core.timezone`** — `start` and `end`
+ * are wall-clock-plus-offset strings (e.g. `2026-05-21T08:00:00+02:00`),
+ * matching what the agent sees on `cal_get_events` / `cal_get_event`.
+ * `eventTz` carries the **original** IANA zone the event was authored
+ * in, for handlers that care about cross-zone reasoning.
  *
  * For `delete`, the fields reflect the row's last-known state captured
  * before {@link CalendarApi.removeEvent} ran (the helper must be called
@@ -181,8 +197,11 @@ export interface CalendarChangePayload {
     readonly calendarEventId: string;
     readonly calendarId: string;
     readonly subject: string | null;
+    /** Wall-clock ISO with offset in `core.timezone`. */
     readonly start: string;
+    /** Wall-clock ISO with offset in `core.timezone`. */
     readonly end: string;
+    /** Original IANA zone the event was authored in; informational only. */
     readonly eventTz: string | null;
     readonly isAllDay: boolean;
     readonly isCancelled: boolean;

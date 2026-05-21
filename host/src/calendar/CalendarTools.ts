@@ -8,8 +8,14 @@ import {
     type ToolFailure,
     type UpdateEventInput,
 } from "@getfamiliar/shared";
+import { DateTime } from "luxon";
 import type { CalendarSafety } from "./CalendarSafety.js";
 import type { CalendarService } from "./CalendarService.js";
+import {
+    type AgentEventView,
+    readCoreTimezone,
+    renderEventForAgent,
+} from "./EventRenderer.js";
 
 /**
  * Inline-attachment ceiling per Graph's `fileAttachment` resource —
@@ -64,8 +70,9 @@ export function buildCalendarTools(
 }
 
 interface GetEventsArgs {
-    readonly from: string;
-    readonly to: string;
+    readonly day?: string;
+    readonly from_day?: string;
+    readonly to_day?: string;
     readonly calendar_id?: string;
 }
 
@@ -75,25 +82,38 @@ function getEventsTool(
     return {
         name: "cal_get_events",
         description:
-            "List calendar events between two ISO-8601 dates (day-resolution; pass the start " +
-            "of the lower day and the end of the upper day). Optional `calendar_id` accepts a " +
-            "calendar name ('Work') or qualified form ('ms365:Work'). Returns a JSONL string " +
-            "with one compact summary per line: id, subject, start, end, showAs, responseStatus.",
+            "List calendar events for a single local day or a range of local days, interpreted " +
+            "in your timezone (`core.timezone`). Use `day: \"YYYY-MM-DD\"` for one day, or " +
+            "`from_day` / `to_day` (both inclusive, YYYY-MM-DD) for a range. Optional " +
+            "`calendar_id` accepts a calendar name ('Work') or qualified form ('ms365:Work'). " +
+            "Returns a JSONL string with one compact summary per line; `start` and `end` are " +
+            "wall-clock strings in your local timezone.",
         inputSchema: {
             type: "object",
             additionalProperties: false,
-            required: ["from", "to"],
             properties: {
-                from: { type: "string", description: "Inclusive ISO-8601 lower bound." },
-                to: { type: "string", description: "Exclusive ISO-8601 upper bound." },
+                day: {
+                    type: "string",
+                    description: "YYYY-MM-DD local day; events overlapping this day are returned.",
+                },
+                from_day: {
+                    type: "string",
+                    description: "Inclusive lower-bound local day (YYYY-MM-DD).",
+                },
+                to_day: {
+                    type: "string",
+                    description: "Inclusive upper-bound local day (YYYY-MM-DD).",
+                },
                 calendar_id: {
                     type: "string",
                     description: "Optional calendar reference (name or 'pluginId:name').",
                 },
             },
         },
-        execute: (args) =>
+        execute: (args, callCtx) =>
             runTool(async () => {
+                const coreTz = readCoreTimezone(callCtx.host.config);
+                const { from, to } = resolveDayBounds(args, coreTz);
                 let calendarId: string | undefined;
                 if (args.calendar_id !== undefined) {
                     const cal = await service.resolveCalendarRef(args.calendar_id);
@@ -105,26 +125,72 @@ function getEventsTool(
                     }
                     calendarId = cal.id;
                 }
-                const rows = await service.findEvents({
-                    calendarId,
-                    from: args.from,
-                    to: args.to,
+                const rows = await service.findEvents({ calendarId, from, to });
+                const lines = rows.map((r) => {
+                    const v = renderEventForAgent(r, coreTz);
+                    return JSON.stringify({
+                        id: v.id,
+                        subject: v.subject,
+                        start: v.start,
+                        end: v.end,
+                        showAs: v.showAs,
+                        responseStatus: v.responseStatus,
+                        isAllDay: v.isAllDay,
+                        location: v.location,
+                    });
                 });
-                const lines = rows.map((r) =>
-                    JSON.stringify({
-                        id: r.id,
-                        subject: r.subject,
-                        start: r.startDt,
-                        end: r.endDt,
-                        showAs: r.showAs,
-                        responseStatus: r.responseStatus,
-                        isAllDay: r.isAllDay,
-                        location: r.location,
-                    }),
-                );
                 return { events: lines.join("\n") };
             }),
     };
+}
+
+/**
+ * Translate the agent's day-resolution local-TZ inputs into the UTC
+ * half-open `[from, to)` interval that {@link CalendarService.findEvents}
+ * expects. Accepts either `day` alone or `from_day` + `to_day` together;
+ * rejects mixed / missing combinations with an agent-readable error.
+ *
+ * `to_day` is **inclusive** at the user-facing layer (Mon–Wed includes
+ * events on Wed), so the upper bound becomes `to_day + 1` at the
+ * start-of-day in `coreTz` before converting to UTC.
+ *
+ * Exported for unit testing.
+ */
+export function resolveDayBounds(
+    args: GetEventsArgs,
+    coreTz: string,
+): { from: string; to: string } {
+    const hasDay = typeof args.day === "string" && args.day.length > 0;
+    const hasFromDay = typeof args.from_day === "string" && args.from_day.length > 0;
+    const hasToDay = typeof args.to_day === "string" && args.to_day.length > 0;
+    if (hasDay && (hasFromDay || hasToDay)) {
+        throw new Error("pass either `day` or `from_day`+`to_day`, not both");
+    }
+    if (!hasDay && (hasFromDay !== hasToDay)) {
+        throw new Error("`from_day` and `to_day` must be set together");
+    }
+    if (!hasDay && !hasFromDay) {
+        throw new Error("provide `day` (single day) or `from_day`+`to_day` (range)");
+    }
+    const fromDay = hasDay ? (args.day as string) : (args.from_day as string);
+    const toDay = hasDay ? (args.day as string) : (args.to_day as string);
+    const lower = DateTime.fromISO(fromDay, { zone: coreTz }).startOf("day");
+    if (!lower.isValid) {
+        throw new Error(`invalid day "${fromDay}" — expected YYYY-MM-DD`);
+    }
+    const upper = DateTime.fromISO(toDay, { zone: coreTz }).startOf("day").plus({ days: 1 });
+    if (!upper.isValid) {
+        throw new Error(`invalid day "${toDay}" — expected YYYY-MM-DD`);
+    }
+    if (upper <= lower) {
+        throw new Error(`from_day "${fromDay}" must not be after to_day "${toDay}"`);
+    }
+    const from = lower.toUTC().toISO({ suppressMilliseconds: true });
+    const to = upper.toUTC().toISO({ suppressMilliseconds: true });
+    if (!from || !to) {
+        throw new Error("failed to convert day bounds to UTC");
+    }
+    return { from, to };
 }
 
 interface GetEventArgs {
@@ -133,26 +199,28 @@ interface GetEventArgs {
 
 function getEventTool(
     service: CalendarService,
-): PluginTool<GetEventArgs, { ok: true; event: CalendarEventRow } | ToolFailure> {
+): PluginTool<GetEventArgs, { ok: true; event: AgentEventView } | ToolFailure> {
     return {
         name: "cal_get_event",
         description:
             "Fetch the full row of one calendar event by id, including body, location, " +
-            "attendees, and attachment metadata. Bytes for attachments are fetched separately " +
-            "via cal_get_event_attachments.",
+            "attendees, and attachment metadata. `start` and `end` are wall-clock strings in " +
+            "your local timezone (`core.timezone`). Bytes for attachments are fetched " +
+            "separately via cal_get_event_attachments.",
         inputSchema: {
             type: "object",
             additionalProperties: false,
             required: ["id"],
             properties: { id: { type: "string" } },
         },
-        execute: (args) =>
+        execute: (args, callCtx) =>
             runTool(async () => {
                 const event = await service.getEvent(args.id);
                 if (!event) {
                     throw new Error(`calendar event "${args.id}" not found`);
                 }
-                return { event };
+                const coreTz = readCoreTimezone(callCtx.host.config);
+                return { event: renderEventForAgent(event, coreTz) };
             }),
     };
 }
@@ -219,7 +287,7 @@ interface CreateEventArgs {
 
 interface CreateEventResult {
     readonly created: true;
-    readonly event: CalendarEventRow;
+    readonly event: AgentEventView;
     readonly notes: readonly string[];
 }
 
@@ -230,7 +298,8 @@ function createEventTool(
     return {
         name: "cal_create_event",
         description:
-            "Create a calendar event. Required: subject, start (ISO-8601), end (ISO-8601). " +
+            "Create a calendar event. Required: subject, start, end (both wall-clock in your " +
+            "local timezone, e.g. \"2026-05-21T10:00:00\" — no `Z`, no offset suffix). " +
             "Optional: body (markdown), location, attendees (bare email or {email, name?}), " +
             "showAs (busy|free|tentative|oof|workingElsewhere; default busy), sensitivity, " +
             "reminderMinutesBeforeStart, attachments (≤3MB inline), calendar_id (name or " +
@@ -241,8 +310,16 @@ function createEventTool(
             required: ["subject", "start", "end"],
             properties: {
                 subject: { type: "string" },
-                start: { type: "string", description: "ISO-8601 start time." },
-                end: { type: "string", description: "ISO-8601 end time." },
+                start: {
+                    type: "string",
+                    description:
+                        "Local wall-clock start (YYYY-MM-DDTHH:mm:ss) in your `core.timezone`.",
+                },
+                end: {
+                    type: "string",
+                    description:
+                        "Local wall-clock end (YYYY-MM-DDTHH:mm:ss) in your `core.timezone`.",
+                },
                 body: { type: "string", description: "Markdown body (rendered to HTML)." },
                 location: { type: "string" },
                 attendees: {
@@ -288,15 +365,16 @@ function createEventTool(
                 is_videocall: { type: "boolean" },
             },
         },
-        execute: (args, _callCtx) =>
+        execute: (args, callCtx) =>
             runTool<CreateEventResult>(async () => {
                 const calendar = await resolveTargetCalendar(service, args.calendar_id);
                 const provider = service.registry.forCalendar(calendar);
+                const coreTz = readCoreTimezone(callCtx.host.config);
                 const notes: string[] = [];
                 const input: CreateEventInput = {
                     subject: args.subject,
-                    start: args.start,
-                    end: args.end,
+                    start: normalizeAgentWallClock(args.start, coreTz),
+                    end: normalizeAgentWallClock(args.end, coreTz),
                     body: args.body,
                     location: args.location,
                     attendees: normaliseAttendees(args.attendees),
@@ -342,7 +420,11 @@ function createEventTool(
                     },
                     { seed: false },
                 );
-                return { created: true as const, event: created, notes };
+                return {
+                    created: true as const,
+                    event: renderEventForAgent(created, coreTz),
+                    notes,
+                };
             }),
     };
 }
@@ -365,7 +447,7 @@ interface UpdateEventArgs {
 
 interface UpdateEventResult {
     readonly updated: true;
-    readonly event: CalendarEventRow;
+    readonly event: AgentEventView;
     readonly notes: readonly string[];
 }
 
@@ -378,8 +460,9 @@ function updateEventTool(
         description:
             "Apply a partial update to an existing calendar event. `id` is the event id " +
             "returned by cal_get_events / cal_create_event. `patch` carries only the fields to " +
-            "change: subject, start, end (ISO-8601), timezone, body (markdown), location, " +
-            "attendees (bare email or {email, name?}), showAs, sensitivity, " +
+            "change: subject, start, end (local wall-clock in your `core.timezone`, " +
+            "YYYY-MM-DDTHH:mm:ss — no Z or offset), timezone (only when authoring the event " +
+            "in a non-local zone), body (markdown), location, attendees, showAs, sensitivity, " +
             "reminderMinutesBeforeStart. Fields omitted from the patch are left untouched. " +
             "Toggling videocall on/off is not supported — recreate the event instead.",
         inputSchema: {
@@ -428,7 +511,7 @@ function updateEventTool(
                 },
             },
         },
-        execute: (args) =>
+        execute: (args, callCtx) =>
             runTool<UpdateEventResult>(async () => {
                 const existing = await service.getEvent(args.id);
                 if (!existing) {
@@ -436,11 +519,18 @@ function updateEventTool(
                 }
                 const calendar = await calendarFor(service, existing);
                 const provider = service.registry.forCalendar(calendar);
+                const coreTz = readCoreTimezone(callCtx.host.config);
                 const notes: string[] = [];
                 const patch: UpdateEventInput = {
                     subject: args.patch.subject,
-                    start: args.patch.start,
-                    end: args.patch.end,
+                    start:
+                        args.patch.start !== undefined
+                            ? normalizeAgentWallClock(args.patch.start, coreTz)
+                            : undefined,
+                    end:
+                        args.patch.end !== undefined
+                            ? normalizeAgentWallClock(args.patch.end, coreTz)
+                            : undefined,
                     timezone: args.patch.timezone,
                     body: args.patch.body,
                     location: args.patch.location,
@@ -486,7 +576,11 @@ function updateEventTool(
                     },
                     { seed: true },
                 );
-                return { updated: true as const, event: updated, notes };
+                return {
+                    updated: true as const,
+                    event: renderEventForAgent(updated, coreTz),
+                    notes,
+                };
             }),
     };
 }
@@ -617,6 +711,30 @@ async function calendarFor(
         throw new Error(`calendar ${event.calendarId} not found for event ${event.id}`);
     }
     return cal;
+}
+
+/**
+ * Coerce an agent-supplied date-time string into the local wall-clock
+ * form (`YYYY-MM-DDTHH:mm:ss`, no offset) the provider expects to pair
+ * with `core.timezone`. The agent is documented to pass local wall-clock,
+ * but tolerant handling of `Z` / `±HH:MM` suffixes means a stray UTC
+ * input gets the right meaning ("interpret in coreTz, drop the offset")
+ * instead of silently being mislabelled.
+ *
+ * Returns the input untouched when the string already has no offset, or
+ * when it can't be parsed (let the provider throw with a clearer error
+ * than a generic `Invalid date`).
+ */
+function normalizeAgentWallClock(value: string, coreTz: string): string {
+    if (!/[Zz]$|[+-]\d{2}:?\d{2}$/.test(value)) {
+        return value;
+    }
+    const dt = DateTime.fromISO(value, { setZone: true });
+    if (!dt.isValid) {
+        return value;
+    }
+    const local = dt.setZone(coreTz);
+    return local.toISO({ suppressMilliseconds: true, includeOffset: false }) ?? value;
 }
 
 function normaliseAttendees(

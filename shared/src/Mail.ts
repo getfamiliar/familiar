@@ -195,9 +195,7 @@ export function parseMailId(id: string): {
 } {
     const first = id.indexOf(":");
     if (first <= 0) {
-        throw new Error(
-            `mail id "${id}" is malformed: expected "<plugin>:<mailbox>:<realId>"`,
-        );
+        throw new Error(`mail id "${id}" is malformed: expected "<plugin>:<mailbox>:<realId>"`);
     }
     const second = id.indexOf(":", first + 1);
     if (second <= first + 1) {

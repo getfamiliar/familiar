@@ -1,10 +1,14 @@
 Bugs:
+- MCPs
 
 Mail:
 * Mail: forward und replies mit original body
 * Signatur, Fonts usw ziehen aus dem Sent Ordner
 * Such-Tool
 * 
+
+Skills:
+* List of "installed" skills in system prompt
 
 Calendar:
 * handler für neue termine calendar:new:ms365, calendar:update:ms365, calendar:delete:ms365
@@ -41,6 +45,9 @@ MCP functions: keep or remove the renaming of "-"?
 - Spotify MCP based on https://github.com/aome510/spotify-player
 - Alternativen Modellprovider testen: Synthetic.new - wie Featherless, 30€ / Monat, scheinbar zuverlässiger
 
+- Plugin-specific config linters as extension point. Special Cases:
+  - ms365.calendar.refreshCron: check if it's a valid cron expression. If not, thats a problem because the delta will never be updated and the calendar will never be refreshed / keep the same from/to dates forever.
+
 ## Workspace Linter
 
 - No unexpected .md files in the root
@@ -51,6 +58,8 @@ MCP functions: keep or remove the renaming of "-"?
 - Count tools per handler and warn if there are too many
 Extreme:
 - Check handler files for tool name mentions that do not exist
+- Check models if they exist
+
 
 ## Before release
 

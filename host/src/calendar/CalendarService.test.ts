@@ -110,6 +110,49 @@ describe("CalendarService.emitCalendarEvent", () => {
         assert.equal(payload.subject, "Lunch");
     });
 
+    it("renders payload start/end in core.timezone (UTC default)", async () => {
+        const calendar = sampleCalendar({ id: "1", pluginId: "ms365" });
+        const row = sampleEvent({
+            id: "ms365:abc",
+            calendarId: "1",
+            startDt: "2026-05-21T06:00:00Z",
+            endDt: "2026-05-21T07:00:00Z",
+        });
+        const captured: NewEvent[] = [];
+        const svc = build({ calendars: [calendar], events: [row], captureEmits: captured });
+        await svc.emitCalendarEvent("calendar:new:ms365", "ms365:abc");
+        const payload = captured[0].payload as CalendarChangePayload;
+        // No core.timezone set → UTC default → start/end keep their UTC
+        // wall-clock; luxon emits the +00:00 offset form.
+        assert.match(payload.start, /^2026-05-21T06:00:00(Z|\+00:00)$/);
+        assert.match(payload.end, /^2026-05-21T07:00:00(Z|\+00:00)$/);
+    });
+
+    it("renders payload start/end in configured core.timezone (Europe/Berlin)", async () => {
+        const calendar = sampleCalendar({ id: "1", pluginId: "ms365" });
+        const row = sampleEvent({
+            id: "ms365:abc",
+            calendarId: "1",
+            startDt: "2026-05-21T06:00:00Z",
+            endDt: "2026-05-21T07:00:00Z",
+            eventTz: "America/New_York",
+        });
+        const captured: NewEvent[] = [];
+        const svc = build({
+            calendars: [calendar],
+            events: [row],
+            captureEmits: captured,
+            configMap: { "core.timezone": "Europe/Berlin" },
+        });
+        await svc.emitCalendarEvent("calendar:new:ms365", "ms365:abc");
+        const payload = captured[0].payload as CalendarChangePayload;
+        assert.equal(payload.start, "2026-05-21T08:00:00+02:00");
+        assert.equal(payload.end, "2026-05-21T09:00:00+02:00");
+        // eventTz is informational and preserved verbatim — handlers
+        // that care about the original authoring zone can still read it.
+        assert.equal(payload.eventTz, "America/New_York");
+    });
+
     it("uses updatedAt in the idempotency key for updates", async () => {
         const calendar = sampleCalendar({ id: "1", pluginId: "ms365" });
         const updatedAt = new Date("2026-05-21T09:15:00.000Z");

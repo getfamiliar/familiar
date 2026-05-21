@@ -57,6 +57,85 @@ describe("Mapping.eventFromGraph", () => {
         );
         assert.equal(row.seriesMasterId, `${MS365_PROVIDER_ID}:MASTER`);
     });
+
+    it("normalizes UTC-source dateTimes by appending Z", () => {
+        const row = eventFromGraph(
+            sampleGraphEvent({
+                start: { dateTime: "2026-05-21T10:00:00", timeZone: "UTC" },
+                end: { dateTime: "2026-05-21T11:00:00", timeZone: "UTC" },
+            }),
+            { calendarId: "1", scanGeneration: 0 },
+        );
+        assert.equal(row.startDt, "2026-05-21T10:00:00Z");
+        assert.equal(row.endDt, "2026-05-21T11:00:00Z");
+        assert.equal(row.eventTz, "UTC");
+    });
+
+    it("converts Europe/Berlin wall-clock to UTC (CEST, +02:00)", () => {
+        const row = eventFromGraph(
+            sampleGraphEvent({
+                start: { dateTime: "2026-05-21T08:00:00", timeZone: "Europe/Berlin" },
+                end: { dateTime: "2026-05-21T09:00:00", timeZone: "Europe/Berlin" },
+            }),
+            { calendarId: "1", scanGeneration: 0 },
+        );
+        assert.equal(row.startDt, "2026-05-21T06:00:00Z");
+        assert.equal(row.endDt, "2026-05-21T07:00:00Z");
+        assert.equal(row.eventTz, "Europe/Berlin");
+    });
+
+    it("converts America/New_York wall-clock to UTC (EDT, -04:00)", () => {
+        const row = eventFromGraph(
+            sampleGraphEvent({
+                start: { dateTime: "2026-05-21T20:00:00", timeZone: "America/New_York" },
+                end: { dateTime: "2026-05-21T22:00:00", timeZone: "America/New_York" },
+            }),
+            { calendarId: "1", scanGeneration: 0 },
+        );
+        // NY 20:00 EDT → UTC 00:00 next day; 22:00 EDT → 02:00.
+        assert.equal(row.startDt, "2026-05-22T00:00:00Z");
+        assert.equal(row.endDt, "2026-05-22T02:00:00Z");
+        assert.equal(row.eventTz, "America/New_York");
+    });
+
+    it("handles Berlin winter time (CET, +01:00)", () => {
+        const row = eventFromGraph(
+            sampleGraphEvent({
+                start: { dateTime: "2026-01-15T08:00:00", timeZone: "Europe/Berlin" },
+                end: { dateTime: "2026-01-15T09:00:00", timeZone: "Europe/Berlin" },
+            }),
+            { calendarId: "1", scanGeneration: 0 },
+        );
+        assert.equal(row.startDt, "2026-01-15T07:00:00Z");
+        assert.equal(row.endDt, "2026-01-15T08:00:00Z");
+    });
+
+    it("falls back to epoch when timeZone is unknown", () => {
+        const row = eventFromGraph(
+            sampleGraphEvent({
+                start: { dateTime: "2026-05-21T08:00:00", timeZone: "Not/A_Zone" },
+                end: { dateTime: "2026-05-21T09:00:00", timeZone: "Not/A_Zone" },
+            }),
+            { calendarId: "1", scanGeneration: 0 },
+        );
+        assert.equal(row.startDt, "1970-01-01T00:00:00.000Z");
+        assert.equal(row.endDt, "1970-01-01T00:00:00.000Z");
+    });
+
+    it("passes through already-UTC dateTimes with Z suffix verbatim", () => {
+        const row = eventFromGraph(
+            sampleGraphEvent({
+                start: { dateTime: "2026-05-21T10:00:00Z", timeZone: "Europe/Berlin" },
+                end: { dateTime: "2026-05-21T11:00:00Z", timeZone: "Europe/Berlin" },
+            }),
+            { calendarId: "1", scanGeneration: 0 },
+        );
+        // Already-Z input is honored verbatim; the row's eventTz still
+        // records the authoring zone.
+        assert.equal(row.startDt, "2026-05-21T10:00:00Z");
+        assert.equal(row.endDt, "2026-05-21T11:00:00Z");
+        assert.equal(row.eventTz, "Europe/Berlin");
+    });
 });
 
 describe("Mapping.buildCreateBody", () => {

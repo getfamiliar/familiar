@@ -13,6 +13,7 @@ import {
     renderMarkdownToHtml,
     type UpdateEventInput,
 } from "@getfamiliar/shared";
+import { DateTime } from "luxon";
 import type {
     GraphCalendar,
     GraphCalendarEvent,
@@ -228,20 +229,40 @@ export function ownerNameOf(graph: GraphCalendar, type: "own" | "shared"): strin
     return graph.owner?.name ?? graph.owner?.address ?? null;
 }
 
+/**
+ * Convert one Graph `{dateTime, timeZone}` slot into a UTC ISO-8601 string
+ * with trailing `Z`. Storage is canonical UTC; the {@link
+ * CalendarEventRow.eventTz} field on the surrounding row carries the
+ * original IANA zone for round-tripping writes back to Graph.
+ *
+ * Graph returns `dateTime` as a wall-clock string ("2026-05-21T08:00:00")
+ * paired with a separate `timeZone` field (IANA zone or `"UTC"`). When the
+ * input is already UTC (either ends with `Z` or `timeZone === "UTC"`), we
+ * just normalize the suffix. Otherwise luxon resolves the wall-clock in
+ * the given zone and converts to UTC — DST gap / overlap follow luxon's
+ * default semantics (forward-shift on gaps, earlier instant on overlaps).
+ *
+ * Malformed inputs (missing slot, empty dateTime, unknown zone) fall back
+ * to the epoch — same as the prior helper. The fallback is intentional:
+ * we'd rather surface a clearly-wrong "1970" date in the agent's view
+ * than a parser exception breaking the whole poll cycle.
+ */
 function isoFromGraph(slot: { dateTime: string; timeZone: string } | null | undefined): string {
     if (!slot || typeof slot.dateTime !== "string" || slot.dateTime.length === 0) {
         return new Date(0).toISOString();
     }
-    // Graph's dateTime is ISO-8601 without trailing 'Z' even when
-    // `Prefer: outlook.timezone="UTC"` is set. Append it so downstream
-    // consumers can `new Date(...)` without surprises.
     if (slot.dateTime.endsWith("Z")) {
         return slot.dateTime;
     }
     if (slot.timeZone === "UTC") {
         return `${slot.dateTime}Z`;
     }
-    return slot.dateTime;
+    const dt = DateTime.fromISO(slot.dateTime, { zone: slot.timeZone });
+    if (!dt.isValid) {
+        return new Date(0).toISOString();
+    }
+    const iso = dt.toUTC().toISO({ suppressMilliseconds: true });
+    return iso ?? new Date(0).toISOString();
 }
 
 function attendeeFromGraph(graph: {

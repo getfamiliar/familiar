@@ -14,6 +14,7 @@ import {
 } from "@getfamiliar/shared";
 import type { CalendarRegistry } from "./CalendarRegistry.js";
 import type { CalendarStore } from "./CalendarStore.js";
+import { readCoreTimezone, renderEventForAgent } from "./EventRenderer.js";
 
 export interface CalendarServiceDeps {
     readonly store: CalendarStore;
@@ -230,19 +231,20 @@ export class CalendarService implements CalendarApi {
             verb === "update"
                 ? `calendar:update:${pluginId}:${row.id}:${updatedAtIso}`
                 : `calendar:${verb}:${pluginId}:${row.id}`;
+        const view = renderEventForAgent(row, readCoreTimezone(this.deps.config));
         const payload: CalendarChangePayload = {
             verb,
             pluginId,
             calendarEventId: row.id,
             calendarId: row.calendarId,
-            subject: row.subject,
-            start: row.startDt,
-            end: row.endDt,
-            eventTz: row.eventTz,
-            isAllDay: row.isAllDay,
-            isCancelled: row.isCancelled,
-            organizerEmail: row.organizerEmail,
-            location: row.location,
+            subject: view.subject,
+            start: view.start,
+            end: view.end,
+            eventTz: view.eventTz,
+            isAllDay: view.isAllDay,
+            isCancelled: view.isCancelled,
+            organizerEmail: view.organizerEmail,
+            location: view.location,
             updatedAt: updatedAtIso,
         };
         const bus = await this.deps.events();
