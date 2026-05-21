@@ -1,38 +1,6 @@
-import type { EventRow, PluginTool } from "@getfamiliar/shared";
+import { type EventRow, type PluginTool, runJsonTool, ToolError } from "@getfamiliar/shared";
 import type { WAMessageKey } from "@whiskeysockets/baileys";
 import type { WhatsAppSocketRegistry } from "./WhatsAppDaemon.js";
-
-/**
- * Structured failure envelope returned to the agent when a tool body
- * throws. Mirrors the shape used by the mail plugin's tools so the
- * agent's response parsing stays uniform across plugins: every tool
- * resolves with either `{ ok: true, ... }` or `{ ok: false, error: {
- * code, message } }`.
- */
-interface ToolFailure {
-    readonly ok: false;
-    readonly error: {
-        readonly code: string;
-        readonly message: string;
-    };
-}
-
-/**
- * Wrap a tool body so its return value is augmented with `ok: true` and
- * any thrown error becomes a `ToolFailure`. Keeps the success/failure
- * shape consistent without each tool repeating the try/catch.
- */
-async function runTool<TResult extends object>(
-    body: () => Promise<TResult>,
-): Promise<({ ok: true } & TResult) | ToolFailure> {
-    try {
-        const result = await body();
-        return { ok: true, ...result };
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return { ok: false, error: { code: "ToolError", message } };
-    }
-}
 
 /**
  * Build the WhatsApp plugin's agent-facing tools. The {@link
@@ -59,9 +27,7 @@ export function buildWhatsAppTools(registry: WhatsAppSocketRegistry): readonly P
  * `{ ok: true, marked: true }` on success or a `ToolFailure` on a
  * disconnected socket, malformed payload, or baileys error.
  */
-function markReadTool(
-    registry: WhatsAppSocketRegistry,
-): PluginTool<Record<string, never>, { ok: true; marked: true } | ToolFailure> {
+function markReadTool(registry: WhatsAppSocketRegistry): PluginTool<Record<string, never>, object> {
     return {
         name: "mark_read",
         description:
@@ -71,17 +37,18 @@ function markReadTool(
             "WhatsApp. No arguments — the message is taken from the current event.",
         inputSchema: { type: "object", additionalProperties: false, properties: {} },
         execute: (_args, callCtx) =>
-            runTool(async () => {
+            runJsonTool(async () => {
                 const key = resolveMessageKey(callCtx.event);
                 const sock = registry.current();
                 if (sock === null) {
-                    throw new Error(
+                    throw new ToolError(
+                        "SocketDisconnected",
                         "whatsapp socket is not connected; cannot mark message as read",
                     );
                 }
                 await sock.readMessages([key]);
                 return { marked: true as const };
-            }),
+            }, callCtx.toolRunContext),
     };
 }
 

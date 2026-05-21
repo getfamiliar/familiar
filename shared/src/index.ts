@@ -127,4 +127,12 @@ export {
     SYSTEM_GROUP_NAME,
     sanitizeToolKey,
 } from "./ToolDsl.js";
-export { runTool, type ToolFailure, type ToolFailureAdaptor } from "./ToolFailure.js";
+export {
+    DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
+    type OffloadedJson,
+    runJsonLinesTool,
+    runJsonTool,
+    runTextTool,
+    ToolError,
+    type ToolRunContext,
+} from "./ToolRunner.js";

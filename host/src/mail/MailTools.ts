@@ -9,8 +9,10 @@ import {
     type PluginTool,
     parseMailId,
     type ReplyInput,
-    runTool,
-    type ToolFailure,
+    runJsonLinesTool,
+    runJsonTool,
+    runTextTool,
+    ToolError,
 } from "@getfamiliar/shared";
 import { DateTime } from "luxon";
 import { readCoreTimezone } from "../calendar/EventRenderer.js";
@@ -35,11 +37,10 @@ const MAIL_SEARCH_DEFAULT_LIMIT = 10;
  *     case the tool falls back to `event.payload.mail_id` of the
  *     originating mail event. This keeps mail handlers terse while
  *     letting chat-initiated calls reference any mail by id.
- *   - **Provider error pass-through.** When the chosen provider
- *     exposes an `adaptError` mapper, its `{status, code, message}`
- *     envelope flows back to the agent (e.g. Graph's
- *     `ErrorItemNotFound`). Non-provider throws collapse to the
- *     generic `ToolError` arm.
+ *   - **Provider error pass-through.** Provider methods catch their
+ *     domain-specific exceptions and re-throw {@link ToolError}; the
+ *     gateway transports them across HTTP and the AI SDK turns them
+ *     into `tool-error` blocks.
  *   - **Result id wrapping.** Every id returned by a provider is
  *     wrapped with `<pluginId>:<mailbox>:` before being handed back —
  *     so a draft id from `mail_draft_reply` is immediately usable as
@@ -77,13 +78,7 @@ interface MailIdArgs {
     readonly mail_id?: string;
 }
 
-interface FetchBodyResult {
-    readonly body: string;
-}
-
-function fetchBodyTool(
-    deps: MailToolsDeps,
-): PluginTool<MailIdArgs, ({ ok: true } & FetchBodyResult) | ToolFailure> {
+function fetchBodyTool(deps: MailToolsDeps): PluginTool<MailIdArgs, string> {
     return {
         name: "mail_fetch_body",
         description:
@@ -102,23 +97,15 @@ function fetchBodyTool(
                 },
             },
         },
-        execute: (args, callCtx) => {
-            const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
-            return runTool(async () => {
-                const body = await target.provider.fetchBody(target.mailbox, target.realId);
-                return { body };
-            }, target.provider.adaptError);
-        },
+        execute: (args, callCtx) =>
+            runTextTool(async () => {
+                const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
+                return target.provider.fetchBody(target.mailbox, target.realId);
+            }, callCtx.toolRunContext),
     };
 }
 
-interface FetchAttachmentsResult {
-    readonly paths: readonly string[];
-}
-
-function fetchAttachmentsTool(
-    deps: MailToolsDeps,
-): PluginTool<MailIdArgs, ({ ok: true } & FetchAttachmentsResult) | ToolFailure> {
+function fetchAttachmentsTool(deps: MailToolsDeps): PluginTool<MailIdArgs, object> {
     return {
         name: "mail_fetch_attachments",
         description:
@@ -133,9 +120,9 @@ function fetchAttachmentsTool(
                 mail_id: { type: "string" },
             },
         },
-        execute: (args, callCtx) => {
-            const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
-            return runTool(async () => {
+        execute: (args, callCtx) =>
+            runJsonTool(async () => {
+                const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
                 const attachments = await target.provider.fetchAttachments(
                     target.mailbox,
                     target.realId,
@@ -150,8 +137,7 @@ function fetchAttachmentsTool(
                 }));
                 const paths = await callCtx.host.scratch.addFiles(callCtx.event.id, files);
                 return { paths };
-            }, target.provider.adaptError);
-        },
+            }, callCtx.toolRunContext),
     };
 }
 
@@ -164,23 +150,6 @@ interface SearchArgs {
     readonly plugin?: string;
     readonly mailbox?: string;
     readonly limit?: number;
-}
-
-interface SearchResult {
-    /**
-     * Newline-delimited JSON. Each line is one `mail:new`-shaped
-     * payload (mail_id, isShared, from, to, cc, subject, date,
-     * internetMessageId, hasAttachments, attachments). Empty string
-     * when nothing matched.
-     */
-    readonly jsonl: string;
-    /**
-     * `true` when the global 100-hit cap was reached and additional
-     * matches were dropped. The agent should narrow the query (tighter
-     * date window, more specific text, named contact) when this is
-     * set and completeness matters.
-     */
-    readonly truncated: boolean;
 }
 
 /**
@@ -201,9 +170,7 @@ interface SearchResult {
  * is enforced as a global budget, decremented across providers — once
  * earlier providers fill the cap, later providers aren't called at all.
  */
-function searchTool(
-    deps: MailToolsDeps,
-): PluginTool<SearchArgs, ({ ok: true } & SearchResult) | ToolFailure> {
+function searchTool(deps: MailToolsDeps): PluginTool<SearchArgs, string> {
     return {
         name: "mail_search",
         description:
@@ -216,10 +183,10 @@ function searchTool(
             "`ms365`) to pin one provider; `mailbox` to pin one address (works " +
             "even for unpolled mailboxes a login can reach); `limit` to cap " +
             "the number of hits (defaults to 10, hard maximum 100). Returns up to that many " +
-            "hits as JSONL — one `mail:new`-shaped object per line. Set " +
-            "`truncated` indicates the cap was hit; raise `limit` or narrow " +
-            "the query if completeness matters. Hit ids are self-routing — pass any " +
-            "`mail_id` straight to `mail_fetch_body`, `mail_draft_reply`, etc.",
+            "hits as JSONL — one `mail:new`-shaped object per line. If the " +
+            'global cap was hit a trailing `{"truncated":true,...}` line is ' +
+            "appended. Hit ids are self-routing — pass any `mail_id` straight " +
+            "to `mail_fetch_body`, `mail_draft_reply`, etc.",
         inputSchema: {
             type: "object",
             additionalProperties: false,
@@ -260,8 +227,8 @@ function searchTool(
                 },
             },
         },
-        execute: (args, callCtx) => {
-            return runTool(async () => {
+        execute: (args, callCtx) =>
+            runJsonLinesTool(async () => {
                 const coreTz = readCoreTimezone(callCtx.host.config);
                 const { after, before } = resolveSearchDateBounds(args, coreTz);
                 if (
@@ -271,25 +238,27 @@ function searchTool(
                     before === undefined &&
                     !args.folder
                 ) {
-                    throw new Error(
+                    throw new ToolError(
+                        "MissingPredicate",
                         "mail_search requires at least one of `text`, `contact`, `after`, " +
                             "`before`, `folder` — an unconstrained search would return every " +
                             "mail in the mailbox.",
                     );
                 }
                 if (args.folder !== undefined && !isMailFolder(args.folder)) {
-                    throw new Error(
+                    throw new ToolError(
+                        "BadFolder",
                         `folder must be one of inbox|archive|trash, got: ${args.folder}`,
                     );
                 }
                 const cap = resolveSearchLimit(args.limit);
                 const providers = pickSearchProviders(deps.registry, args.plugin);
                 const hits: MailSearchHit[] = [];
-                let truncated = false;
+                let capHit = false;
                 for (const provider of providers) {
                     const remaining = cap - hits.length;
                     if (remaining <= 0) {
-                        truncated = true;
+                        capHit = true;
                         break;
                     }
                     const providerHits = await provider.search({
@@ -303,7 +272,7 @@ function searchTool(
                     });
                     for (const hit of providerHits) {
                         if (hits.length >= cap) {
-                            truncated = true;
+                            capHit = true;
                             break;
                         }
                         hits.push(hit);
@@ -312,31 +281,22 @@ function searchTool(
                     // remaining budget; surface as truncated so the agent
                     // knows there might be more.
                     if (providerHits.length >= remaining && hits.length >= cap) {
-                        truncated = true;
+                        capHit = true;
                     }
                 }
-                return {
-                    jsonl: hits.map((h) => JSON.stringify(h)).join("\n"),
-                    truncated,
-                };
-            });
-        },
+                const out: object[] = hits.slice();
+                if (capHit) {
+                    out.push({
+                        truncated: true,
+                        cappedAt: cap,
+                        reason: `search cap (${cap}) reached; raise \`limit\` or narrow the query`,
+                    });
+                }
+                return out;
+            }, callCtx.toolRunContext),
     };
 }
 
-/**
- * Resolve `after` / `before` from agent-supplied local-tz strings to
- * UTC ISO instants. Both bounds are inclusive at day resolution:
- * `after=2026-05-01` means "on or after the start of May 1 local time",
- * `before=2026-05-31` means "strictly before the start of June 1 local
- * time" — so both ends of the day are included.
- *
- * Accepts either bare `YYYY-MM-DD` (treated as start-of-day) or full
- * wall-clock `YYYY-MM-DDTHH:mm:ss` (used verbatim, no day rounding) so
- * the agent can ask for narrow time windows when needed. Invalid input
- * throws with an agent-readable message — the tool surfaces this as a
- * `ToolFailure` before any provider call.
- */
 /**
  * Resolve the agent-supplied `limit` to the per-call cap. Missing
  * falls back to {@link MAIL_SEARCH_DEFAULT_LIMIT}; anything above the
@@ -349,11 +309,23 @@ function resolveSearchLimit(raw: number | undefined): number {
         return MAIL_SEARCH_DEFAULT_LIMIT;
     }
     if (!Number.isFinite(raw) || !Number.isInteger(raw) || raw < 1) {
-        throw new Error(`limit must be a positive integer, got: ${raw}`);
+        throw new ToolError("BadLimit", `limit must be a positive integer, got: ${raw}`);
     }
     return Math.min(raw, MAIL_SEARCH_LIMIT);
 }
 
+/**
+ * Resolve `after` / `before` from agent-supplied local-tz strings to
+ * UTC ISO instants. Both bounds are inclusive at day resolution:
+ * `after=2026-05-01` means "on or after the start of May 1 local time",
+ * `before=2026-05-31` means "strictly before the start of June 1 local
+ * time" — so both ends of the day are included.
+ *
+ * Accepts either bare `YYYY-MM-DD` (treated as start-of-day) or full
+ * wall-clock `YYYY-MM-DDTHH:mm:ss` (used verbatim, no day rounding) so
+ * the agent can ask for narrow time windows when needed. Invalid input
+ * throws a `ToolError` so the runner surfaces it as a `tool-error` block.
+ */
 function resolveSearchDateBounds(
     args: SearchArgs,
     coreTz: string,
@@ -367,14 +339,15 @@ function resolveSearchDateBounds(
 function toLowerBound(value: string, coreTz: string): string {
     const dt = DateTime.fromISO(value, { zone: coreTz });
     if (!dt.isValid) {
-        throw new Error(
+        throw new ToolError(
+            "BadAfter",
             `after "${value}" is not a valid date — use YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss`,
         );
     }
     const lower = isDateOnly(value) ? dt.startOf("day") : dt;
     const iso = lower.toUTC().toISO({ suppressMilliseconds: true });
     if (iso === null) {
-        throw new Error(`after "${value}" could not be converted to UTC`);
+        throw new ToolError("BadAfter", `after "${value}" could not be converted to UTC`);
     }
     return iso;
 }
@@ -382,14 +355,15 @@ function toLowerBound(value: string, coreTz: string): string {
 function toUpperBound(value: string, coreTz: string): string {
     const dt = DateTime.fromISO(value, { zone: coreTz });
     if (!dt.isValid) {
-        throw new Error(
+        throw new ToolError(
+            "BadBefore",
             `before "${value}" is not a valid date — use YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss`,
         );
     }
     const upper = isDateOnly(value) ? dt.startOf("day").plus({ days: 1 }) : dt;
     const iso = upper.toUTC().toISO({ suppressMilliseconds: true });
     if (iso === null) {
-        throw new Error(`before "${value}" could not be converted to UTC`);
+        throw new ToolError("BadBefore", `before "${value}" could not be converted to UTC`);
     }
     return iso;
 }
@@ -414,14 +388,7 @@ interface DraftReplyArgs extends MailIdArgs {
     readonly replyAll?: boolean;
 }
 
-interface DraftResult {
-    readonly drafted: true;
-    readonly draftId: string;
-}
-
-function draftReplyTool(
-    deps: MailToolsDeps,
-): PluginTool<DraftReplyArgs, ({ ok: true } & DraftResult) | ToolFailure> {
+function draftReplyTool(deps: MailToolsDeps): PluginTool<DraftReplyArgs, object> {
     return {
         name: "mail_draft_reply",
         description:
@@ -439,13 +406,13 @@ function draftReplyTool(
                 replyAll: { type: "boolean" },
             },
         },
-        execute: (args, callCtx) => {
-            const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
-            const input: ReplyInput = {
-                bodyMarkdown: args.body,
-                replyAll: args.replyAll === true,
-            };
-            return runTool(async () => {
+        execute: (args, callCtx) =>
+            runJsonTool(async () => {
+                const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
+                const input: ReplyInput = {
+                    bodyMarkdown: args.body,
+                    replyAll: args.replyAll === true,
+                };
                 const draftRealId = await target.provider.draftReply(
                     target.mailbox,
                     target.realId,
@@ -455,8 +422,7 @@ function draftReplyTool(
                     drafted: true as const,
                     draftId: buildMailId(target.pluginId, target.mailbox, draftRealId),
                 };
-            }, target.provider.adaptError);
-        },
+            }, callCtx.toolRunContext),
     };
 }
 
@@ -466,9 +432,7 @@ interface DraftForwardArgs extends MailIdArgs {
     readonly comment?: string;
 }
 
-function draftForwardTool(
-    deps: MailToolsDeps,
-): PluginTool<DraftForwardArgs, ({ ok: true } & DraftResult) | ToolFailure> {
+function draftForwardTool(deps: MailToolsDeps): PluginTool<DraftForwardArgs, object> {
     return {
         name: "mail_draft_forward",
         description:
@@ -487,14 +451,14 @@ function draftForwardTool(
                 comment: { type: "string" },
             },
         },
-        execute: (args, callCtx) => {
-            const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
-            const input: ForwardInput = {
-                to: args.to,
-                cc: args.cc ?? [],
-                commentMarkdown: args.comment ?? "",
-            };
-            return runTool(async () => {
+        execute: (args, callCtx) =>
+            runJsonTool(async () => {
+                const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
+                const input: ForwardInput = {
+                    to: args.to,
+                    cc: args.cc ?? [],
+                    commentMarkdown: args.comment ?? "",
+                };
                 const draftRealId = await target.provider.draftForward(
                     target.mailbox,
                     target.realId,
@@ -504,8 +468,7 @@ function draftForwardTool(
                     drafted: true as const,
                     draftId: buildMailId(target.pluginId, target.mailbox, draftRealId),
                 };
-            }, target.provider.adaptError);
-        },
+            }, callCtx.toolRunContext),
     };
 }
 
@@ -517,9 +480,7 @@ interface DraftNewArgs {
     readonly body: string;
 }
 
-function draftNewTool(
-    deps: MailToolsDeps,
-): PluginTool<DraftNewArgs, ({ ok: true } & DraftResult) | ToolFailure> {
+function draftNewTool(deps: MailToolsDeps): PluginTool<DraftNewArgs, object> {
     return {
         name: "mail_draft_new",
         description:
@@ -544,34 +505,25 @@ function draftNewTool(
                 body: { type: "string", description: "Markdown body of the mail." },
             },
         },
-        execute: (args, callCtx) => {
-            const sender = resolveSender(args.from, callCtx.event, deps.registry);
-            const input: NewMailInput = {
-                to: args.to,
-                cc: args.cc ?? [],
-                subject: args.subject,
-                bodyMarkdown: args.body,
-            };
-            return runTool(async () => {
+        execute: (args, callCtx) =>
+            runJsonTool(async () => {
+                const sender = resolveSender(args.from, callCtx.event, deps.registry);
+                const input: NewMailInput = {
+                    to: args.to,
+                    cc: args.cc ?? [],
+                    subject: args.subject,
+                    bodyMarkdown: args.body,
+                };
                 const draftRealId = await sender.provider.draftNew(sender.mailbox, input);
                 return {
                     drafted: true as const,
                     draftId: buildMailId(sender.pluginId, sender.mailbox, draftRealId),
                 };
-            }, sender.provider.adaptError);
-        },
+            }, callCtx.toolRunContext),
     };
 }
 
-interface SendResult {
-    readonly sent: boolean;
-    readonly draftId?: string;
-    readonly reason?: string;
-}
-
-function sendReplyTool(
-    deps: MailToolsDeps,
-): PluginTool<DraftReplyArgs, ({ ok: true } & SendResult) | ToolFailure> {
+function sendReplyTool(deps: MailToolsDeps): PluginTool<DraftReplyArgs, object> {
     return {
         name: "mail_send_reply",
         description:
@@ -590,11 +542,11 @@ function sendReplyTool(
                 replyAll: { type: "boolean" },
             },
         },
-        execute: (args, callCtx) => {
-            const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
-            const replyAll = args.replyAll === true;
-            const input: ReplyInput = { bodyMarkdown: args.body, replyAll };
-            return runTool<SendResult>(async () => {
+        execute: (args, callCtx) =>
+            runJsonTool(async () => {
+                const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
+                const replyAll = args.replyAll === true;
+                const input: ReplyInput = { bodyMarkdown: args.body, replyAll };
                 const recipients = await target.provider.previewReplyRecipients(
                     target.mailbox,
                     target.realId,
@@ -608,21 +560,18 @@ function sendReplyTool(
                         input,
                     );
                     return {
-                        sent: false,
+                        sent: false as const,
                         draftId: buildMailId(target.pluginId, target.mailbox, draftRealId),
                         reason: decision.reason,
                     };
                 }
                 await target.provider.sendReply(target.mailbox, target.realId, input);
-                return { sent: true };
-            }, target.provider.adaptError);
-        },
+                return { sent: true as const };
+            }, callCtx.toolRunContext),
     };
 }
 
-function sendForwardTool(
-    deps: MailToolsDeps,
-): PluginTool<DraftForwardArgs, ({ ok: true } & SendResult) | ToolFailure> {
+function sendForwardTool(deps: MailToolsDeps): PluginTool<DraftForwardArgs, object> {
     return {
         name: "mail_send_forward",
         description:
@@ -641,15 +590,15 @@ function sendForwardTool(
                 comment: { type: "string" },
             },
         },
-        execute: (args, callCtx) => {
-            const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
-            const input: ForwardInput = {
-                to: args.to,
-                cc: args.cc ?? [],
-                commentMarkdown: args.comment ?? "",
-            };
-            const recipients = [...input.to, ...input.cc];
-            return runTool<SendResult>(async () => {
+        execute: (args, callCtx) =>
+            runJsonTool(async () => {
+                const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
+                const input: ForwardInput = {
+                    to: args.to,
+                    cc: args.cc ?? [],
+                    commentMarkdown: args.comment ?? "",
+                };
+                const recipients = [...input.to, ...input.cc];
                 const decision = deps.safety.checkSendAllowed(recipients);
                 if (!decision.send) {
                     const draftRealId = await target.provider.draftForward(
@@ -658,21 +607,18 @@ function sendForwardTool(
                         input,
                     );
                     return {
-                        sent: false,
+                        sent: false as const,
                         draftId: buildMailId(target.pluginId, target.mailbox, draftRealId),
                         reason: decision.reason,
                     };
                 }
                 await target.provider.sendForward(target.mailbox, target.realId, input);
-                return { sent: true };
-            }, target.provider.adaptError);
-        },
+                return { sent: true as const };
+            }, callCtx.toolRunContext),
     };
 }
 
-function sendNewTool(
-    deps: MailToolsDeps,
-): PluginTool<DraftNewArgs, ({ ok: true } & SendResult) | ToolFailure> {
+function sendNewTool(deps: MailToolsDeps): PluginTool<DraftNewArgs, object> {
     return {
         name: "mail_send_new",
         description:
@@ -694,29 +640,28 @@ function sendNewTool(
                 body: { type: "string" },
             },
         },
-        execute: (args, callCtx) => {
-            const sender = resolveSender(args.from, callCtx.event, deps.registry);
-            const input: NewMailInput = {
-                to: args.to,
-                cc: args.cc ?? [],
-                subject: args.subject,
-                bodyMarkdown: args.body,
-            };
-            const recipients = [...input.to, ...input.cc];
-            return runTool<SendResult>(async () => {
+        execute: (args, callCtx) =>
+            runJsonTool(async () => {
+                const sender = resolveSender(args.from, callCtx.event, deps.registry);
+                const input: NewMailInput = {
+                    to: args.to,
+                    cc: args.cc ?? [],
+                    subject: args.subject,
+                    bodyMarkdown: args.body,
+                };
+                const recipients = [...input.to, ...input.cc];
                 const decision = deps.safety.checkSendAllowed(recipients);
                 if (!decision.send) {
                     const draftRealId = await sender.provider.draftNew(sender.mailbox, input);
                     return {
-                        sent: false,
+                        sent: false as const,
                         draftId: buildMailId(sender.pluginId, sender.mailbox, draftRealId),
                         reason: decision.reason,
                     };
                 }
                 await sender.provider.sendNew(sender.mailbox, input);
-                return { sent: true };
-            }, sender.provider.adaptError);
-        },
+                return { sent: true as const };
+            }, callCtx.toolRunContext),
     };
 }
 
@@ -724,9 +669,7 @@ interface MoveArgs extends MailIdArgs {
     readonly folder: MailFolder;
 }
 
-function moveTool(
-    deps: MailToolsDeps,
-): PluginTool<MoveArgs, { ok: true; moved: true; folder: MailFolder } | ToolFailure> {
+function moveTool(deps: MailToolsDeps): PluginTool<MoveArgs, object> {
     return {
         name: "mail_move",
         description:
@@ -742,18 +685,18 @@ function moveTool(
                 folder: { type: "string", enum: ["inbox", "archive", "trash"] },
             },
         },
-        execute: (args, callCtx) => {
-            const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
-            return runTool(async () => {
+        execute: (args, callCtx) =>
+            runJsonTool(async () => {
                 if (!isMailFolder(args.folder)) {
-                    throw new Error(
+                    throw new ToolError(
+                        "BadFolder",
                         `folder must be one of inbox|archive|trash, got: ${args.folder}`,
                     );
                 }
+                const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
                 await target.provider.move(target.mailbox, target.realId, args.folder);
                 return { moved: true as const, folder: args.folder };
-            }, target.provider.adaptError);
-        },
+            }, callCtx.toolRunContext),
     };
 }
 
@@ -787,7 +730,8 @@ function pickMailId(explicit: string | undefined, event: EventRow): string {
     if (fallback) {
         return fallback;
     }
-    throw new Error(
+    throw new ToolError(
+        "MissingMailId",
         "no mail_id given and event.payload.mail_id is missing — pass mail_id explicitly when " +
             "calling a mail tool from a non-mail handler.",
     );
@@ -822,7 +766,8 @@ function resolveSender(
     if (typeof explicit === "string" && explicit.length > 0) {
         const colon = explicit.indexOf(":");
         if (colon <= 0 || colon === explicit.length - 1) {
-            throw new Error(
+            throw new ToolError(
+                "BadFrom",
                 `from "${explicit}" is malformed — expected "<plugin>:<mailbox>" ` +
                     "(e.g. ms365:user@example.com)",
             );
@@ -830,13 +775,17 @@ function resolveSender(
         const pluginId = explicit.slice(0, colon);
         const mailbox = explicit.slice(colon + 1);
         if (mailbox.includes(":")) {
-            throw new Error(`from "${explicit}" mailbox segment must not contain ":"`);
+            throw new ToolError(
+                "BadFrom",
+                `from "${explicit}" mailbox segment must not contain ":"`,
+            );
         }
         return { provider: registry.forPluginId(pluginId), pluginId, mailbox };
     }
     const fallbackId = readPayloadMailId(event);
     if (!fallbackId) {
-        throw new Error(
+        throw new ToolError(
+            "MissingFrom",
             "no `from` given and event.payload.mail_id is missing — pass `from` explicitly " +
                 "(e.g. ms365:user@example.com) when composing from a non-mail handler.",
         );

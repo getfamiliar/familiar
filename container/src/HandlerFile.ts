@@ -84,6 +84,18 @@ export interface HandlerFileHeader {
      *   want to fully override more general guidance.
      */
     readonly mergeMode?: "merge" | "replace";
+    /**
+     * Byte budget for inline tool-call results before the runner spills
+     * the full result to a scratch file. Resolved per-call against the
+     * value the host injected via `TOOL_CALL_OFFLOADING_LIMIT` (sourced
+     * from `core.toolCallOffloadingLimit` in `config.yml`), which in
+     * turn falls back to `DEFAULT_TOOL_CALL_OFFLOADING_LIMIT` from
+     * `@getfamiliar/shared`. Set per handler when a handler is known
+     * to produce especially large results and the agent should see
+     * more of them inline — or, conversely, to force aggressive
+     * offloading on a noisy handler.
+     */
+    readonly toolCallOffloadingLimit?: number;
 }
 
 /** Pair returned by the parser before defaults are applied. */
@@ -339,6 +351,7 @@ function mergeDeclared(parent: HandlerFileHeader, child: HandlerFileHeader): Han
         outputChat: child.outputChat ?? parent.outputChat,
         cron: child.cron ?? parent.cron,
         mergeMode: child.mergeMode ?? parent.mergeMode,
+        toolCallOffloadingLimit: child.toolCallOffloadingLimit ?? parent.toolCallOffloadingLimit,
     };
 }
 
@@ -401,6 +414,7 @@ function parseHandler(filePath: string, source: string): DeclaredFile {
         outputChat: optionalBoolean(filePath, raw, "outputChat"),
         cron: optionalString(filePath, raw, "cron"),
         mergeMode: optionalEnum(filePath, raw, "mergeMode", ["merge", "replace"]),
+        toolCallOffloadingLimit: optionalPositiveInteger(filePath, raw, "toolCallOffloadingLimit"),
     };
 
     return { header, body };
@@ -424,6 +438,8 @@ function mergeDefaults(
         outputChat: declared.outputChat ?? defaults.outputChat,
         cron: declared.cron ?? defaults.cron,
         mergeMode: declared.mergeMode ?? defaults.mergeMode,
+        toolCallOffloadingLimit:
+            declared.toolCallOffloadingLimit ?? defaults.toolCallOffloadingLimit,
     };
 }
 

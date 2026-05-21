@@ -4,6 +4,7 @@ import { createInterface } from "node:readline";
 import {
     type ConfigService,
     createLogger,
+    DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
     EventBus,
     jsonStdoutStream,
     type Logger,
@@ -106,6 +107,10 @@ export const startCommand = defineCommand({
         const defaultModel = config.getString("inference.defaultModel");
         const inferenceMaxRetries = config.getNumber("inference.maxRetries", 3);
         const agentTimeoutSeconds = config.getNumber("core.agentTimeout", 60);
+        const toolCallOffloadingLimit = config.getNumber(
+            "core.toolCallOffloadingLimit",
+            DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
+        );
         // In dev mode, default the inference debug captures to on when
         // the operator hasn't pinned a value in config.yml. Explicit
         // `true`/`false` in config always wins; in production both
@@ -240,6 +245,7 @@ export const startCommand = defineCommand({
             defaultProvider,
             defaultModel,
             inferenceMaxRetries,
+            toolCallOffloadingLimit,
             agentTimeoutSeconds,
             logSystemPrompt,
             captureRawStepResultToDatabase,

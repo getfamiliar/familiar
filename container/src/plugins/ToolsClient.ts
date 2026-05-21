@@ -1,4 +1,4 @@
-import type { Logger } from "@getfamiliar/shared";
+import { type Logger, ToolError } from "@getfamiliar/shared";
 import { jsonSchema, type ToolSet, tool } from "ai";
 
 /**
@@ -68,8 +68,9 @@ export class PluginToolsClient {
 
     /**
      * Fetch the live catalog and return a tool set whose `execute`
-     * callbacks POST back to the gateway with `eventId` and
-     * `agentrunId` already bound. Empty catalog → empty set.
+     * callbacks POST back to the gateway with `eventId`,
+     * `agentrunId`, and the resolved offloading limit already bound.
+     * Empty catalog → empty set.
      *
      * The second return value maps plugin id → set of that plugin's
      * sanitized tool keys, threaded into {@link
@@ -80,6 +81,7 @@ export class PluginToolsClient {
     async tools(
         eventId: string,
         agentrunId: string,
+        toolCallOffloadingLimit: number,
     ): Promise<{ tools: ToolSet; keysById: ReadonlyMap<string, ReadonlySet<string>> }> {
         const catalog = await this.fetchCatalog();
         const toolSet: ToolSet = {};
@@ -88,7 +90,8 @@ export class PluginToolsClient {
             toolSet[entry.key] = tool({
                 description: entry.description,
                 inputSchema: jsonSchema(entry.inputSchema),
-                execute: async (args: unknown) => this.invoke(entry.key, args, eventId, agentrunId),
+                execute: async (args: unknown) =>
+                    this.invoke(entry.key, args, eventId, agentrunId, toolCallOffloadingLimit),
             });
             let set = keysById.get(entry.pluginId);
             if (set === undefined) {
@@ -143,38 +146,79 @@ export class PluginToolsClient {
     }
 
     /**
-     * POST the call to the gateway. Errors are surfaced to the model
-     * as plain strings — the AI SDK's tool loop treats a thrown
-     * `execute` as a fatal agent-loop failure, which is not what we
-     * want for transient backend issues. The gateway already wraps
-     * tool-level failures in `{ ok: false, error }`; this method
-     * unwraps to either the raw result or a thrown Error carrying
-     * the gateway's error string.
+     * POST the call to the gateway. The response body is the runner's
+     * output verbatim: either the bare success value (which we return
+     * straight to the AI SDK) or `{ok:false, code, message, status?}`
+     * — which we reconstruct into a {@link ToolError} and **throw**.
+     * Transport faults (5xx, parse errors) throw a synthesised
+     * `ToolError("Transport", …)` for the same reason: every failure
+     * mode becomes a `tool-error` block in the agent's transcript.
      */
     private async invoke(
         key: string,
         args: unknown,
         eventId: string,
         agentrunId: string,
+        toolCallOffloadingLimit: number,
     ): Promise<unknown> {
         const url = `${this.config.bastionUrl.replace(/\/$/, "")}/plugin-tools/${encodeURIComponent(key)}`;
-        const res = await fetch(url, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ args, eventId, agentrunId }),
-        });
-        if (!res.ok) {
-            const text = await res.text().catch(() => "");
-            throw new Error(
-                `plugin tool ${key} HTTP ${res.status} ${res.statusText}${text ? `: ${text}` : ""}`,
+        let res: Response;
+        try {
+            res = await fetch(url, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ args, eventId, agentrunId, toolCallOffloadingLimit }),
+            });
+        } catch (err) {
+            throw new ToolError(
+                "Transport",
+                `plugin tool ${key} fetch failed: ${err instanceof Error ? err.message : String(err)}`,
             );
         }
-        const body = (await res.json()) as { ok?: unknown; result?: unknown; error?: unknown };
-        if (body.ok === true) {
-            return body.result;
+        if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            throw new ToolError(
+                "Transport",
+                `plugin tool ${key} HTTP ${res.status} ${res.statusText}${text ? `: ${text}` : ""}`,
+                res.status,
+            );
         }
-        const error = typeof body.error === "string" ? body.error : "plugin tool returned ok=false";
-        this.config.log.warn({ tool: key, error }, "plugin tool error");
-        throw new Error(error);
+        let body: unknown;
+        try {
+            body = await res.json();
+        } catch (err) {
+            throw new ToolError(
+                "Transport",
+                `plugin tool ${key} returned non-JSON body: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
+        if (isFailureBody(body)) {
+            this.config.log.warn(
+                { tool: key, code: body.code, status: body.status, message: body.message },
+                "plugin tool error",
+            );
+            throw new ToolError(body.code, body.message, body.status);
+        }
+        return body;
     }
+}
+
+/**
+ * Type-guard for the failure shape the host gateway uses on the wire:
+ * `{ok:false, code, message, status?}`. Returned bodies missing `ok`
+ * are treated as success — that's the no-wrap success contract.
+ */
+function isFailureBody(
+    body: unknown,
+): body is { ok: false; code: string; message: string; status?: number } {
+    if (body === null || typeof body !== "object") {
+        return false;
+    }
+    const ok = (body as { ok?: unknown }).ok;
+    if (ok !== false) {
+        return false;
+    }
+    const code = (body as { code?: unknown }).code;
+    const message = (body as { message?: unknown }).message;
+    return typeof code === "string" && typeof message === "string";
 }

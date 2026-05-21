@@ -1,5 +1,3 @@
-import type { ToolFailureAdaptor } from "./ToolFailure.js";
-
 /**
  * Plugin-agnostic mail model. Lives in `shared/` because both the host
  * (which owns the `mail_*` agent tools and the safety gate) and the
@@ -225,14 +223,6 @@ export interface MailProvider {
      *    self-routing.
      */
     search(query: MailSearchQuery): Promise<readonly MailSearchHit[]>;
-
-    /**
-     * Optional mapper from a thrown provider-specific exception to the
-     * {@link ToolFailure} envelope. Lets Graph's `ErrorItemNotFound`
-     * etc. flow through to the agent verbatim instead of collapsing to
-     * the generic `{status:0, code:"ToolError"}` arm.
-     */
-    readonly adaptError?: ToolFailureAdaptor;
 }
 
 /**

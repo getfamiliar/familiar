@@ -19,6 +19,7 @@ import type { McpClientPool } from "./mcp/McpClientPool.js";
 import type { PluginToolsClient } from "./plugins/ToolsClient.js";
 import type { AgentrunRecovery } from "./recovery/AgentrunRecovery.js";
 import type { Clock, TimerHandle } from "./testing/MockClock.js";
+import { buildContainerToolRunContext } from "./tools/ContainerToolRunContext.js";
 import { createGroupLookup } from "./tools/ToolGroupLoader.js";
 import { ToolsFactory } from "./tools/ToolsFactory.js";
 
@@ -69,6 +70,13 @@ export interface SchedulerDeps {
     readonly defaultTimeoutMs: number;
     /** Default retry cap; overridden per-handler via YAML frontmatter. */
     readonly retryCap: number;
+    /**
+     * Default byte budget for inline tool-call results; overridden
+     * per-handler via the `toolCallOffloadingLimit` YAML frontmatter
+     * field. Sourced from `TOOL_CALL_OFFLOADING_LIMIT` env, in turn
+     * from `core.toolCallOffloadingLimit` on the host side.
+     */
+    readonly toolCallOffloadingLimit: number;
     /**
      * Maximum number of runners executing (not paused) at once. Today
      * always `1` to match Featherless's single Pro slot; per-model
@@ -602,8 +610,14 @@ export class AgentrunScheduler {
             row,
             signal: active.abortController.signal,
             waitForSubagent,
-            buildTools: async (toolsExpression) => {
-                const pluginToolset = await pluginToolsClient.tools(row.eventId, row.id);
+            buildTools: async (toolsExpression, handlerOffloadingLimit) => {
+                const offloadingLimit = handlerOffloadingLimit ?? this.deps.toolCallOffloadingLimit;
+                const toolRunContext = buildContainerToolRunContext(row.eventId, offloadingLimit);
+                const pluginToolset = await pluginToolsClient.tools(
+                    row.eventId,
+                    row.id,
+                    offloadingLimit,
+                );
                 return ToolsFactory.build({
                     chat,
                     eventId: row.eventId,
@@ -618,6 +632,7 @@ export class AgentrunScheduler {
                     mcpKeysById: mcpPool.mcpKeysById(),
                     pluginTools: pluginToolset.tools,
                     pluginKeysById: pluginToolset.keysById,
+                    toolRunContext,
                     log,
                 });
             },

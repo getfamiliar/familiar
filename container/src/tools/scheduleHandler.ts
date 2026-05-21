@@ -2,8 +2,11 @@ import {
     type AgentRunRow,
     parseInZone,
     renderInZone,
+    runJsonTool,
     type ScheduledHandlerBus,
     TOPIC_PATTERN,
+    ToolError,
+    type ToolRunContext,
 } from "@getfamiliar/shared";
 import { jsonSchema, type Tool, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
@@ -16,10 +19,6 @@ interface ScheduleHandlerInput {
     readonly prompt?: string;
     readonly payload?: Record<string, unknown>;
 }
-
-type ScheduleHandlerOutput =
-    | { readonly ok: true; readonly key: string; readonly when: string }
-    | { readonly ok: false; readonly error: string };
 
 /** Whitelisted shape for scheduled-handler keys. Predictable enough for the
  * agent to reuse (e.g. `briefing_<eventId>`) without colliding with
@@ -42,15 +41,16 @@ const TOPIC_REGEXP = new RegExp(TOPIC_PATTERN);
  * — same trust-propagation rule as `queue_handler` / `call_handler`.
  *
  * Failure modes (bad key, malformed `when`, past `when`, unknown
- * handler, non-serializable payload) surface as `{ ok: false, error }`
- * so the agent can recover instead of aborting the loop.
+ * handler, non-serializable payload) throw a {@link ToolError} so the
+ * agent sees a `tool-error` block and can recover.
  */
 export function buildScheduleHandlerTool(
     bus: ScheduledHandlerBus,
     parent: AgentRunRow,
     timezone: string,
-): Tool<ScheduleHandlerInput, ScheduleHandlerOutput> {
-    return tool<ScheduleHandlerInput, ScheduleHandlerOutput>({
+    ctx: ToolRunContext,
+): Tool<ScheduleHandlerInput, object> {
+    return tool<ScheduleHandlerInput, object>({
         description:
             "Schedule a one-off future wake-up: at `when`, the named handler runs as a fresh " +
             "agentrun (new event, no parent). Re-using a `key` overwrites the previous schedule. " +
@@ -101,60 +101,58 @@ export function buildScheduleHandlerTool(
                 },
             },
         }),
-        execute: async ({ key, when, topic, handler, prompt, payload }) => {
-            if (!KEY_PATTERN.test(key)) {
-                return {
-                    ok: false,
-                    error: `key must match ${KEY_PATTERN.source} (letters, digits, _:.-, max 128 chars)`,
-                };
-            }
-
-            const resolvedTopic = topic ?? parent.topic;
-            if (!TOPIC_REGEXP.test(resolvedTopic)) {
-                return {
-                    ok: false,
-                    error: `topic "${resolvedTopic}" must match ${TOPIC_PATTERN}`,
-                };
-            }
-
-            if (payload !== undefined) {
-                try {
-                    const serialized = JSON.stringify(payload);
-                    if (serialized === undefined) {
-                        return {
-                            ok: false,
-                            error: "payload must be JSON-serializable (must not contain functions, symbols, or undefined at the root)",
-                        };
-                    }
-                } catch (err) {
-                    return {
-                        ok: false,
-                        error: `payload must be JSON-serializable: ${err instanceof Error ? err.message : String(err)}`,
-                    };
+        execute: ({ key, when, topic, handler, prompt, payload }) =>
+            runJsonTool(async () => {
+                if (!KEY_PATTERN.test(key)) {
+                    throw new ToolError(
+                        "BadKey",
+                        `key must match ${KEY_PATTERN.source} (letters, digits, _:.-, max 128 chars)`,
+                    );
                 }
-            }
 
-            try {
-                HandlerFile.load(resolvedTopic, handler);
-            } catch (err) {
-                return {
-                    ok: false,
-                    error: err instanceof Error ? err.message : String(err),
-                };
-            }
+                const resolvedTopic = topic ?? parent.topic;
+                if (!TOPIC_REGEXP.test(resolvedTopic)) {
+                    throw new ToolError(
+                        "BadTopic",
+                        `topic "${resolvedTopic}" must match ${TOPIC_PATTERN}`,
+                    );
+                }
 
-            const parsed = parseInZone(when, timezone);
-            if (!parsed.ok) {
-                return { ok: false, error: parsed.error };
-            }
-            if (Date.parse(parsed.utcIso) <= Date.now()) {
-                return {
-                    ok: false,
-                    error: `\`when\` (${when}) must be in the future`,
-                };
-            }
+                if (payload !== undefined) {
+                    let serialized: string | undefined;
+                    try {
+                        serialized = JSON.stringify(payload);
+                    } catch (err) {
+                        throw new ToolError(
+                            "InvalidPayload",
+                            `payload must be JSON-serializable: ${err instanceof Error ? err.message : String(err)}`,
+                        );
+                    }
+                    if (serialized === undefined) {
+                        throw new ToolError(
+                            "InvalidPayload",
+                            "payload must be JSON-serializable (must not contain functions, symbols, or undefined at the root)",
+                        );
+                    }
+                }
 
-            try {
+                try {
+                    HandlerFile.load(resolvedTopic, handler);
+                } catch (err) {
+                    throw new ToolError(
+                        "HandlerNotFound",
+                        err instanceof Error ? err.message : String(err),
+                    );
+                }
+
+                const parsed = parseInZone(when, timezone);
+                if (!parsed.ok) {
+                    throw new ToolError("BadWhen", parsed.error);
+                }
+                if (Date.parse(parsed.utcIso) <= Date.now()) {
+                    throw new ToolError("PastWhen", `\`when\` (${when}) must be in the future`);
+                }
+
                 const row = await bus.upsert({
                     key,
                     fireAt: parsed.utcIso,
@@ -166,16 +164,9 @@ export function buildScheduleHandlerTool(
                     privileged: parent.privileged,
                 });
                 return {
-                    ok: true,
                     key: row.key,
                     when: renderInZone(row.fireAt, timezone),
                 };
-            } catch (err) {
-                return {
-                    ok: false,
-                    error: `failed to schedule handler: ${err instanceof Error ? err.message : String(err)}`,
-                };
-            }
-        },
+            }, ctx),
     });
 }

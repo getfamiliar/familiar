@@ -4,8 +4,9 @@ import {
     type CreateEventInput,
     type PluginTool,
     parseCalendarEventId,
-    runTool,
-    type ToolFailure,
+    runJsonLinesTool,
+    runJsonTool,
+    ToolError,
     type UpdateEventInput,
 } from "@getfamiliar/shared";
 import { DateTime } from "luxon";
@@ -72,9 +73,7 @@ interface GetEventsArgs {
     readonly calendar_id?: string;
 }
 
-function getEventsTool(
-    service: CalendarService,
-): PluginTool<GetEventsArgs, { ok: true; events: string } | ToolFailure> {
+function getEventsTool(service: CalendarService): PluginTool<GetEventsArgs, string> {
     return {
         name: "cal_get_events",
         description:
@@ -107,14 +106,15 @@ function getEventsTool(
             },
         },
         execute: (args, callCtx) =>
-            runTool(async () => {
+            runJsonLinesTool(async () => {
                 const coreTz = readCoreTimezone(callCtx.host.config);
                 const { from, to } = resolveDayBounds(args, coreTz);
                 let calendarId: string | undefined;
                 if (args.calendar_id !== undefined) {
                     const cal = await service.resolveCalendarRef(args.calendar_id);
                     if (!cal) {
-                        throw new Error(
+                        throw new ToolError(
+                            "UnknownCalendar",
                             `unknown calendar reference "${args.calendar_id}" — ` +
                                 "run `./cli.sh ms365 cal list` to see available calendars.",
                         );
@@ -122,9 +122,9 @@ function getEventsTool(
                     calendarId = cal.id;
                 }
                 const rows = await service.findEvents({ calendarId, from, to });
-                const lines = rows.map((r) => {
+                return rows.map((r) => {
                     const v = renderEventForAgent(r, coreTz);
-                    return JSON.stringify({
+                    return {
                         id: v.id,
                         subject: v.subject,
                         start: v.start,
@@ -133,10 +133,9 @@ function getEventsTool(
                         responseStatus: v.responseStatus,
                         isAllDay: v.isAllDay,
                         location: v.location,
-                    });
+                    };
                 });
-                return { events: lines.join("\n") };
-            }),
+            }, callCtx.toolRunContext),
     };
 }
 
@@ -193,9 +192,7 @@ interface GetEventArgs {
     readonly id: string;
 }
 
-function getEventTool(
-    service: CalendarService,
-): PluginTool<GetEventArgs, { ok: true; event: AgentEventView } | ToolFailure> {
+function getEventTool(service: CalendarService): PluginTool<GetEventArgs, object> {
     return {
         name: "cal_get_event",
         description:
@@ -210,20 +207,18 @@ function getEventTool(
             properties: { id: { type: "string" } },
         },
         execute: (args, callCtx) =>
-            runTool(async () => {
+            runJsonTool(async () => {
                 const event = await service.getEvent(args.id);
                 if (!event) {
-                    throw new Error(`calendar event "${args.id}" not found`);
+                    throw new ToolError("EventNotFound", `calendar event "${args.id}" not found`);
                 }
                 const coreTz = readCoreTimezone(callCtx.host.config);
                 return { event: renderEventForAgent(event, coreTz) };
-            }),
+            }, callCtx.toolRunContext),
     };
 }
 
-function getEventAttachmentsTool(
-    service: CalendarService,
-): PluginTool<GetEventArgs, { ok: true; paths: readonly string[] } | ToolFailure> {
+function getEventAttachmentsTool(service: CalendarService): PluginTool<GetEventArgs, object> {
     return {
         name: "cal_get_event_attachments",
         description:
@@ -236,10 +231,10 @@ function getEventAttachmentsTool(
             properties: { id: { type: "string" } },
         },
         execute: (args, callCtx) =>
-            runTool(async () => {
+            runJsonTool(async () => {
                 const event = await service.getEvent(args.id);
                 if (!event) {
-                    throw new Error(`calendar event "${args.id}" not found`);
+                    throw new ToolError("EventNotFound", `calendar event "${args.id}" not found`);
                 }
                 const calendar = await calendarFor(service, event);
                 const provider = service.registry.forCalendar(calendar);
@@ -255,7 +250,7 @@ function getEventAttachmentsTool(
                 }));
                 const paths = await callCtx.host.scratch.addFiles(callCtx.event.id, files);
                 return { paths };
-            }),
+            }, callCtx.toolRunContext),
     };
 }
 
@@ -281,16 +276,10 @@ interface CreateEventArgs {
     readonly is_videocall?: boolean;
 }
 
-interface CreateEventResult {
-    readonly created: true;
-    readonly event: AgentEventView;
-    readonly notes: readonly string[];
-}
-
 function createEventTool(
     service: CalendarService,
     deps: CalendarToolsDeps,
-): PluginTool<CreateEventArgs, ({ ok: true } & CreateEventResult) | ToolFailure> {
+): PluginTool<CreateEventArgs, object> {
     return {
         name: "cal_create_event",
         description:
@@ -362,7 +351,7 @@ function createEventTool(
             },
         },
         execute: (args, callCtx) =>
-            runTool<CreateEventResult>(async () => {
+            runJsonTool(async () => {
                 const calendar = await resolveTargetCalendar(service, args.calendar_id);
                 const provider = service.registry.forCalendar(calendar);
                 const coreTz = readCoreTimezone(callCtx.host.config);
@@ -421,7 +410,7 @@ function createEventTool(
                     event: renderEventForAgent(created, coreTz),
                     notes,
                 };
-            }),
+            }, callCtx.toolRunContext),
     };
 }
 
@@ -441,16 +430,10 @@ interface UpdateEventArgs {
     };
 }
 
-interface UpdateEventResult {
-    readonly updated: true;
-    readonly event: AgentEventView;
-    readonly notes: readonly string[];
-}
-
 function updateEventTool(
     service: CalendarService,
     deps: CalendarToolsDeps,
-): PluginTool<UpdateEventArgs, ({ ok: true } & UpdateEventResult) | ToolFailure> {
+): PluginTool<UpdateEventArgs, object> {
     return {
         name: "cal_update_event",
         description:
@@ -508,10 +491,10 @@ function updateEventTool(
             },
         },
         execute: (args, callCtx) =>
-            runTool<UpdateEventResult>(async () => {
+            runJsonTool(async () => {
                 const existing = await service.getEvent(args.id);
                 if (!existing) {
-                    throw new Error(`calendar event "${args.id}" not found`);
+                    throw new ToolError("EventNotFound", `calendar event "${args.id}" not found`);
                 }
                 const calendar = await calendarFor(service, existing);
                 const provider = service.registry.forCalendar(calendar);
@@ -577,7 +560,7 @@ function updateEventTool(
                     event: renderEventForAgent(updated, coreTz),
                     notes,
                 };
-            }),
+            }, callCtx.toolRunContext),
     };
 }
 
@@ -585,9 +568,7 @@ interface DeleteEventArgs {
     readonly id: string;
 }
 
-function deleteEventTool(
-    service: CalendarService,
-): PluginTool<DeleteEventArgs, { ok: true; deleted: true } | ToolFailure> {
+function deleteEventTool(service: CalendarService): PluginTool<DeleteEventArgs, object> {
     return {
         name: "cal_delete_event",
         description:
@@ -600,11 +581,11 @@ function deleteEventTool(
             required: ["id"],
             properties: { id: { type: "string" } },
         },
-        execute: (args) =>
-            runTool(async () => {
+        execute: (args, callCtx) =>
+            runJsonTool(async () => {
                 const existing = await service.getEvent(args.id);
                 if (!existing) {
-                    throw new Error(`calendar event "${args.id}" not found`);
+                    throw new ToolError("EventNotFound", `calendar event "${args.id}" not found`);
                 }
                 const calendar = await calendarFor(service, existing);
                 const provider = service.registry.forCalendar(calendar);
@@ -612,7 +593,7 @@ function deleteEventTool(
                 await provider.deleteEvent(calendar, realId);
                 await service.removeEvent(existing.id);
                 return { deleted: true as const };
-            }),
+            }, callCtx.toolRunContext),
     };
 }
 
@@ -626,7 +607,7 @@ interface AttachFileArgs {
 function attachFileTool(
     service: CalendarService,
     deps: CalendarToolsDeps,
-): PluginTool<AttachFileArgs, { ok: true; attached: true } | ToolFailure> {
+): PluginTool<AttachFileArgs, object> {
     return {
         name: "cal_attach_file",
         description:
@@ -644,17 +625,21 @@ function attachFileTool(
                 scratch_path: { type: "string" },
             },
         },
-        execute: (args) =>
-            runTool(async () => {
+        execute: (args, callCtx) =>
+            runJsonTool(async () => {
                 const event = await service.getEvent(args.event_id);
                 if (!event) {
-                    throw new Error(`calendar event "${args.event_id}" not found`);
+                    throw new ToolError(
+                        "EventNotFound",
+                        `calendar event "${args.event_id}" not found`,
+                    );
                 }
                 const calendar = await calendarFor(service, event);
                 const provider = service.registry.forCalendar(calendar);
                 const bytes = await resolveAttachmentBytes(args, deps.scratchDir);
                 if (bytes.length > INLINE_ATTACHMENT_LIMIT_BYTES) {
-                    throw new Error(
+                    throw new ToolError(
+                        "AttachmentTooLarge",
                         `attachment ${args.name} is ${bytes.length} bytes; the v1 inline ` +
                             `limit is ${INLINE_ATTACHMENT_LIMIT_BYTES} bytes — large-file upload ` +
                             "sessions are not yet implemented.",
@@ -663,7 +648,7 @@ function attachFileTool(
                 const { realId } = parseCalendarEventId(event.id);
                 await provider.attachFile(calendar, realId, args.name, bytes);
                 return { attached: true as const };
-            }),
+            }, callCtx.toolRunContext),
     };
 }
 

@@ -2,8 +2,10 @@ import {
     dayBoundsInZone,
     parseInZone,
     renderInZone,
+    runJsonLinesTool,
     type ScheduledHandlerBus,
-    type ScheduledHandlerRow,
+    ToolError,
+    type ToolRunContext,
 } from "@getfamiliar/shared";
 import { jsonSchema, type Tool, tool } from "ai";
 
@@ -13,22 +15,10 @@ interface GetScheduledHandlersInput {
     readonly day?: string;
 }
 
-interface ScheduledHandlerView {
-    readonly key: string;
-    readonly when: string;
-    readonly topic: string;
-    readonly handler: string;
-    readonly prompt: string | null;
-    readonly payload: unknown;
-}
-
-type GetScheduledHandlersOutput =
-    | { readonly ok: true; readonly scheduled: readonly ScheduledHandlerView[] }
-    | { readonly ok: false; readonly error: string };
-
 /**
  * Build the `get_scheduled_handlers` tool — list scheduled wake-ups in
- * a time range, rendered in the user's `core.timezone`.
+ * a time range, rendered in the user's `core.timezone`. Returns one
+ * row per line as JSONL.
  *
  * Accepts either a `from` / `to` pair (each parsed like
  * `schedule_handler`'s `when`) or a `day` (date-only, `YYYY-MM-DD`,
@@ -38,13 +28,14 @@ type GetScheduledHandlersOutput =
 export function buildGetScheduledHandlersTool(
     bus: ScheduledHandlerBus,
     timezone: string,
-): Tool<GetScheduledHandlersInput, GetScheduledHandlersOutput> {
-    return tool<GetScheduledHandlersInput, GetScheduledHandlersOutput>({
+    ctx: ToolRunContext,
+): Tool<GetScheduledHandlersInput, string> {
+    return tool<GetScheduledHandlersInput, string>({
         description:
             "List scheduled one-off handlers. Pass either {day: 'YYYY-MM-DD'} for one local " +
             "calendar day, or {from?, to?} for a range (each a wall-clock ISO in the user's " +
             "local timezone). With no arguments, returns the next 7 days from now. Output " +
-            "times are rendered in the user's local timezone.",
+            "times are rendered in the user's local timezone, one schedule per JSONL line.",
         inputSchema: jsonSchema<GetScheduledHandlersInput>({
             type: "object",
             additionalProperties: false,
@@ -69,32 +60,19 @@ export function buildGetScheduledHandlersTool(
                 },
             },
         }),
-        execute: async ({ from, to, day }) => {
-            const range = resolveRange({ from, to, day, timezone });
-            if (!range.ok) {
-                return { ok: false, error: range.error };
-            }
-
-            let rows: ScheduledHandlerRow[];
-            try {
-                rows = await bus.listInRange(range.fromUtc, range.toUtc);
-            } catch (err) {
-                return {
-                    ok: false,
-                    error: `failed to list scheduled handlers: ${err instanceof Error ? err.message : String(err)}`,
-                };
-            }
-
-            const scheduled = rows.map<ScheduledHandlerView>((row) => ({
-                key: row.key,
-                when: renderInZone(row.fireAt, timezone),
-                topic: row.topic,
-                handler: row.handler,
-                prompt: row.prompt,
-                payload: row.payload,
-            }));
-            return { ok: true, scheduled };
-        },
+        execute: ({ from, to, day }) =>
+            runJsonLinesTool(async () => {
+                const range = resolveRange({ from, to, day, timezone });
+                const rows = await bus.listInRange(range.fromUtc, range.toUtc);
+                return rows.map((row) => ({
+                    key: row.key,
+                    when: renderInZone(row.fireAt, timezone),
+                    topic: row.topic,
+                    handler: row.handler,
+                    prompt: row.prompt,
+                    payload: row.payload,
+                }));
+            }, ctx),
     });
 }
 
@@ -102,21 +80,20 @@ export function buildGetScheduledHandlersTool(
  * Resolve the UTC `[from, to)` range from the agent's input. `day`
  * wins over `from`/`to`. When all three are absent the default is
  * `[now, now+7d)`.
+ *
+ * @throws {ToolError} On any malformed input. Caller invokes inside the
+ *   runner so the throw becomes the tool's failure.
  */
-function resolveRange(args: {
-    from?: string;
-    to?: string;
-    day?: string;
-    timezone: string;
-}):
-    | { readonly ok: true; readonly fromUtc: string; readonly toUtc: string }
-    | { readonly ok: false; readonly error: string } {
+function resolveRange(args: { from?: string; to?: string; day?: string; timezone: string }): {
+    readonly fromUtc: string;
+    readonly toUtc: string;
+} {
     if (args.day !== undefined && args.day.length > 0) {
         const bounds = dayBoundsInZone(args.day, args.timezone);
         if (!bounds.ok) {
-            return { ok: false, error: bounds.error };
+            throw new ToolError("BadDay", bounds.error);
         }
-        return { ok: true, fromUtc: bounds.fromUtc, toUtc: bounds.toUtc };
+        return { fromUtc: bounds.fromUtc, toUtc: bounds.toUtc };
     }
 
     const now = new Date();
@@ -129,20 +106,20 @@ function resolveRange(args: {
     if (args.from !== undefined && args.from.length > 0) {
         const parsed = parseInZone(args.from, args.timezone);
         if (!parsed.ok) {
-            return { ok: false, error: `from: ${parsed.error}` };
+            throw new ToolError("BadFrom", `from: ${parsed.error}`);
         }
         fromUtc = parsed.utcIso;
     }
     if (args.to !== undefined && args.to.length > 0) {
         const parsed = parseInZone(args.to, args.timezone);
         if (!parsed.ok) {
-            return { ok: false, error: `to: ${parsed.error}` };
+            throw new ToolError("BadTo", `to: ${parsed.error}`);
         }
         toUtc = parsed.utcIso;
     }
 
     if (Date.parse(toUtc) <= Date.parse(fromUtc)) {
-        return { ok: false, error: "`to` must be strictly after `from`" };
+        throw new ToolError("BadRange", "`to` must be strictly after `from`");
     }
-    return { ok: true, fromUtc, toUtc };
+    return { fromUtc, toUtc };
 }

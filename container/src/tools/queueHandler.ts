@@ -1,4 +1,10 @@
-import type { AgentRunBus, AgentRunRow } from "@getfamiliar/shared";
+import {
+    type AgentRunBus,
+    type AgentRunRow,
+    runJsonTool,
+    ToolError,
+    type ToolRunContext,
+} from "@getfamiliar/shared";
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
@@ -9,10 +15,6 @@ interface QueueHandlerInput {
     readonly prompt?: string;
     readonly payload?: Record<string, unknown>;
 }
-
-type QueueHandlerOutput =
-    | { readonly ok: true; readonly agentrunId: string }
-    | { readonly ok: false; readonly error: string };
 
 /**
  * Build the `queue_handler` tool for one agentrun. Spawns a child
@@ -30,17 +32,17 @@ type QueueHandlerOutput =
  * the model. Topic defaults to the parent's topic when omitted, so
  * common same-topic fan-outs stay one argument shorter.
  *
- * Failure modes are reported as `{ ok: false, error }` rather than
- * thrown: the SDK's tool loop treats `execute` exceptions as
- * agent-loop failures, but a handler that asks for a missing sibling
- * should be able to recover (pick a different handler, send a
- * message, etc.) instead of aborting.
+ * Bad inputs (unserialisable payload, missing handler file) throw a
+ * {@link ToolError} — the AI SDK then emits a `tool-error` block so
+ * the model can recover (pick a different handler, send a message,
+ * etc.) instead of crashing.
  */
 export function buildQueueHandlerTool(
     bus: AgentRunBus,
     parent: AgentRunRow,
-): Tool<QueueHandlerInput, QueueHandlerOutput> {
-    return tool<QueueHandlerInput, QueueHandlerOutput>({
+    ctx: ToolRunContext,
+): Tool<QueueHandlerInput, object> {
+    return tool<QueueHandlerInput, object>({
         description:
             "Spawn a subagent and return immediately (fire-and-forget). The new agentrun runs " +
             "after the current one; you do NOT see its result. Use `call_handler` instead when " +
@@ -78,48 +80,49 @@ export function buildQueueHandlerTool(
                 },
             },
         }),
-        execute: async ({ topic, handler, prompt, payload }) => {
-            const resolvedTopic = topic ?? parent.topic;
+        execute: ({ topic, handler, prompt, payload }) =>
+            runJsonTool(async () => {
+                const resolvedTopic = topic ?? parent.topic;
 
-            if (payload !== undefined) {
-                let serialized: string | undefined;
+                if (payload !== undefined) {
+                    let serialized: string | undefined;
+                    try {
+                        serialized = JSON.stringify(payload);
+                    } catch (err) {
+                        throw new ToolError(
+                            "InvalidPayload",
+                            `payload must be JSON-serializable: ${err instanceof Error ? err.message : String(err)}`,
+                        );
+                    }
+                    if (serialized === undefined) {
+                        throw new ToolError(
+                            "InvalidPayload",
+                            "payload must be JSON-serializable (must not contain functions, symbols, or undefined at the root)",
+                        );
+                    }
+                }
+
                 try {
-                    serialized = JSON.stringify(payload);
+                    HandlerFile.load(resolvedTopic, handler);
                 } catch (err) {
-                    return {
-                        ok: false,
-                        error: `payload must be JSON-serializable: ${err instanceof Error ? err.message : String(err)}`,
-                    };
+                    throw new ToolError(
+                        "HandlerNotFound",
+                        err instanceof Error ? err.message : String(err),
+                    );
                 }
-                if (serialized === undefined) {
-                    return {
-                        ok: false,
-                        error: "payload must be JSON-serializable (must not contain functions, symbols, or undefined at the root)",
-                    };
-                }
-            }
 
-            try {
-                HandlerFile.load(resolvedTopic, handler);
-            } catch (err) {
-                return {
-                    ok: false,
-                    error: err instanceof Error ? err.message : String(err),
-                };
-            }
-
-            const row = await bus.add({
-                eventId: parent.eventId,
-                parentAgentrunId: parent.id,
-                topic: resolvedTopic,
-                handler,
-                priority: parent.priority,
-                prompt: prompt ?? null,
-                payload: payload ?? {},
-                privileged: parent.privileged,
-                calltype: "queued",
-            });
-            return { ok: true, agentrunId: row.id };
-        },
+                const row = await bus.add({
+                    eventId: parent.eventId,
+                    parentAgentrunId: parent.id,
+                    topic: resolvedTopic,
+                    handler,
+                    priority: parent.priority,
+                    prompt: prompt ?? null,
+                    payload: payload ?? {},
+                    privileged: parent.privileged,
+                    calltype: "queued",
+                });
+                return { agentrunId: row.id };
+            }, ctx),
     });
 }

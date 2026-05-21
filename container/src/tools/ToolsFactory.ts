@@ -1,4 +1,10 @@
-import type { AgentRunBus, AgentRunRow, Logger, ScheduledHandlerBus } from "@getfamiliar/shared";
+import type {
+    AgentRunBus,
+    AgentRunRow,
+    Logger,
+    ScheduledHandlerBus,
+    ToolRunContext,
+} from "@getfamiliar/shared";
 import type { ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
 import { buildCallHandlerTool, type WaitForSubagent } from "./callHandler.js";
@@ -98,6 +104,14 @@ export interface ToolsFactoryContext {
      */
     readonly pluginKeysById?: ReadonlyMap<string, ReadonlySet<string>>;
     /**
+     * Per-call runner context (byte budget + spill function). Threaded
+     * into every container-side tool wrapper so the three
+     * {@link import("@getfamiliar/shared").runJsonTool}-family runners
+     * can offload oversized results to scratch consistently. Required
+     * whenever any container-side system tool will be registered.
+     */
+    readonly toolRunContext?: ToolRunContext;
+    /**
      * Logger child for filter diagnostics. Resolution errors throw
      * so the agentrun fails loud; warnings are not currently
      * emitted (kept for future use).
@@ -138,16 +152,26 @@ export class ToolsFactory {
      */
     static build(context: ToolsFactoryContext = {}): ToolSet {
         const systemTools: ToolSet = {};
+        const toolRunContext = context.toolRunContext ?? FALLBACK_TOOL_RUN_CONTEXT;
         if (context.chat && context.eventId) {
-            systemTools.send_chat = buildSendChatTool(context.chat, context.eventId);
+            systemTools.send_chat = buildSendChatTool(
+                context.chat,
+                context.eventId,
+                toolRunContext,
+            );
         }
         if (context.bus && context.parent) {
-            systemTools.queue_handler = buildQueueHandlerTool(context.bus, context.parent);
+            systemTools.queue_handler = buildQueueHandlerTool(
+                context.bus,
+                context.parent,
+                toolRunContext,
+            );
             if (context.waitForSubagent) {
                 systemTools.call_handler = buildCallHandlerTool(
                     context.bus,
                     context.parent,
                     context.waitForSubagent,
+                    toolRunContext,
                 );
             }
         }
@@ -156,13 +180,16 @@ export class ToolsFactory {
                 context.scheduledHandlerBus,
                 context.parent,
                 context.timezone,
+                toolRunContext,
             );
             systemTools.unschedule_handler = buildUnscheduleHandlerTool(
                 context.scheduledHandlerBus,
+                toolRunContext,
             );
             systemTools.get_scheduled_handlers = buildGetScheduledHandlersTool(
                 context.scheduledHandlerBus,
                 context.timezone,
+                toolRunContext,
             );
         }
         if (context.parent) {
@@ -171,7 +198,7 @@ export class ToolsFactory {
             // `parent.privileged` internally to gate `.md` paths and
             // anything under `workspace/toolgroups/`, so every agentrun
             // can read but only privileged runs can modify those.
-            Object.assign(systemTools, buildFsTools(context.parent));
+            Object.assign(systemTools, buildFsTools(context.parent, toolRunContext));
         }
 
         const mcpTools = context.mcpTools ?? {};
@@ -254,3 +281,21 @@ function resolveMatched(args: {
  * resolver translates that to `unknown group: <name>`.
  */
 const rejectAnyLookup: GroupLookup = () => undefined;
+
+/**
+ * Inert {@link ToolRunContext} for callers (typically tests) that
+ * build a {@link ToolsFactory} without wiring scratch offloading.
+ * The 10000-byte limit matches the platform default; the `spill`
+ * stub throws to make accidental offload attempts loud rather than
+ * silently dropping bytes.
+ */
+const FALLBACK_TOOL_RUN_CONTEXT: ToolRunContext = {
+    limit: 10000,
+    spill: () => {
+        throw new Error(
+            "ToolsFactory.build was called without a toolRunContext; " +
+                "configure one (with a real scratch spill) before exercising tools that " +
+                "may exceed the inline byte budget.",
+        );
+    },
+};

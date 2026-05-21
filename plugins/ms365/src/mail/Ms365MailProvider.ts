@@ -8,7 +8,7 @@ import {
     type NewMailInput,
     type ReplyInput,
     renderMarkdownToHtml,
-    type ToolFailureAdaptor,
+    ToolError,
 } from "@getfamiliar/shared";
 import { getActiveLogins } from "../auth/ActiveLogins.js";
 import type { LoginStore } from "../auth/LoginStore.js";
@@ -54,27 +54,31 @@ export class Ms365MailProvider implements MailProvider {
     }
 
     async fetchBody(mailbox: string, messageId: string): Promise<string> {
-        const client = await this.clientForMailbox(mailbox);
-        return client.getMessageBodyText(mailbox, messageId);
+        return mapGraphErrors(async () => {
+            const client = await this.clientForMailbox(mailbox);
+            return client.getMessageBodyText(mailbox, messageId);
+        });
     }
 
     async fetchAttachments(mailbox: string, messageId: string): Promise<readonly MailAttachment[]> {
-        const client = await this.clientForMailbox(mailbox);
-        const raw = await client.getAttachments(mailbox, messageId);
-        const out: MailAttachment[] = [];
-        for (const att of raw) {
-            if (att.isInline) {
-                continue;
+        return mapGraphErrors(async () => {
+            const client = await this.clientForMailbox(mailbox);
+            const raw = await client.getAttachments(mailbox, messageId);
+            const out: MailAttachment[] = [];
+            for (const att of raw) {
+                if (att.isInline) {
+                    continue;
+                }
+                if (typeof att.contentBytes !== "string" || att.contentBytes.length === 0) {
+                    continue;
+                }
+                out.push({
+                    name: pickAttachmentName(att.name, att.id),
+                    contents: Buffer.from(att.contentBytes, "base64"),
+                });
             }
-            if (typeof att.contentBytes !== "string" || att.contentBytes.length === 0) {
-                continue;
-            }
-            out.push({
-                name: pickAttachmentName(att.name, att.id),
-                contents: Buffer.from(att.contentBytes, "base64"),
-            });
-        }
-        return out;
+            return out;
+        });
     }
 
     async previewReplyRecipients(
@@ -82,123 +86,146 @@ export class Ms365MailProvider implements MailProvider {
         messageId: string,
         replyAll: boolean,
     ): Promise<readonly string[]> {
-        const client = await this.clientForMailbox(mailbox);
-        const { from, to, cc } = await client.getMessageRecipients(mailbox, messageId);
-        const out: string[] = [];
-        if (from) {
-            out.push(from);
-        }
-        if (!replyAll) {
+        return mapGraphErrors(async () => {
+            const client = await this.clientForMailbox(mailbox);
+            const { from, to, cc } = await client.getMessageRecipients(mailbox, messageId);
+            const out: string[] = [];
+            if (from) {
+                out.push(from);
+            }
+            if (!replyAll) {
+                return out;
+            }
+            out.push(...to, ...cc);
             return out;
-        }
-        out.push(...to, ...cc);
-        return out;
+        });
     }
 
     async draftReply(mailbox: string, messageId: string, input: ReplyInput): Promise<string> {
-        const client = await this.clientForMailbox(mailbox);
-        const html = renderMarkdownToHtml(input.bodyMarkdown);
-        const draft = await client.createReplyDraft(mailbox, messageId, input.replyAll, html);
-        return draft.id;
+        return mapGraphErrors(async () => {
+            const client = await this.clientForMailbox(mailbox);
+            const html = renderMarkdownToHtml(input.bodyMarkdown);
+            const draft = await client.createReplyDraft(mailbox, messageId, input.replyAll, html);
+            return draft.id;
+        });
     }
 
     async draftForward(mailbox: string, messageId: string, input: ForwardInput): Promise<string> {
-        const client = await this.clientForMailbox(mailbox);
-        const html = renderMarkdownToHtml(input.commentMarkdown);
-        const draft = await client.createForwardDraft(
-            mailbox,
-            messageId,
-            toGraphRecipients(input.to),
-            toGraphRecipients(input.cc),
-            html,
-        );
-        return draft.id;
+        return mapGraphErrors(async () => {
+            const client = await this.clientForMailbox(mailbox);
+            const html = renderMarkdownToHtml(input.commentMarkdown);
+            const draft = await client.createForwardDraft(
+                mailbox,
+                messageId,
+                toGraphRecipients(input.to),
+                toGraphRecipients(input.cc),
+                html,
+            );
+            return draft.id;
+        });
     }
 
     async draftNew(mailbox: string, input: NewMailInput): Promise<string> {
-        const client = await this.clientForMailbox(mailbox);
-        const html = renderMarkdownToHtml(input.bodyMarkdown);
-        const draft = await client.createDraft(mailbox, {
-            subject: input.subject,
-            bodyHtml: html,
-            to: toGraphRecipients(input.to),
-            cc: toGraphRecipients(input.cc),
+        return mapGraphErrors(async () => {
+            const client = await this.clientForMailbox(mailbox);
+            const html = renderMarkdownToHtml(input.bodyMarkdown);
+            const draft = await client.createDraft(mailbox, {
+                subject: input.subject,
+                bodyHtml: html,
+                to: toGraphRecipients(input.to),
+                cc: toGraphRecipients(input.cc),
+            });
+            return draft.id;
         });
-        return draft.id;
     }
 
     async sendReply(mailbox: string, messageId: string, input: ReplyInput): Promise<void> {
-        const client = await this.clientForMailbox(mailbox);
-        const html = renderMarkdownToHtml(input.bodyMarkdown);
-        await client.sendReply(mailbox, messageId, input.replyAll, html);
+        return mapGraphErrors(async () => {
+            const client = await this.clientForMailbox(mailbox);
+            const html = renderMarkdownToHtml(input.bodyMarkdown);
+            await client.sendReply(mailbox, messageId, input.replyAll, html);
+        });
     }
 
     async sendForward(mailbox: string, messageId: string, input: ForwardInput): Promise<void> {
-        const client = await this.clientForMailbox(mailbox);
-        const html = renderMarkdownToHtml(input.commentMarkdown);
-        await client.sendForward(
-            mailbox,
-            messageId,
-            toGraphRecipients(input.to),
-            toGraphRecipients(input.cc),
-            html,
-        );
+        return mapGraphErrors(async () => {
+            const client = await this.clientForMailbox(mailbox);
+            const html = renderMarkdownToHtml(input.commentMarkdown);
+            await client.sendForward(
+                mailbox,
+                messageId,
+                toGraphRecipients(input.to),
+                toGraphRecipients(input.cc),
+                html,
+            );
+        });
     }
 
     async sendNew(mailbox: string, input: NewMailInput): Promise<void> {
-        const client = await this.clientForMailbox(mailbox);
-        const html = renderMarkdownToHtml(input.bodyMarkdown);
-        await client.sendMail(mailbox, {
-            subject: input.subject,
-            bodyHtml: html,
-            to: toGraphRecipients(input.to),
-            cc: toGraphRecipients(input.cc),
+        return mapGraphErrors(async () => {
+            const client = await this.clientForMailbox(mailbox);
+            const html = renderMarkdownToHtml(input.bodyMarkdown);
+            await client.sendMail(mailbox, {
+                subject: input.subject,
+                bodyHtml: html,
+                to: toGraphRecipients(input.to),
+                cc: toGraphRecipients(input.cc),
+            });
         });
     }
 
     async move(mailbox: string, messageId: string, folder: MailFolder): Promise<void> {
-        const client = await this.clientForMailbox(mailbox);
-        await client.moveMessage(mailbox, messageId, FOLDER_IDS[folder]);
+        return mapGraphErrors(async () => {
+            const client = await this.clientForMailbox(mailbox);
+            await client.moveMessage(mailbox, messageId, FOLDER_IDS[folder]);
+        });
     }
 
     async search(query: MailSearchQuery): Promise<readonly MailSearchHit[]> {
-        if (query.limit <= 0) {
-            return [];
-        }
-        const kql = buildKqlQuery(query);
-        const folderId = query.folder ? FOLDER_IDS[query.folder] : null;
-        const targets = this.resolveSearchTargets(query.mailbox);
-        if (targets.length === 0) {
-            return [];
-        }
-        const hits: MailSearchHit[] = [];
-        let remaining = query.limit;
-        for (const target of targets) {
-            if (remaining <= 0) {
-                break;
+        return mapGraphErrors(async () => {
+            if (query.limit <= 0) {
+                return [];
             }
-            const client = new GraphClient(() => target.auth.getAccessTokenSilent());
-            const messages = await client.searchMessages(target.mailbox, kql, folderId, remaining);
-            for (const message of messages) {
-                hits.push(
-                    buildMailHit({
-                        message,
-                        mailbox: target.mailbox,
-                        isShared: target.isShared,
-                        // Search hits don't pre-fetch attachment bytes; agent
-                        // can call `mail_fetch_attachments` on demand. `null`
-                        // signals "not fetched", matching the poller's
-                        // failed-fetch convention.
-                        attachments: message.hasAttachments ? null : [],
-                    }),
-                );
-                if (hits.length >= query.limit) {
+            const kql = buildKqlQuery(query);
+            const folderId = query.folder ? FOLDER_IDS[query.folder] : null;
+            const targets = this.resolveSearchTargets(query.mailbox);
+            if (targets.length === 0) {
+                return [];
+            }
+            const hits: MailSearchHit[] = [];
+            let remaining = query.limit;
+            for (const target of targets) {
+                if (remaining <= 0) {
                     break;
                 }
+                const client = new GraphClient(() => target.auth.getAccessTokenSilent());
+                const messages = await client.searchMessages(
+                    target.mailbox,
+                    kql,
+                    folderId,
+                    remaining,
+                );
+                for (const message of messages) {
+                    hits.push(
+                        buildMailHit({
+                            message,
+                            mailbox: target.mailbox,
+                            isShared: target.isShared,
+                            // Search hits don't pre-fetch attachment bytes; agent
+                            // can call `mail_fetch_attachments` on demand. `null`
+                            // signals "not fetched", matching the poller's
+                            // failed-fetch convention.
+                            attachments: message.hasAttachments ? null : [],
+                        }),
+                    );
+                    if (hits.length >= query.limit) {
+                        break;
+                    }
+                }
+                remaining = query.limit - hits.length;
             }
-            remaining = query.limit - hits.length;
-        }
-        return hits;
+            return hits;
+        });
     }
 
     /**
@@ -240,17 +267,6 @@ export class Ms365MailProvider implements MailProvider {
         ];
     }
 
-    readonly adaptError: ToolFailureAdaptor = (err) => {
-        if (err instanceof GraphError) {
-            return {
-                status: err.status,
-                code: err.code ?? "GraphError",
-                message: err.graphMessage,
-            };
-        }
-        return null;
-    };
-
     /**
      * Resolve the {@link GraphClient} bound to whichever active login
      * owns the requested mailbox. Throws agent-readable errors when no
@@ -271,6 +287,24 @@ export class Ms365MailProvider implements MailProvider {
             );
         }
         return new GraphClient(() => auth.getAccessTokenSilent());
+    }
+}
+
+/**
+ * Run `body` and translate any thrown {@link GraphError} into a
+ * {@link ToolError} carrying Graph's `code` / cleaned `graphMessage`
+ * / HTTP `status`. Non-Graph throws propagate unchanged. Wrapping
+ * happens at the provider boundary so the agent-facing mail tools
+ * don't have to know about Graph's exception shape.
+ */
+async function mapGraphErrors<T>(body: () => Promise<T>): Promise<T> {
+    try {
+        return await body();
+    } catch (err) {
+        if (err instanceof GraphError) {
+            throw new ToolError(err.code ?? "GraphError", err.graphMessage, err.status);
+        }
+        throw err;
     }
 }
 

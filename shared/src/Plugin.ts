@@ -9,6 +9,7 @@ import type { EventFile, EventRow, NewEvent } from "./Event.js";
 import type { Logger } from "./logging/Logger.js";
 import type { MailApi } from "./Mail.js";
 import type { StepResultRow } from "./StepResult.js";
+import type { ToolRunContext } from "./ToolRunner.js";
 
 export type { ChatHandler, Client as McpClient };
 
@@ -333,6 +334,15 @@ export interface PluginToolCallContext {
     readonly host: HostContext;
     /** Logger child pre-scoped to `{ plugin, tool, eventId, agentrunId }`. */
     readonly log: Logger;
+    /**
+     * Per-call runner context: byte budget plus a `spill` callback that
+     * writes oversized results into the calling event's scratch dir.
+     * Pass this into {@link import("./ToolRunner.js").runJsonTool} (or
+     * its `JsonLines`/`Text` siblings) so the runner can decide between
+     * inline and offload-to-scratch consistently across host and
+     * container.
+     */
+    readonly toolRunContext: ToolRunContext;
 }
 
 /**

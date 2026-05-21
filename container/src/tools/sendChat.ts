@@ -1,3 +1,4 @@
+import { runJsonTool, type ToolRunContext } from "@getfamiliar/shared";
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
@@ -14,14 +15,15 @@ interface SendChatInput {
  * event's `preferred_chat_channel_id`, so the agent's mental model is
  * just "send a message to the user".
  *
- * Returns `{ ok: true }` on success — the SDK serializes it as the
- * tool result the model sees in the next step.
+ * Returns an empty object on success — the runner forwards it to the
+ * AI SDK, which serializes the empty object as the next tool result.
  */
 export function buildSendChatTool(
     chat: Pick<ChatManager, "appendAssistantMessage">,
     eventId: string,
-): Tool<SendChatInput, { ok: true }> {
-    return tool<SendChatInput, { ok: true }>({
+    ctx: ToolRunContext,
+): Tool<SendChatInput, object> {
+    return tool<SendChatInput, object>({
         description:
             "Send a chat message to the user. Use it to reply, ask follow-up questions, or proactively notify." +
             'Use like that: `send_chat({text: "Hi there!"})`.',
@@ -37,9 +39,10 @@ export function buildSendChatTool(
                 },
             },
         }),
-        execute: async ({ text }) => {
-            await chat.appendAssistantMessage(eventId, text ?? "...");
-            return { ok: true };
-        },
+        execute: ({ text }) =>
+            runJsonTool(async () => {
+                await chat.appendAssistantMessage(eventId, text ?? "...");
+                return {};
+            }, ctx),
     });
 }

@@ -1,4 +1,10 @@
-import type { AgentRunBus, AgentRunRow } from "@getfamiliar/shared";
+import {
+    type AgentRunBus,
+    type AgentRunRow,
+    runTextTool,
+    ToolError,
+    type ToolRunContext,
+} from "@getfamiliar/shared";
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
@@ -9,10 +15,6 @@ interface CallHandlerInput {
     readonly prompt?: string;
     readonly payload?: Record<string, unknown>;
 }
-
-type CallHandlerOutput =
-    | { readonly ok: true; readonly resultText: string }
-    | { readonly ok: false; readonly error: string };
 
 /**
  * Callback the Scheduler binds to each runner — when invoked, the
@@ -27,7 +29,7 @@ export type WaitForSubagent = (childId: string) => Promise<AgentRunRow>;
 /**
  * Build the `call_handler` tool for one agentrun. Spawns a child
  * agentrun and **suspends** the current run until the child settles,
- * then returns the child's `resultText` (or its error if it failed).
+ * then returns the child's `resultText` as the tool's text result.
  *
  * Unlike `queue_handler` (fire-and-forget), the caller awaits and
  * receives the subagent's output — making it possible to react to
@@ -39,25 +41,25 @@ export type WaitForSubagent = (childId: string) => Promise<AgentRunRow>;
  * the parent and is tagged `calltype='called'`. Topic defaults to
  * the parent's topic when omitted.
  *
- * Errors during child insertion or handler resolution surface as
- * `{ ok: false, error }` — the caller can recover instead of
- * crashing the loop. A failed child likewise surfaces with its error
- * text, not as a thrown exception.
+ * Errors during child insertion, handler resolution, or a failed
+ * subagent throw a {@link ToolError}; the AI SDK then emits a
+ * `tool-error` block so the calling handler can decide how to react
+ * (read the failure message, pick a different handler, etc.).
  */
 export function buildCallHandlerTool(
     bus: AgentRunBus,
     parent: AgentRunRow,
     waitForSubagent: WaitForSubagent,
-): Tool<CallHandlerInput, CallHandlerOutput> {
-    return tool<CallHandlerInput, CallHandlerOutput>({
+    ctx: ToolRunContext,
+): Tool<CallHandlerInput, string> {
+    return tool<CallHandlerInput, string>({
         description:
             "Spawn a subagent and WAIT for its result. The current agentrun suspends; once the " +
-            "subagent settles, this tool returns the subagent's final text in `resultText`. Use " +
+            "subagent settles, this tool returns the subagent's final text. Use " +
             "`queue_handler` instead when you don't need the subagent's output. Topic defaults " +
             "to the current agentrun's topic; override with the `topic` argument to call " +
             "cross-topic. Inherits the event and trust level from this run. If the subagent " +
-            "fails, the tool returns `{ ok: false, error }` rather than aborting — the calling " +
-            "handler can decide how to react.",
+            "fails, the tool surfaces an error so the calling handler can decide how to react.",
         inputSchema: jsonSchema<CallHandlerInput>({
             type: "object",
             additionalProperties: false,
@@ -88,65 +90,66 @@ export function buildCallHandlerTool(
                 },
             },
         }),
-        execute: async ({ topic, handler, prompt, payload }) => {
-            const resolvedTopic = topic ?? parent.topic;
+        execute: ({ topic, handler, prompt, payload }) =>
+            runTextTool(async () => {
+                const resolvedTopic = topic ?? parent.topic;
 
-            if (payload !== undefined) {
-                let serialized: string | undefined;
+                if (payload !== undefined) {
+                    let serialized: string | undefined;
+                    try {
+                        serialized = JSON.stringify(payload);
+                    } catch (err) {
+                        throw new ToolError(
+                            "InvalidPayload",
+                            `payload must be JSON-serializable: ${err instanceof Error ? err.message : String(err)}`,
+                        );
+                    }
+                    if (serialized === undefined) {
+                        throw new ToolError(
+                            "InvalidPayload",
+                            "payload must be JSON-serializable (must not contain functions, symbols, or undefined at the root)",
+                        );
+                    }
+                }
+
                 try {
-                    serialized = JSON.stringify(payload);
+                    HandlerFile.load(resolvedTopic, handler);
                 } catch (err) {
-                    return {
-                        ok: false,
-                        error: `payload must be JSON-serializable: ${err instanceof Error ? err.message : String(err)}`,
-                    };
+                    throw new ToolError(
+                        "HandlerNotFound",
+                        err instanceof Error ? err.message : String(err),
+                    );
                 }
-                if (serialized === undefined) {
-                    return {
-                        ok: false,
-                        error: "payload must be JSON-serializable (must not contain functions, symbols, or undefined at the root)",
-                    };
+
+                let child: AgentRunRow;
+                try {
+                    child = await bus.add({
+                        eventId: parent.eventId,
+                        parentAgentrunId: parent.id,
+                        topic: resolvedTopic,
+                        handler,
+                        priority: parent.priority,
+                        prompt: prompt ?? null,
+                        payload: payload ?? {},
+                        privileged: parent.privileged,
+                        calltype: "called",
+                    });
+                } catch (err) {
+                    throw new ToolError(
+                        "SubagentSpawnFailed",
+                        `failed to spawn subagent: ${err instanceof Error ? err.message : String(err)}`,
+                    );
                 }
-            }
 
-            try {
-                HandlerFile.load(resolvedTopic, handler);
-            } catch (err) {
-                return {
-                    ok: false,
-                    error: err instanceof Error ? err.message : String(err),
-                };
-            }
+                const settled = await waitForSubagent(child.id);
 
-            let child: AgentRunRow;
-            try {
-                child = await bus.add({
-                    eventId: parent.eventId,
-                    parentAgentrunId: parent.id,
-                    topic: resolvedTopic,
-                    handler,
-                    priority: parent.priority,
-                    prompt: prompt ?? null,
-                    payload: payload ?? {},
-                    privileged: parent.privileged,
-                    calltype: "called",
-                });
-            } catch (err) {
-                return {
-                    ok: false,
-                    error: `failed to spawn subagent: ${err instanceof Error ? err.message : String(err)}`,
-                };
-            }
-
-            const settled = await waitForSubagent(child.id);
-
-            if (settled.state === "done") {
-                return { ok: true, resultText: settled.resultText ?? "" };
-            }
-            return {
-                ok: false,
-                error: settled.error ?? "subagent failed without an error message",
-            };
-        },
+                if (settled.state === "done") {
+                    return settled.resultText ?? "";
+                }
+                throw new ToolError(
+                    "SubagentFailed",
+                    settled.error ?? "subagent failed without an error message",
+                );
+            }, ctx),
     });
 }

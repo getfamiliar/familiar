@@ -52,10 +52,7 @@ describe("parseInZone", () => {
         const parsed = parseInZone("2026-05-22T13:55:00", "Europe/Berlin");
         assert.equal(parsed.ok, true);
         if (parsed.ok) {
-            assert.equal(
-                renderInZone(parsed.utcIso, "Europe/Berlin"),
-                "2026-05-22T13:55:00+02:00",
-            );
+            assert.equal(renderInZone(parsed.utcIso, "Europe/Berlin"), "2026-05-22T13:55:00+02:00");
         }
     });
 });

@@ -1,6 +1,12 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { AgentRunRow } from "@getfamiliar/shared";
+import {
+    type AgentRunRow,
+    runJsonLinesTool,
+    runJsonTool,
+    ToolError,
+    type ToolRunContext,
+} from "@getfamiliar/shared";
 import type { Tool, ToolSet } from "ai";
 import { jsonSchema, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
@@ -50,39 +56,38 @@ const SCRATCH_ROOT = "/scratch";
  * All other absolute paths are rejected. Centralizes the sandbox check
  * so each tool just calls this once and surfaces the error to the model.
  *
- * @throws If `input` is empty, an absolute path outside `/scratch/`,
- *   or escapes its allowed root via `..`.
+ * @throws {ToolError} If `input` is empty, an absolute path outside
+ *   `/scratch/`, or escapes its allowed root via `..`.
  */
 function resolveWorkspacePath(input: string): string {
     if (typeof input !== "string") {
-        throw new Error("path must be a string");
+        throw new ToolError("BadPath", "path must be a string");
     }
     const trimmed = input.trim();
     if (trimmed.length === 0) {
-        throw new Error("path must not be empty");
+        throw new ToolError("BadPath", "path must not be empty");
     }
     if (path.isAbsolute(trimmed)) {
         const normalized = path.resolve(trimmed);
         if (normalized === SCRATCH_ROOT) {
-            throw new Error(
+            throw new ToolError(
+                "BadPath",
                 "path must include a subdirectory under /scratch/ (e.g. /scratch/<event-id>/<file>)",
             );
         }
         if (normalized === `${SCRATCH_ROOT}/` || normalized.startsWith(`${SCRATCH_ROOT}/`)) {
             return normalized;
         }
-        throw new Error(
+        throw new ToolError(
+            "BadPath",
             "absolute paths are only allowed under /scratch/; workspace paths must be relative",
         );
     }
     const root = HandlerFile.getWorkspaceRoot();
     const resolved = path.resolve(root, trimmed);
     const rel = path.relative(root, resolved);
-    if (rel === "..") {
-        throw new Error("path escapes workspace root");
-    }
-    if (rel.startsWith(`..${path.sep}`)) {
-        throw new Error("path escapes workspace root");
+    if (rel === ".." || rel.startsWith(`..${path.sep}`)) {
+        throw new ToolError("BadPath", "path escapes workspace root");
     }
     return resolved;
 }
@@ -114,49 +119,38 @@ function requiresPrivilegedWrite(absolute: string): boolean {
     }
     const root = HandlerFile.getWorkspaceRoot();
     const rel = path.relative(root, absolute);
-    if (rel === TOOLGROUPS_DIR) {
-        return true;
-    }
-    if (rel.startsWith(`${TOOLGROUPS_DIR}${path.sep}`)) {
+    if (rel === TOOLGROUPS_DIR || rel.startsWith(`${TOOLGROUPS_DIR}${path.sep}`)) {
         return true;
     }
     return false;
 }
 
-/**
- * Standard refusal returned by writing tools when the agentrun is
- * non-privileged and the target is a gated path. The text spells out
- * *why* so the model can decide what to do (give up, ask the user,
- * write a different file) instead of looping retries.
- */
-function privilegeRefusal(): { readonly ok: false; readonly error: string } {
-    return {
-        ok: false,
-        error:
-            "Only privileged agentruns may write to .md files or anything under " +
-            "workspace/toolgroups/. This run is non-privileged. Those files " +
-            "(handlers, SOUL.md, people/*, toolgroup definitions) can only be " +
-            "modified by runs descending from trusted user input (cli-chat REPL " +
-            "or the operator on Telegram). Reads are still allowed.",
-    };
+/** Standardised refusal text used by writing tools when the run is non-privileged. */
+const PRIVILEGE_REFUSAL_MESSAGE =
+    "Only privileged agentruns may write to .md files or anything under " +
+    "workspace/toolgroups/. This run is non-privileged. Those files " +
+    "(handlers, SOUL.md, people/*, toolgroup definitions) can only be " +
+    "modified by runs descending from trusted user input (cli-chat REPL " +
+    "or the operator on Telegram). Reads are still allowed.";
+
+function refusePrivilege(): never {
+    throw new ToolError("PrivilegeDenied", PRIVILEGE_REFUSAL_MESSAGE);
 }
 
 interface FileReadInput {
     readonly path: string;
 }
 
-type FileReadOutput =
-    | { readonly ok: true; readonly content: string; readonly totalLines: number }
-    | { readonly ok: false; readonly error: string };
-
 /**
  * Build the `file_read` tool. Reads a workspace file as UTF-8 and
- * returns its full contents. Stripped to a single `path` property
- * while we shake out tool-call reliability — slicing via offset/limit
- * can come back once the simple shape is reliable.
+ * returns its full contents alongside a `totalLines` count so the
+ * model can decide whether to ask for a follow-up slice. Stripped to
+ * a single `path` property while we shake out tool-call reliability —
+ * slicing via offset/limit can come back once the simple shape is
+ * reliable.
  */
-function buildFileReadTool(): Tool<FileReadInput, FileReadOutput> {
-    return tool<FileReadInput, FileReadOutput>({
+function buildFileReadTool(ctx: ToolRunContext): Tool<FileReadInput, object> {
+    return tool<FileReadInput, object>({
         description:
             "Read a file and return its UTF-8 contents. Paths are workspace-" +
             "relative (e.g. `SOUL.md`, `people/anna.md`) — except absolute " +
@@ -173,32 +167,29 @@ function buildFileReadTool(): Tool<FileReadInput, FileReadOutput> {
                 },
             },
         }),
-        execute: async (params) => {
-            const p = params.path;
-            let absolute: string;
-            try {
-                absolute = resolveWorkspacePath(p);
-            } catch (err) {
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-
-            let content: string;
-            try {
-                content = await fs.readFile(absolute, "utf8");
-            } catch (err) {
-                const code = (err as NodeJS.ErrnoException).code;
-                if (code === "ENOENT") {
-                    return { ok: false, error: `file not found: ${p}` };
+        execute: (params) =>
+            runJsonTool(async () => {
+                const p = params.path;
+                const absolute = resolveWorkspacePath(p);
+                let content: string;
+                try {
+                    content = await fs.readFile(absolute, "utf8");
+                } catch (err) {
+                    const code = (err as NodeJS.ErrnoException).code;
+                    if (code === "ENOENT") {
+                        throw new ToolError("FileNotFound", `file not found: ${p}`);
+                    }
+                    if (code === "EISDIR") {
+                        throw new ToolError(
+                            "IsADirectory",
+                            `path is a directory, not a file: ${p}`,
+                        );
+                    }
+                    throw err;
                 }
-                if (code === "EISDIR") {
-                    return { ok: false, error: `path is a directory, not a file: ${p}` };
-                }
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-
-            const totalLines = content.split("\n").length;
-            return { ok: true, content, totalLines };
-        },
+                const totalLines = content.split("\n").length;
+                return { content, totalLines };
+            }, ctx),
     });
 }
 
@@ -207,17 +198,16 @@ interface FileWriteInput {
     readonly content: string;
 }
 
-type FileWriteOutput =
-    | { readonly ok: true; readonly bytes: number }
-    | { readonly ok: false; readonly error: string };
-
 /**
  * Build the `file_write` tool. Overwrites the file at `path` with
  * `content`. Creates missing parent directories. Refuses `.md` writes
  * for non-privileged runs.
  */
-function buildFileWriteTool(parent: AgentRunRow): Tool<FileWriteInput, FileWriteOutput> {
-    return tool<FileWriteInput, FileWriteOutput>({
+function buildFileWriteTool(
+    parent: AgentRunRow,
+    ctx: ToolRunContext,
+): Tool<FileWriteInput, object> {
+    return tool<FileWriteInput, object>({
         description:
             "Write or overwrite a file with the given content. Creates missing " +
             "parent directories. Markdown (.md) writes require a privileged run.",
@@ -236,24 +226,16 @@ function buildFileWriteTool(parent: AgentRunRow): Tool<FileWriteInput, FileWrite
                 },
             },
         }),
-        execute: async ({ path: p, content }) => {
-            let absolute: string;
-            try {
-                absolute = resolveWorkspacePath(p);
-            } catch (err) {
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-            if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
-                return privilegeRefusal();
-            }
-            try {
+        execute: ({ path: p, content }) =>
+            runJsonTool(async () => {
+                const absolute = resolveWorkspacePath(p);
+                if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
+                    refusePrivilege();
+                }
                 await fs.mkdir(path.dirname(absolute), { recursive: true });
                 await fs.writeFile(absolute, content, "utf8");
-                return { ok: true, bytes: Buffer.byteLength(content, "utf8") };
-            } catch (err) {
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-        },
+                return { bytes: Buffer.byteLength(content, "utf8") };
+            }, ctx),
     });
 }
 
@@ -262,8 +244,6 @@ interface FileStrReplaceInput {
     readonly old_string: string;
     readonly new_string: string;
 }
-
-type FileStrReplaceOutput = { readonly ok: true } | { readonly ok: false; readonly error: string };
 
 /**
  * Build the `file_str_replace` tool. Replaces exactly one occurrence
@@ -274,8 +254,9 @@ type FileStrReplaceOutput = { readonly ok: true } | { readonly ok: false; readon
  */
 function buildFileStrReplaceTool(
     parent: AgentRunRow,
-): Tool<FileStrReplaceInput, FileStrReplaceOutput> {
-    return tool<FileStrReplaceInput, FileStrReplaceOutput>({
+    ctx: ToolRunContext,
+): Tool<FileStrReplaceInput, object> {
+    return tool<FileStrReplaceInput, object>({
         description:
             "Replace exactly one occurrence of `old_string` with `new_string` " +
             "in the file. Errors if `old_string` is missing or appears more " +
@@ -300,54 +281,45 @@ function buildFileStrReplaceTool(
                 },
             },
         }),
-        execute: async ({ path: p, old_string, new_string }) => {
-            let absolute: string;
-            try {
-                absolute = resolveWorkspacePath(p);
-            } catch (err) {
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-            if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
-                return privilegeRefusal();
-            }
-            if (typeof old_string !== "string" || old_string.length === 0) {
-                return { ok: false, error: "old_string must be non-empty" };
-            }
-
-            let content: string;
-            try {
-                content = await fs.readFile(absolute, "utf8");
-            } catch (err) {
-                const code = (err as NodeJS.ErrnoException).code;
-                if (code === "ENOENT") {
-                    return { ok: false, error: `file not found: ${p}` };
+        execute: ({ path: p, old_string, new_string }) =>
+            runJsonTool(async () => {
+                const absolute = resolveWorkspacePath(p);
+                if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
+                    refusePrivilege();
                 }
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
+                if (typeof old_string !== "string" || old_string.length === 0) {
+                    throw new ToolError("BadInput", "old_string must be non-empty");
+                }
 
-            const first = content.indexOf(old_string);
-            if (first === -1) {
-                return { ok: false, error: "old_string not found in file" };
-            }
-            const second = content.indexOf(old_string, first + old_string.length);
-            if (second !== -1) {
-                return {
-                    ok: false,
-                    error:
+                let content: string;
+                try {
+                    content = await fs.readFile(absolute, "utf8");
+                } catch (err) {
+                    const code = (err as NodeJS.ErrnoException).code;
+                    if (code === "ENOENT") {
+                        throw new ToolError("FileNotFound", `file not found: ${p}`);
+                    }
+                    throw err;
+                }
+
+                const first = content.indexOf(old_string);
+                if (first === -1) {
+                    throw new ToolError("NoMatch", "old_string not found in file");
+                }
+                const second = content.indexOf(old_string, first + old_string.length);
+                if (second !== -1) {
+                    throw new ToolError(
+                        "AmbiguousMatch",
                         "old_string occurs more than once. " +
-                        "Add surrounding context to make the match unique.",
-                };
-            }
+                            "Add surrounding context to make the match unique.",
+                    );
+                }
 
-            const updated =
-                content.slice(0, first) + new_string + content.slice(first + old_string.length);
-            try {
+                const updated =
+                    content.slice(0, first) + new_string + content.slice(first + old_string.length);
                 await fs.writeFile(absolute, updated, "utf8");
-            } catch (err) {
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-            return { ok: true };
-        },
+                return {};
+            }, ctx),
     });
 }
 
@@ -355,10 +327,6 @@ interface FileAppendInput {
     readonly path: string;
     readonly content: string;
 }
-
-type FileAppendOutput =
-    | { readonly ok: true; readonly bytes: number }
-    | { readonly ok: false; readonly error: string };
 
 /**
  * Build the `file_append` tool. Appends `content` to the file at
@@ -373,8 +341,11 @@ type FileAppendOutput =
  *
  * Refuses `.md` and `toolgroups/*` writes for non-privileged runs.
  */
-function buildFileAppendTool(parent: AgentRunRow): Tool<FileAppendInput, FileAppendOutput> {
-    return tool<FileAppendInput, FileAppendOutput>({
+function buildFileAppendTool(
+    parent: AgentRunRow,
+    ctx: ToolRunContext,
+): Tool<FileAppendInput, object> {
+    return tool<FileAppendInput, object>({
         description:
             "Append content to the end of a file. Creates the file (and any " +
             "missing parent directories) if it does not exist. If the existing " +
@@ -399,26 +370,18 @@ function buildFileAppendTool(parent: AgentRunRow): Tool<FileAppendInput, FileApp
                 },
             },
         }),
-        execute: async ({ path: p, content }) => {
-            let absolute: string;
-            try {
-                absolute = resolveWorkspacePath(p);
-            } catch (err) {
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-            if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
-                return privilegeRefusal();
-            }
-            try {
+        execute: ({ path: p, content }) =>
+            runJsonTool(async () => {
+                const absolute = resolveWorkspacePath(p);
+                if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
+                    refusePrivilege();
+                }
                 await fs.mkdir(path.dirname(absolute), { recursive: true });
                 const prefix = (await needsLeadingNewline(absolute)) ? "\n" : "";
                 const toWrite = prefix + content;
                 await fs.appendFile(absolute, toWrite, "utf8");
-                return { ok: true, bytes: Buffer.byteLength(toWrite, "utf8") };
-            } catch (err) {
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-        },
+                return { bytes: Buffer.byteLength(toWrite, "utf8") };
+            }, ctx),
     });
 }
 
@@ -456,21 +419,12 @@ interface LsInput {
     readonly path: string;
 }
 
-interface LsEntry {
-    readonly name: string;
-    readonly type: "file" | "directory" | "other";
-}
-
-type LsOutput =
-    | { readonly ok: true; readonly entries: readonly LsEntry[] }
-    | { readonly ok: false; readonly error: string };
-
 /**
  * Build the `ls` tool. Lists immediate entries (files + subdirectories)
  * of a workspace directory. Pass `.` for the workspace root.
  */
-function buildLsTool(): Tool<LsInput, LsOutput> {
-    return tool<LsInput, LsOutput>({
+function buildLsTool(ctx: ToolRunContext): Tool<LsInput, object> {
+    return tool<LsInput, object>({
         description:
             "List immediate entries of a workspace directory (non-recursive). " +
             "Pass `.` for the workspace root. Returns one entry per child with " +
@@ -486,32 +440,29 @@ function buildLsTool(): Tool<LsInput, LsOutput> {
                 },
             },
         }),
-        execute: async ({ path: p }) => {
-            let absolute: string;
-            try {
-                absolute = resolveWorkspacePath(p === "" ? "." : p);
-            } catch (err) {
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-            try {
-                const dirents = await fs.readdir(absolute, { withFileTypes: true });
-                const entries: LsEntry[] = dirents.map((d) => ({
+        execute: ({ path: p }) =>
+            runJsonTool(async () => {
+                const absolute = resolveWorkspacePath(p === "" ? "." : p);
+                let dirents: import("node:fs").Dirent[];
+                try {
+                    dirents = await fs.readdir(absolute, { withFileTypes: true });
+                } catch (err) {
+                    const code = (err as NodeJS.ErrnoException).code;
+                    if (code === "ENOENT") {
+                        throw new ToolError("NotFound", `directory not found: ${p}`);
+                    }
+                    if (code === "ENOTDIR") {
+                        throw new ToolError("NotADirectory", `path is not a directory: ${p}`);
+                    }
+                    throw err;
+                }
+                const entries = dirents.map((d) => ({
                     name: d.name,
                     type: d.isFile() ? "file" : d.isDirectory() ? "directory" : "other",
                 }));
                 entries.sort((a, b) => a.name.localeCompare(b.name));
-                return { ok: true, entries };
-            } catch (err) {
-                const code = (err as NodeJS.ErrnoException).code;
-                if (code === "ENOENT") {
-                    return { ok: false, error: `directory not found: ${p}` };
-                }
-                if (code === "ENOTDIR") {
-                    return { ok: false, error: `path is not a directory: ${p}` };
-                }
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-        },
+                return { entries };
+            }, ctx),
     });
 }
 
@@ -519,21 +470,21 @@ interface GlobInput {
     readonly pattern: string;
 }
 
-type GlobOutput =
-    | { readonly ok: true; readonly paths: readonly string[]; readonly truncated: boolean }
-    | { readonly ok: false; readonly error: string };
-
 /**
  * Build the `glob` tool. Matches workspace files against a glob
  * pattern (e.g. `chat/*.md`, `**\/*.json`) and returns matching
- * workspace-relative paths. Capped at {@link GLOB_MAX_RESULTS} hits.
+ * workspace-relative paths as JSONL — one `{"path":"..."}` per line,
+ * with a terminating `{"truncated":true,...}` marker when the cap is
+ * hit. Capped at {@link GLOB_MAX_RESULTS} hits.
  */
-function buildGlobTool(): Tool<GlobInput, GlobOutput> {
-    return tool<GlobInput, GlobOutput>({
+function buildGlobTool(ctx: ToolRunContext): Tool<GlobInput, string> {
+    return tool<GlobInput, string>({
         description:
             "Match files in the workspace against a glob pattern (e.g. " +
             "`chat/*.md`, `**/*.json`, `people/*.md`). Returns workspace-" +
-            `relative paths. Capped at ${GLOB_MAX_RESULTS} matches.`,
+            'relative paths as one JSON object per line (`{"path":"..."}`). ' +
+            `Capped at ${GLOB_MAX_RESULTS} matches; a trailing ` +
+            '`{"truncated":true,...}` line is appended when the cap fires.',
         inputSchema: jsonSchema<GlobInput>({
             type: "object",
             additionalProperties: false,
@@ -545,24 +496,29 @@ function buildGlobTool(): Tool<GlobInput, GlobOutput> {
                 },
             },
         }),
-        execute: async ({ pattern }) => {
-            const root = HandlerFile.getWorkspaceRoot();
-            const paths: string[] = [];
-            let truncated = false;
-            try {
+        execute: ({ pattern }) =>
+            runJsonLinesTool(async () => {
+                const root = HandlerFile.getWorkspaceRoot();
+                const paths: string[] = [];
+                let capped = false;
                 for await (const match of fs.glob(pattern, { cwd: root })) {
                     paths.push(match);
                     if (paths.length >= GLOB_MAX_RESULTS) {
-                        truncated = true;
+                        capped = true;
                         break;
                     }
                 }
-            } catch (err) {
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-            paths.sort();
-            return { ok: true, paths, truncated };
-        },
+                paths.sort();
+                const out: object[] = paths.map((p) => ({ path: p }));
+                if (capped) {
+                    out.push({
+                        truncated: true,
+                        cappedAt: GLOB_MAX_RESULTS,
+                        reason: `glob hit ${GLOB_MAX_RESULTS}-result ceiling; narrow the pattern for completeness`,
+                    });
+                }
+                return out;
+            }, ctx),
     });
 }
 
@@ -578,25 +534,22 @@ interface GrepMatch {
     readonly text: string;
 }
 
-type GrepOutput =
-    | { readonly ok: true; readonly matches: readonly GrepMatch[]; readonly truncated: boolean }
-    | { readonly ok: false; readonly error: string };
-
 /**
  * Build the `grep` tool. Searches workspace files for a JavaScript
  * regex. Optional `path` (file or subdirectory; default: workspace
  * root) narrows the scan; optional `glob` further filters which files
  * inside that subtree are inspected. Returns up to
- * {@link GREP_MAX_MATCHES} matches with `truncated` flagged when more
- * exist.
+ * {@link GREP_MAX_MATCHES} matches as JSONL, plus a `{"truncated":true,
+ * ...}` marker line when the cap fires.
  */
-function buildGrepTool(): Tool<GrepInput, GrepOutput> {
-    return tool<GrepInput, GrepOutput>({
+function buildGrepTool(ctx: ToolRunContext): Tool<GrepInput, string> {
+    return tool<GrepInput, string>({
         description:
             "Search workspace files for a regex pattern (JavaScript regex syntax). " +
             "Optional `path` (file or subdirectory; default: workspace root) " +
             "narrows the scan; optional `glob` (e.g. `**/*.md`) further filters " +
-            `which files are inspected. Returns up to ${GREP_MAX_MATCHES} matches.`,
+            `which files are inspected. Returns up to ${GREP_MAX_MATCHES} matches ` +
+            'as one JSON object per line (`{"file":..., "line":..., "text":...}`).',
         inputSchema: jsonSchema<GrepInput>({
             type: "object",
             additionalProperties: false,
@@ -620,42 +573,37 @@ function buildGrepTool(): Tool<GrepInput, GrepOutput> {
                 },
             },
         }),
-        execute: async ({ pattern, path: searchPath, glob: globPattern }) => {
-            let regex: RegExp;
-            try {
-                regex = new RegExp(pattern);
-            } catch (err) {
-                return {
-                    ok: false,
-                    error: `invalid regex: ${err instanceof Error ? err.message : String(err)}`,
-                };
-            }
-
-            const root = HandlerFile.getWorkspaceRoot();
-            let baseAbs: string;
-            try {
-                baseAbs = resolveWorkspacePath(searchPath ?? ".");
-            } catch (err) {
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-
-            let baseStat: Awaited<ReturnType<typeof fs.stat>>;
-            try {
-                baseStat = await fs.stat(baseAbs);
-            } catch (err) {
-                const code = (err as NodeJS.ErrnoException).code;
-                if (code === "ENOENT") {
-                    return { ok: false, error: `path not found: ${searchPath ?? "."}` };
-                }
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-
-            const candidates: string[] = [];
-            if (baseStat.isFile()) {
-                candidates.push(baseAbs);
-            } else if (baseStat.isDirectory()) {
-                const pat = globPattern ?? "**/*";
+        execute: ({ pattern, path: searchPath, glob: globPattern }) =>
+            runJsonLinesTool(async () => {
+                let regex: RegExp;
                 try {
+                    regex = new RegExp(pattern);
+                } catch (err) {
+                    throw new ToolError(
+                        "BadRegex",
+                        `invalid regex: ${err instanceof Error ? err.message : String(err)}`,
+                    );
+                }
+
+                const root = HandlerFile.getWorkspaceRoot();
+                const baseAbs = resolveWorkspacePath(searchPath ?? ".");
+
+                let baseStat: Awaited<ReturnType<typeof fs.stat>>;
+                try {
+                    baseStat = await fs.stat(baseAbs);
+                } catch (err) {
+                    const code = (err as NodeJS.ErrnoException).code;
+                    if (code === "ENOENT") {
+                        throw new ToolError("NotFound", `path not found: ${searchPath ?? "."}`);
+                    }
+                    throw err;
+                }
+
+                const candidates: string[] = [];
+                if (baseStat.isFile()) {
+                    candidates.push(baseAbs);
+                } else if (baseStat.isDirectory()) {
+                    const pat = globPattern ?? "**/*";
                     for await (const dirent of fs.glob(pat, {
                         cwd: baseAbs,
                         withFileTypes: true,
@@ -667,55 +615,60 @@ function buildGrepTool(): Tool<GrepInput, GrepOutput> {
                             break;
                         }
                     }
-                } catch (err) {
-                    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+                } else {
+                    throw new ToolError(
+                        "BadPath",
+                        `path is neither a file nor a directory: ${searchPath ?? "."}`,
+                    );
                 }
-            } else {
-                return {
-                    ok: false,
-                    error: `path is neither a file nor a directory: ${searchPath ?? "."}`,
-                };
-            }
 
-            const matches: GrepMatch[] = [];
-            let truncated = false;
-            for (const file of candidates) {
-                if (matches.length >= GREP_MAX_MATCHES) {
-                    truncated = true;
-                    break;
-                }
-                let stat: Awaited<ReturnType<typeof fs.stat>>;
-                try {
-                    stat = await fs.stat(file);
-                } catch {
-                    continue;
-                }
-                if (stat.size > GREP_MAX_FILE_BYTES) {
-                    continue;
-                }
-                let content: string;
-                try {
-                    content = await fs.readFile(file, "utf8");
-                } catch {
-                    continue;
-                }
-                const lines = content.split("\n");
-                for (let i = 0; i < lines.length; i++) {
-                    if (regex.test(lines[i])) {
-                        matches.push({
-                            file: path.relative(root, file),
-                            line: i + 1,
-                            text: lines[i].slice(0, GREP_LINE_PREVIEW_CHARS),
-                        });
-                        if (matches.length >= GREP_MAX_MATCHES) {
-                            truncated = true;
-                            break;
+                const matches: GrepMatch[] = [];
+                let capped = false;
+                for (const file of candidates) {
+                    if (matches.length >= GREP_MAX_MATCHES) {
+                        capped = true;
+                        break;
+                    }
+                    let stat: Awaited<ReturnType<typeof fs.stat>>;
+                    try {
+                        stat = await fs.stat(file);
+                    } catch {
+                        continue;
+                    }
+                    if (stat.size > GREP_MAX_FILE_BYTES) {
+                        continue;
+                    }
+                    let content: string;
+                    try {
+                        content = await fs.readFile(file, "utf8");
+                    } catch {
+                        continue;
+                    }
+                    const lines = content.split("\n");
+                    for (let i = 0; i < lines.length; i++) {
+                        if (regex.test(lines[i])) {
+                            matches.push({
+                                file: path.relative(root, file),
+                                line: i + 1,
+                                text: lines[i].slice(0, GREP_LINE_PREVIEW_CHARS),
+                            });
+                            if (matches.length >= GREP_MAX_MATCHES) {
+                                capped = true;
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            return { ok: true, matches, truncated };
-        },
+                const out: object[] = matches.slice();
+                if (capped) {
+                    out.push({
+                        truncated: true,
+                        cappedAt: GREP_MAX_MATCHES,
+                        reason: `grep hit ${GREP_MAX_MATCHES}-match ceiling; narrow the search for completeness`,
+                    });
+                }
+                return out;
+            }, ctx),
     });
 }
 
@@ -727,14 +680,6 @@ interface FsRemoveSkip {
     readonly path: string;
     readonly reason: string;
 }
-
-type FsRemoveOutput =
-    | {
-          readonly ok: true;
-          readonly removed: readonly string[];
-          readonly skipped: readonly FsRemoveSkip[];
-      }
-    | { readonly ok: false; readonly error: string };
 
 /**
  * Glob meta characters that mark a path segment as a pattern rather
@@ -799,8 +744,8 @@ function classifyRemovePattern(
  *   branch, a gated target fails the call so the model gets an explicit
  *   refusal.
  */
-function buildFsRemoveTool(parent: AgentRunRow): Tool<FsRemoveInput, FsRemoveOutput> {
-    return tool<FsRemoveInput, FsRemoveOutput>({
+function buildFsRemoveTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FsRemoveInput, object> {
+    return tool<FsRemoveInput, object>({
         description:
             "Remove a file from the workspace. The `path` may be a single " +
             "workspace-relative file (e.g. `chat/digests/2026-05.jsonl`), or " +
@@ -825,60 +770,47 @@ function buildFsRemoveTool(parent: AgentRunRow): Tool<FsRemoveInput, FsRemoveOut
                 },
             },
         }),
-        execute: async ({ path: p }) => {
-            const classification = classifyRemovePattern(p);
-            if (classification.kind === "invalid") {
-                return { ok: false, error: classification.error };
-            }
-
-            let absolute: string;
-            try {
-                absolute = resolveWorkspacePath(p);
-            } catch (err) {
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
-
-            if (classification.kind === "literal") {
-                if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
-                    return privilegeRefusal();
+        execute: ({ path: p }) =>
+            runJsonTool(async () => {
+                const classification = classifyRemovePattern(p);
+                if (classification.kind === "invalid") {
+                    throw new ToolError("BadPattern", classification.error);
                 }
-                let stat: Awaited<ReturnType<typeof fs.lstat>>;
-                try {
-                    stat = await fs.lstat(absolute);
-                } catch (err) {
-                    const code = (err as NodeJS.ErrnoException).code;
-                    if (code === "ENOENT") {
-                        return { ok: false, error: `file not found: ${p}` };
+
+                const absolute = resolveWorkspacePath(p);
+
+                if (classification.kind === "literal") {
+                    if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
+                        refusePrivilege();
                     }
-                    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-                }
-                if (stat.isDirectory()) {
-                    return {
-                        ok: false,
-                        error: `path is a directory; fs_remove does not delete directories: ${p}`,
-                    };
-                }
-                try {
+                    let stat: Awaited<ReturnType<typeof fs.lstat>>;
+                    try {
+                        stat = await fs.lstat(absolute);
+                    } catch (err) {
+                        const code = (err as NodeJS.ErrnoException).code;
+                        if (code === "ENOENT") {
+                            throw new ToolError("FileNotFound", `file not found: ${p}`);
+                        }
+                        throw err;
+                    }
+                    if (stat.isDirectory()) {
+                        throw new ToolError(
+                            "IsADirectory",
+                            `path is a directory; fs_remove does not delete directories: ${p}`,
+                        );
+                    }
                     await fs.unlink(absolute);
-                } catch (err) {
-                    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+                    return { removed: [p], skipped: [] };
                 }
-                return { ok: true, removed: [p], skipped: [] };
-            }
 
-            const root = HandlerFile.getWorkspaceRoot();
-            const isAbsolutePattern = path.isAbsolute(p.trim());
-            const globCwd = isAbsolutePattern ? "/" : root;
-            const removed: string[] = [];
-            const skipped: FsRemoveSkip[] = [];
-            const refusalText = privilegeRefusal().error;
+                const root = HandlerFile.getWorkspaceRoot();
+                const isAbsolutePattern = path.isAbsolute(p.trim());
+                const globCwd = isAbsolutePattern ? "/" : root;
+                const removed: string[] = [];
+                const skipped: FsRemoveSkip[] = [];
 
-            try {
                 for await (const dirent of fs.glob(p, { cwd: globCwd, withFileTypes: true })) {
                     const matchAbs = path.join(dirent.parentPath, dirent.name);
-                    // Scratch patterns report absolute paths back; workspace
-                    // patterns report relative-to-root, matching what the
-                    // model passed in.
                     const matchRel = isAbsolutePattern ? matchAbs : path.relative(root, matchAbs);
                     if (!dirent.isFile()) {
                         skipped.push({
@@ -890,7 +822,7 @@ function buildFsRemoveTool(parent: AgentRunRow): Tool<FsRemoveInput, FsRemoveOut
                         continue;
                     }
                     if (requiresPrivilegedWrite(matchAbs) && !parent.privileged) {
-                        skipped.push({ path: matchRel, reason: refusalText });
+                        skipped.push({ path: matchRel, reason: PRIVILEGE_REFUSAL_MESSAGE });
                         continue;
                     }
                     try {
@@ -903,14 +835,11 @@ function buildFsRemoveTool(parent: AgentRunRow): Tool<FsRemoveInput, FsRemoveOut
                         });
                     }
                 }
-            } catch (err) {
-                return { ok: false, error: err instanceof Error ? err.message : String(err) };
-            }
 
-            removed.sort();
-            skipped.sort((a, b) => a.path.localeCompare(b.path));
-            return { ok: true, removed, skipped };
-        },
+                removed.sort();
+                skipped.sort((a, b) => a.path.localeCompare(b.path));
+                return { removed, skipped };
+            }, ctx),
     });
 }
 
@@ -920,15 +849,15 @@ function buildFsRemoveTool(parent: AgentRunRow): Tool<FsRemoveInput, FsRemoveOut
  * close over `parent.privileged` so the `.md` gate is decided once at
  * registration time and the model's tool calls can't bypass it.
  */
-export function buildFsTools(parent: AgentRunRow): ToolSet {
+export function buildFsTools(parent: AgentRunRow, ctx: ToolRunContext): ToolSet {
     return {
-        file_read: buildFileReadTool(),
-        file_write: buildFileWriteTool(parent),
-        file_str_replace: buildFileStrReplaceTool(parent),
-        file_append: buildFileAppendTool(parent),
-        fs_ls: buildLsTool(),
-        fs_glob: buildGlobTool(),
-        fs_grep: buildGrepTool(),
-        fs_remove: buildFsRemoveTool(parent),
+        file_read: buildFileReadTool(ctx),
+        file_write: buildFileWriteTool(parent, ctx),
+        file_str_replace: buildFileStrReplaceTool(parent, ctx),
+        file_append: buildFileAppendTool(parent, ctx),
+        fs_ls: buildLsTool(ctx),
+        fs_glob: buildGlobTool(ctx),
+        fs_grep: buildGrepTool(ctx),
+        fs_remove: buildFsRemoveTool(parent, ctx),
     };
 }

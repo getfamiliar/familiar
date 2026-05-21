@@ -74,7 +74,10 @@ export interface AgentRunnerContext {
      * the right Scheduler hooks. The runner reads
      * `handler.header.tools` and calls this once.
      */
-    readonly buildTools: (toolsExpression: string | undefined) => Promise<ToolSet>;
+    readonly buildTools: (
+        toolsExpression: string | undefined,
+        handlerOffloadingLimit: number | undefined,
+    ) => Promise<ToolSet>;
     /**
      * Suspend the current run until the named child agentrun (and
      * every other `calltype='called'` sibling) has settled. The real
@@ -146,7 +149,10 @@ export class AgentRunner {
         const handler = HandlerFile.load(ctx.row.topic, ctx.row.handler);
         const { model, label: modelLabel } = ModelFactory.build(handler.header.model);
 
-        const tools = await ctx.buildTools(handler.header.tools);
+        const tools = await ctx.buildTools(
+            handler.header.tools,
+            handler.header.toolCallOffloadingLimit,
+        );
         const toolNames = Object.keys(tools);
         const toolList =
             toolNames.length === 0

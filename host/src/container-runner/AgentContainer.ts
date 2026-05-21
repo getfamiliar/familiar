@@ -91,6 +91,16 @@ export interface AgentContainerConfig {
      */
     readonly inferenceMaxRetries: number;
     /**
+     * Byte budget for inline tool-call results before the runner spills
+     * the full response to a scratch file. Reflected to the container
+     * as `TOOL_CALL_OFFLOADING_LIMIT`; sourced from
+     * `core.toolCallOffloadingLimit` in `config.yml`, defaulting to
+     * `DEFAULT_TOOL_CALL_OFFLOADING_LIMIT` (10000). Individual handlers
+     * can override per-call via their `toolCallOffloadingLimit`
+     * frontmatter field.
+     */
+    readonly toolCallOffloadingLimit: number;
+    /**
      * Hard cap (in seconds) on a single `agent.generate()` call.
      * Prevents a wedged upstream LLM from parking the agentrun
      * watcher slot indefinitely. Reflected to the container as
@@ -195,6 +205,8 @@ export class AgentContainer {
             `INFERENCE_PROVIDERS=${JSON.stringify(this.config.providerTypes)}`,
             "-e",
             `INFERENCE_MAX_RETRIES=${this.config.inferenceMaxRetries}`,
+            "-e",
+            `TOOL_CALL_OFFLOADING_LIMIT=${this.config.toolCallOffloadingLimit}`,
             "-e",
             `AGENT_TIMEOUT_SECONDS=${this.config.agentTimeoutSeconds}`,
             "-e",
