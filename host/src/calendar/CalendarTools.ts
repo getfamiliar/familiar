@@ -3,10 +3,12 @@ import {
     type CalendarRow,
     type CreateEventInput,
     type PluginTool,
+    parseCalendarEventId,
     runTool,
     type ToolFailure,
     type UpdateEventInput,
 } from "@getfamiliar/shared";
+import type { CalendarSafety } from "./CalendarSafety.js";
 import type { CalendarService } from "./CalendarService.js";
 
 /**
@@ -19,14 +21,19 @@ import type { CalendarService } from "./CalendarService.js";
 const INLINE_ATTACHMENT_LIMIT_BYTES = 3 * 1024 * 1024;
 
 /**
- * Settings the calendar tools need beyond `CalendarService`. Currently
- * just the host's scratch dir — used by `cal_create_event` and
- * `cal_attach_file` when the agent passes a `scratch_path` instead of
- * inline base64.
+ * Settings the calendar tools need beyond `CalendarService`.
+ *
+ * - `scratchDir` — absolute host path of `tmp/scratch/` (matches
+ *   `Bootstrap.scratchDir`). Used by `cal_create_event` and
+ *   `cal_attach_file` when the agent passes a `scratch_path` instead
+ *   of inline base64.
+ * - `safety` — cross-provider safety gate (attendee stripping today;
+ *   future knobs land here as well). Applied before dispatching to a
+ *   provider so every provider inherits the policy uniformly.
  */
 export interface CalendarToolsDeps {
-    /** Absolute host path of `tmp/scratch/` (matches `Bootstrap.scratchDir`). */
     readonly scratchDir: string;
+    readonly safety: CalendarSafety;
 }
 
 /**
@@ -50,7 +57,7 @@ export function buildCalendarTools(
         getEventTool(service),
         getEventAttachmentsTool(service),
         createEventTool(service, deps),
-        updateEventTool(service),
+        updateEventTool(service, deps),
         deleteEventTool(service),
         attachFileTool(service, deps),
     ];
@@ -172,7 +179,8 @@ function getEventAttachmentsTool(
                 }
                 const calendar = await calendarFor(service, event);
                 const provider = service.registry.forCalendar(calendar);
-                const fetched = await provider.getAttachments(event.id);
+                const { realId } = parseCalendarEventId(event.id);
+                const fetched = await provider.getAttachments(calendar, realId);
                 if (fetched.length === 0) {
                     return { paths: [] as readonly string[] };
                 }
@@ -297,12 +305,13 @@ function createEventTool(
                     reminderMinutesBeforeStart: args.reminderMinutesBeforeStart,
                     isVideocall: args.is_videocall === true,
                 };
+                const safe = deps.safety.maybeStripAttendees(input);
                 const attachments = await resolveAttachments(args.attachments, deps.scratchDir);
                 if (attachments.dropped.length > 0) {
                     notes.push(`attachments dropped: ${attachments.dropped.join(", ")}`);
                 }
                 const created = await provider.createEvent(calendar, {
-                    ...input,
+                    ...safe,
                     attachments: attachments.kept,
                 });
                 await service.addEvent(
@@ -362,6 +371,7 @@ interface UpdateEventResult {
 
 function updateEventTool(
     service: CalendarService,
+    deps: CalendarToolsDeps,
 ): PluginTool<UpdateEventArgs, ({ ok: true } & UpdateEventResult) | ToolFailure> {
     return {
         name: "cal_update_event",
@@ -439,11 +449,15 @@ function updateEventTool(
                     sensitivity: args.patch.sensitivity,
                     reminderMinutesBeforeStart: args.patch.reminderMinutesBeforeStart,
                 };
-                const updated = await provider.updateEvent(calendar, existing.id, patch);
-                // Persist the post-patch row. `seed: true` is the
-                // honest tag: this is a mutation of a known event, not
-                // a discovery — no `calendar:new` should fire even
-                // hypothetically.
+                const safe = deps.safety.maybeStripAttendeesUpdate(patch);
+                const { realId } = parseCalendarEventId(existing.id);
+                const updated = await provider.updateEvent(calendar, realId, safe);
+                // Persist the post-patch row. Agent-driven mutations
+                // intentionally skip the standardized
+                // `calendar:update:<pluginId>` emission — the agent is
+                // the originator, re-notifying it would be circular.
+                // `seed: true` is retained as the honest tag for the
+                // call site.
                 await service.addEvent(
                     {
                         id: updated.id,
@@ -504,7 +518,8 @@ function deleteEventTool(
                 }
                 const calendar = await calendarFor(service, existing);
                 const provider = service.registry.forCalendar(calendar);
-                await provider.deleteEvent(calendar, existing.id);
+                const { realId } = parseCalendarEventId(existing.id);
+                await provider.deleteEvent(calendar, realId);
                 await service.removeEvent(existing.id);
                 return { deleted: true as const };
             }),
@@ -555,7 +570,8 @@ function attachFileTool(
                             "sessions are not yet implemented.",
                     );
                 }
-                await provider.attachFile(event.id, args.name, bytes);
+                const { realId } = parseCalendarEventId(event.id);
+                await provider.attachFile(calendar, realId, args.name, bytes);
                 return { attached: true as const };
             }),
     };

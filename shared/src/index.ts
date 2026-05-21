@@ -6,24 +6,27 @@ export type {
     NewAgentRun,
 } from "./AgentRun.js";
 export { AgentRunBus, type AgentRunUnsubscribe } from "./AgentRunBus.js";
-export type {
-    CalendarApi,
-    CalendarAttachmentMeta,
-    CalendarAttendee,
-    CalendarEventRow,
-    CalendarEventType,
-    CalendarImportance,
-    CalendarProvider,
-    CalendarResponseStatus,
-    CalendarRow,
-    CalendarSensitivity,
-    CalendarShowAs,
-    CalendarType,
-    CreateEventInput,
-    FindEventsQuery,
-    NewCalendarEvent,
-    UpdateEventInput,
-    UpsertCalendarInput,
+export {
+    buildCalendarEventId,
+    type CalendarApi,
+    type CalendarAttachmentMeta,
+    type CalendarAttendee,
+    type CalendarChangePayload,
+    type CalendarEventRow,
+    type CalendarEventType,
+    type CalendarImportance,
+    type CalendarProvider,
+    type CalendarResponseStatus,
+    type CalendarRow,
+    type CalendarSensitivity,
+    type CalendarShowAs,
+    type CalendarType,
+    type CreateEventInput,
+    type FindEventsQuery,
+    type NewCalendarEvent,
+    parseCalendarEventId,
+    type UpdateEventInput,
+    type UpsertCalendarInput,
 } from "./Calendar.js";
 export type { ChatFilter, ChatMessage, ChatRole, NewChatMessage } from "./ChatMessage.js";
 export { type ChatHandler, ChatMessageBus, type ChatUnsubscribe } from "./ChatMessageBus.js";
@@ -48,6 +51,18 @@ export {
     type LogStream,
     prettyStdoutStream,
 } from "./logging/Logger.js";
+export {
+    buildMailId,
+    type ForwardInput,
+    type MailApi,
+    type MailAttachment,
+    type MailFolder,
+    type MailProvider,
+    type NewMailInput,
+    parseMailId,
+    type ReplyInput,
+} from "./Mail.js";
+export { renderMarkdownToHtml } from "./markdownHtml.js";
 export { renderMarkdown } from "./markdownTerminal.js";
 export type {
     AnyCommandDef,

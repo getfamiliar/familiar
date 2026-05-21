@@ -10,11 +10,15 @@ import { EventBus } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import type { Bootstrap } from "../Bootstrap.js";
 import { CalendarRegistry } from "../calendar/CalendarRegistry.js";
+import { CalendarSafety } from "../calendar/CalendarSafety.js";
 import { CalendarService } from "../calendar/CalendarService.js";
 import { CalendarStore } from "../calendar/CalendarStore.js";
 import { buildCalendarTools } from "../calendar/CalendarTools.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
+import { MailRegistry } from "../mail/MailRegistry.js";
+import { MailSafety } from "../mail/MailSafety.js";
+import { buildMailTools } from "../mail/MailTools.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
 import { PluginMcpService } from "../mcp/PluginMcpService.js";
 import { HostContextImpl } from "./HostContextImpl.js";
@@ -49,6 +53,9 @@ export class PluginHost {
     private readonly mcpRegistry: McpRegistry;
     private readonly mcpService: PluginMcpService;
     private readonly calendarService: CalendarService;
+    private readonly calendarSafety: CalendarSafety;
+    private readonly mailRegistry: MailRegistry;
+    private readonly mailSafety: MailSafety;
     private toolsRegistry: PluginToolsRegistry | undefined;
     private bastionBaseUrl: string = DEFAULT_BASTION_BASE_URL;
     private connection: PostgresConnection | undefined;
@@ -72,6 +79,9 @@ export class PluginHost {
             config: this.config,
             log: log.child({ component: "calendar" }),
         });
+        this.calendarSafety = new CalendarSafety(this.config);
+        this.mailRegistry = new MailRegistry();
+        this.mailSafety = new MailSafety(this.config);
     }
 
     /**
@@ -118,6 +128,16 @@ export class PluginHost {
      */
     get calendar(): CalendarService {
         return this.calendarService;
+    }
+
+    /**
+     * The shared mail registry backing every plugin's `ctx.mail`.
+     * Exposed for the same reason as {@link calendar} — daemon-owned
+     * host services that build their own context can dispatch to the
+     * already-registered providers without re-instantiating.
+     */
+    get mail(): MailRegistry {
+        return this.mailRegistry;
     }
 
     /**
@@ -241,15 +261,23 @@ export class PluginHost {
                 this.toolsRegistry.register(plugin.id, ctx, tools);
             }
         }
-        // Core tools (`cal_*`, future approval-gate prompts) land
-        // after every plugin's `start` so any provider that registered
-        // via `ctx.calendar.registerProvider` is reachable from the
-        // first tool call.
+        // Core tools (`cal_*`, `mail_*`, future approval-gate prompts)
+        // land after every plugin's `start` so any provider that
+        // registered via `ctx.calendar.registerProvider` or
+        // `ctx.mail.registerProvider` is reachable from the first tool
+        // call.
         if (this.toolsRegistry) {
             const coreCtx = this.context("core");
-            const coreTools = buildCalendarTools(this.calendarService, {
-                scratchDir: this.boot.scratchDir,
-            });
+            const coreTools = [
+                ...buildCalendarTools(this.calendarService, {
+                    scratchDir: this.boot.scratchDir,
+                    safety: this.calendarSafety,
+                }),
+                ...buildMailTools({
+                    registry: this.mailRegistry,
+                    safety: this.mailSafety,
+                }),
+            ];
             this.toolsRegistry.registerCoreTools(coreCtx, coreTools);
             const registered = this.toolsRegistry.list();
             if (registered.length > 0) {
@@ -291,6 +319,7 @@ export class PluginHost {
             pidFile: this.boot.pidFile,
             mcp: this.mcpService,
             calendar: this.calendarService,
+            mail: this.mailRegistry,
         });
     }
 

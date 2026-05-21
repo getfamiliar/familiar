@@ -1,5 +1,4 @@
 import type {
-    CalendarApi,
     CalendarEventRow,
     CalendarProvider,
     CalendarRow,
@@ -26,27 +25,27 @@ import {
  * The provider deliberately does not look up the local cache or talk
  * to the core service. The core's `cal_*` tools handle persistence
  * after `createEvent` returns — see `CalendarService.addEvent`.
+ *
+ * Every `eventId` arriving on a method here is the **bare Graph id**:
+ * the core (`CalendarTools`) parses the `ms365:` prefix away using
+ * {@link parseCalendarEventId} before dispatch.
  */
 export class Ms365CalendarProvider implements CalendarProvider {
     readonly pluginId = MS365_PROVIDER_ID;
     private readonly config: ConfigService;
-    private readonly calendarApi: CalendarApi;
     private readonly calendarConfig: Ms365CalendarConfig;
 
     constructor(deps: {
         readonly config: ConfigService;
-        readonly calendarApi: CalendarApi;
         readonly calendarConfig: Ms365CalendarConfig;
     }) {
         this.config = deps.config;
-        this.calendarApi = deps.calendarApi;
         this.calendarConfig = deps.calendarConfig;
     }
 
     async createEvent(calendar: CalendarRow, input: CreateEventInput): Promise<CalendarEventRow> {
         const { client, upn } = await this.clientForCalendar(calendar);
-        const sanitised = this.maybeStripAttendees(input);
-        const body = buildCreateBody(sanitised, {
+        const body = buildCreateBody(input, {
             timezone: this.timezoneFromConfig(),
             reminderMinutesBeforeStart: this.calendarConfig.defaultReminderMinutesBeforeStart,
         });
@@ -72,22 +71,20 @@ export class Ms365CalendarProvider implements CalendarProvider {
         eventId: string,
         patch: UpdateEventInput,
     ): Promise<CalendarEventRow> {
-        const graphEventId = stripPrefix(eventId);
         const { client, upn } = await this.clientForCalendar(calendar);
-        const sanitised = this.maybeStripAttendeesUpdate(patch);
-        const body = buildPatchBody(sanitised, { timezone: this.timezoneFromConfig() });
+        const body = buildPatchBody(patch, { timezone: this.timezoneFromConfig() });
         if (Object.keys(body).length === 0) {
             // No-op patch: Graph would still 200 but minting an empty
             // PATCH masks agent bugs. Re-fetch the event so the
             // returned row reflects the live state and let the caller
             // notice nothing changed.
-            const current = await client.getCalendarEvent(upn, graphEventId);
+            const current = await client.getCalendarEvent(upn, eventId);
             return eventRowFromGraph(current, {
                 calendarId: calendar.id,
                 scanGeneration: calendar.scanGeneration,
             });
         }
-        const graph = await client.updateCalendarEvent(upn, graphEventId, body);
+        const graph = await client.updateCalendarEvent(upn, eventId, body);
         return eventRowFromGraph(graph, {
             calendarId: calendar.id,
             scanGeneration: calendar.scanGeneration,
@@ -95,19 +92,26 @@ export class Ms365CalendarProvider implements CalendarProvider {
     }
 
     async deleteEvent(calendar: CalendarRow, eventId: string): Promise<void> {
-        const graphEventId = stripPrefix(eventId);
         const { client, upn } = await this.clientForCalendar(calendar);
-        await client.deleteCalendarEvent(upn, graphEventId);
+        await client.deleteCalendarEvent(upn, eventId);
     }
 
-    async attachFile(eventId: string, name: string, contents: Buffer): Promise<void> {
-        const { client, upn, graphEventId } = await this.clientForEvent(eventId);
-        await client.addEventAttachment(upn, graphEventId, name, contents);
+    async attachFile(
+        calendar: CalendarRow,
+        eventId: string,
+        name: string,
+        contents: Buffer,
+    ): Promise<void> {
+        const { client, upn } = await this.clientForCalendar(calendar);
+        await client.addEventAttachment(upn, eventId, name, contents);
     }
 
-    async getAttachments(eventId: string): Promise<readonly { name: string; contents: Buffer }[]> {
-        const { client, upn, graphEventId } = await this.clientForEvent(eventId);
-        const raw = await client.getEventAttachments(upn, graphEventId);
+    async getAttachments(
+        calendar: CalendarRow,
+        eventId: string,
+    ): Promise<readonly { name: string; contents: Buffer }[]> {
+        const { client, upn } = await this.clientForCalendar(calendar);
+        const raw = await client.getEventAttachments(upn, eventId);
         const out: { name: string; contents: Buffer }[] = [];
         for (const att of raw) {
             if (att.isInline) {
@@ -127,33 +131,6 @@ export class Ms365CalendarProvider implements CalendarProvider {
     private timezoneFromConfig(): string {
         const tz = this.config.getString("core.timezone", "UTC") ?? "UTC";
         return typeof tz === "string" && tz.length > 0 ? tz : "UTC";
-    }
-
-    private maybeStripAttendees(input: CreateEventInput): CreateEventInput {
-        if (this.calendarConfig.allowAttendees) {
-            return input;
-        }
-        if (!input.attendees || input.attendees.length === 0) {
-            return input;
-        }
-        return { ...input, attendees: [] };
-    }
-
-    /**
-     * Same gate as {@link maybeStripAttendees} but for update patches.
-     * Distinguishes "patch doesn't mention attendees" (leave Graph's
-     * current list alone) from "patch sets attendees to [a, b]" (when
-     * disallowed, force to empty so the agent never sends invitations
-     * by accident).
-     */
-    private maybeStripAttendeesUpdate(input: UpdateEventInput): UpdateEventInput {
-        if (this.calendarConfig.allowAttendees) {
-            return input;
-        }
-        if (input.attendees === undefined) {
-            return input;
-        }
-        return { ...input, attendees: [] };
     }
 
     /**
@@ -189,44 +166,4 @@ export class Ms365CalendarProvider implements CalendarProvider {
             upn: first.upn,
         };
     }
-
-    private async clientForEvent(
-        eventId: string,
-    ): Promise<{ client: GraphClient; upn: string; graphEventId: string }> {
-        const prefix = `${MS365_PROVIDER_ID}:`;
-        if (!eventId.startsWith(prefix)) {
-            throw new Error(
-                `event id "${eventId}" is not owned by the ms365 provider — expected prefix "${prefix}"`,
-            );
-        }
-        const graphEventId = eventId.slice(prefix.length);
-        const row = await this.calendarApi.getEvent(eventId);
-        if (!row) {
-            throw new Error(`event ${eventId} not found in local cache`);
-        }
-        const calendars = await this.calendarApi.listCalendars({ pluginId: MS365_PROVIDER_ID });
-        const calendar = calendars.find((c) => c.id === row.calendarId);
-        if (!calendar) {
-            throw new Error(`calendar ${row.calendarId} not found for event ${eventId}`);
-        }
-        const resolved = await this.clientForCalendar(calendar);
-        return { ...resolved, graphEventId };
-    }
-}
-
-/**
- * Strip the `ms365:` prefix the core uses on event ids to recover the
- * bare Graph id Graph endpoints expect. Throws with a clear,
- * agent-readable message when the id doesn't carry the expected
- * prefix — that catches mis-routed dispatches (an id from another
- * provider was passed to this one).
- */
-function stripPrefix(eventId: string): string {
-    const prefix = `${MS365_PROVIDER_ID}:`;
-    if (!eventId.startsWith(prefix)) {
-        throw new Error(
-            `event id "${eventId}" is not owned by the ms365 provider — expected prefix "${prefix}"`,
-        );
-    }
-    return eventId.slice(prefix.length);
 }

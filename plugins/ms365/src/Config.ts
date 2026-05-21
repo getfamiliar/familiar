@@ -29,12 +29,26 @@ export interface Ms365AuthConfig {
 export interface Ms365MailConfig {
     /**
      * Master kill switch for the mail feature. `true` (default) →
-     * the poller starts and the `ms365_*` mail tools are registered.
-     * `false` → the daemon skips mail entirely (no polls, no tools)
-     * regardless of login state. Use this to keep ms365 logins
-     * around for calendar while silencing mail.
+     * the poller starts and the ms365 mail provider is registered
+     * (so the core `mail_*` tools can dispatch to it). `false` → the
+     * daemon skips mail entirely (no polls, no provider) regardless
+     * of login state. Use this to keep ms365 logins around for
+     * calendar while silencing mail.
+     *
+     * Send-safety (`mail.allowSend`, `mail.recipientWhitelist`) lives
+     * in the **core** mail config — those keys are cross-provider and
+     * not scoped to ms365.
      */
     readonly enabled: boolean;
+    /**
+     * When `true` (default), the daemon runs the mailbox poller that
+     * emits `mail:ms365` events. When `false`, polling is skipped but
+     * the provider stays registered — use this when the user wants
+     * on-demand tool access (read, draft, send) without proactive
+     * new-mail processing. Has no effect when {@link enabled} is `false`
+     * (that disables the entire mail subsystem).
+     */
+    readonly polling: boolean;
     /**
      * Whitelist of mailbox addresses (own or shared) the poller
      * walks. Empty → every primary mailbox of every logged-in account
@@ -42,21 +56,6 @@ export interface Ms365MailConfig {
      * listed mailboxes are polled across every logged-in account.
      */
     readonly mailboxes: readonly string[];
-    /**
-     * When `true`, the send-* tools dispatch immediately. When
-     * `false` (the default), every send becomes a draft instead — a
-     * safety net for the early-life agent.
-     */
-    readonly allowSend: boolean;
-    /**
-     * Recipient whitelist applied **only when {@link allowSend} is
-     * `true`**. Each entry is either a full address (`user@host`) or
-     * a domain anchor (`@host`); a recipient matches if its address
-     * equals an entry verbatim or shares a domain with an `@host`
-     * entry. Empty (default) → allowSend with no whitelist means
-     * "anything goes" once the master switch is on.
-     */
-    readonly recipientWhitelist: readonly string[];
     /** Minutes between successful polls. */
     readonly pollingIntervalMinutes: number;
     /** Base (minutes) for the exponential-backoff schedule on poll errors. */
@@ -98,15 +97,11 @@ export interface Ms365CalendarConfig {
      * Calendar names to subscribe to. Empty → primary calendar only.
      * Match is case-insensitive on the Graph `name` field; unknown
      * names are silently skipped (logged once at startup).
+     *
+     * Attendee-safety (`calendar.allowAttendees`) lives in the **core**
+     * calendar config; it is cross-provider and not scoped to ms365.
      */
     readonly calendars: readonly string[];
-    /**
-     * When `false`, attendees passed to `cal_create_event` are
-     * silently dropped before hitting Graph — the agent's
-     * tool result still surfaces a `note: "attendees dropped: …"`
-     * so the model doesn't believe invitations went out.
-     */
-    readonly allowAttendees: boolean;
     /** Default reminder window for events created via `cal_create_event`. */
     readonly defaultReminderMinutesBeforeStart: number;
     /** Minutes between successful incremental polls. */
@@ -156,9 +151,8 @@ export function readMs365MailConfig(ctx: HostContext): Ms365MailConfig {
     );
     return {
         enabled: ctx.config.getBool("ms365.mail.enabled", true) !== false,
+        polling: ctx.config.getBool("ms365.mail.polling", true) !== false,
         mailboxes: readStringArray(ctx, "ms365.mail.mailboxes"),
-        allowSend: ctx.config.getBool("ms365.mail.allowSend", false) === true,
-        recipientWhitelist: readStringArray(ctx, "ms365.mail.recipientWhitelist"),
         pollingIntervalMinutes:
             typeof interval === "number" && interval > 0
                 ? interval
@@ -199,7 +193,6 @@ export function readMs365CalendarConfig(ctx: HostContext): Ms365CalendarConfig {
     return {
         enabled: ctx.config.getBool("ms365.calendar.enabled", true) !== false,
         calendars: readStringArray(ctx, "ms365.calendar.calendars"),
-        allowAttendees: ctx.config.getBool("ms365.calendar.allowAttendees", false) === true,
         defaultReminderMinutesBeforeStart:
             typeof reminder === "number" && reminder >= 0
                 ? reminder

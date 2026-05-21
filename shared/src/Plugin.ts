@@ -7,6 +7,7 @@ import type { ChatHandler, ChatUnsubscribe } from "./ChatMessageBus.js";
 import type { ConfigService } from "./Config.js";
 import type { EventFile, EventRow, NewEvent } from "./Event.js";
 import type { Logger } from "./logging/Logger.js";
+import type { MailApi } from "./Mail.js";
 import type { StepResultRow } from "./StepResult.js";
 
 export type { ChatHandler, Client as McpClient };
@@ -231,6 +232,19 @@ export interface HostContext {
      * `cal_*` agent tools dispatch through the same interface.
      */
     readonly calendar: CalendarApi;
+    /**
+     * Shared mail dispatch layer. Plugins that act as mail providers
+     * register a {@link MailProvider} during `start()` via
+     * `ctx.mail.registerProvider(provider)`. The core `mail_*` agent
+     * tools route through the registered provider by parsing the
+     * `<pluginId>:` prefix on every mail id.
+     *
+     * Unlike `calendar`, there is no read-side surface here — the
+     * core does not cache mail bodies or metadata. Pollers emit
+     * `mail:<plugin>` events with a prefixed `mail_id` in the payload;
+     * the agent reaches the body via `mail_fetch_body` on demand.
+     */
+    readonly mail: MailApi;
     readonly mcp: {
         /**
          * Snapshot of every MCP declared in `mcp.yml` as `{ key, source,

@@ -1,5 +1,6 @@
 import {
     type CalendarApi,
+    type CalendarChangePayload,
     type CalendarEventRow,
     type CalendarProvider,
     type CalendarRow,
@@ -29,15 +30,25 @@ export interface CalendarServiceDeps {
 }
 
 /**
+ * Topic format accepted by {@link CalendarService.emitCalendarEvent}.
+ * Captures the verb and the pluginId so the service can validate the
+ * suffix against the calendar's owning plugin.
+ */
+const EMIT_TOPIC_RE = /^calendar:(new|update|delete):([\w-]+)$/;
+
+/**
  * Concrete implementation of {@link CalendarApi}. One instance per
  * host process, shared across plugin contexts via
  * {@link CalendarApiBinding} so every plugin sees the same registry.
  *
  * Bus events:
- *   - `calendar:new` — emitted by {@link addEvent} when `seed=false`
- *     and the row id did not previously exist. Idempotency key is the
- *     event id (`<plugin>:<provider-id>`) so re-walks dedup on the
- *     bus side.
+ *   - `calendar:new:<pluginId>` / `calendar:update:<pluginId>` /
+ *     `calendar:delete:<pluginId>` — emitted via
+ *     {@link emitCalendarEvent}. Pollers call this explicitly after an
+ *     upsert (using the `{created}` flag to pick new vs update) or
+ *     before a tombstone-driven remove. The service additionally
+ *     drives `calendar:delete:<pluginId>` for every row pruned by
+ *     {@link endRefresh}.
  *
  * Defaults / lookups:
  *   - `resolveDefaultCalendar` parses `core.defaultCalendar` (format
@@ -68,22 +79,40 @@ export class CalendarService implements CalendarApi {
         return this.deps.store.beginRefresh(calendarId);
     }
 
-    async endRefresh(calendarId: string, gen: number): Promise<{ removed: number }> {
-        return this.deps.store.endRefresh(calendarId, gen);
-    }
-
-    async addEvent(row: NewCalendarEvent, opts: { seed: boolean }): Promise<{ created: boolean }> {
-        const result = await this.deps.store.upsertEvent(row);
-        if (!opts.seed && result.created) {
-            await this.emitNew(row).catch((err) => {
+    async endRefresh(
+        calendarId: string,
+        gen: number,
+    ): Promise<{ removed: number; rows: readonly CalendarEventRow[] }> {
+        const result = await this.deps.store.endRefresh(calendarId, gen);
+        if (result.rows.length === 0) {
+            return result;
+        }
+        const calendar = await this.deps.store.getCalendar(calendarId);
+        if (!calendar) {
+            this.deps.log.warn(
+                { calendarId },
+                "calendar: endRefresh pruned rows for unknown calendar; skipping delete emissions",
+            );
+            return result;
+        }
+        const topic = `calendar:delete:${calendar.pluginId}`;
+        for (const deleted of result.rows) {
+            await this.emitFromRow(topic, deleted, calendar.pluginId).catch((err) => {
                 const message = err instanceof Error ? err.message : String(err);
                 this.deps.log.warn(
-                    { calendarEventId: row.id, err: message },
-                    "calendar: emit calendar:new failed",
+                    { calendarEventId: deleted.id, err: message },
+                    "calendar: endRefresh delete emit failed",
                 );
             });
         }
         return result;
+    }
+
+    // `opts.seed` is retained for forward compatibility; emission control
+    // moved to the caller via {@link emitCalendarEvent}, so this method
+    // is now pure persistence.
+    async addEvent(row: NewCalendarEvent, _opts: { seed: boolean }): Promise<{ created: boolean }> {
+        return this.deps.store.upsertEvent(row);
     }
 
     async removeEvent(id: string): Promise<void> {
@@ -139,22 +168,90 @@ export class CalendarService implements CalendarApi {
         );
     }
 
-    private async emitNew(row: NewCalendarEvent): Promise<void> {
+    async emitCalendarEvent(topic: string, eventId: string): Promise<void> {
+        const match = EMIT_TOPIC_RE.exec(topic);
+        if (!match) {
+            throw new Error(
+                `calendar: invalid emit topic "${topic}" — expected ` +
+                    `"calendar:{new|update|delete}:<pluginId>"`,
+            );
+        }
+        const topicPluginId = match[2];
+        const row = await this.deps.store.getEvent(eventId);
+        if (!row) {
+            throw new Error(`calendar: emit target row not found: ${eventId}`);
+        }
+        const calendar = await this.deps.store.getCalendar(row.calendarId);
+        if (!calendar) {
+            throw new Error(
+                `calendar: event ${eventId} references unknown calendar ${row.calendarId}`,
+            );
+        }
+        if (calendar.pluginId !== topicPluginId) {
+            throw new Error(
+                `calendar: emit topic "${topic}" pluginId does not match ` +
+                    `the event's calendar owner "${calendar.pluginId}"`,
+            );
+        }
+        await this.emitFromRow(topic, row, calendar.pluginId);
+    }
+
+    /**
+     * Build the standardized payload + prompt for `row` and post it
+     * under `topic`. Caller is responsible for having validated the
+     * topic shape and pluginId match — this helper trusts both. The
+     * verb is parsed from the topic so `endRefresh`'s pre-built
+     * `calendar:delete:<pluginId>` path can reuse it without a second
+     * regex pass.
+     */
+    private async emitFromRow(
+        topic: string,
+        row: CalendarEventRow,
+        pluginId: string,
+    ): Promise<void> {
+        const match = EMIT_TOPIC_RE.exec(topic);
+        if (!match) {
+            throw new Error(`calendar: emitFromRow received invalid topic "${topic}"`);
+        }
+        const verb = match[1] as CalendarChangePayload["verb"];
+        const subjectLabel = row.subject ?? "(no subject)";
+        const prompt =
+            verb === "new"
+                ? `A new calendar event was discovered: ${subjectLabel}.`
+                : verb === "update"
+                  ? `A calendar event was updated: ${subjectLabel}.`
+                  : `A calendar event was deleted: ${subjectLabel}.`;
+        // new/delete fire once per id; update fires once per change,
+        // discriminated by the row's updatedAt. Two pollers seeing
+        // the identical updated_at coalesce on the bus side; two
+        // genuine sequential updates each fire.
+        const updatedAtIso = row.updatedAt.toISOString();
+        const idempotencyKey =
+            verb === "update"
+                ? `calendar:update:${pluginId}:${row.id}:${updatedAtIso}`
+                : `calendar:${verb}:${pluginId}:${row.id}`;
+        const payload: CalendarChangePayload = {
+            verb,
+            pluginId,
+            calendarEventId: row.id,
+            calendarId: row.calendarId,
+            subject: row.subject,
+            start: row.startDt,
+            end: row.endDt,
+            eventTz: row.eventTz,
+            isAllDay: row.isAllDay,
+            isCancelled: row.isCancelled,
+            organizerEmail: row.organizerEmail,
+            location: row.location,
+            updatedAt: updatedAtIso,
+        };
         const bus = await this.deps.events();
         await bus.add({
-            topic: "calendar:new",
-            prompt: `A new calendar event was discovered: ${row.subject ?? "(no subject)"}.`,
+            topic,
+            prompt,
             priority: EVENT_PRIORITY.ASYNC,
-            idempotencyKey: `calendar:new:${row.id}`,
-            payload: {
-                calendarEventId: row.id,
-                calendarId: row.calendarId,
-                subject: row.subject,
-                start: row.startDt,
-                end: row.endDt,
-                isAllDay: row.isAllDay === true,
-                eventTz: row.eventTz ?? null,
-            },
+            idempotencyKey,
+            payload,
         });
     }
 }

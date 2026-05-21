@@ -17,6 +17,7 @@ import {
     type EventRow,
     type HostContext,
     type Logger,
+    type MailApi,
     type McpClient,
     type McpInfo,
     type NewEvent,
@@ -83,6 +84,12 @@ export interface HostContextImplDeps {
      * accessors for the `calendars` + `calendar_events` tables.
      */
     calendar: CalendarApi;
+    /**
+     * Shared singleton that backs `ctx.mail`. One instance per host
+     * process — owns the `pluginId → MailProvider` registry consumed
+     * by the core `mail_*` tools. No DB layer (no mail cache).
+     */
+    mail: MailApi;
 }
 
 /**
@@ -123,6 +130,10 @@ export class HostContextImpl implements HostContext {
 
     get calendar(): CalendarApi {
         return this.deps.calendar;
+    }
+
+    get mail(): MailApi {
+        return this.deps.mail;
     }
 
     readonly scratch = {

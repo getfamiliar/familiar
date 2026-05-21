@@ -272,6 +272,7 @@ export const startCommand = defineCommand({
             pidFile: boot.pidFile,
             mcp: pluginHost.mcp,
             calendar: pluginHost.calendar,
+            mail: pluginHost.mail,
         });
         const workspaceWatcher = new WorkspaceWatcher({
             workspaceDir: boot.workspaceDir,

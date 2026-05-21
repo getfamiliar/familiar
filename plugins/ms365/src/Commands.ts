@@ -79,6 +79,17 @@ function calCommand(
     });
 }
 
+function readCoreStringArray(ctx: HostContext, key: string): readonly string[] {
+    const raw = ctx.config.getArray(key, []);
+    const out: string[] = [];
+    for (const entry of raw) {
+        if (typeof entry === "string" && entry.length > 0) {
+            out.push(entry);
+        }
+    }
+    return out;
+}
+
 function makeLoginStore(ctx: HostContext): LoginStore {
     const auth = readMs365AuthConfig(ctx);
     return new LoginStore(loginDirectory(ctx.dataDir), resolveAppRegistration(auth));
@@ -124,10 +135,12 @@ function statusCommand(
                     process.stdout.write(`  - ${m}\n`);
                 }
             }
+            const allowSend = ctx.config.getBool("mail.allowSend", false) === true;
+            const whitelist = readCoreStringArray(ctx, "mail.recipientWhitelist");
             process.stdout.write(
-                `\nmail.allowSend: ${mail.allowSend ? "true" : "false"}` +
-                    (mail.allowSend && mail.recipientWhitelist.length > 0
-                        ? ` (whitelist: ${mail.recipientWhitelist.join(", ")})`
+                `\nmail.allowSend: ${allowSend ? "true" : "false"}` +
+                    (allowSend && whitelist.length > 0
+                        ? ` (whitelist: ${whitelist.join(", ")})`
                         : "") +
                     "\n",
             );

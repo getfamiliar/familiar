@@ -1,5 +1,6 @@
 import path from "node:path";
 import {
+    buildMailId,
     type EmitHandle,
     EVENT_PRIORITY,
     type EventFile,
@@ -18,6 +19,7 @@ import {
 } from "../graph/GraphClient.js";
 import { flatAddress, formatAddress, isSafeEmailAddress } from "./AddressFormat.js";
 import { DeltaCursorStore } from "./DeltaCursorStore.js";
+import { MS365_MAIL_PROVIDER_ID } from "./Ms365MailProvider.js";
 
 /** Graph caps bodyPreview at 255 chars; equals → cap hit, more body upstream. */
 const BODY_PREVIEW_TRUNCATION_LENGTH = 255;
@@ -300,11 +302,11 @@ async function emitMailEvent(
     const prompt =
         `A new e-mail was received from ${fromDisplay} with subject "${subject}", see payload for metadata. ` +
         `The body starts with: ${preview}` +
-        (truncated
-            ? " Body is truncated. Use the ms365_fetch_body tool to get the full body."
-            : "");
+        (truncated ? " Body is truncated. Use the mail_fetch_body tool to get the full body." : "");
 
     const fetched = await fetchAttachmentsForEvent(opts, target, client, message);
+
+    const mailId = buildMailId(MS365_MAIL_PROVIDER_ID, target.mailbox, message.id);
 
     const event: NewEvent = {
         topic: "mail:ms365",
@@ -312,16 +314,13 @@ async function emitMailEvent(
         priority: EVENT_PRIORITY.ASYNC,
         idempotencyKey: `mail:ms365:${message.internetMessageId}`,
         payload: {
-            provider: "ms365",
-            upn: target.upn,
-            mailbox: target.mailbox,
+            mail_id: mailId,
             isShared: target.isShared,
             from,
             to: (message.toRecipients ?? []).map(flatAddress),
             cc: (message.ccRecipients ?? []).map(flatAddress),
             subject,
             date: message.receivedDateTime,
-            messageId: message.id,
             internetMessageId: message.internetMessageId,
             hasAttachments: message.hasAttachments,
             attachments: fetched?.metadata ?? null,

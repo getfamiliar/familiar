@@ -1,9 +1,18 @@
+Bugs:
 
+Mail:
+* Mail: forward und replies mit original body
+* Signatur, Fonts usw ziehen aus dem Sent Ordner
+* Such-Tool
+* 
+
+Calendar:
+* handler für neue termine calendar:new:ms365, calendar:update:ms365, calendar:delete:ms365
 
 Features:
 * Wakeups / Alerts per Datenbank bauen
 * Compression
-* Calendar Plugin - kompletter rewrite des mail plugins 
+* Token Limits checken und warnen in verschiedenen Stufen - Token-Schätzung mit Faktor 3 reicht.
 * True bash
 * Besseres Reporting Format
 * Self-Reflection Tools: List of events, event report, plugin status, system status 

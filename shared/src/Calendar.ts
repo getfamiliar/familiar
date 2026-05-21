@@ -98,7 +98,12 @@ export interface CalendarAttachmentMeta {
  * `eventTz`, not when our row was inserted.
  */
 export interface CalendarEventRow {
-    /** Provider-prefixed id (`ms365:<graph-id>`). Stable across polls. */
+    /**
+     * Provider-prefixed id (`<pluginId>:<provider-real-id>`, e.g.
+     * `ms365:AAMkAGI...`). Built via {@link buildCalendarEventId};
+     * parsed back into its two segments by {@link parseCalendarEventId}.
+     * Stable across polls.
+     */
     readonly id: string;
     /** FK to `calendars.id`. */
     readonly calendarId: string;
@@ -158,6 +163,33 @@ export interface NewCalendarEvent {
     readonly body?: string | null;
     readonly attachments?: readonly CalendarAttachmentMeta[] | null;
     readonly scanGeneration: number;
+}
+
+/**
+ * Standardized payload of a `calendar:{new,update,delete}:<pluginId>`
+ * bus event. Every calendar plugin emits this same shape via
+ * {@link CalendarApi.emitCalendarEvent} so downstream handlers don't
+ * need to know which provider produced the change.
+ *
+ * For `delete`, the fields reflect the row's last-known state captured
+ * before {@link CalendarApi.removeEvent} ran (the helper must be called
+ * BEFORE the removal — otherwise the lookup fails).
+ */
+export interface CalendarChangePayload {
+    readonly verb: "new" | "update" | "delete";
+    readonly pluginId: string;
+    readonly calendarEventId: string;
+    readonly calendarId: string;
+    readonly subject: string | null;
+    readonly start: string;
+    readonly end: string;
+    readonly eventTz: string | null;
+    readonly isAllDay: boolean;
+    readonly isCancelled: boolean;
+    readonly organizerEmail: string | null;
+    readonly location: string | null;
+    /** ISO-8601 string of the row's `updatedAt` at emit time. */
+    readonly updatedAt: string;
 }
 
 export interface FindEventsQuery {
@@ -231,21 +263,31 @@ export interface CreateEventInput {
  * write tools (`cal_create_event`, `cal_attach_file`,
  * `cal_get_event_attachments`) to the provider owning the target
  * calendar.
+ *
+ * Every `eventId` argument is a **bare provider-native id** (no
+ * `<pluginId>:` prefix). The core strips the prefix at the dispatch
+ * boundary using {@link parseCalendarEventId} so each provider sees
+ * only the id format its upstream API expects. Provider implementations
+ * return bare ids from {@link CalendarEventRow} fields too — the
+ * mapping helpers wrap them with {@link buildCalendarEventId} before
+ * persistence so every id the agent sees is self-routing.
  */
 export interface CalendarProvider {
     readonly pluginId: string;
     /**
      * Create a fresh event on the given calendar and return the
      * persisted row shape. The core inserts the returned row into
-     * the cache with `seed: false`, which (because the row id is
-     * new) emits a `calendar:new` bus event.
+     * the cache. Emission of `calendar:new:<pluginId>` is the
+     * caller's responsibility (via {@link CalendarApi.emitCalendarEvent}) —
+     * agent-driven creates intentionally do not emit so the agent
+     * doesn't re-trigger itself.
      */
     createEvent(calendar: CalendarRow, input: CreateEventInput): Promise<CalendarEventRow>;
     /**
-     * Apply a partial update to an existing event. Returns the
-     * post-patch row in the same shape `createEvent` does — the core
-     * upserts it into the cache (no `calendar:new` emission, since
-     * the PK already exists).
+     * Apply a partial update to an existing event. `eventId` is the
+     * bare provider id. Returns the post-patch row in the same shape
+     * `createEvent` does — the core upserts it into the cache. No bus
+     * emission happens here; see {@link CalendarApi.emitCalendarEvent}.
      */
     updateEvent(
         calendar: CalendarRow,
@@ -253,19 +295,30 @@ export interface CalendarProvider {
         patch: UpdateEventInput,
     ): Promise<CalendarEventRow>;
     /**
-     * Delete an event at the provider. The core removes the row
-     * from the local cache only after this resolves so a provider
-     * error leaves the cache unchanged.
+     * Delete an event at the provider. `eventId` is the bare provider
+     * id. The core removes the row from the local cache only after
+     * this resolves so a provider error leaves the cache unchanged.
      */
     deleteEvent(calendar: CalendarRow, eventId: string): Promise<void>;
-    /** Inline-attach a file (≤3MB) onto an existing event. */
-    attachFile(eventId: string, name: string, contents: Buffer): Promise<void>;
+    /**
+     * Inline-attach a file (≤3MB) onto an existing event. `eventId`
+     * is the bare provider id.
+     */
+    attachFile(
+        calendar: CalendarRow,
+        eventId: string,
+        name: string,
+        contents: Buffer,
+    ): Promise<void>;
     /**
      * Fetch every non-inline attachment for an event as in-memory
-     * buffers. The core tool stages these into the agentrun's
-     * scratch dir.
+     * buffers. `eventId` is the bare provider id. The core tool stages
+     * these into the agentrun's scratch dir.
      */
-    getAttachments(eventId: string): Promise<readonly { name: string; contents: Buffer }[]>;
+    getAttachments(
+        calendar: CalendarRow,
+        eventId: string,
+    ): Promise<readonly { name: string; contents: Buffer }[]>;
 }
 
 /**
@@ -296,19 +349,53 @@ export interface CalendarApi {
 
     /**
      * Finalise a refresh walk: DELETE every event for `calendarId`
-     * whose `scanGeneration < gen`. Returns the count removed.
+     * whose `scanGeneration < gen`. Returns the count removed and the
+     * removed row data. The core emits one
+     * `calendar:delete:<pluginId>` per returned row so handlers see
+     * refresh-time deletions the same way they see tombstone-driven
+     * deletions from the incremental poll.
      */
-    endRefresh(calendarId: string, gen: number): Promise<{ removed: number }>;
+    endRefresh(
+        calendarId: string,
+        gen: number,
+    ): Promise<{ removed: number; rows: readonly CalendarEventRow[] }>;
 
     /**
-     * Upsert one event into the cache. Emits `calendar:new` iff
-     * `opts.seed === false` AND the row id did not previously exist.
-     * Returns `{created: true}` when the row was a fresh INSERT,
-     * `{created: false}` for an UPDATE of an existing row.
+     * Upsert one event into the cache. Returns `{created: true}` when
+     * the row was a fresh INSERT, `{created: false}` for an UPDATE of
+     * an existing row. Does NOT emit any bus event — the caller (a
+     * plugin poller) decides whether to call
+     * {@link emitCalendarEvent} based on the `{created}` flag and
+     * whether the call site represents a refresh re-walk or a real
+     * change. `opts.seed` is retained as a no-op for forward
+     * compatibility with future emission policies.
      */
     addEvent(row: NewCalendarEvent, opts: { seed: boolean }): Promise<{ created: boolean }>;
 
     removeEvent(id: string): Promise<void>;
+
+    /**
+     * Emit a standardized calendar-change bus event for `eventId`.
+     * `topic` must be `calendar:new:<pluginId>`,
+     * `calendar:update:<pluginId>`, or `calendar:delete:<pluginId>`,
+     * where `<pluginId>` matches the pluginId of the calendar the
+     * event belongs to. The helper fetches the row, constructs the
+     * shared {@link CalendarChangePayload}, and posts to the bus.
+     *
+     * Delete contract: callers MUST call this BEFORE
+     * {@link removeEvent}, otherwise the row lookup returns null and
+     * the helper throws.
+     *
+     * Refresh contract: pollers should suppress `calendar:update`
+     * emissions during a full re-walk so re-saving an unchanged row
+     * doesn't carpet-bomb handlers. New events found during a refresh
+     * (i.e. `addEvent` returned `{created: true}`) should still emit
+     * `calendar:new` — they are genuinely new.
+     *
+     * Throws on malformed topic, unknown row, or `pluginId` mismatch
+     * between the topic suffix and the calendar's owner.
+     */
+    emitCalendarEvent(topic: string, eventId: string): Promise<void>;
 
     findEvents(q: FindEventsQuery): Promise<readonly CalendarEventRow[]>;
     getEvent(id: string): Promise<CalendarEventRow | null>;
@@ -332,4 +419,46 @@ export interface CalendarApi {
      * Returns `null` when no match exists.
      */
     resolveCalendarRef(ref: string): Promise<CalendarRow | null>;
+}
+
+/**
+ * Construct a calendar event id in the canonical `<pluginId>:<realId>`
+ * shape used everywhere outside the provider boundary. Mirrors
+ * {@link buildMailId} so the two surfaces share a wire-format pattern.
+ *
+ * No escaping is applied: pluginIds must not contain `:` (enforced
+ * here); realIds may contain `:` and the parser treats them opaquely.
+ */
+export function buildCalendarEventId(pluginId: string, realId: string): string {
+    if (pluginId.length === 0 || pluginId.includes(":")) {
+        throw new Error(`pluginId must be non-empty and ":"-free: "${pluginId}"`);
+    }
+    if (realId.length === 0) {
+        throw new Error("realId must be non-empty");
+    }
+    return `${pluginId}:${realId}`;
+}
+
+/**
+ * Parse a calendar event id back into its two segments. Splits on the
+ * **first** `:` so a realId that happens to contain colons (rare but
+ * Graph does occasionally mint them) round-trips unchanged.
+ *
+ * @throws If the id has no `:` separator or either segment is empty.
+ *   The error names the offending input so a bad id surfaced from
+ *   agent args produces an actionable tool failure.
+ */
+export function parseCalendarEventId(id: string): {
+    readonly pluginId: string;
+    readonly realId: string;
+} {
+    const first = id.indexOf(":");
+    if (first <= 0) {
+        throw new Error(`calendar event id "${id}" is malformed: expected "<pluginId>:<realId>"`);
+    }
+    const realId = id.slice(first + 1);
+    if (realId.length === 0) {
+        throw new Error(`calendar event id "${id}" is malformed: empty real-id segment`);
+    }
+    return { pluginId: id.slice(0, first), realId };
 }

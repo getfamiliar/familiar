@@ -230,20 +230,19 @@ export class CalendarPoller {
         const client = new GraphClient(() => target.auth.getAccessTokenSilent());
         let cursor: string | null = this.cursorStore.get(target.upn, target.graphCalendarId);
         const isFreshWalk = cursor === null;
-        const { startDateTime, endDateTime } = this.windowIso();
+        // The window is only needed when there's no cursor yet (initial walk or
+        // post-410 reset). On subsequent pages the next/delta link carries the
+        // window it was minted with.
+        let window: { startDateTime: string; endDateTime: string } | undefined = isFreshWalk
+            ? this.windowIso()
+            : undefined;
         let nextDeltaLink: string | null = null;
         let pages = 0;
         while (pages < MAX_PAGES_PER_POLL) {
             pages += 1;
             let page: CalendarDeltaPage;
             try {
-                page = await this.fetchDeltaPage(
-                    client,
-                    target,
-                    startDateTime,
-                    endDateTime,
-                    cursor,
-                );
+                page = await this.fetchDeltaPage(client, target, cursor, window);
             } catch (err) {
                 if (err instanceof GraphError && err.status === 410) {
                     this.opts.log(
@@ -251,6 +250,7 @@ export class CalendarPoller {
                     );
                     await this.cursorStore.drop(target.upn, target.graphCalendarId);
                     cursor = null;
+                    window = this.windowIso();
                     continue;
                 }
                 throw err;
@@ -258,6 +258,7 @@ export class CalendarPoller {
             await this.persistPage(target, page.value, {
                 seed: isFreshWalk,
                 scanGeneration: target.row.scanGeneration,
+                emitUpdates: true,
             });
             if (page.deltaLink !== null) {
                 nextDeltaLink = page.deltaLink;
@@ -276,7 +277,7 @@ export class CalendarPoller {
     private async refreshOne(target: PollTarget): Promise<void> {
         const client = new GraphClient(() => target.auth.getAccessTokenSilent());
         const gen = await this.opts.calendarApi.beginRefresh(target.row.id);
-        const { startDateTime, endDateTime } = this.windowIso();
+        const window = this.windowIso();
         // Refresh ignores the per-calendar delta cursor — it walks
         // the whole window from scratch. New events still emit
         // `calendar:new` (the PK doesn't exist yet); known events
@@ -285,13 +286,7 @@ export class CalendarPoller {
         let cursor: string | null = null;
         while (pages < MAX_PAGES_PER_POLL) {
             pages += 1;
-            const page = await this.fetchDeltaPage(
-                client,
-                target,
-                startDateTime,
-                endDateTime,
-                cursor,
-            );
+            const page = await this.fetchDeltaPage(client, target, cursor, window);
             // Refresh deletes by generation, not by tombstone — drop
             // @removed items here and let `persistPage` handle the
             // master-first ordering for the rest.
@@ -299,6 +294,7 @@ export class CalendarPoller {
             await this.persistPage(target, items, {
                 seed: false,
                 scanGeneration: gen,
+                emitUpdates: false,
             });
             if (page.deltaLink !== null) {
                 // Persist the new delta link for the incremental loop
@@ -325,13 +321,16 @@ export class CalendarPoller {
      * 5xx responses. 410 (expired cursor) and 4xx (auth, bad request)
      * propagate immediately so the calling site can recover or fail
      * loud as appropriate.
+     *
+     * `window` is only consulted when `cursor` is null (an initial
+     * walk); on subsequent pages the persisted next/delta link already
+     * encodes the window it was minted with.
      */
     private async fetchDeltaPage(
         client: GraphClient,
         target: PollTarget,
-        startDateTime: string,
-        endDateTime: string,
         cursor: string | null,
+        window?: { startDateTime: string; endDateTime: string },
     ): Promise<CalendarDeltaPage> {
         let attempt = 0;
         for (;;) {
@@ -339,9 +338,8 @@ export class CalendarPoller {
                 return await client.listCalendarViewDelta(
                     target.upn,
                     target.graphCalendarId,
-                    startDateTime,
-                    endDateTime,
                     cursor,
+                    window,
                 );
             } catch (err) {
                 if (!isTransientGraphError(err) || attempt >= TRANSIENT_RETRY_DELAYS_MS.length) {
@@ -365,14 +363,25 @@ export class CalendarPoller {
      * Persist one delta page in two passes so occurrences can inherit
      * fields from their series master:
      *
-     *   1. Tombstones (`@removed`) → removeEvent.
-     *   2. Masters (`type === 'seriesMaster'`) → addEvent. Done before
-     *      pass 3 so the cache lookup in pass 3 succeeds for any
-     *      master present in this very page (Graph usually orders
-     *      master-first but we don't rely on it).
+     *   1. Tombstones (`@removed`) → emit `calendar:delete:ms365`
+     *      (best-effort) → removeEvent.
+     *   2. Masters (`type === 'seriesMaster'`) → addEvent → emit
+     *      new/update based on `{created}` and `opts.emitUpdates`.
+     *      Done before pass 3 so the cache lookup in pass 3 succeeds
+     *      for any master present in this very page (Graph usually
+     *      orders master-first but we don't rely on it).
      *   3. Everything else (`singleInstance`, `occurrence`,
      *      `exception`) → mergeWithMaster from the local cache when
-     *      `seriesMasterId` is set, then addEvent.
+     *      `seriesMasterId` is set, then addEvent → emit.
+     *
+     * Emission policy:
+     *   - `opts.seed === true` (very first walk, no cursor) → never
+     *     emit; the cache is being seeded.
+     *   - new row (`created === true`) → emit `calendar:new:ms365`.
+     *   - existing row + `opts.emitUpdates === true` (incremental
+     *     poll) → emit `calendar:update:ms365`.
+     *   - existing row + `opts.emitUpdates === false` (refresh
+     *     re-walk) → no emit; refresh isn't a change-detection path.
      *
      * A missing master (cross-calendar reference, race with deletion)
      * leaves the occurrence as-is — better to surface partial data
@@ -381,11 +390,29 @@ export class CalendarPoller {
     private async persistPage(
         target: PollTarget,
         items: readonly GraphCalendarEvent[],
-        opts: { readonly seed: boolean; readonly scanGeneration: number },
+        opts: {
+            readonly seed: boolean;
+            readonly scanGeneration: number;
+            readonly emitUpdates: boolean;
+        },
     ): Promise<void> {
         for (const item of items) {
             if (item["@removed"]) {
-                await this.opts.calendarApi.removeEvent(`${MS365_PROVIDER_ID}:${item.id}`);
+                const eventId = `${MS365_PROVIDER_ID}:${item.id}`;
+                // Emit before removing so the helper can still fetch
+                // the row. Tombstones for unknown ids (cursor drift,
+                // shared-calendar quirks) cause the helper to throw —
+                // swallow and still proceed to removeEvent so the
+                // cache converges.
+                try {
+                    await this.opts.calendarApi.emitCalendarEvent("calendar:delete:ms365", eventId);
+                } catch (err) {
+                    const message = err instanceof Error ? err.message : String(err);
+                    this.opts.log(
+                        `calendar ${target.row.name}: emit-before-delete failed for ${eventId}: ${message}`,
+                    );
+                }
+                await this.opts.calendarApi.removeEvent(eventId);
             }
         }
 
@@ -407,7 +434,8 @@ export class CalendarPoller {
                 calendarId: target.row.id,
                 scanGeneration: opts.scanGeneration,
             });
-            await this.opts.calendarApi.addEvent(row, { seed: opts.seed });
+            const { created } = await this.opts.calendarApi.addEvent(row, { seed: opts.seed });
+            await this.emitChange(target, row.id, created, opts);
         }
 
         for (const item of others) {
@@ -421,10 +449,53 @@ export class CalendarPoller {
                     row = mergeWithMaster(row, master);
                 }
             }
-            await this.opts.calendarApi.addEvent(row, { seed: opts.seed });
+            const { created } = await this.opts.calendarApi.addEvent(row, { seed: opts.seed });
+            await this.emitChange(target, row.id, created, opts);
         }
     }
 
+    /**
+     * Pick the right `calendar:new|update:ms365` topic per the policy
+     * documented on {@link persistPage} and post via the standardized
+     * helper. Errors are logged and swallowed so a single emit failure
+     * doesn't park the whole poll.
+     */
+    private async emitChange(
+        target: PollTarget,
+        eventId: string,
+        created: boolean,
+        opts: { readonly seed: boolean; readonly emitUpdates: boolean },
+    ): Promise<void> {
+        if (opts.seed) {
+            return;
+        }
+        const topic = created
+            ? "calendar:new:ms365"
+            : opts.emitUpdates
+              ? "calendar:update:ms365"
+              : null;
+        if (topic === null) {
+            return;
+        }
+        try {
+            await this.opts.calendarApi.emitCalendarEvent(topic, eventId);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.opts.log(
+                `calendar ${target.row.name}: emit ${topic} failed for ${eventId}: ${message}`,
+            );
+        }
+    }
+
+    /**
+     * Compute the calendar-view window relative to *now*. This is consulted
+     * only when minting a fresh `@odata.deltaLink`: the initial walk in
+     * `pollOneIncremental`, the post-410 reset, and the weekly `refreshOne`.
+     * Incremental polls follow the persisted deltaLink instead — its window
+     * is frozen at the moment it was minted. See `refreshOne` for the
+     * periodic window-slide that keeps the lookahead frontier from going
+     * stale.
+     */
     private windowIso(): { startDateTime: string; endDateTime: string } {
         const now = new Date();
         const lookback = this.opts.calendarConfig.lookbackDays;

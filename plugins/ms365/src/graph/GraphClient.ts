@@ -183,7 +183,7 @@ export interface GraphRecipient {
 /** Either an HTML-bodied draft or a send payload. */
 export interface GraphOutgoing {
     readonly subject: string;
-    /** HTML body — render markdown upstream via `renderMailHtml`. */
+    /** HTML body — render markdown upstream via `renderMarkdownToHtml`. */
     readonly bodyHtml: string;
     readonly to: readonly GraphRecipient[];
     readonly cc?: readonly GraphRecipient[];
@@ -245,6 +245,29 @@ function decodeGraphErrorBody(body: string): { code: string | null; message: str
  * `{ emailAddress: { address, name? } }` wire shape. The `name` field
  * is omitted when unset so we don't send empty strings.
  */
+/**
+ * Project a Graph recipient array (`toRecipients` / `ccRecipients`) to
+ * a flat string list, dropping entries whose `emailAddress.address` is
+ * missing. Used by `getMessageRecipients`; the missing-entry case is
+ * "defensive but not normal" — Graph always returns the address on a
+ * mail with a real recipient.
+ */
+function pickAddresses(
+    raw: ReadonlyArray<{ emailAddress?: { address?: string } }> | undefined,
+): readonly string[] {
+    if (!raw) {
+        return [];
+    }
+    const out: string[] = [];
+    for (const entry of raw) {
+        const addr = entry.emailAddress?.address;
+        if (typeof addr === "string" && addr.length > 0) {
+            out.push(addr);
+        }
+    }
+    return out;
+}
+
 function mapGraphRecipients(
     recipients: readonly GraphRecipient[],
 ): ReadonlyArray<{ emailAddress: { address: string; name?: string } }> {
@@ -309,6 +332,38 @@ export class GraphClient {
             throw new GraphError(200, url, "probeInbox: response missing `id`");
         }
         return json.id;
+    }
+
+    /**
+     * Fetch just the sender + recipient headers of one message. Used
+     * by the core `mail_send_reply` path to gate the original
+     * recipients against the send-safety whitelist before dispatching.
+     * Returns empty `to` / `cc` arrays when Graph omits the field
+     * (rare, but defensive).
+     */
+    async getMessageRecipients(
+        userId: string,
+        messageId: string,
+    ): Promise<{
+        readonly from: string | null;
+        readonly to: readonly string[];
+        readonly cc: readonly string[];
+    }> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}?$select=from,toRecipients,ccRecipients`;
+        const response = await this.request("GET", url);
+        const json = (await response.json()) as {
+            from?: { emailAddress?: { address?: string } } | null;
+            toRecipients?: ReadonlyArray<{ emailAddress?: { address?: string } }>;
+            ccRecipients?: ReadonlyArray<{ emailAddress?: { address?: string } }>;
+        };
+        return {
+            from:
+                typeof json.from?.emailAddress?.address === "string"
+                    ? json.from.emailAddress.address
+                    : null,
+            to: pickAddresses(json.toRecipients),
+            cc: pickAddresses(json.ccRecipients),
+        };
     }
 
     /** Fetch one message's body as plain text. */
@@ -485,21 +540,37 @@ export class GraphClient {
 
     /**
      * Walk the `calendarView/delta` stream for one calendar. On the
-     * initial walk pass `deltaOrNextLink: null` and the start /
-     * end pair; subsequent calls follow whatever link the prior page
-     * returned (next-page or deltaLink). A 410 Gone signals the cursor
-     * expired and the caller must restart from the window.
+     * initial walk pass `deltaOrNextLink: null` and a `window`;
+     * subsequent calls follow whatever link the prior page returned
+     * (next-page or deltaLink) and the window is ignored — the
+     * persisted deltaLink already encodes the window it was minted
+     * with. A 410 Gone signals the cursor expired and the caller
+     * must restart from a fresh window.
+     *
+     * @throws if `deltaOrNextLink` is null and `window` is missing.
      */
     async listCalendarViewDelta(
         userId: string,
         calendarId: string,
-        startDateTime: string,
-        endDateTime: string,
         deltaOrNextLink: string | null,
+        window?: { startDateTime: string; endDateTime: string },
     ): Promise<CalendarDeltaPage> {
-        const url =
-            deltaOrNextLink ??
-            this.buildInitialCalendarDeltaUrl(userId, calendarId, startDateTime, endDateTime);
+        let url: string;
+        if (deltaOrNextLink !== null) {
+            url = deltaOrNextLink;
+        } else {
+            if (!window) {
+                throw new Error(
+                    "listCalendarViewDelta: window required for an initial walk (deltaOrNextLink is null)",
+                );
+            }
+            url = this.buildInitialCalendarDeltaUrl(
+                userId,
+                calendarId,
+                window.startDateTime,
+                window.endDateTime,
+            );
+        }
         const response = await this.request("GET", url, {
             preferTokens: ['outlook.timezone="UTC"'],
         });

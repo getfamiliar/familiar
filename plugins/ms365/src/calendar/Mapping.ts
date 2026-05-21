@@ -1,22 +1,23 @@
-import type {
-    CalendarAttachmentMeta,
-    CalendarAttendee,
-    CalendarEventRow,
-    CalendarEventType,
-    CalendarImportance,
-    CalendarResponseStatus,
-    CalendarSensitivity,
-    CalendarShowAs,
-    CreateEventInput,
-    NewCalendarEvent,
-    UpdateEventInput,
+import {
+    buildCalendarEventId,
+    type CalendarAttachmentMeta,
+    type CalendarAttendee,
+    type CalendarEventRow,
+    type CalendarEventType,
+    type CalendarImportance,
+    type CalendarResponseStatus,
+    type CalendarSensitivity,
+    type CalendarShowAs,
+    type CreateEventInput,
+    type NewCalendarEvent,
+    renderMarkdownToHtml,
+    type UpdateEventInput,
 } from "@getfamiliar/shared";
 import type {
     GraphCalendar,
     GraphCalendarEvent,
     GraphCalendarEventCreate,
 } from "../graph/GraphClient.js";
-import { renderCalendarHtml } from "./CalendarHtml.js";
 
 /** Provider id used as a prefix on event ids and as the registry key. */
 export const MS365_PROVIDER_ID = "ms365";
@@ -43,11 +44,11 @@ export function eventFromGraph(
     const organizerEmail = graph.organizer?.emailAddress?.address ?? null;
     const organizerName = graph.organizer?.emailAddress?.name ?? null;
     return {
-        id: `${MS365_PROVIDER_ID}:${graph.id}`,
+        id: buildCalendarEventId(MS365_PROVIDER_ID, graph.id),
         calendarId: opts.calendarId,
         seriesMasterId:
             typeof graph.seriesMasterId === "string" && graph.seriesMasterId.length > 0
-                ? `${MS365_PROVIDER_ID}:${graph.seriesMasterId}`
+                ? buildCalendarEventId(MS365_PROVIDER_ID, graph.seriesMasterId)
                 : null,
         type: normaliseType(graph.type),
         subject: typeof graph.subject === "string" ? graph.subject : null,
@@ -95,7 +96,7 @@ export function buildCreateBody(
         start: { dateTime: input.start, timeZone: input.timezone ?? opts.timezone },
         end: { dateTime: input.end, timeZone: input.timezone ?? opts.timezone },
         body: input.body
-            ? { contentType: "HTML", content: renderCalendarHtml(input.body) }
+            ? { contentType: "HTML", content: renderMarkdownToHtml(input.body) }
             : undefined,
         location: input.location ? { displayName: input.location } : undefined,
         attendees: input.attendees?.length
@@ -142,7 +143,7 @@ export function buildPatchBody(
             end: { dateTime: patch.end, timeZone: tz },
         }),
         ...(patch.body !== undefined && {
-            body: { contentType: "HTML" as const, content: renderCalendarHtml(patch.body) },
+            body: { contentType: "HTML" as const, content: renderMarkdownToHtml(patch.body) },
         }),
         ...(patch.location !== undefined && {
             location: { displayName: patch.location },

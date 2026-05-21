@@ -10,6 +10,7 @@ import {
 import { CalendarPoller } from "./calendar/CalendarPoller.js";
 import { Ms365CalendarProvider } from "./calendar/Ms365CalendarProvider.js";
 import { MailPoller } from "./mail/MailPoller.js";
+import { Ms365MailProvider } from "./mail/Ms365MailProvider.js";
 
 /**
  * Boot the Microsoft 365 plugin: load logins, hand the live store to
@@ -33,24 +34,33 @@ export async function startMs365Daemon(ctx: HostContext): Promise<void> {
     if (!mail.enabled) {
         log("mail: disabled via ms365.mail.enabled=false; skipping");
     } else {
-        const mailPoller = await MailPoller.prepare({
-            ctx,
-            mail,
-            logins,
-            log,
-            emit: (event) => ctx.events.emit(event),
-        });
-        if (mailPoller === null) {
-            log("mail: not active; idle until a login is added");
+        // Register the provider before the poller runs so the core
+        // `mail_*` tools can dispatch to ms365 the moment the daemon
+        // resolves — even when polling is off, the agent can act on
+        // mails referenced by id from a chat handler.
+        ctx.mail.registerProvider(new Ms365MailProvider());
+        if (!mail.polling) {
+            log("mail: polling disabled via ms365.mail.polling=false; tools remain available");
         } else {
-            log(`mail: registered; polling every ${mail.pollingIntervalMinutes}m`);
-            runPollLoop(
-                (): Promise<void> => mailPoller.pollOnce(),
-                mail.pollingIntervalMinutes,
-                mail.pollingBackoffMinutes,
-                "mail",
+            const mailPoller = await MailPoller.prepare({
+                ctx,
+                mail,
+                logins,
                 log,
-            );
+                emit: (event) => ctx.events.emit(event),
+            });
+            if (mailPoller === null) {
+                log("mail: not active; idle until a login is added");
+            } else {
+                log(`mail: registered; polling every ${mail.pollingIntervalMinutes}m`);
+                runPollLoop(
+                    (): Promise<void> => mailPoller.pollOnce(),
+                    mail.pollingIntervalMinutes,
+                    mail.pollingBackoffMinutes,
+                    "mail",
+                    log,
+                );
+            }
         }
     }
 
@@ -66,7 +76,6 @@ export async function startMs365Daemon(ctx: HostContext): Promise<void> {
     ctx.calendar.registerProvider(
         new Ms365CalendarProvider({
             config: ctx.config,
-            calendarApi: ctx.calendar,
             calendarConfig: calendar,
         }),
     );

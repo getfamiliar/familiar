@@ -31,22 +31,19 @@ is only to surface the mail.
 When the body preview is at Graph's truncation cap (255 chars), the prompt
 ends with:
 
-> Body is truncated. Use the ms365_fetch_body tool to get the full body.
+> Body is truncated. Use the mail_fetch_body tool to get the full body.
 
 **Payload**:
 
 ```ts
 {
-    provider: "ms365",
-    upn: string,            // logged-in account upn (safe as path component)
-    mailbox: string,        // address polled — primary or shared (safe as path component)
+    mail_id: string,        // "<plugin>:<mailbox>:<realId>" — pass to every core mail_* tool
     isShared: boolean,
     from: { name: string | null; address: string; rawAddress: string | null },
     to:    Array<{ name: string | null; address: string; rawAddress: string | null }>,
     cc:    Array<{ name: string | null; address: string; rawAddress: string | null }>,
     subject: string,
     date: string,           // ISO-8601, == receivedDateTime
-    messageId: string,      // Graph "id" — used by every ms365_* tool internally
     internetMessageId: string,
     hasAttachments: boolean,
     attachments: Array<{
@@ -61,35 +58,42 @@ ends with:
 
 ### Tools the agent gets
 
-All tools resolve the active mail from the triggering event's payload — the
-agent never passes a message id or mailbox address. Tool names are
-namespaced by the plugin id (`ms365_*`).
+The plugin contributes no agent tools of its own. Mail surfaces are reached
+through the core `mail_*` tools (defined in `host/src/mail/MailTools.ts`),
+which dispatch to whichever provider owns the `<pluginId>:` prefix on a given
+mail id. This plugin registers a `MailProvider` for the `ms365:` prefix
+during `start()`.
+
+The core tools relevant to ms365 mails:
 
 | Tool | Effect |
 |------|--------|
-| `ms365_fetch_body` | Returns the full plain-text body of the current mail. |
-| `ms365_fetch_attachments` | Downloads every non-inline attachment into `/scratch/<event-id>/` and returns their paths. |
-| `ms365_draft_reply` | Creates a reply draft. `replyAll: true` to include every recipient. |
-| `ms365_draft_new` | Creates a brand-new draft under the current mailbox. |
-| `ms365_send_reply` | Sends a reply immediately. Gated by `allowSend` + `recipientWhitelist`. |
-| `ms365_send_new` | Sends a brand-new mail immediately. Gated by `allowSend` + `recipientWhitelist`. |
-| `ms365_draft_forward` | Creates a forwarding draft. |
-| `ms365_send_forward` | Forwards the current mail immediately. Gated by `allowSend` + `recipientWhitelist`. |
-| `ms365_move` | Moves the current mail. `folder` ∈ `inbox \| archive \| trash`. |
+| `mail_fetch_body` | Full plain-text body of one mail. |
+| `mail_fetch_attachments` | Downloads non-inline attachments into `/scratch/<event-id>/`. |
+| `mail_draft_reply` | Reply draft. `replyAll: true` to include every recipient. |
+| `mail_draft_new` | Brand-new draft. Takes `from: "<plugin>:<mailbox>"`. |
+| `mail_send_reply` | Send a reply. Gated by core `mail.allowSend` + `mail.recipientWhitelist`. |
+| `mail_send_new` | Send a brand-new mail. Same gates. |
+| `mail_draft_forward` | Forwarding draft. |
+| `mail_send_forward` | Forward immediately. Same gates. |
+| `mail_move` | Move to `inbox` / `archive` / `trash`. |
 
-`send_*` tools fall back to creating a draft (and report why) when `allowSend`
-is `false` or a recipient violates the whitelist. The agent can surface the
-returned reason to the user.
+Every tool resolves `mail_id` from its argument or — when omitted — from
+`event.payload.mail_id` of the triggering mail event. From chat handlers,
+pass `mail_id` explicitly.
+
+`send_*` tools fall back to creating a draft (and report why) when
+`mail.allowSend` is `false` or a recipient violates the whitelist.
 
 ### Attachments
 
 When a message has attachments, the polling loop downloads every non-inline
-attachment up-front via the same Graph endpoint the `ms365_fetch_attachments`
+attachment up-front via the same Graph endpoint the `mail_fetch_attachments`
 tool uses. Bytes that fit Graph's inline-bytes ceiling (~3 MB) ship straight
 into the event's `/scratch/<event-id>/` directory; metadata lands in
 `payload.attachments` either way. The `attachments` field is `null` only when
 the polling-time fetch errored — the agent can still call
-`ms365_fetch_attachments` and retry.
+`mail_fetch_attachments` and retry.
 
 ### Address safety
 
@@ -141,7 +145,7 @@ same set.
 | `Mail.ReadWrite.Shared`        | Same, for shared mailboxes.                                                            |
 | `Mail.Send`                    | Send replies / new mail from the signed-in user's mailbox.                             |
 | `Mail.Send.Shared`             | Same, on behalf of a shared mailbox.                                                   |
-| `MailboxFolder.Read`           | Resolve the well-known folder ids (`inbox`, `archive`, `deleteditems`) used by `ms365_move`. |
+| `MailboxFolder.Read`           | Resolve the well-known folder ids (`inbox`, `archive`, `deleteditems`) used by `mail_move`. |
 | `MailboxSettings.ReadWrite`    | Reserved for an upcoming out-of-office automation that reads and updates auto-reply settings. |
 | `Calendars.ReadWrite`          | Read events from the user's own calendars during delta polling; create new events via `cal_create_event`. |
 | `Calendars.ReadWrite.Shared`   | Same, for calendars shared with the user (delegated access).                          |

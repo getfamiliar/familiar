@@ -83,17 +83,23 @@ export class CalendarStore {
 
     /**
      * Delete every event for `calendarId` whose `scan_generation` is
-     * strictly less than `gen`. Returns the number of removed rows.
+     * strictly less than `gen`. Returns the number of removed rows and
+     * the removed row data so the service can emit one
+     * `calendar:delete:<pluginId>` per pruned row.
      */
-    async endRefresh(calendarId: string, gen: number): Promise<{ removed: number }> {
+    async endRefresh(
+        calendarId: string,
+        gen: number,
+    ): Promise<{ removed: number; rows: readonly CalendarEventRow[] }> {
         const conn = await this.conn();
         const pool = conn.getPool();
-        const result = await pool.query(
+        const result = await pool.query<EventSqlRow>(
             `DELETE FROM calendar_events
-             WHERE calendar_id = $1 AND scan_generation < $2`,
+             WHERE calendar_id = $1 AND scan_generation < $2
+             RETURNING *`,
             [calendarId, gen],
         );
-        return { removed: result.rowCount ?? 0 };
+        return { removed: result.rowCount ?? 0, rows: result.rows.map(rowToEvent) };
     }
 
     /**
@@ -239,6 +245,20 @@ export class CalendarStore {
         const sql = `SELECT * FROM calendar_events ${whereClause} ORDER BY start_dt ASC ${limitClause}`;
         const result = await pool.query<EventSqlRow>(sql, params);
         return result.rows.map(rowToEvent);
+    }
+
+    /**
+     * Fetch one calendar row by primary key, or null if it doesn't
+     * exist. Used by the service to look up the owning plugin of an
+     * event for emit-topic validation.
+     */
+    async getCalendar(id: string): Promise<CalendarRow | null> {
+        const conn = await this.conn();
+        const pool = conn.getPool();
+        const result = await pool.query<CalendarSqlRow>(`SELECT * FROM calendars WHERE id = $1`, [
+            id,
+        ]);
+        return result.rows[0] ? rowToCalendar(result.rows[0]) : null;
     }
 
     async listCalendars(filter?: { pluginId?: string }): Promise<readonly CalendarRow[]> {
