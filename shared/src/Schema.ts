@@ -42,6 +42,14 @@ export const EVENTS_STATE_CHANNEL = "events_state";
 export const AGENTRUNS_CHANNEL = "agentruns_changed";
 export const STEPRESULTS_NEW_CHANNEL = "stepresults_new";
 export const CHATMESSAGES_NEW_CHANNEL = "chatmessages_new";
+/**
+ * NOTIFY channel for `scheduled_handlers` mutations. Payload format is
+ * `<key>:<op>` where `op` is `u` (insert / update) or `d` (delete). The
+ * host-side `ScheduledHandlerScheduler` listens here to install or
+ * cancel Croner jobs as the agent schedules / unschedules one-off
+ * handlers.
+ */
+export const SCHEDULED_HANDLERS_CHANNEL = "scheduled_handlers_changed";
 
 /**
  * Topic regex used by the events check constraint and by the container
@@ -416,6 +424,57 @@ CREATE INDEX IF NOT EXISTS calendar_events_series_idx
   ON calendar_events (series_master_id);
 CREATE INDEX IF NOT EXISTS calendar_events_generation_idx
   ON calendar_events (calendar_id, scan_generation);
+
+-- ───────── scheduled_handlers ─────────
+--
+-- One-off agent-scheduled wake-ups. Each row is upserted by the
+-- container's \`schedule_handler\` tool and read by the host-side
+-- \`ScheduledHandlerScheduler\`, which installs a Croner job per row
+-- and atomically deletes the row when it fires. \`key\` is the
+-- agent-supplied unique id used for replace-on-conflict semantics
+-- ("rescheduling a key overwrites the previous timing"). \`fire_at\`
+-- is the UTC firing time; the agent passes wall-clock-in-\`core.timezone\`
+-- and the container projects to UTC before insert. On daemon startup,
+-- past-due rows are deleted with a warn log; future rows are
+-- reinstalled. See [[feedback_agent_facing_format]] — UTC storage,
+-- local-tz projection at every agent-facing edge.
+CREATE TABLE IF NOT EXISTS scheduled_handlers (
+  key         text PRIMARY KEY,
+  fire_at     timestamptz NOT NULL,
+  topic       text NOT NULL,
+  handler     text NOT NULL,
+  prompt      text,
+  payload     jsonb NOT NULL DEFAULT '{}'::jsonb,
+  priority    smallint NOT NULL DEFAULT 50,
+  privileged  boolean NOT NULL DEFAULT false,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT scheduled_handlers_topic_format CHECK (topic ~ '${TOPIC_PATTERN}')
+);
+
+CREATE INDEX IF NOT EXISTS scheduled_handlers_fire_at_idx
+  ON scheduled_handlers (fire_at);
+
+CREATE OR REPLACE FUNCTION scheduled_handlers_notify_changed() RETURNS trigger AS $$
+DECLARE
+  payload_key text;
+  op text;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    payload_key := OLD.key;
+    op := 'd';
+  ELSE
+    payload_key := NEW.key;
+    op := 'u';
+  END IF;
+  PERFORM pg_notify('${SCHEDULED_HANDLERS_CHANNEL}', payload_key || ':' || op);
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS scheduled_handlers_notify_changed_trg ON scheduled_handlers;
+CREATE TRIGGER scheduled_handlers_notify_changed_trg
+  AFTER INSERT OR UPDATE OR DELETE ON scheduled_handlers
+  FOR EACH ROW EXECUTE FUNCTION scheduled_handlers_notify_changed();
 `;
 
 /**

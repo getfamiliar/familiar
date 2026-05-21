@@ -1,5 +1,8 @@
-import type { CalendarEventRow, ConfigService } from "@getfamiliar/shared";
-import { DateTime } from "luxon";
+import { type CalendarEventRow, type ConfigService, renderInZone } from "@getfamiliar/shared";
+
+// Re-exported for backwards compatibility — callers historically import
+// `renderInZone` from this module. The canonical home is `shared/Timezone`.
+export { renderInZone };
 
 /**
  * Agent-facing projection of a {@link CalendarEventRow}.
@@ -61,23 +64,6 @@ export function renderEventForAgent(row: CalendarEventRow, coreTz: string): Agen
         start: renderInZone(row.startDt, coreTz),
         end: renderInZone(row.endDt, coreTz),
     };
-}
-
-/**
- * Reformat a UTC ISO-8601 string as a wall-clock-with-offset string in
- * `zone`. Exported for the day-bounds resolver in `CalendarTools` and
- * for unit tests.
- */
-export function renderInZone(utcIso: string, zone: string): string {
-    const dt = DateTime.fromISO(utcIso, { zone: "utc" });
-    if (!dt.isValid) {
-        return utcIso;
-    }
-    const local = dt.setZone(zone);
-    if (!local.isValid) {
-        return utcIso;
-    }
-    return local.toISO({ suppressMilliseconds: true }) ?? utcIso;
 }
 
 /**

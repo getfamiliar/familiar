@@ -9,6 +9,7 @@ import {
     type Logger,
     type LogStream,
     prettyStdoutStream,
+    ScheduledHandlerBus,
 } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import type { Bootstrap } from "../Bootstrap.js";
@@ -23,6 +24,7 @@ import {
     ensureAgentImage,
 } from "../container-runner/AgentContainer.js";
 import { CronjobScheduler } from "../cron/CronjobScheduler.js";
+import { ScheduledHandlerScheduler } from "../cron/ScheduledHandlerScheduler.js";
 import { ScratchGc } from "../cron/ScratchGc.js";
 import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
@@ -289,6 +291,21 @@ export const startCommand = defineCommand({
         });
         await cronScheduler.start();
 
+        const scheduledHandlerConn = await pluginHost.ensureConnection();
+        const scheduledHandlerBus = new ScheduledHandlerBus(
+            scheduledHandlerConn,
+            log.child({ component: "scheduled-handler-bus" }),
+        );
+        const scheduledHandlerScheduler = new ScheduledHandlerScheduler({
+            bus: scheduledHandlerBus,
+            emit: async (event) => {
+                const handle = await cronCtx.events.emit(event);
+                return { id: handle.id };
+            },
+            log: log.child({ component: "scheduled-handler-scheduler" }),
+        });
+        await scheduledHandlerScheduler.start();
+
         const scratchGc = new ScratchGc({
             scratchDir: boot.scratchDir,
             log: log.child({ component: "scratch-gc" }),
@@ -305,6 +322,9 @@ export const startCommand = defineCommand({
 
             const orderedSteps = async (): Promise<"done"> => {
                 scratchGc.stop();
+                await safeStop(log, "scheduled-handler scheduler", () =>
+                    scheduledHandlerScheduler.stop(),
+                );
                 await safeStop(log, "cron scheduler", () => cronScheduler.stop());
                 await safeStop(log, "workspace watcher", () => workspaceWatcher.stop());
                 await safeStop(log, "plugin host", () => pluginHost.close());

@@ -33,6 +33,7 @@
         "citty": "^0.1.6",
         "croner": "^10.0.1",
         "friendly-node-cron": "^1.5.0",
+        "luxon": "^3.7.2",
         "marked": "^15.0.12",
         "marked-terminal": "^7.3.0",
         "pg": "^8.13.1",
@@ -40,6 +41,7 @@
     },
     "devDependencies": {
         "@biomejs/biome": "^2.4.12",
+        "@types/luxon": "^3.7.1",
         "@types/marked-terminal": "^6.1.1",
         "@types/node": "^25.6.0",
         "@types/pg": "^8.11.10",

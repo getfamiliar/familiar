@@ -1,9 +1,11 @@
-import type { AgentRunBus, AgentRunRow, Logger } from "@getfamiliar/shared";
+import type { AgentRunBus, AgentRunRow, Logger, ScheduledHandlerBus } from "@getfamiliar/shared";
 import type { ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
 import { buildCallHandlerTool, type WaitForSubagent } from "./callHandler.js";
 import { buildFsTools } from "./fs.js";
+import { buildGetScheduledHandlersTool } from "./getScheduledHandlers.js";
 import { buildQueueHandlerTool } from "./queueHandler.js";
+import { buildScheduleHandlerTool } from "./scheduleHandler.js";
 import { buildSendChatTool } from "./sendChat.js";
 import {
     evaluate,
@@ -12,6 +14,7 @@ import {
     parseExpression,
     SYSTEM_GROUP_NAME,
 } from "./ToolFilter.js";
+import { buildUnscheduleHandlerTool } from "./unscheduleHandler.js";
 
 /** Inputs the {@link AgentRunner} threads into the factory per agentrun. */
 export interface ToolsFactoryContext {
@@ -36,6 +39,19 @@ export interface ToolsFactoryContext {
     readonly groups?: GroupLookup;
     /** Agentrun bus; required to register `queue_handler` / `call_handler`. */
     readonly bus?: AgentRunBus;
+    /**
+     * Scheduled-handler bus; required to register `schedule_handler`,
+     * `unschedule_handler`, and `get_scheduled_handlers`. The host's
+     * `ScheduledHandlerScheduler` observes the same table and installs
+     * Croner jobs for inserted rows.
+     */
+    readonly scheduledHandlerBus?: ScheduledHandlerBus;
+    /**
+     * IANA timezone (typically `core.timezone`) used by the scheduled-
+     * handler tools to convert between wall-clock and UTC. When
+     * omitted, the scheduled-handler tools are not registered.
+     */
+    readonly timezone?: string;
     /**
      * The currently-running agentrun row; closed over by both
      * `queue_handler` and `call_handler` for parent inheritance.
@@ -94,10 +110,11 @@ export interface ToolsFactoryContext {
  * hands to the Vercel AI SDK's tool-loop agent.
  *
  * **One pool, one filter.** System tools (`send_chat`,
- * `queue_handler`, `call_handler`, `file_*`, `fs_*`) and MCP tools
- * (`${id}_${name}`) are merged into a single available set. The
- * handler's `tools:` expression — or, when omitted, the implicit
- * `system` default — decides what survives.
+ * `queue_handler`, `call_handler`, `schedule_handler`,
+ * `unschedule_handler`, `get_scheduled_handlers`, `file_*`, `fs_*`)
+ * and MCP tools (`${id}_${name}`) are merged into a single available
+ * set. The handler's `tools:` expression — or, when omitted, the
+ * implicit `system` default — decides what survives.
  *
  * Built-in groups visible from any expression:
  *
@@ -133,6 +150,20 @@ export class ToolsFactory {
                     context.waitForSubagent,
                 );
             }
+        }
+        if (context.scheduledHandlerBus && context.parent && context.timezone) {
+            systemTools.schedule_handler = buildScheduleHandlerTool(
+                context.scheduledHandlerBus,
+                context.parent,
+                context.timezone,
+            );
+            systemTools.unschedule_handler = buildUnscheduleHandlerTool(
+                context.scheduledHandlerBus,
+            );
+            systemTools.get_scheduled_handlers = buildGetScheduledHandlersTool(
+                context.scheduledHandlerBus,
+                context.timezone,
+            );
         }
         if (context.parent) {
             // Filesystem tools are always available; the writing tools

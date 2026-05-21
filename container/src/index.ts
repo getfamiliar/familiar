@@ -10,13 +10,14 @@ import {
     POSTGRES_PORT,
     POSTGRES_USER,
     PostgresConnection,
+    ScheduledHandlerBus,
     StepResultBus,
 } from "@getfamiliar/shared";
 import { AgentrunScheduler, subscribeAgentrunsChanges } from "./AgentrunScheduler.js";
 import { AgentRunner } from "./agent-runner/AgentRunner.js";
 import { ChatManager } from "./chat/ChatManager.js";
 import { EventWatcher } from "./EventWatcher.js";
-import { optionalEnvInt } from "./env.js";
+import { getCoreTimezone, optionalEnvInt } from "./env.js";
 import { HandlerFile } from "./HandlerFile.js";
 import { McpClientPool } from "./mcp/McpClientPool.js";
 import { PluginToolsClient } from "./plugins/ToolsClient.js";
@@ -87,8 +88,13 @@ async function main(): Promise<void> {
     const agentRunBus = new AgentRunBus(connection, log.child({ component: "agentrun-bus" }));
     const eventBus = new EventBus(connection, log.child({ component: "event-bus" }));
     const stepBus = new StepResultBus(connection, log.child({ component: "step-bus" }));
+    const scheduledHandlerBus = new ScheduledHandlerBus(
+        connection,
+        log.child({ component: "scheduled-handler-bus" }),
+    );
     const chat = new ChatManager(new ChatMessageBus(connection));
     const recovery = new AgentrunRecovery(connection, log.child({ component: "recovery" }));
+    const timezone = getCoreTimezone();
 
     const defaultTimeoutMs = (optionalEnvInt("AGENT_TIMEOUT_SECONDS") ?? 60) * 1000;
     const retryCap = optionalEnvInt("INFERENCE_MAX_RETRIES") ?? 3;
@@ -97,6 +103,8 @@ async function main(): Promise<void> {
         agentRunBus,
         eventBus,
         stepBus,
+        scheduledHandlerBus,
+        timezone,
         log: log.child({ component: "agentrun-scheduler" }),
         clock: RealClock,
         runnerFactory: () => new AgentRunner(),

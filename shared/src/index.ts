@@ -91,18 +91,32 @@ export {
     PostgresConnection,
     type PostgresConnectionConfig,
 } from "./PostgresConnection.js";
+export type { NewScheduledHandler, ScheduledHandlerRow } from "./ScheduledHandler.js";
+export {
+    ScheduledHandlerBus,
+    type ScheduledHandlerNotification,
+    type ScheduledHandlerOp,
+    type ScheduledHandlerUnsubscribe,
+} from "./ScheduledHandlerBus.js";
 export {
     AGENTRUNS_CHANNEL,
     CHATMESSAGES_NEW_CHANNEL,
     EVENT_TERMINAL_UPDATE_SQL,
     EVENTS_NEW_CHANNEL,
     EVENTS_STATE_CHANNEL,
+    SCHEDULED_HANDLERS_CHANNEL,
     SCHEMA_SQL,
     STEPRESULTS_NEW_CHANNEL,
     TOPIC_PATTERN,
 } from "./Schema.js";
 export type { NewStepResult, StepResultRow } from "./StepResult.js";
 export { StepResultBus, type StepResultUnsubscribe } from "./StepResultBus.js";
+export {
+    dayBoundsInZone,
+    type ParseInZoneResult,
+    parseInZone,
+    renderInZone,
+} from "./Timezone.js";
 export {
     ALL_GROUP_NAME,
     CORE_GROUP_NAME,

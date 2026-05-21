@@ -7,6 +7,7 @@ import {
     type NewStepResult,
     type NotificationHandler,
     type PostgresConnection,
+    type ScheduledHandlerBus,
     type StepResultBus,
 } from "@getfamiliar/shared";
 import type { AgentRunner, AgentRunnerContext } from "./agent-runner/AgentRunner.js";
@@ -34,6 +35,15 @@ export interface SchedulerDeps {
     readonly agentRunBus: AgentRunBus;
     readonly eventBus: EventBus;
     readonly stepBus: StepResultBus;
+    readonly scheduledHandlerBus: ScheduledHandlerBus;
+    /**
+     * IANA timezone string — typically `core.timezone` forwarded by
+     * the host through `CORE_TIMEZONE` and resolved by
+     * `getCoreTimezone()`. Threaded into agent-facing tools that need
+     * to convert between wall-clock and UTC (currently
+     * `schedule_handler` / `get_scheduled_handlers`).
+     */
+    readonly timezone: string;
     readonly log: Logger;
     readonly clock: Clock;
     /**
@@ -568,7 +578,17 @@ export class AgentrunScheduler {
      * read / mutate the right map entry.
      */
     private async buildContext(row: AgentRunRow, active: ActiveAgent): Promise<AgentRunnerContext> {
-        const { agentRunBus, eventBus, stepBus, mcpPool, pluginToolsClient, chat, log } = this.deps;
+        const {
+            agentRunBus,
+            eventBus,
+            stepBus,
+            scheduledHandlerBus,
+            timezone,
+            mcpPool,
+            pluginToolsClient,
+            chat,
+            log,
+        } = this.deps;
         const waitForSubagent = (childId: string) => this.waitForSubagent(row.id, childId);
 
         const runnerLog = log.child({
@@ -590,6 +610,8 @@ export class AgentrunScheduler {
                     toolsExpression,
                     groups: createGroupLookup(),
                     bus: agentRunBus,
+                    scheduledHandlerBus,
+                    timezone,
                     parent: row,
                     waitForSubagent,
                     mcpTools: mcpPool.tools(),

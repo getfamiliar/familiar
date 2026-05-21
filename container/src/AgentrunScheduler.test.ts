@@ -91,10 +91,25 @@ function buildHarness(opts: HarnessOptions): Harness {
         }),
     };
 
+    const scheduledHandlerBus = {
+        upsert: async () => {
+            throw new Error("scheduledHandlerBus.upsert not implemented in harness");
+        },
+        deleteByKey: async () => false,
+        listInRange: async () => [],
+        listFuture: async () => [],
+        deletePastDue: async () => 0,
+        getByKey: async () => undefined,
+        claimAndDeleteForFiring: async () => undefined,
+        listen: async () => async () => {},
+    };
+
     const deps: SchedulerDeps = {
         agentRunBus: agentRunBus as unknown as SchedulerDeps["agentRunBus"],
         eventBus: eventBus as unknown as SchedulerDeps["eventBus"],
         stepBus: stepBus as unknown as SchedulerDeps["stepBus"],
+        scheduledHandlerBus: scheduledHandlerBus as unknown as SchedulerDeps["scheduledHandlerBus"],
+        timezone: "UTC",
         log,
         clock,
         runnerFactory: buildRunnerFactory(opts.behaviors),
