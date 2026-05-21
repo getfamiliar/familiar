@@ -114,6 +114,31 @@ export class StdioMcpTransport implements McpTransport {
     private pendingResolve: ((line: string) => void) | null = null;
     private pendingReject: ((err: Error) => void) | null = null;
     private prepPromise: Promise<void> | null = null;
+    /**
+     * Verbatim bytes of the upstream's `initialize` request the first
+     * time one flowed through this transport. Replayed silently against
+     * every later cold-spawn so a respawned MCP server doesn't reject
+     * the upstream's next tool call with "Received request before
+     * initialization was complete". Captured raw (not re-serialised)
+     * so the replayed handshake matches exactly what the upstream
+     * negotiated originally (capability flags, protocol version, …).
+     */
+    private cachedInitializeRequest: string | null = null;
+    /**
+     * The `notifications/initialized` frame the upstream sent right
+     * after its initialize. Replayed after the initialize on every
+     * cold respawn so the child reaches `Initialized` state before
+     * any tool call arrives. Some clients send it; if absent, we
+     * skip the second step (the Python `mcp` library tolerates this).
+     */
+    private cachedInitializedNotification: string | null = null;
+    /**
+     * True iff the *current* child has observed an initialize +
+     * notifications/initialized pair. Reset to false in the
+     * `child.on("exit")` handler so the next `ensureSpawned` triggers
+     * a replay against the fresh child.
+     */
+    private childIsInitialized = false;
 
     constructor(config: StdioMcpTransportConfig) {
         this.id = config.id;
@@ -143,6 +168,22 @@ export class StdioMcpTransport implements McpTransport {
         if (trimmed.length === 0) {
             replyError(res, 400, "empty body");
             return;
+        }
+
+        // Capture the upstream's initialize handshake so we can
+        // transparently replay it after any future cold respawn. The
+        // upstream SDK only does this once per MCPClient instance and
+        // doesn't re-initialize if our docker child is reaped between
+        // calls; the bastion has to fill that gap itself.
+        const classification = classifyJsonRpcMessage(trimmed);
+        if (classification === "initialize") {
+            this.cachedInitializeRequest = trimmed;
+            // Re-initialize state is invalidated until the matching
+            // notifications/initialized arrives next.
+            this.childIsInitialized = false;
+        } else if (classification === "initialized-notification") {
+            this.cachedInitializedNotification = trimmed;
+            this.childIsInitialized = true;
         }
 
         // Notifications (JSON-RPC frames without an `id`) elicit no
@@ -313,6 +354,11 @@ export class StdioMcpTransport implements McpTransport {
             this.pendingResolve = null;
             this.pendingReject = null;
             this.child = null;
+            // The fresh child we spawn next will start in
+            // `NotInitialized` state and reject every non-initialize
+            // request until we replay. Flip the flag here, not in
+            // ensureSpawned, so a crash mid-request still resets it.
+            this.childIsInitialized = false;
             this.clearIdleTimer();
             if (reject !== null) {
                 reject(new Error(`mcp child exited (code=${code}, signal=${signal})`));
@@ -328,6 +374,69 @@ export class StdioMcpTransport implements McpTransport {
                 reject(err);
             }
         });
+
+        // Transparent re-initialize: if we've seen the upstream's
+        // initialize before and the current child hasn't been brought
+        // through it yet, replay before exchange() writes the upstream
+        // payload. Order is critical — pendingResolve must be free for
+        // the replay's own round-trip, which it is here because
+        // exchange() sets its own waiter only AFTER ensureSpawned
+        // returns.
+        if (this.cachedInitializeRequest !== null && !this.childIsInitialized) {
+            await this.replayInitialize();
+        } else if (this.cachedInitializeRequest === null && !this.childIsInitialized) {
+            // First spawn of this transport's lifetime — the upstream's
+            // initialize is about to flow through normally and get
+            // captured by handle(). Nothing to replay.
+        }
+    }
+
+    /**
+     * Send the cached `initialize` request (and the cached
+     * `notifications/initialized` if any) to the freshly-spawned child
+     * before any upstream payload is forwarded. Throws if the child
+     * answers the initialize with a JSON-RPC error, so the upstream's
+     * pending request fails fast with a clear cause instead of hanging
+     * 60 s waiting for a response that will never come.
+     */
+    private async replayInitialize(): Promise<void> {
+        const initRequest = this.cachedInitializeRequest;
+        if (initRequest === null) {
+            return;
+        }
+        const child = this.child;
+        if (child === null) {
+            throw new Error("replayInitialize: child not spawned");
+        }
+        this.log.info(`stdio mcp '${this.id}': replaying initialize after cold respawn`);
+        const responsePromise = new Promise<string>((resolve, reject) => {
+            this.pendingResolve = resolve;
+            this.pendingReject = reject;
+        });
+        child.stdin.write(`${initRequest}\n`);
+        const responseLine = await responsePromise;
+        // Validate the response — a JSON-RPC error means the new child
+        // refused the handshake (image mismatch, capability conflict,
+        // …). Surface it to the caller; do not mark initialized.
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(responseLine);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            throw new Error(
+                `mcp '${this.id}' re-initialize failed: child returned unparseable response: ${message}`,
+            );
+        }
+        if (parsed !== null && typeof parsed === "object" && "error" in parsed) {
+            throw new Error(
+                `mcp '${this.id}' re-initialize failed: ${JSON.stringify((parsed as { error: unknown }).error)}`,
+            );
+        }
+        const initializedFrame = this.cachedInitializedNotification;
+        if (initializedFrame !== null) {
+            child.stdin.write(`${initializedFrame}\n`);
+        }
+        this.childIsInitialized = true;
     }
 
     /**
@@ -503,6 +612,45 @@ function replyError(res: ServerResponse, status: number, message: string): void 
         res.writeHead(status, { "content-type": "text/plain" });
     }
     res.end(message);
+}
+
+/**
+ * Classify an inbound JSON-RPC body so {@link StdioMcpTransport} can
+ * capture the upstream's `initialize` handshake for transparent replay
+ * after a cold respawn. Returns:
+ *
+ * - `"initialize"` — request frame with `method === "initialize"`.
+ *   The bytes are stashed verbatim and replayed against every later
+ *   fresh child.
+ * - `"initialized-notification"` — notification with
+ *   `method === "notifications/initialized"`. Marks the child as
+ *   initialized and is replayed after every cached initialize replay.
+ * - `"other"` — any other valid JSON-RPC frame; no capture action.
+ * - `"unparseable"` — JSON.parse fails. Treated as `"other"` by the
+ *   caller; the dedicated variant exists for diagnostic logging.
+ *
+ * Exported for unit testing.
+ */
+export function classifyJsonRpcMessage(
+    payload: string,
+): "initialize" | "initialized-notification" | "other" | "unparseable" {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(payload);
+    } catch {
+        return "unparseable";
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return "other";
+    }
+    const method = (parsed as { method?: unknown }).method;
+    if (method === "initialize") {
+        return "initialize";
+    }
+    if (method === "notifications/initialized") {
+        return "initialized-notification";
+    }
+    return "other";
 }
 
 /**
