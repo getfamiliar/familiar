@@ -51,4 +51,13 @@ export class MailRegistry implements MailApi {
     byPluginId(pluginId: string): MailProvider | undefined {
         return this.providers.get(pluginId);
     }
+
+    /**
+     * Snapshot of every registered provider in registration order.
+     * Used by `mail_search` to fan a query out across providers when
+     * the agent did not pin one with the `plugin` argument.
+     */
+    all(): readonly MailProvider[] {
+        return Array.from(this.providers.values());
+    }
 }

@@ -14,6 +14,7 @@ set -e
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOST="${ROOT}/host"
 SHARED="${ROOT}/shared"
+PLUGINS_DIR="${ROOT}/plugins"
 CONFIG_FILE="${ROOT}/config/config.yml"
 
 if [ ! -f "${CONFIG_FILE}" ]; then
@@ -61,6 +62,24 @@ if is_dev_mode; then
 else
   if [ ! -f "${SHARED}/build/index.js" ]; then build_pkg "${SHARED}" "shared"; fi
   if [ ! -f "${HOST}/build/index.js"   ]; then build_pkg "${HOST}"   "host";   fi
+fi
+
+# Plugins are loaded from <plugin>/build/index.js — keep them in sync the same
+# way as shared/host so a `git pull` of a plugin actually takes effect on the
+# next start (otherwise the daemon happily loads stale compiled code missing
+# methods the host now calls on it).
+if [ -d "${PLUGINS_DIR}" ]; then
+  for plugin in "${PLUGINS_DIR}"/*/; do
+    plugin="${plugin%/}"
+    [ -f "${plugin}/package.json" ] || continue
+    if is_dev_mode; then
+      if needs_rebuild "${plugin}"; then build_pkg "${plugin}" "plugin $(basename "${plugin}")"; fi
+    else
+      if [ ! -f "${plugin}/build/index.js" ]; then
+        build_pkg "${plugin}" "plugin $(basename "${plugin}")"
+      fi
+    fi
+  done
 fi
 
 if is_dev_mode; then

@@ -1,15 +1,12 @@
 import path from "node:path";
 import {
-    buildMailId,
     type EmitHandle,
     EVENT_PRIORITY,
     type EventFile,
     type HostContext,
+    type MailAttachmentMeta,
     type NewEvent,
 } from "@getfamiliar/shared";
-import type { GraphAuth } from "../auth/GraphAuth.js";
-import type { LoginStore } from "../auth/LoginStore.js";
-import type { Ms365MailConfig } from "../Config.js";
 import {
     type DeltaPage,
     GraphClient,
@@ -17,9 +14,10 @@ import {
     type GraphMailMessage,
     type GraphAttachment as GraphRawAttachment,
 } from "../graph/GraphClient.js";
-import { flatAddress, formatAddress, isSafeEmailAddress } from "./AddressFormat.js";
+import { flatAddress, formatAddress } from "./AddressFormat.js";
 import { DeltaCursorStore } from "./DeltaCursorStore.js";
-import { MS365_MAIL_PROVIDER_ID } from "./Ms365MailProvider.js";
+import type { MailboxTarget } from "./MailboxMap.js";
+import { buildMailHit } from "./MessageShape.js";
 
 /** Graph caps bodyPreview at 255 chars; equals → cap hit, more body upstream. */
 const BODY_PREVIEW_TRUNCATION_LENGTH = 255;
@@ -29,10 +27,15 @@ const MAX_PAGES_PER_POLL = 50;
 /** Inputs the daemon hands the poller at construction. */
 export interface MailPollerOptions {
     readonly ctx: HostContext;
-    readonly mail: Ms365MailConfig;
-    readonly logins: LoginStore;
     readonly log: (msg: string) => void;
     readonly emit: (event: NewEvent) => Promise<EmitHandle>;
+    /**
+     * Pre-resolved mailbox map shared with `Ms365MailProvider` so the
+     * poller and the search tool agree on which mailboxes ms365
+     * considers configured. Built once in `Ms365Daemon` from the
+     * mail-config whitelist + the live login store.
+     */
+    readonly mailboxMap: readonly MailboxTarget[];
 }
 
 /**
@@ -40,72 +43,38 @@ export interface MailPollerOptions {
  * delta cursor store. No interface, no provider abstraction —
  * mail-over-Graph is the only mail this plugin will ever speak.
  *
- * The login → mailboxes map is computed once in {@link prepare} and
- * reused for every poll cycle; the user runs the daemon again to
- * pick up a new login or a changed whitelist.
+ * The login → mailboxes map is computed once by `Ms365Daemon` (shared
+ * with `Ms365MailProvider`) and passed in via {@link MailPollerOptions}.
  */
 export class MailPoller {
     private readonly opts: MailPollerOptions;
     private readonly cursorStore: DeltaCursorStore;
-    private readonly mailboxMap: ReadonlyArray<PollTarget>;
 
-    private constructor(
-        opts: MailPollerOptions,
-        cursorStore: DeltaCursorStore,
-        mailboxMap: ReadonlyArray<PollTarget>,
-    ) {
+    private constructor(opts: MailPollerOptions, cursorStore: DeltaCursorStore) {
         this.opts = opts;
         this.cursorStore = cursorStore;
-        this.mailboxMap = mailboxMap;
     }
 
     /**
-     * Validate the logins the daemon already loaded, build the
-     * mailbox map, prepare the cursor store. Returns `null` when
-     * there's nothing usable to poll (no valid logins, no reachable
-     * mailboxes) — daemon logs the reason and stays idle. Per the
-     * memory rule [[feedback_skip_broken_logins_over_exit]], partial
-     * failures are skipped rather than fatal.
+     * Prepare the delta cursor store and return a poller bound to the
+     * shared mailbox map. Returns `null` when the map is empty (no
+     * reachable mailboxes) — daemon logs the reason and stays idle.
      */
     static async prepare(opts: MailPollerOptions): Promise<MailPoller | null> {
-        const { ctx, logins, log, mail } = opts;
         const cursorStore = new DeltaCursorStore(
-            path.join(ctx.dataDir, "ms365", "mail", "delta.json"),
+            path.join(opts.ctx.dataDir, "ms365", "mail", "delta.json"),
         );
         await cursorStore.load();
-
-        const validations = await logins.validateAll();
-        const valid: { upn: string; auth: GraphAuth }[] = [];
-        for (const v of validations) {
-            if (v.ok) {
-                log(`login ok: ${v.upn}`);
-                valid.push({ upn: v.upn, auth: v.auth });
-            } else {
-                log(`login failed for ${v.upn}: ${v.reason ?? "(no reason)"}; skipping`);
-            }
-        }
-        if (valid.length === 0) {
-            log(
-                "mail: no usable ms365 logins; run `./cli.sh ms365 login` " +
-                    "(or fix the failing logins above)",
-            );
+        if (opts.mailboxMap.length === 0) {
+            opts.log("mail: no reachable mailboxes for any active login; nothing to poll");
             return null;
         }
-        const mailboxMap = await buildMailboxMap(valid, mail.mailboxes, log);
-        if (mailboxMap.length === 0) {
-            log("mail: no reachable mailboxes for any active login; nothing to poll");
-            return null;
-        }
-        const summary = mailboxMap
-            .map((t) => `${t.mailbox} via ${t.upn}${t.isShared ? " (shared)" : ""}`)
-            .join(", ");
-        log(`mail: polling ${summary}`);
-        return new MailPoller(opts, cursorStore, mailboxMap);
+        return new MailPoller(opts, cursorStore);
     }
 
     /** Run one poll pass for every mapped mailbox. */
     async pollOnce(): Promise<void> {
-        for (const target of this.mailboxMap) {
+        for (const target of this.opts.mailboxMap) {
             try {
                 await pollMailbox(this.opts, target, this.cursorStore);
             } catch (err) {
@@ -119,110 +88,6 @@ export class MailPoller {
 }
 
 /**
- * One concrete (login, mailbox) tuple. The `auth` reference is the
- * live `GraphAuth` token provider used by the poll loop.
- */
-export interface PollTarget {
-    readonly upn: string;
-    readonly auth: GraphAuth;
-    readonly mailbox: string;
-    readonly isShared: boolean;
-}
-
-/**
- * Decide which (login, mailbox) tuples to poll. Empty whitelist →
- * every login's primary mailbox. Non-empty whitelist → only listed
- * mailboxes; each listed address is probed against every valid login
- * (`GET /users/{addr}/mailFolders/inbox?$select=id`), and the first
- * login that can read it owns the mailbox.
- *
- * Every UPN and mailbox here is **lowercased** before it lands on a
- * {@link PollTarget}: logins come from {@link GraphAuth} (already
- * folded in `toSummary`), config-supplied mailboxes are folded
- * explicitly. Downstream consumers (event payload, rules-file
- * lookups, login-store keys) get the same form regardless of how the
- * upstream system cased the bytes.
- */
-async function buildMailboxMap(
-    logins: ReadonlyArray<{ upn: string; auth: GraphAuth }>,
-    whitelist: readonly string[],
-    log: (msg: string) => void,
-): Promise<readonly PollTarget[]> {
-    const safeLogins = logins
-        .filter((entry) => {
-            if (isSafeEmailAddress(entry.upn)) {
-                return true;
-            }
-            log(`login upn "${entry.upn}" rejected by address validator; skipping`);
-            return false;
-        })
-        .map((entry) => ({ upn: entry.upn.toLowerCase(), auth: entry.auth }));
-    if (safeLogins.length === 0) {
-        return [];
-    }
-
-    if (whitelist.length === 0) {
-        return safeLogins.map((entry) => ({
-            upn: entry.upn,
-            auth: entry.auth,
-            mailbox: entry.upn,
-            isShared: false,
-        }));
-    }
-
-    const out: PollTarget[] = [];
-    for (const requested of whitelist) {
-        if (!isSafeEmailAddress(requested)) {
-            log(`mailbox "${requested}" in config rejected by address validator; skipping`);
-            continue;
-        }
-        const lower = requested.toLowerCase();
-        const ownerLogin = safeLogins.find((l) => l.upn === lower);
-        if (ownerLogin) {
-            out.push({
-                upn: ownerLogin.upn,
-                auth: ownerLogin.auth,
-                mailbox: ownerLogin.upn,
-                isShared: false,
-            });
-            continue;
-        }
-        const sharedOwner = await findReaderForShared(safeLogins, lower);
-        if (sharedOwner) {
-            out.push({
-                upn: sharedOwner.upn,
-                auth: sharedOwner.auth,
-                mailbox: lower,
-                isShared: true,
-            });
-        } else {
-            log(
-                `mailbox ${requested}: no active login can read it; ` +
-                    `skipping (check delegation in Outlook admin)`,
-            );
-        }
-    }
-    return out;
-}
-
-async function findReaderForShared(
-    logins: ReadonlyArray<{ upn: string; auth: GraphAuth }>,
-    mailbox: string,
-): Promise<{ upn: string; auth: GraphAuth } | null> {
-    for (const login of logins) {
-        const client = new GraphClient(() => login.auth.getAccessTokenSilent());
-        try {
-            await client.probeInbox(mailbox);
-            return login;
-        } catch (err) {
-            if (err instanceof GraphError && err.status < 500) {
-            }
-        }
-    }
-    return null;
-}
-
-/**
  * Walk one mailbox forward from its current delta cursor, emit one
  * event per message, and persist the new delta link. On a 410 Gone
  * the cursor is dropped and the next poll starts fresh from "now" —
@@ -230,7 +95,7 @@ async function findReaderForShared(
  */
 async function pollMailbox(
     opts: MailPollerOptions,
-    target: PollTarget,
+    target: MailboxTarget,
     cursorStore: DeltaCursorStore,
 ): Promise<void> {
     const client = new GraphClient(() => target.auth.getAccessTokenSilent());
@@ -288,13 +153,10 @@ async function pollMailbox(
 /** Build the NewEvent for one message and hand it to the host. */
 async function emitMailEvent(
     opts: MailPollerOptions,
-    target: PollTarget,
+    target: MailboxTarget,
     client: GraphClient,
     message: GraphMailMessage,
 ): Promise<void> {
-    const from = message.from
-        ? flatAddress(message.from)
-        : { name: null, address: "", rawAddress: null };
     const fromDisplay = formatAddress(message.from ? flatAddress(message.from) : null);
     const subject = message.subject ?? "(no subject)";
     const preview = message.bodyPreview ?? "";
@@ -306,44 +168,32 @@ async function emitMailEvent(
 
     const fetched = await fetchAttachmentsForEvent(opts, target, client, message);
 
-    const mailId = buildMailId(MS365_MAIL_PROVIDER_ID, target.mailbox, message.id);
+    const payload = buildMailHit({
+        message,
+        mailbox: target.mailbox,
+        isShared: target.isShared,
+        attachments: fetched?.metadata ?? null,
+    });
 
     const event: NewEvent = {
         topic: "mail:ms365",
         prompt,
         priority: EVENT_PRIORITY.ASYNC,
         idempotencyKey: `mail:ms365:${message.internetMessageId}`,
-        payload: {
-            mail_id: mailId,
-            isShared: target.isShared,
-            from,
-            to: (message.toRecipients ?? []).map(flatAddress),
-            cc: (message.ccRecipients ?? []).map(flatAddress),
-            subject,
-            date: message.receivedDateTime,
-            internetMessageId: message.internetMessageId,
-            hasAttachments: message.hasAttachments,
-            attachments: fetched?.metadata ?? null,
-        },
+        payload,
         files: fetched?.files,
     };
     await opts.emit(event);
 }
 
 interface FetchedAttachments {
-    readonly metadata: ReadonlyArray<{
-        id: string;
-        name: string;
-        contentType: string;
-        size: number;
-        isInline: boolean;
-    }>;
+    readonly metadata: readonly MailAttachmentMeta[];
     readonly files: readonly EventFile[];
 }
 
 async function fetchAttachmentsForEvent(
     opts: MailPollerOptions,
-    target: PollTarget,
+    target: MailboxTarget,
     client: GraphClient,
     message: GraphMailMessage,
 ): Promise<FetchedAttachments | null> {
@@ -367,13 +217,7 @@ function normalizeAttachments(raw: readonly GraphRawAttachment[]): FetchedAttach
     if (raw.length === 0) {
         return { metadata: [], files: [] };
     }
-    const meta: Array<{
-        id: string;
-        name: string;
-        contentType: string;
-        size: number;
-        isInline: boolean;
-    }> = [];
+    const meta: MailAttachmentMeta[] = [];
     const files: EventFile[] = [];
     const usedNames = new Set<string>();
     for (const item of raw) {

@@ -3,6 +3,8 @@ import {
     type MailAttachment,
     type MailFolder,
     type MailProvider,
+    type MailSearchHit,
+    type MailSearchQuery,
     type NewMailInput,
     type ReplyInput,
     renderMarkdownToHtml,
@@ -12,6 +14,8 @@ import { getActiveLogins } from "../auth/ActiveLogins.js";
 import type { LoginStore } from "../auth/LoginStore.js";
 import { GraphClient, GraphError, type GraphRecipient } from "../graph/GraphClient.js";
 import { FOLDER_IDS } from "./Folders.js";
+import type { MailboxTarget } from "./MailboxMap.js";
+import { buildMailHit } from "./MessageShape.js";
 
 /** Plugin id this provider registers under. Matches the package id. */
 export const MS365_MAIL_PROVIDER_ID = "ms365";
@@ -34,6 +38,20 @@ export const MS365_MAIL_PROVIDER_ID = "ms365";
  */
 export class Ms365MailProvider implements MailProvider {
     readonly pluginId = MS365_MAIL_PROVIDER_ID;
+
+    /**
+     * Mailbox set this provider considers configured, computed once at
+     * daemon start by {@link buildMailboxMap}. Search uses it to fan a
+     * query across every configured mailbox when the agent didn't pin
+     * one; mutating operations still resolve their auth per-call via
+     * the active login store (so a token refresh between calls is
+     * picked up without rebuilding the map).
+     */
+    private readonly mailboxMap: readonly MailboxTarget[];
+
+    constructor(mailboxMap: readonly MailboxTarget[] = []) {
+        this.mailboxMap = mailboxMap;
+    }
 
     async fetchBody(mailbox: string, messageId: string): Promise<string> {
         const client = await this.clientForMailbox(mailbox);
@@ -143,6 +161,85 @@ export class Ms365MailProvider implements MailProvider {
         await client.moveMessage(mailbox, messageId, FOLDER_IDS[folder]);
     }
 
+    async search(query: MailSearchQuery): Promise<readonly MailSearchHit[]> {
+        if (query.limit <= 0) {
+            return [];
+        }
+        const kql = buildKqlQuery(query);
+        const folderId = query.folder ? FOLDER_IDS[query.folder] : null;
+        const targets = this.resolveSearchTargets(query.mailbox);
+        if (targets.length === 0) {
+            return [];
+        }
+        const hits: MailSearchHit[] = [];
+        let remaining = query.limit;
+        for (const target of targets) {
+            if (remaining <= 0) {
+                break;
+            }
+            const client = new GraphClient(() => target.auth.getAccessTokenSilent());
+            const messages = await client.searchMessages(target.mailbox, kql, folderId, remaining);
+            for (const message of messages) {
+                hits.push(
+                    buildMailHit({
+                        message,
+                        mailbox: target.mailbox,
+                        isShared: target.isShared,
+                        // Search hits don't pre-fetch attachment bytes; agent
+                        // can call `mail_fetch_attachments` on demand. `null`
+                        // signals "not fetched", matching the poller's
+                        // failed-fetch convention.
+                        attachments: message.hasAttachments ? null : [],
+                    }),
+                );
+                if (hits.length >= query.limit) {
+                    break;
+                }
+            }
+            remaining = query.limit - hits.length;
+        }
+        return hits;
+    }
+
+    /**
+     * Pick which mailboxes a search call should visit.
+     *
+     *  - No `mailbox` filter → every entry in the configured map.
+     *  - Filter matches an entry (case-insensitive on the address) →
+     *    just that entry.
+     *  - Filter doesn't match → best-effort fallback: route through the
+     *    active login store (`clientForMailbox`-style) so an unpolled
+     *    but reachable mailbox still works on demand. When no login can
+     *    reach it, return empty so the caller's fan-in stays clean
+     *    (Graph itself would surface the error a beat later anyway).
+     */
+    private resolveSearchTargets(explicit: string | undefined): readonly MailboxTarget[] {
+        if (typeof explicit !== "string" || explicit.length === 0) {
+            return this.mailboxMap;
+        }
+        const lower = explicit.toLowerCase();
+        const configured = this.mailboxMap.find((t) => t.mailbox === lower);
+        if (configured) {
+            return [configured];
+        }
+        const store: LoginStore | undefined = getActiveLogins() ?? undefined;
+        if (!store) {
+            return [];
+        }
+        const auth = store.byUpn(lower);
+        if (!auth) {
+            return [];
+        }
+        return [
+            {
+                upn: lower,
+                auth,
+                mailbox: lower,
+                isShared: false,
+            },
+        ];
+    }
+
     readonly adaptError: ToolFailureAdaptor = (err) => {
         if (err instanceof GraphError) {
             return {
@@ -185,6 +282,38 @@ export class Ms365MailProvider implements MailProvider {
  */
 function toGraphRecipients(addresses: readonly string[]): readonly GraphRecipient[] {
     return addresses.map((address) => ({ address }));
+}
+
+/**
+ * Assemble a Graph KQL `$search` expression from the agent-facing
+ * search predicates. Components are joined with AND. Date predicates
+ * use KQL's `received` keyword (Graph maps to `receivedDateTime`); the
+ * `after`/`before` values arrive as UTC ISO instants — KQL accepts
+ * `yyyy-MM-ddTHH:mm:ssZ` directly. The contact predicate fans across
+ * `from:`, `to:`, `cc:` so a single string captures "any mail
+ * involving this person".
+ *
+ * The host pre-validates that at least one predicate is set; an empty
+ * KQL string would make Graph return every mail in the folder, which
+ * is rarely what the agent intended. (`buildKqlQuery` itself doesn't
+ * enforce this — the host's tool layer surfaces the clearer error.)
+ */
+function buildKqlQuery(query: MailSearchQuery): string {
+    const parts: string[] = [];
+    if (query.text) {
+        parts.push(query.text.trim());
+    }
+    if (query.contact) {
+        const c = query.contact.trim();
+        parts.push(`(from:${c} OR to:${c} OR cc:${c})`);
+    }
+    if (query.after) {
+        parts.push(`received>=${query.after}`);
+    }
+    if (query.before) {
+        parts.push(`received<${query.before}`);
+    }
+    return parts.join(" AND ");
 }
 
 /**

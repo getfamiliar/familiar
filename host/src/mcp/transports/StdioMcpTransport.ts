@@ -133,12 +133,20 @@ export class StdioMcpTransport implements McpTransport {
      */
     private cachedInitializedNotification: string | null = null;
     /**
-     * True iff the *current* child has observed an initialize +
-     * notifications/initialized pair. Reset to false in the
-     * `child.on("exit")` handler so the next `ensureSpawned` triggers
-     * a replay against the fresh child.
+     * Set to `true` only when a previously-initialized child dies with
+     * a cached handshake on hand — i.e. the next spawn must silently
+     * replay the cached `initialize` (and the cached
+     * `notifications/initialized` if any) before forwarding the
+     * upstream request, or the fresh child rejects every non-init
+     * frame with "Received request before initialization was complete".
+     *
+     * Crucially this is **not** flipped on by `handle()` when it caches
+     * a fresh upstream initialize: that frame is about to be sent
+     * through the normal `exchange` path, so replaying it would result
+     * in sending `initialize` twice on the very first handshake. The
+     * flag is reset after a successful replay.
      */
-    private childIsInitialized = false;
+    private needsInitializeReplay = false;
 
     constructor(config: StdioMcpTransportConfig) {
         this.id = config.id;
@@ -177,13 +185,15 @@ export class StdioMcpTransport implements McpTransport {
         // calls; the bastion has to fill that gap itself.
         const classification = classifyJsonRpcMessage(trimmed);
         if (classification === "initialize") {
+            // Cache the verbatim bytes for any future cold-respawn replay.
+            // We deliberately don't flip `needsInitializeReplay` here: the
+            // current request *is* the initialize and will reach the child
+            // through `exchange()` below. The replay path is only for when
+            // a previously-initialized child died and the upstream has
+            // moved on to non-init traffic.
             this.cachedInitializeRequest = trimmed;
-            // Re-initialize state is invalidated until the matching
-            // notifications/initialized arrives next.
-            this.childIsInitialized = false;
         } else if (classification === "initialized-notification") {
             this.cachedInitializedNotification = trimmed;
-            this.childIsInitialized = true;
         }
 
         // Notifications (JSON-RPC frames without an `id`) elicit no
@@ -356,9 +366,15 @@ export class StdioMcpTransport implements McpTransport {
             this.child = null;
             // The fresh child we spawn next will start in
             // `NotInitialized` state and reject every non-initialize
-            // request until we replay. Flip the flag here, not in
-            // ensureSpawned, so a crash mid-request still resets it.
-            this.childIsInitialized = false;
+            // request. If we've already seen a complete handshake,
+            // schedule a silent replay against the next spawn so a
+            // mid-session crash is invisible to the upstream. Without
+            // a cached handshake (death before any initialize) there
+            // is nothing to replay; the upstream's own initialize
+            // will flow through `exchange()` next.
+            if (this.cachedInitializeRequest !== null) {
+                this.needsInitializeReplay = true;
+            }
             this.clearIdleTimer();
             if (reject !== null) {
                 reject(new Error(`mcp child exited (code=${code}, signal=${signal})`));
@@ -375,19 +391,18 @@ export class StdioMcpTransport implements McpTransport {
             }
         });
 
-        // Transparent re-initialize: if we've seen the upstream's
-        // initialize before and the current child hasn't been brought
-        // through it yet, replay before exchange() writes the upstream
-        // payload. Order is critical — pendingResolve must be free for
-        // the replay's own round-trip, which it is here because
-        // exchange() sets its own waiter only AFTER ensureSpawned
-        // returns.
-        if (this.cachedInitializeRequest !== null && !this.childIsInitialized) {
+        // Transparent re-initialize: a previously-initialized child
+        // died and we're standing up a replacement. Replay the cached
+        // handshake before `exchange()` writes the upstream payload.
+        // Order is critical — `pendingResolve` must be free for the
+        // replay's own round-trip, which it is here because exchange()
+        // sets its own waiter only AFTER ensureSpawned returns.
+        //
+        // On the very first spawn of a transport's life there's no
+        // cached handshake to replay: the upstream's initialize will
+        // flow through `exchange()` next and be captured by handle().
+        if (this.needsInitializeReplay) {
             await this.replayInitialize();
-        } else if (this.cachedInitializeRequest === null && !this.childIsInitialized) {
-            // First spawn of this transport's lifetime — the upstream's
-            // initialize is about to flow through normally and get
-            // captured by handle(). Nothing to replay.
         }
     }
 
@@ -436,7 +451,7 @@ export class StdioMcpTransport implements McpTransport {
         if (initializedFrame !== null) {
             child.stdin.write(`${initializedFrame}\n`);
         }
-        this.childIsInitialized = true;
+        this.needsInitializeReplay = false;
     }
 
     /**

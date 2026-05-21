@@ -35,6 +35,83 @@ export interface MailAttachment {
 }
 
 /**
+ * Sanitized address bundle as it appears in the `mail:new` event
+ * payload and in {@link MailSearchHit} results. `address` is always
+ * safe to use as a filename component; `rawAddress` is `null` when the
+ * upstream address passed validation, otherwise it carries the
+ * original bytes for audit (handlers must NEVER use it as a path).
+ */
+export interface MailAddress {
+    readonly name: string | null;
+    readonly address: string;
+    readonly rawAddress: string | null;
+}
+
+/**
+ * Attachment metadata that ships with a `mail:new` payload and search
+ * hits. Bytes never travel through this shape — the agent calls
+ * `mail_fetch_attachments` to download contents on demand.
+ */
+export interface MailAttachmentMeta {
+    readonly id: string;
+    readonly name: string;
+    readonly contentType: string;
+    readonly size: number;
+    readonly isInline: boolean;
+}
+
+/**
+ * Predicates for {@link MailProvider.search}. Date bounds are passed
+ * in already-resolved UTC ISO form (the host parses agent-supplied
+ * local-tz strings against `core.timezone` before dispatching, so
+ * providers never have to know about timezones).
+ */
+export interface MailSearchQuery {
+    /** Full-text query, applied across subject/body/from/to/cc. */
+    readonly text?: string;
+    /** Address that must appear as sender, To, or Cc. */
+    readonly contact?: string;
+    /** Inclusive lower bound on receivedDateTime (UTC ISO instant). */
+    readonly after?: string;
+    /** Exclusive upper bound on receivedDateTime (UTC ISO instant). */
+    readonly before?: string;
+    /** Restrict to one abstract folder; otherwise any folder is in scope. */
+    readonly folder?: MailFolder;
+    /**
+     * Optional mailbox restriction. When omitted the provider searches
+     * every mailbox in its configured set, regardless of polling state.
+     * When given and not in the configured set, providers may still
+     * attempt the call as a best-effort fallback.
+     */
+    readonly mailbox?: string;
+    /**
+     * Hard ceiling on hits to return. The host passes the remaining
+     * global budget (initial 100, decremented across providers) so a
+     * provider can stop paging early instead of fetching results that
+     * would be dropped anyway.
+     */
+    readonly limit: number;
+}
+
+/**
+ * One match returned by {@link MailProvider.search}. Shape is
+ * intentionally identical to the `mail:new` event payload so handlers
+ * can treat search hits and live mail events with the same code path.
+ */
+export interface MailSearchHit {
+    readonly mail_id: string;
+    readonly isShared: boolean;
+    readonly from: MailAddress;
+    readonly to: readonly MailAddress[];
+    readonly cc: readonly MailAddress[];
+    readonly subject: string;
+    readonly date: string;
+    readonly internetMessageId: string;
+    readonly hasAttachments: boolean;
+    readonly attachments: readonly MailAttachmentMeta[] | null;
+}
+
+/**
  * Composition input for {@link MailProvider.draftReply} /
  * {@link MailProvider.sendReply}. The body is markdown; providers render
  * to their native body format (HTML for Graph) before dispatch.
@@ -130,6 +207,24 @@ export interface MailProvider {
 
     /** Move a message to one of the abstract folder aliases. */
     move(mailbox: string, messageId: string, folder: MailFolder): Promise<void>;
+
+    /**
+     * Search this provider's mail for hits matching `query`. The host
+     * fans out to every registered provider when no `plugin` filter is
+     * set; per-provider results are merged into a single JSONL response
+     * to the agent. Implementations should:
+     *
+     *  - target `query.mailbox` when given (best-effort: try even if
+     *    the address isn't in the configured set), otherwise iterate
+     *    over every mailbox the provider considers configured —
+     *    independent of whether that mailbox is being polled;
+     *  - cap returned hits at `query.limit` (the host's remaining
+     *    global budget) and stop paging once the cap is hit;
+     *  - shape each hit identically to the provider's `mail:new`
+     *    event payload, so downstream tools accept the `mail_id` as
+     *    self-routing.
+     */
+    search(query: MailSearchQuery): Promise<readonly MailSearchHit[]>;
 
     /**
      * Optional mapper from a thrown provider-specific exception to the

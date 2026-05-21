@@ -366,6 +366,63 @@ export class GraphClient {
         };
     }
 
+    /**
+     * Search messages in `userId`'s mailbox with a KQL `$search`
+     * expression, optionally scoped to a single folder id (Graph alias
+     * like `inbox` / `archive` / `deleteditems`). Caller passes a
+     * `limit` (the host's remaining global budget) and pagination stops
+     * once that many hits have been collected — `$top` is set on each
+     * page so Graph doesn't over-fetch.
+     *
+     * `$search` enables Graph's full-text index on
+     * subject/body/from/to/cc with KQL syntax (e.g.
+     * `"invoice" AND from:bob@example.com`). Graph rejects combining
+     * `$search` with `$orderby`, so hits come back in relevance order;
+     * that's the right default for "find mail mentioning X".
+     */
+    async searchMessages(
+        userId: string,
+        kql: string,
+        folderId: string | null,
+        limit: number,
+    ): Promise<readonly GraphMailMessage[]> {
+        if (limit <= 0) {
+            return [];
+        }
+        const select =
+            "id,internetMessageId,from,toRecipients,ccRecipients,subject,receivedDateTime,bodyPreview,hasAttachments";
+        const pageSize = Math.min(limit, 100);
+        const path = folderId
+            ? `/users/${encodeURIComponent(userId)}/mailFolders/${encodeURIComponent(folderId)}/messages`
+            : `/users/${encodeURIComponent(userId)}/messages`;
+        const params = new URLSearchParams({
+            $search: `"${kql.replace(/"/g, '\\"')}"`,
+            $select: select,
+            $top: String(pageSize),
+        });
+        let url: string | null = `${GRAPH_BASE_URL}${path}?${params.toString()}`;
+        const out: GraphMailMessage[] = [];
+        while (url !== null && out.length < limit) {
+            // Graph requires ConsistencyLevel=eventual on $search queries.
+            const response = await this.request("GET", url, {
+                preferTokens: ['outlook.body-content-type="text"'],
+                extraHeaders: { ConsistencyLevel: "eventual" },
+            });
+            const json = (await response.json()) as {
+                value?: readonly GraphMailMessage[];
+                "@odata.nextLink"?: string;
+            };
+            for (const message of json.value ?? []) {
+                out.push(message);
+                if (out.length >= limit) {
+                    break;
+                }
+            }
+            url = typeof json["@odata.nextLink"] === "string" ? json["@odata.nextLink"] : null;
+        }
+        return out;
+    }
+
     /** Fetch one message's body as plain text. */
     async getMessageBodyText(userId: string, messageId: string): Promise<string> {
         const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}?$select=body`;
@@ -392,10 +449,11 @@ export class GraphClient {
     }
 
     /**
-     * Create a draft reply / reply-all for an existing message. Graph
-     * mints the draft seeded with the right recipients and the quoted
-     * original; we PATCH the body after so the user-visible reply
-     * lands above the quote.
+     * Create a draft reply / reply-all for an existing message. The
+     * rendered HTML goes into Graph's `comment` parameter on the create
+     * call — Graph then mints the draft with our comment above the
+     * auto-quoted original. Patching `body.content` afterwards would
+     * replace the body and wipe the quote, so we deliberately don't.
      */
     async createReplyDraft(
         userId: string,
@@ -405,11 +463,12 @@ export class GraphClient {
     ): Promise<{ id: string }> {
         const op = replyAll ? "createReplyAll" : "createReply";
         const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/${op}`;
-        const created = (await this.request("POST", url).then((r) => r.json())) as { id?: string };
+        const created = (await this.request("POST", url, {
+            jsonBody: { comment: bodyHtml },
+        }).then((r) => r.json())) as { id?: string };
         if (typeof created.id !== "string" || created.id.length === 0) {
             throw new GraphError(200, url, `${op}: response missing draft id`);
         }
-        await this.patchDraftBody(userId, created.id, bodyHtml);
         return { id: created.id };
     }
 
@@ -430,10 +489,10 @@ export class GraphClient {
     }
 
     /**
-     * Send a reply / reply-all immediately. Mirrors `createReplyDraft`
-     * but uses the `reply`/`replyAll` action that posts the message
-     * without leaving a draft behind. The body must be the rendered
-     * HTML — markdown rendering happens upstream.
+     * Send a reply / reply-all immediately. Mirrors `sendForward`: the
+     * rendered HTML rides in `comment` so Graph auto-quotes the
+     * original below it. Passing `message.body.content` here would
+     * override the body and lose the quote.
      */
     async sendReply(
         userId: string,
@@ -444,10 +503,7 @@ export class GraphClient {
         const op = replyAll ? "replyAll" : "reply";
         const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/${op}`;
         await this.request("POST", url, {
-            jsonBody: {
-                comment: undefined,
-                message: { body: { contentType: "HTML", content: bodyHtml } },
-            },
+            jsonBody: { comment: bodyHtml },
         });
     }
 
@@ -464,11 +520,10 @@ export class GraphClient {
     }
 
     /**
-     * Create a draft that forwards an existing message. Graph's
-     * `createForward` action mints the draft with the quoted original
-     * and its attachments already attached, but does **not** accept
-     * recipients or a body in the initial POST — both are set via a
-     * follow-up PATCH on the draft (same shape as the reply path).
+     * Create a draft that forwards an existing message. Comment +
+     * recipients go in the create POST (top-level `toRecipients` and
+     * `message.ccRecipients`); the draft body is composed by Graph,
+     * with the comment above the quoted original and its attachments.
      */
     async createForwardDraft(
         userId: string,
@@ -478,18 +533,16 @@ export class GraphClient {
         bodyHtml: string,
     ): Promise<{ id: string }> {
         const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/createForward`;
-        const created = (await this.request("POST", url).then((r) => r.json())) as { id?: string };
+        const created = (await this.request("POST", url, {
+            jsonBody: {
+                comment: bodyHtml,
+                toRecipients: mapGraphRecipients(to),
+                message: { ccRecipients: mapGraphRecipients(cc) },
+            },
+        }).then((r) => r.json())) as { id?: string };
         if (typeof created.id !== "string" || created.id.length === 0) {
             throw new GraphError(200, url, "createForward: response missing draft id");
         }
-        const patchUrl = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(created.id)}`;
-        await this.request("PATCH", patchUrl, {
-            jsonBody: {
-                body: { contentType: "HTML", content: bodyHtml },
-                toRecipients: mapGraphRecipients(to),
-                ccRecipients: mapGraphRecipients(cc),
-            },
-        });
         return { id: created.id };
     }
 
@@ -694,13 +747,6 @@ export class GraphClient {
         return `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/mailFolders/inbox/messages/delta?$select=${encodeURIComponent(select)}`;
     }
 
-    private async patchDraftBody(userId: string, draftId: string, bodyHtml: string): Promise<void> {
-        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(draftId)}`;
-        await this.request("PATCH", url, {
-            jsonBody: { body: { contentType: "HTML", content: bodyHtml } },
-        });
-    }
-
     private buildMessageBody(outgoing: GraphOutgoing): Record<string, unknown> {
         return {
             subject: outgoing.subject,
@@ -714,7 +760,11 @@ export class GraphClient {
     private async request(
         method: string,
         url: string,
-        options?: { jsonBody?: unknown; preferTokens?: readonly string[] },
+        options?: {
+            jsonBody?: unknown;
+            preferTokens?: readonly string[];
+            extraHeaders?: Record<string, string>;
+        },
     ): Promise<Response> {
         const token = await this.tokenProvider();
         const preferTokens = [IMMUTABLE_ID_PREFER, ...(options?.preferTokens ?? [])];
@@ -722,6 +772,7 @@ export class GraphClient {
             Authorization: `Bearer ${token}`,
             Accept: "application/json",
             Prefer: preferTokens.join(", "),
+            ...(options?.extraHeaders ?? {}),
         };
         let body: string | undefined;
         if (options?.jsonBody !== undefined) {

@@ -1,5 +1,6 @@
 import type { HostContext } from "@getfamiliar/shared";
 import { setActiveLogins } from "./auth/ActiveLogins.js";
+import type { GraphAuth } from "./auth/GraphAuth.js";
 import { LoginStore, loginDirectory } from "./auth/LoginStore.js";
 import {
     readMs365AuthConfig,
@@ -9,6 +10,7 @@ import {
 } from "./Config.js";
 import { CalendarPoller } from "./calendar/CalendarPoller.js";
 import { Ms365CalendarProvider } from "./calendar/Ms365CalendarProvider.js";
+import { buildMailboxMap } from "./mail/MailboxMap.js";
 import { MailPoller } from "./mail/MailPoller.js";
 import { Ms365MailProvider } from "./mail/Ms365MailProvider.js";
 
@@ -34,20 +36,35 @@ export async function startMs365Daemon(ctx: HostContext): Promise<void> {
     if (!mail.enabled) {
         log("mail: disabled via ms365.mail.enabled=false; skipping");
     } else {
+        // Resolve configured mailboxes once at boot. Used by both the
+        // provider's `search` (so search remains available even when
+        // polling is off) and the poller's emit loop.
+        const validLogins = await collectValidLogins(logins, log);
+        const mailboxMap =
+            validLogins.length === 0 ? [] : await buildMailboxMap(validLogins, mail.mailboxes, log);
+        if (mailboxMap.length > 0) {
+            const summary = mailboxMap
+                .map((t) => `${t.mailbox} via ${t.upn}${t.isShared ? " (shared)" : ""}`)
+                .join(", ");
+            log(`mail: configured mailboxes: ${summary}`);
+        }
+
         // Register the provider before the poller runs so the core
         // `mail_*` tools can dispatch to ms365 the moment the daemon
         // resolves — even when polling is off, the agent can act on
-        // mails referenced by id from a chat handler.
-        ctx.mail.registerProvider(new Ms365MailProvider());
+        // mails referenced by id from a chat handler, and `mail_search`
+        // can hit every configured mailbox.
+        ctx.mail.registerProvider(new Ms365MailProvider(mailboxMap));
         if (!mail.polling) {
             log("mail: polling disabled via ms365.mail.polling=false; tools remain available");
+        } else if (mailboxMap.length === 0) {
+            log("mail: polling enabled but no reachable mailboxes; idle until a login is added");
         } else {
             const mailPoller = await MailPoller.prepare({
                 ctx,
-                mail,
-                logins,
                 log,
                 emit: (event) => ctx.events.emit(event),
+                mailboxMap,
             });
             if (mailPoller === null) {
                 log("mail: not active; idle until a login is added");
@@ -151,4 +168,33 @@ function runPollLoop(
     // without doing I/O — host startup isn't blocked on the first
     // Graph round-trip.
     schedule(0);
+}
+
+/**
+ * Validate every cached login and return only those whose token
+ * refresh succeeded. Failures are logged with a reason; per the
+ * skip-broken-logins rule, a single bad account does not abort daemon
+ * start. Shared between mail and (potentially) calendar bootstrap.
+ */
+async function collectValidLogins(
+    logins: LoginStore,
+    log: (msg: string) => void,
+): Promise<ReadonlyArray<{ upn: string; auth: GraphAuth }>> {
+    const validations = await logins.validateAll();
+    const valid: { upn: string; auth: GraphAuth }[] = [];
+    for (const v of validations) {
+        if (v.ok) {
+            log(`login ok: ${v.upn}`);
+            valid.push({ upn: v.upn, auth: v.auth });
+        } else {
+            log(`login failed for ${v.upn}: ${v.reason ?? "(no reason)"}; skipping`);
+        }
+    }
+    if (valid.length === 0) {
+        log(
+            "mail: no usable ms365 logins; run `./cli.sh ms365 login` " +
+                "(or fix the failing logins above)",
+        );
+    }
+    return valid;
 }
