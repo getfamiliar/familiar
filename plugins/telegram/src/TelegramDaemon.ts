@@ -1,6 +1,6 @@
+import { transcribeAudio } from "@getfamiliar/plugin-transcribe-whisper";
 import { type EmitHandle, EVENT_PRIORITY, type HostContext } from "@getfamiliar/shared";
 import { Bot, type Context, GrammyError, HttpError } from "grammy";
-import { transcribeAudio } from "@getfamiliar/plugin-transcribe-whisper";
 
 const TELEGRAM_CHANNEL = "telegram";
 const TELEGRAM_MESSAGE_LIMIT = 4096;
@@ -10,6 +10,15 @@ const TELEGRAM_MESSAGE_LIMIT = 4096;
  * 5 seconds, so we refresh slightly under that interval.
  */
 const TYPING_REFRESH_MS = 4000;
+
+/**
+ * Pre-attempt delays (ms) for the voice download + transcription
+ * retry loop. Length is also the attempt count. First entry is 0 so
+ * the first attempt fires immediately; subsequent entries gate retries
+ * after a transient failure (e.g. `fetch failed` against Telegram or
+ * the Whisper backend).
+ */
+const VOICE_RETRY_DELAYS_MS = [0, 5_000, 10_000];
 
 /**
  * Resolved telegram configuration. `authorizedUserId === null` means
@@ -132,12 +141,26 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
             return;
         }
         const voice = gctx.message.voice;
-        let transcript: string;
-        try {
-            const audio = await downloadTelegramFile(bot, token, voice.file_id);
-            transcript = (await transcribeAudio(audio, "voice.ogg")).trim();
-        } catch (err) {
-            ctx.log(`telegram voice transcription failed: ${formatError(err)}`);
+        let transcript: string | undefined;
+        let lastError: unknown;
+        for (let attempt = 0; attempt < VOICE_RETRY_DELAYS_MS.length; attempt++) {
+            const delay = VOICE_RETRY_DELAYS_MS[attempt];
+            if (delay > 0) {
+                await new Promise((resolve) => setTimeout(resolve, delay));
+            }
+            try {
+                const audio = await downloadTelegramFile(bot, token, voice.file_id);
+                transcript = (await transcribeAudio(audio, "voice.ogg")).trim();
+                break;
+            } catch (err) {
+                lastError = err;
+                ctx.log(
+                    `telegram voice transcription attempt ${attempt + 1}/${VOICE_RETRY_DELAYS_MS.length} failed: ${formatError(err)}`,
+                );
+            }
+        }
+        if (transcript === undefined) {
+            ctx.log(`telegram voice transcription failed: ${formatError(lastError)}`);
             await gctx.reply(
                 "Sorry, I couldn't transcribe your voice message — please try again or send text.",
             );

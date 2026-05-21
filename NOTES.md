@@ -65,3 +65,7 @@ Important: many services need a restart after login (whatsapp, o365, ...). Reque
 
 * Ralph Loop for loosing context vs what we do with different handler files
 * Interesting: [statewright](https://github.com/statewright/statewright) implements narrowed down scopes for agents in certain steps, quite similar to our handler files. "State machine guardrails that control which tools your AI agent can use in each phase. Define a workflow once, enforce it across Claude Code, Codex, Cursor, opencode, and Pi." && "Instead of making the model bigger, make the problem smaller."
+* Observable!
+* Provider-independent
+* Local. Independent. Markdown?
+* Independent. Dependable. Markdown?
