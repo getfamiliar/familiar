@@ -11,11 +11,7 @@ import {
 import { DateTime } from "luxon";
 import type { CalendarSafety } from "./CalendarSafety.js";
 import type { CalendarService } from "./CalendarService.js";
-import {
-    type AgentEventView,
-    readCoreTimezone,
-    renderEventForAgent,
-} from "./EventRenderer.js";
+import { type AgentEventView, readCoreTimezone, renderEventForAgent } from "./EventRenderer.js";
 
 /**
  * Inline-attachment ceiling per Graph's `fileAttachment` resource —
@@ -83,7 +79,7 @@ function getEventsTool(
         name: "cal_get_events",
         description:
             "List calendar events for a single local day or a range of local days, interpreted " +
-            "in your timezone (`core.timezone`). Use `day: \"YYYY-MM-DD\"` for one day, or " +
+            'in your timezone (`core.timezone`). Use `day: "YYYY-MM-DD"` for one day, or ' +
             "`from_day` / `to_day` (both inclusive, YYYY-MM-DD) for a range. Optional " +
             "`calendar_id` accepts a calendar name ('Work') or qualified form ('ms365:Work'). " +
             "Returns a JSONL string with one compact summary per line; `start` and `end` are " +
@@ -166,7 +162,7 @@ export function resolveDayBounds(
     if (hasDay && (hasFromDay || hasToDay)) {
         throw new Error("pass either `day` or `from_day`+`to_day`, not both");
     }
-    if (!hasDay && (hasFromDay !== hasToDay)) {
+    if (!hasDay && hasFromDay !== hasToDay) {
         throw new Error("`from_day` and `to_day` must be set together");
     }
     if (!hasDay && !hasFromDay) {
@@ -299,7 +295,7 @@ function createEventTool(
         name: "cal_create_event",
         description:
             "Create a calendar event. Required: subject, start, end (both wall-clock in your " +
-            "local timezone, e.g. \"2026-05-21T10:00:00\" — no `Z`, no offset suffix). " +
+            'local timezone, e.g. "2026-05-21T10:00:00" — no `Z`, no offset suffix). ' +
             "Optional: body (markdown), location, attendees (bare email or {email, name?}), " +
             "showAs (busy|free|tentative|oof|workingElsewhere; default busy), sensitivity, " +
             "reminderMinutesBeforeStart, attachments (≤3MB inline), calendar_id (name or " +

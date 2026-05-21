@@ -21,6 +21,10 @@ export interface ParsedCron {
  * expression. When friendly returns `null` (no human-pattern match) we
  * validate the verbatim against Croner.
  *
+ * Lives in `shared/` so both the host's `CronjobScheduler` (handler-
+ * frontmatter cron) and plugin pollers (e.g. ms365's calendar refresh
+ * cron) reach the same parsing contract.
+ *
  * @returns `null` when neither path produces a runnable schedule.
  */
 export function parseCron(verbatim: string): ParsedCron | null {

@@ -1,6 +1,6 @@
+import { parseCron } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
-import { parseCron } from "../cron/CronExpression.js";
 import { pathToHandlerTarget, readVerbatimCron } from "../cron/CronjobScheduler.js";
 import { scanWorkspace } from "../workspace/WorkspaceWatcher.js";
 

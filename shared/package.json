@@ -31,6 +31,8 @@
         "@modelcontextprotocol/sdk": "^1.29.0",
         "chalk": "^5.4.1",
         "citty": "^0.1.6",
+        "croner": "^10.0.1",
+        "friendly-node-cron": "^1.5.0",
         "marked": "^15.0.12",
         "marked-terminal": "^7.3.0",
         "pg": "^8.13.1",

@@ -1,5 +1,10 @@
 import path from "node:path";
-import type { CalendarApi, CalendarRow, HostContext } from "@getfamiliar/shared";
+import {
+    type CalendarApi,
+    type CalendarRow,
+    type HostContext,
+    parseCron,
+} from "@getfamiliar/shared";
 import { Cron } from "croner";
 import type { GraphAuth } from "../auth/GraphAuth.js";
 import type { LoginStore } from "../auth/LoginStore.js";
@@ -176,19 +181,31 @@ export class CalendarPoller {
         if (this.refreshJob) {
             return;
         }
+        // Route through the same `parseCron` the handler-frontmatter
+        // path uses so friendly-cron expressions ("every sunday at 03:00")
+        // get translated before they reach croner; otherwise croner's
+        // own timezone parser bails with "Invalid ISO8601 passed to
+        // timezone parser" on anything non-cron-shaped.
+        const parsed = parseCron(this.opts.refreshExpression);
+        if (parsed === null) {
+            log(
+                `calendar: invalid refresh expression "${this.opts.refreshExpression}" ` +
+                    "(neither friendly-cron nor raw cron parsed it)",
+            );
+            return;
+        }
         try {
-            this.refreshJob = new Cron(this.opts.refreshExpression, () => {
+            this.refreshJob = new Cron(parsed.expression, () => {
                 void this.refreshAll().catch((err) => {
                     const message = err instanceof Error ? err.message : String(err);
                     log(`calendar: refresh job error: ${message}`);
                 });
             });
-            log(`calendar: refresh cron scheduled (${this.opts.refreshExpression})`);
+            const tail = parsed.source === "friendly" ? ` → ${parsed.expression}` : "";
+            log(`calendar: refresh cron scheduled (${this.opts.refreshExpression}${tail})`);
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            log(
-                `calendar: invalid refresh expression "${this.opts.refreshExpression}": ${message}`,
-            );
+            log(`calendar: refresh cron failed to register: ${message}`);
         }
     }
 

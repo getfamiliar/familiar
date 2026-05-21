@@ -1,8 +1,13 @@
 import { readFileSync } from "node:fs";
-import { EVENT_PRIORITY, type Logger, type NewEvent } from "@getfamiliar/shared";
+import {
+    EVENT_PRIORITY,
+    type Logger,
+    type NewEvent,
+    type ParsedCron,
+    parseCron,
+} from "@getfamiliar/shared";
 import { Cron } from "croner";
 import type { WorkspaceFile, WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
-import { type ParsedCron, parseCron } from "./CronExpression.js";
 
 /** A single scheduled cron entry — the parsed expression plus its live job. */
 interface ScheduledEntry {
