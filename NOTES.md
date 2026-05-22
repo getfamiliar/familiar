@@ -1,25 +1,17 @@
-Bugs:
-- MCPs
-
 Mail:
-* Mail: forward und replies mit original body
 * Signatur, Fonts usw ziehen aus dem Sent Ordner
-* Such-Tool
-* 
+* Erweiterte Mailbox Config: allowSend per Mailbox.
+* Signatur-Templates auch aus direkter E-Mail 
 
 Skills:
 * List of "installed" skills in system prompt
 
-Calendar:
-* handler für neue termine calendar:new:ms365, calendar:update:ms365, calendar:delete:ms365
-
 Features:
-* Wakeups / Alerts per Datenbank bauen
 * Compression
 * Token Limits checken und warnen in verschiedenen Stufen - Token-Schätzung mit Faktor 3 reicht.
 * True bash
 * Besseres Reporting Format
-* Self-Reflection Tools: List of events, event report, plugin status, system status 
+* Self-Reflection Tools: List of events (auch CLI) mit search, event report, plugin status, system status 
 * Tool Call Offloading in temp files
 
 
@@ -27,7 +19,7 @@ Reflect and learn from things when memory plugin is ready:
 * Mail Digest
 * ...
 
-
+Zeitlimit per Step, nicht über den gesamten Agent Execution - wir wollen ihn ja lange laufen lassen können.
 
 Neues CLI Tool: `logs`
 * `logs tail` tails the current data/logs/ log file but pretty prints the JSON objects in it.
@@ -59,6 +51,7 @@ MCP functions: keep or remove the renaming of "-"?
 Extreme:
 - Check handler files for tool name mentions that do not exist
 - Check models if they exist
+- Check if chat/compaction/index.md exists and is parseable
 
 
 ## Before release

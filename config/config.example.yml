@@ -116,6 +116,18 @@ inference:
   # the common case. Restart the daemon after changing.
   # captureRawStepResultToDatabase: false
 
+# Chat history compaction. The ChatCompactor watches the chatmessages
+# table; once its total size crosses `thresholdBytes`, it composes a
+# transcript of the oldest messages (everything beyond the most-recent
+# `keepUncompactedBytes` worth) and runs the `chat/compaction/index.md`
+# handler to summarize them. The summary replaces those messages as a
+# single user-role row. If the handler file is missing the compactor
+# falls back to plain truncation (oldest rows deleted) and logs a warning.
+# chat:
+#   compaction:
+#     thresholdBytes: 60000          # start compaction when chatmessages total exceeds this
+#     keepUncompactedBytes: 30000    # keep this much of recent history verbatim
+
 # --- Plugin-owned subtrees below. Each plugin parses + validates its
 # --- own keys; the platform linter does not police them.
 

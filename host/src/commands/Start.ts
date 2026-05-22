@@ -17,6 +17,7 @@ import type { Bootstrap } from "../Bootstrap.js";
 import { bootstrap, isDevMode } from "../Bootstrap.js";
 import { Bastion } from "../bastion/Bastion.js";
 import { buildProviders, ReverseProxy } from "../bastion/ReverseProxy.js";
+import { ChatCompactor } from "../chat/ChatCompactor.js";
 import { lintOrThrow } from "../config/ConfigLinter.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import {
@@ -298,6 +299,15 @@ export const startCommand = defineCommand({
         });
         await cronScheduler.start();
 
+        const chatCompactor = new ChatCompactor({
+            connection: await pluginHost.ensureConnection(),
+            host: cronCtx,
+            workspaceDir: boot.workspaceDir,
+            config,
+            log: log.child({ component: "chat-compactor" }),
+        });
+        await chatCompactor.start();
+
         const scheduledHandlerConn = await pluginHost.ensureConnection();
         const scheduledHandlerBus = new ScheduledHandlerBus(
             scheduledHandlerConn,
@@ -332,6 +342,7 @@ export const startCommand = defineCommand({
                 await safeStop(log, "scheduled-handler scheduler", () =>
                     scheduledHandlerScheduler.stop(),
                 );
+                await safeStop(log, "chat compactor", () => chatCompactor.stop());
                 await safeStop(log, "cron scheduler", () => cronScheduler.stop());
                 await safeStop(log, "workspace watcher", () => workspaceWatcher.stop());
                 await safeStop(log, "plugin host", () => pluginHost.close());
