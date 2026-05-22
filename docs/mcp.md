@@ -167,8 +167,9 @@ this stays cheap.
 ## Filtering tools per handler
 
 Handlers declare which tools they want via a `tools:` expression in their YAML header. The
-expression filters across **all** registered tools — system tools (`send_chat`, `queue_handler`,
-`call_handler`, `file_*`, `fs_*`) and namespaced MCP tools share one available pool.
+expression filters across **all** registered tools — system tools (`send_chat`,
+`schedule_handler`, `call_handler`, `unschedule_handler`, `get_scheduled_handlers`, `file_*`,
+`fs_*`) and namespaced MCP tools share one available pool.
 
 **Omitted ⇒ implicit `system`.** A handler with no `tools:` line gets every system tool registered
 for the agentrun and no MCP tools, matching pre-filter behavior. Override with `tools: all`,
@@ -223,7 +224,7 @@ user lookup:
 | Name | Resolves to |
 | --- | --- |
 | `all` | Every key in the available pool — system tools + MCP tools. |
-| `system` | Just the system tools registered for *this* agentrun. Conditional ones (`send_chat` only when chat context is present, `queue_handler` / `call_handler` only when bus + parent are present, with `call_handler` additionally requiring the Scheduler's `waitForSubagent` hook) are reflected automatically. **The implicit default** when `tools:` is omitted. |
+| `system` | Just the system tools registered for *this* agentrun. Conditional ones (`send_chat` only when chat context is present, `schedule_handler` only when bus + parent + scheduledHandlerBus + timezone are all present, `call_handler` only when bus + parent + the Scheduler's `waitForSubagent` hook are present) are reflected automatically. **The implicit default** when `tools:` is omitted. |
 | `mcp` | Just the namespaced MCP-tool keys. Useful for `mcp - some_mcp_*` style scopes. |
 | `none` | Empty set. Lets a child handler override its parent's `tools:` to nothing under the replace-merge inheritance rule. |
 | `<mcp-id>` | One auto-group per entry declared in `mcp.yml`. Resolves to every tool key that MCP exposes. So `tools: fetch` is shorthand for `tools: fetch_*`, and `tools: all - atlassian` excludes every Atlassian tool without spelling out the prefix glob. |

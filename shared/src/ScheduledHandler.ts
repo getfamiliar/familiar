@@ -1,10 +1,13 @@
 /**
  * A persisted row in `scheduled_handlers` — one future one-off wake-up
- * the agent has asked the host to fire. Lifecycle:
+ * the agent has asked the host to fire. Only produced when the agent
+ * called `schedule_handler` with a future `when`; without `when`, the
+ * tool inserts a child agentrun directly instead and never touches
+ * this table. Lifecycle:
  *
- * 1. Container's `schedule_handler` tool inserts (or upserts on key) a
- *    row with `fireAt` in UTC, copying the calling agentrun's
- *    `priority` and `privileged` flag.
+ * 1. Container's `schedule_handler` tool upserts (on `key`) a row with
+ *    `fireAt` in UTC, copying the calling agentrun's `priority` and
+ *    `privileged` flag.
  * 2. Host's `ScheduledHandlerScheduler` reacts to the
  *    `scheduled_handlers_changed` NOTIFY and installs a Croner job for
  *    `fireAt` with `maxRuns: 1`.

@@ -9,14 +9,16 @@ import {
 /**
  * Input-event watcher. Claims `pending` events into `running` and
  * inserts a root agentrun for each, pointing at the topic's `index`
- * handler. The event then sits in `running` until its agentrun tree
- * settles — {@link AgentRunBus.settle} flips it to `done` / `failed`
- * via the reactive `EVENT_TERMINAL_UPDATE_SQL` once no agentruns for
- * the event remain pending or running.
+ * handler. The event then sits in `running` until its root agentrun
+ * settles — {@link AgentRunBus.settle} flips the event to `done` /
+ * `failed` to mirror the root's terminal state via
+ * `EVENT_TERMINAL_UPDATE_SQL`. Non-root agentruns (`call_handler`
+ * children, `schedule_handler` immediate-mode children) settle out of
+ * band and do not affect the event's outcome.
  *
  * This watcher does no handler resolution and runs no agent code; it
  * only routes input events to the agentrun queue. Markdown loading and
- * subagent resolution (`queue_handler`, `call_handler`) live in the
+ * subagent resolution (`schedule_handler`, `call_handler`) live in the
  * {@link AgentrunScheduler}.
  *
  * **Crash window** (intentional, fix in a later pass): if the process

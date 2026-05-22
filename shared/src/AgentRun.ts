@@ -97,7 +97,7 @@ export interface AgentRunRow {
     readonly error: string | null;
     /**
      * Inherited from the originating event (root agentrun) or the parent
-     * agentrun (children spawned via `queue_handler` / `call_handler`).
+     * agentrun (children spawned via `schedule_handler` / `call_handler`).
      * `true` when the run descends from a trusted user-input source;
      * `false` otherwise. Tools that gate risky behavior on the call
      * site's trust level read this flag rather than rummaging through
@@ -106,9 +106,10 @@ export interface AgentRunRow {
     readonly privileged: boolean;
     /**
      * How this agentrun was spawned. `null` for root agentruns;
-     * `'queued'` for children of `queue_handler` (fire-and-forget);
-     * `'called'` for children of `call_handler` (parent parks in
-     * `waiting` until this row settles).
+     * `'queued'` for children spawned by `schedule_handler` without a
+     * future `when` (fire-and-forget immediate dispatch); `'called'`
+     * for children of `call_handler` (parent parks in `waiting` until
+     * this row settles).
      */
     readonly calltype: AgentRunCallType | null;
     /**

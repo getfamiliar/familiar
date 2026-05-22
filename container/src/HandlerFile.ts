@@ -23,7 +23,7 @@ export interface HandlerFileHeader {
      * this handler's agent loop. See `tools/ToolFilter.ts` for the full
      * grammar (groups, paths with `*` globs, `&&` / `||` / `!`). When
      * omitted, **no MCP tools** are exposed — system tools (`send_chat`,
-     * `queue_handler`, `call_handler`, filesystem) are always present regardless.
+     * `schedule_handler`, `call_handler`, filesystem) are always present regardless.
      *
      * The built-in group `all` is the escape hatch for handlers that
      * genuinely want every declared MCP's tools (`tools: all`).

@@ -207,12 +207,18 @@ export class AgentRunner {
         });
 
         // Gate context assembly on the originating event's `isChat`
-        // flag. Chat events feed prior turns from `chatmessages`; every
-        // other event (cron firings, mail ingestion, jira webhooks,
-        // queue_handler / call_handler descendants of those) feeds the
-        // agentrun lineage instead.
+        // flag AND on this run being the root of its tree. Chat events
+        // feed prior turns from `chatmessages` for the root only; every
+        // other agentrun (cron firings, mail ingestion, jira webhooks,
+        // and any `schedule_handler` / `call_handler` descendant —
+        // including descendants of a chat root) feeds the agentrun
+        // lineage instead. Root-only is critical for chat events: a
+        // subagent spawned mid-conversation must NOT see the live
+        // channel history, otherwise the trailing user turn ("call
+        // handler X") gets replayed to the subagent and triggers the
+        // same call recursively.
         const event = await ctx.eventsView.getById(ctx.row.eventId);
-        const isChat = event?.isChat === true;
+        const isChat = event?.isChat === true && ctx.row.parentAgentrunId === null;
         const scratchListing = buildScratchListing(ctx.row.eventId);
 
         let messages: ModelMessage[];
@@ -241,7 +247,7 @@ export class AgentRunner {
             // lineage. Both `prompt` and `resultText` of each ancestor
             // are assistant-side artifacts here — the prompt was
             // written by the host emitter (cron, mail plugin) or by
-            // the parent agent's `queue_handler` / `call_handler`,
+            // the parent agent's `schedule_handler` / `call_handler`,
             // never by a literal user. Tagging it `user` would falsely
             // imply user authorship.
             const ancestors = await fetchAncestorChain(ctx.agentRunsView, ctx.row.parentAgentrunId);

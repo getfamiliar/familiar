@@ -12,8 +12,8 @@
  * - `agentruns` is the assistant's response tree. Each row is one agent
  *   invocation. The container's input-event watcher inserts the root
  *   agentrun for each new event; child agentruns are spawned by the
- *   `queue_handler` (fire-and-forget) and `call_handler` (suspending)
- *   tools inside a running handler.
+ *   `schedule_handler` (fire-and-forget when called without `when`) and
+ *   `call_handler` (suspending) tools inside a running handler.
  *
  * Four tables, five NOTIFY channels:
  *
@@ -115,7 +115,7 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS start_handler text;
 -- Privileged events originate from a trusted user-input source (operator
 -- at the local terminal via cli-chat, operator on Telegram). The flag
 -- propagates verbatim to the root agentrun and to every child agentrun
--- spawned via queue_handler / call_handler, so future system tools can
+-- spawned via schedule_handler / call_handler, so future system tools can
 -- gate risky reads / writes (editing SOUL.md etc.) on whether the run
 -- descends from a trusted input. Default false: any plugin that doesn't
 -- explicitly opt in produces non-privileged events.
@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS agentruns (
 -- Safe no-op on fresh databases where the column already exists.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS result_text text;
 -- Inherited from the originating event (root agentrun) or parent
--- agentrun (children spawned via queue_handler / call_handler). See
+-- agentrun (children spawned via schedule_handler / call_handler). See
 -- the matching ALTER on the events table for the trust-model rationale.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS privileged boolean NOT NULL DEFAULT false;
 -- Number of retry attempts already made on this agentrun. Bumped each
@@ -183,7 +183,8 @@ ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS system_prompt text;
 
 -- Distinguishes how a child agentrun was spawned.
 --   NULL     — root agentrun (created by the input-event watcher, no parent).
---   'queued' — fire-and-forget child spawned via the \`queue_handler\` tool.
+--   'queued' — fire-and-forget child spawned by \`schedule_handler\` without
+--              a future \`when\` (immediate dispatch under the same event).
 --   'called' — synchronous child spawned via the \`call_handler\` tool; the
 --              parent is parked in state='waiting' until this row settles.
 -- The Scheduler reads this column to decide whether settling a row should
@@ -484,37 +485,34 @@ CREATE TRIGGER scheduled_handlers_notify_changed_trg
 `;
 
 /**
- * SQL fragment that recomputes the parent event's terminal state after
- * one of its agentruns settles. Run inside the same transaction as the
+ * SQL fragment that flips the parent event's terminal state when the
+ * **root** agentrun settles. Run inside the same transaction as the
  * agentrun's terminal UPDATE.
+ *
+ * The event's outcome mirrors the root agentrun's outcome. Non-root
+ * agentruns — `call_handler` children that surface their result back
+ * to the parent, and `schedule_handler` immediate-mode children that
+ * the parent fired and forgot — are out-of-band side effects. They
+ * never flip the event on their own; the root decides.
+ *
+ * Settling a non-root agentrun is therefore a no-op for this update
+ * (the EXISTS guard fails). Settling the root writes the event's
+ * terminal state to the root's terminal state directly.
  *
  * Parameters (in order):
  *   $1 = event_id (bigint, as string)
- *   $2 = id of the just-settled agentrun (bigint, as string) — excluded
- *        from the "is anything still running?" check because its UPDATE
- *        is in the same transaction and may not be visible yet.
+ *   $2 = id of the just-settled agentrun (bigint, as string)
  *   $3 = state of the just-settled agentrun ('done' | 'failed')
- *
- * Result: events row flips from `running` to `done` or `failed` once no
- * agentruns for that event remain `pending` or `running`. `failed` wins
- * if any agentrun for the event has failed (including the just-settled
- * one).
  */
 export const EVENT_TERMINAL_UPDATE_SQL = `
 UPDATE events
-SET state = CASE
-  WHEN EXISTS (
+SET state = $3, updated_at = now()
+WHERE id = $1
+  AND state = 'running'
+  AND EXISTS (
     SELECT 1 FROM agentruns
-    WHERE event_id = $1
-      AND state IN ('pending','running','waiting')
-      AND id <> $2
-  ) THEN state
-  WHEN $3 = 'failed' OR EXISTS (
-    SELECT 1 FROM agentruns
-    WHERE event_id = $1 AND state = 'failed'
-  ) THEN 'failed'
-  ELSE 'done'
-END,
-    updated_at = now()
-WHERE id = $1 AND state = 'running'
+    WHERE id = $2
+      AND event_id = $1
+      AND parent_agentrun_id IS NULL
+  )
 `;

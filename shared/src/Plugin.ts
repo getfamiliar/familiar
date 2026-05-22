@@ -363,7 +363,7 @@ export class DaemonStoppedError extends Error {
  * execute} resolves with goes straight back to the model. The
  * `{ ok, result | error }` envelope on the wire is purely the
  * HTTP-layer error channel; agent-facing semantics match how MCP
- * tools and the built-in subagent tools (`queue_handler`,
+ * tools and the built-in subagent tools (`schedule_handler`,
  * `call_handler`) feel.
  */
 export interface PluginTool<TInput = unknown, TOutput = unknown> {

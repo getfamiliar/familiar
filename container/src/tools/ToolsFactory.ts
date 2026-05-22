@@ -10,7 +10,6 @@ import type { ChatManager } from "../chat/ChatManager.js";
 import { buildCallHandlerTool, type WaitForSubagent } from "./callHandler.js";
 import { buildFsTools } from "./fs.js";
 import { buildGetScheduledHandlersTool } from "./getScheduledHandlers.js";
-import { buildQueueHandlerTool } from "./queueHandler.js";
 import { buildScheduleHandlerTool } from "./scheduleHandler.js";
 import { buildSendChatTool } from "./sendChat.js";
 import {
@@ -43,7 +42,10 @@ export interface ToolsFactoryContext {
      * work without it.
      */
     readonly groups?: GroupLookup;
-    /** Agentrun bus; required to register `queue_handler` / `call_handler`. */
+    /**
+     * Agentrun bus; required to register `schedule_handler` (immediate
+     * mode inserts a child agentrun) and `call_handler`.
+     */
     readonly bus?: AgentRunBus;
     /**
      * Scheduled-handler bus; required to register `schedule_handler`,
@@ -59,16 +61,15 @@ export interface ToolsFactoryContext {
      */
     readonly timezone?: string;
     /**
-     * The currently-running agentrun row; closed over by both
-     * `queue_handler` and `call_handler` for parent inheritance.
+     * The currently-running agentrun row; closed over by
+     * `schedule_handler` and `call_handler` for parent inheritance.
      */
     readonly parent?: AgentRunRow;
     /**
      * Scheduler-provided callback that, given a freshly-inserted
      * child agentrun id, suspends the parent until the child settles
-     * and resolves with the child's terminal row. When supplied (and
-     * `bus` + `parent` are also present), `call_handler` is registered;
-     * without it, only `queue_handler` is available.
+     * and resolves with the child's terminal row. Required to register
+     * `call_handler`; `schedule_handler` does not need it.
      */
     readonly waitForSubagent?: WaitForSubagent;
     /**
@@ -124,21 +125,21 @@ export interface ToolsFactoryContext {
  * hands to the Vercel AI SDK's tool-loop agent.
  *
  * **One pool, one filter.** System tools (`send_chat`,
- * `queue_handler`, `call_handler`, `schedule_handler`,
- * `unschedule_handler`, `get_scheduled_handlers`, `file_*`, `fs_*`)
- * and MCP tools (`${id}_${name}`) are merged into a single available
- * set. The handler's `tools:` expression — or, when omitted, the
- * implicit `system` default — decides what survives.
+ * `schedule_handler`, `call_handler`, `unschedule_handler`,
+ * `get_scheduled_handlers`, `file_*`, `fs_*`) and MCP tools
+ * (`${id}_${name}`) are merged into a single available set. The
+ * handler's `tools:` expression — or, when omitted, the implicit
+ * `system` default — decides what survives.
  *
  * Built-in groups visible from any expression:
  *
  * - `all` — every key in the available pool.
  * - `system` — just the system-tool keys registered for *this*
  *   agentrun. Conditional registrations (`send_chat` only when chat
- *   context is present, `queue_handler` / `call_handler` only when
- *   bus + parent are present, with `call_handler` further requiring
- *   the Scheduler's `waitForSubagent` callback) are reflected here
- *   automatically.
+ *   context is present, `schedule_handler` only when bus + parent +
+ *   scheduledHandlerBus + timezone are all present, `call_handler`
+ *   only when bus + parent + the Scheduler's `waitForSubagent`
+ *   callback are present) are reflected here automatically.
  * - `mcp` — just the MCP-tool keys.
  * - `none` — empty set; lets a child handler override its parent's
  *   `tools:` to nothing under the replace-merge rule.
@@ -160,28 +161,24 @@ export class ToolsFactory {
                 toolRunContext,
             );
         }
-        if (context.bus && context.parent) {
-            systemTools.queue_handler = buildQueueHandlerTool(
+        if (context.bus && context.parent && context.waitForSubagent) {
+            systemTools.call_handler = buildCallHandlerTool(
                 context.bus,
                 context.parent,
+                context.waitForSubagent,
                 toolRunContext,
             );
-            if (context.waitForSubagent) {
-                systemTools.call_handler = buildCallHandlerTool(
+        }
+        if (context.scheduledHandlerBus && context.parent && context.timezone) {
+            if (context.bus) {
+                systemTools.schedule_handler = buildScheduleHandlerTool(
                     context.bus,
+                    context.scheduledHandlerBus,
                     context.parent,
-                    context.waitForSubagent,
+                    context.timezone,
                     toolRunContext,
                 );
             }
-        }
-        if (context.scheduledHandlerBus && context.parent && context.timezone) {
-            systemTools.schedule_handler = buildScheduleHandlerTool(
-                context.scheduledHandlerBus,
-                context.parent,
-                context.timezone,
-                toolRunContext,
-            );
             systemTools.unschedule_handler = buildUnscheduleHandlerTool(
                 context.scheduledHandlerBus,
                 toolRunContext,

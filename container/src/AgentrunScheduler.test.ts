@@ -292,9 +292,11 @@ describe("AgentrunScheduler — subagents", () => {
             assert.equal(settled.state, "done");
             assert.match(settled.resultText ?? "", /child status: failed, error: boom/);
 
-            // Event flips failed because a child failed inside its tree.
+            // Event mirrors the root agentrun: the parent caught the
+            // failure and returned 'done', so the event is 'done' too.
+            // Child failures are out-of-band — only the root decides.
             await flush();
-            assert.equal(harness.store.events.get(event.id)?.state, "failed");
+            assert.equal(harness.store.events.get(event.id)?.state, "done");
         } finally {
             await harness.stop();
         }
@@ -600,8 +602,8 @@ describe("AgentrunScheduler — timeouts", () => {
     });
 });
 
-describe("AgentrunScheduler — queue_handler (fire-and-forget)", () => {
-    it("queued child runs separately; parent does NOT suspend on it", async () => {
+describe("AgentrunScheduler — schedule_handler (immediate mode, fire-and-forget)", () => {
+    it("queued child runs separately; event terminal mirrors root, ignoring the child", async () => {
         let agentRunBus!: MockAgentRunBus;
 
         const parentBehavior: MockBehavior = async (ctx) => {
@@ -634,10 +636,13 @@ describe("AgentrunScheduler — queue_handler (fire-and-forget)", () => {
             const settled = await waitForTerminal(harness.agentRunBus, harness.store, root.id);
             assert.equal(settled.state, "done");
             assert.equal(settled.resultText, "parent done");
-            // Parent never visited 'waiting' — no state assertion needed
-            // beyond the final result; the followup may still be running.
+            // Event mirrors the root immediately — queued child can still
+            // be running and the event is already terminal.
+            await flush();
+            assert.equal(harness.store.events.get(event.id)?.state, "done");
 
-            // Drain the queued child.
+            // Drain the queued child to verify it stays out-of-band: the
+            // event remains 'done' after the child settles.
             const followup = [...harness.store.agentruns.values()].find(
                 (r) => r.handler === "followup",
             );

@@ -31,11 +31,12 @@ export type WaitForSubagent = (childId: string) => Promise<AgentRunRow>;
  * agentrun and **suspends** the current run until the child settles,
  * then returns the child's `resultText` as the tool's text result.
  *
- * Unlike `queue_handler` (fire-and-forget), the caller awaits and
- * receives the subagent's output — making it possible to react to
- * the result. The parent's watcher slot is released while suspended,
- * so the child can run (and any other unrelated agentruns can
- * interleave) without holding the parent's slot for the full duration.
+ * Unlike `schedule_handler` (fire-and-forget when called without
+ * `when`), the caller awaits and receives the subagent's output —
+ * making it possible to react to the result. The parent's watcher
+ * slot is released while suspended, so the child can run (and any
+ * other unrelated agentruns can interleave) without holding the
+ * parent's slot for the full duration.
  *
  * The child inherits `event_id`, `priority`, and `privileged` from
  * the parent and is tagged `calltype='called'`. Topic defaults to
@@ -56,10 +57,11 @@ export function buildCallHandlerTool(
         description:
             "Spawn a subagent and WAIT for its result. The current agentrun suspends; once the " +
             "subagent settles, this tool returns the subagent's final text. Use " +
-            "`queue_handler` instead when you don't need the subagent's output. Topic defaults " +
-            "to the current agentrun's topic; override with the `topic` argument to call " +
-            "cross-topic. Inherits the event and trust level from this run. If the subagent " +
-            "fails, the tool surfaces an error so the calling handler can decide how to react.",
+            "`schedule_handler` (without `when`) instead when you don't need the subagent's " +
+            "output. Topic defaults to the current agentrun's topic; override with the `topic` " +
+            "argument to call cross-topic. Inherits the event and trust level from this run. " +
+            "If the subagent fails, the tool surfaces an error so the calling handler can " +
+            "decide how to react.",
         inputSchema: jsonSchema<CallHandlerInput>({
             type: "object",
             additionalProperties: false,

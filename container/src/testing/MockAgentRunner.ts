@@ -10,7 +10,7 @@ import type { AgentRunner, AgentRunnerContext } from "../agent-runner/AgentRunne
  * - throw a {@link RetryableModelException} → triggers Scheduler postpone
  * - throw an {@link AgentRunTimeoutError} → settled as timeout failure
  * - throw any other Error → settled as a non-retryable failure
- * - spawn children (call_handler / queue_handler shape) by calling
+ * - spawn children (call_handler / schedule_handler immediate-mode shape) by calling
  *   `await ctx.tools.call_handler({...})` if the test wires `tools`,
  *   or — more simply — by INSERTing a child row directly through a
  *   bus reference the test captured at setup time and then

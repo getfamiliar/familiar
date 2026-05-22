@@ -1,10 +1,4 @@
-import type {
-    AgentRunCallType,
-    AgentRunPatch,
-    AgentRunRow,
-    AgentRunState,
-    NewAgentRun,
-} from "../AgentRun.js";
+import type { AgentRunCallType, AgentRunPatch, AgentRunRow, NewAgentRun } from "../AgentRun.js";
 import type { MockBusStore } from "./MockBusStore.js";
 
 /**
@@ -116,10 +110,10 @@ export class MockAgentRunBus {
         };
         this.store.agentruns.set(id, next);
 
-        // Mirror EVENT_TERMINAL_UPDATE_SQL: if no other agentruns for
-        // this event are still pending/running/waiting, flip the event
-        // to its terminal state (failed if any failed, else done).
-        this.recomputeEventTerminal(row.eventId, id, toState);
+        // Mirror EVENT_TERMINAL_UPDATE_SQL: the event's terminal state
+        // mirrors the root agentrun's terminal state. Settling a
+        // non-root agentrun is a no-op for the event.
+        this.recomputeEventTerminal(row, toState);
 
         this.fire(next);
     }
@@ -204,33 +198,15 @@ export class MockAgentRunBus {
         }
     }
 
-    private recomputeEventTerminal(
-        eventId: string,
-        settledId: string,
-        settledState: AgentRunState,
-    ): void {
-        const event = this.store.events.get(eventId);
+    private recomputeEventTerminal(settledRow: AgentRunRow, settledState: "done" | "failed"): void {
+        if (settledRow.parentAgentrunId !== null) {
+            return;
+        }
+        const event = this.store.events.get(settledRow.eventId);
         if (!event || event.state !== "running") {
             return;
         }
-        let anyStillLive = false;
-        let anyFailed = settledState === "failed";
-        for (const r of this.store.agentruns.values()) {
-            if (r.eventId !== eventId || r.id === settledId) {
-                continue;
-            }
-            if (r.state === "pending" || r.state === "running" || r.state === "waiting") {
-                anyStillLive = true;
-                break;
-            }
-            if (r.state === "failed") {
-                anyFailed = true;
-            }
-        }
-        if (anyStillLive) {
-            return;
-        }
-        const next = { ...event, state: anyFailed ? "failed" : "done", updatedAt: new Date() };
-        this.store.events.set(eventId, next as typeof event);
+        const next = { ...event, state: settledState, updatedAt: new Date() };
+        this.store.events.set(settledRow.eventId, next as typeof event);
     }
 }
