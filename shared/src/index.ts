@@ -67,6 +67,12 @@ export {
     parseMailId,
     type ReplyInput,
 } from "./Mail.js";
+export {
+    MAIL_STYLE_TEMPLATE_DEFAULTS,
+    type MailStyleTemplate,
+    mailStyleTemplatePath,
+    signatureToPlainText,
+} from "./MailStyleTemplate.js";
 export { renderMarkdownToHtml } from "./markdownHtml.js";
 export { renderMarkdown } from "./markdownTerminal.js";
 export type {

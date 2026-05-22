@@ -1,5 +1,6 @@
 import {
     type ForwardInput,
+    type HostContext,
     type MailAttachment,
     type MailFolder,
     type MailProvider,
@@ -8,6 +9,7 @@ import {
     type NewMailInput,
     type ReplyInput,
     renderMarkdownToHtml,
+    signatureToPlainText,
     ToolError,
 } from "@getfamiliar/shared";
 import { getActiveLogins } from "../auth/ActiveLogins.js";
@@ -20,11 +22,9 @@ import {
 } from "../graph/GraphClient.js";
 import { FOLDER_IDS, FolderAliasResolver } from "./Folders.js";
 import type { MailboxTarget } from "./MailboxMap.js";
-import { signatureToPlainText } from "./MailStyleTemplate.js";
 import { buildMailHit } from "./MessageShape.js";
 import type { MailKind } from "./SentSampler.js";
 import { injectStyle, STYLED_TAGS } from "./StyleInjector.js";
-import type { TemplateCache } from "./TemplateCache.js";
 
 /** Plugin id this provider registers under. Matches the package id. */
 export const MS365_MAIL_PROVIDER_ID = "ms365";
@@ -59,17 +59,16 @@ export class Ms365MailProvider implements MailProvider {
     private readonly mailboxMap: readonly MailboxTarget[];
 
     /**
-     * Per-mailbox style-template cache. `null` when the extraction
-     * feature is disabled — the send path then skips styling and
-     * signature entirely and emits the bare rendered HTML (pre-feature
-     * behaviour). Populated by {@link TemplateExtractor} on its boot /
-     * cron passes; read here via {@link composeBody} on every send.
+     * Plugin context — borrowed only for its `getMailStyleTemplate`
+     * read path. The provider never mutates ctx state; writes flow
+     * through the core `mailstyle_*` tools the extract-style handler
+     * calls.
      */
-    private readonly templates: TemplateCache | null;
+    private readonly ctx: HostContext;
 
-    constructor(mailboxMap: readonly MailboxTarget[] = [], templates: TemplateCache | null = null) {
+    constructor(ctx: HostContext, mailboxMap: readonly MailboxTarget[] = []) {
+        this.ctx = ctx;
         this.mailboxMap = mailboxMap;
-        this.templates = templates;
     }
 
     /**
@@ -97,11 +96,8 @@ export class Ms365MailProvider implements MailProvider {
         kind: MailKind,
         markdownBody: string,
     ): Promise<GraphOutgoingBody> {
-        if (this.templates === null) {
-            return { contentType: "HTML", content: renderMarkdownToHtml(markdownBody) };
-        }
-        const tpl = await this.templates.get(mailbox);
-        if (tpl === null) {
+        const tpl = await this.ctx.getMailStyleTemplate(mailbox);
+        if (tpl === undefined) {
             return { contentType: "HTML", content: renderMarkdownToHtml(markdownBody) };
         }
 

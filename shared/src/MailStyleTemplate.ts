@@ -2,14 +2,18 @@ import path from "node:path";
 
 /**
  * Per-mailbox styling commands the send path applies to every outgoing
- * mail. Distilled from the user's Sent Items by `TemplateExtractor`:
- * two model-extracted fields (signature, textStyle) plus three
- * deterministically-computed booleans that capture per-kind habits
- * without needing per-kind files.
+ * mail. Two extracted fields (signature, textStyle) plus three booleans
+ * that capture per-kind habits (whether the signature should be appended
+ * on replies / forwards, and whether the user predominantly writes
+ * plain text).
  *
  * Named `MailStyleTemplate` (not `MailTemplate`) because the JSON
  * carries styling commands, not a full template body — the word
  * "template" alone over-claims.
+ *
+ * Storage is provider-agnostic: the file lives at
+ * `data/mail/templates/<mailbox>/<name>.json` so a future Gmail / IMAP
+ * provider can write its own templates without colliding with ms365.
  */
 export interface MailStyleTemplate {
     /**
@@ -31,13 +35,12 @@ export interface MailStyleTemplate {
      * Dominant `body.contentType` across the user's sampled Sent mails.
      * `true` when the user predominantly writes plain text — the send
      * path then ships new mails with `body.contentType: "Text"` and
-     * the raw markdown body (markdown reads fine as plain text;
-     * see [[feedback-markdown-is-plain-text]]).
+     * the raw markdown body (markdown reads fine as plain text).
      */
     readonly usePlainText: boolean;
     /**
      * True when the signature appears in ≥ half of the user's reply
-     * samples. Drives whether `composeBody` appends the signature on
+     * samples. Drives whether the send path appends the signature on
      * reply paths. Empty reply bucket ⇒ `false` (no evidence; default
      * to "don't sign").
      */
@@ -45,6 +48,15 @@ export interface MailStyleTemplate {
     /** Same as {@link useSignatureOnReplies} for the forward bucket. */
     readonly useSignatureOnForwards: boolean;
 }
+
+/** Defaults applied when a `mailstyle_update` call creates a new file. */
+export const MAIL_STYLE_TEMPLATE_DEFAULTS: MailStyleTemplate = {
+    signature: "",
+    textStyle: "",
+    usePlainText: false,
+    useSignatureOnReplies: false,
+    useSignatureOnForwards: false,
+};
 
 /**
  * Absolute path of a per-mailbox style template. `name` defaults to
@@ -58,7 +70,7 @@ export function mailStyleTemplatePath(
     mailbox: string,
     name: string = "default",
 ): string {
-    return path.join(dataDir, "ms365", "mail", "templates", mailbox, `${name}.json`);
+    return path.join(dataDir, "mail", "templates", mailbox, `${name}.json`);
 }
 
 /**

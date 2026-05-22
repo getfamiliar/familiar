@@ -8,6 +8,7 @@ import type { ConfigService } from "./Config.js";
 import type { EventFile, EventRow, NewEvent } from "./Event.js";
 import type { Logger } from "./logging/Logger.js";
 import type { MailApi } from "./Mail.js";
+import type { MailStyleTemplate } from "./MailStyleTemplate.js";
 import type { StepResultRow } from "./StepResult.js";
 import type { ToolRunContext } from "./ToolRunner.js";
 
@@ -183,7 +184,7 @@ export interface HostContext {
     /**
      * Cheap synchronous probe for whether the host daemon (`./cli.sh
      * start`) is currently running on this machine. Inspects the
-     * daemon's pidfile under `<dataDir>/.daemon.pid` and confirms the
+     * daemon's pidfile under `<tmpDir>/.daemon.pid` and confirms the
      * recorded pid is still alive — no network calls, no MCP traffic.
      *
      * One-shot CLI commands that need to reach MCPs (i.e. anything
@@ -246,6 +247,23 @@ export interface HostContext {
      * the agent reaches the body via `mail_fetch_body` on demand.
      */
     readonly mail: MailApi;
+    /**
+     * Read the per-mailbox style template the user (or the
+     * extract-style handler) wrote at `data/mail/templates/<mailbox>/<name>.json`.
+     * Used by mail provider implementations at send time to inject the
+     * user's signature + CSS into outgoing mail. Returns `undefined`
+     * when no template exists yet for the (mailbox, name) pair — the
+     * caller should fall back to sending bare HTML.
+     *
+     * `name` defaults to `"default"`. Writes flow through the core
+     * `mailstyle_*` agent tools, not directly through this surface —
+     * `ctx` exposes only the read path because that's what plugins
+     * (mail providers) need.
+     */
+    readonly getMailStyleTemplate: (
+        mailbox: string,
+        name?: string,
+    ) => Promise<MailStyleTemplate | undefined>;
     readonly mcp: {
         /**
          * Snapshot of every MCP declared in `mcp.yml` as `{ key, source,

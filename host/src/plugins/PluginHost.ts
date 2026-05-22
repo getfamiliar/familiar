@@ -18,6 +18,8 @@ import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { MailRegistry } from "../mail/MailRegistry.js";
 import { MailSafety } from "../mail/MailSafety.js";
+import { MailStyleStore } from "../mail/MailStyleStore.js";
+import { buildMailStyleTools } from "../mail/MailStyleTools.js";
 import { buildMailTools } from "../mail/MailTools.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
 import { PluginMcpService } from "../mcp/PluginMcpService.js";
@@ -56,6 +58,7 @@ export class PluginHost {
     private readonly calendarSafety: CalendarSafety;
     private readonly mailRegistry: MailRegistry;
     private readonly mailSafety: MailSafety;
+    private readonly mailStyleStore: MailStyleStore;
     private toolsRegistry: PluginToolsRegistry | undefined;
     private bastionBaseUrl: string = DEFAULT_BASTION_BASE_URL;
     private connection: PostgresConnection | undefined;
@@ -82,6 +85,9 @@ export class PluginHost {
         this.calendarSafety = new CalendarSafety(this.config);
         this.mailRegistry = new MailRegistry();
         this.mailSafety = new MailSafety(this.config);
+        this.mailStyleStore = new MailStyleStore(boot.dataDir, (msg) =>
+            log.child({ component: "mail-style" }).warn(msg),
+        );
     }
 
     /**
@@ -138,6 +144,15 @@ export class PluginHost {
      */
     get mail(): MailRegistry {
         return this.mailRegistry;
+    }
+
+    /**
+     * The shared mail-style-template store. Backs `ctx.getMailStyleTemplate`
+     * (plugin read path) and the core `mailstyle_*` agent tools (write path).
+     * Exposed for the same reason as {@link mail}.
+     */
+    get mailStyle(): MailStyleStore {
+        return this.mailStyleStore;
     }
 
     /**
@@ -277,6 +292,7 @@ export class PluginHost {
                     registry: this.mailRegistry,
                     safety: this.mailSafety,
                 }),
+                ...buildMailStyleTools({ store: this.mailStyleStore }),
             ];
             this.toolsRegistry.registerCoreTools(coreCtx, coreTools);
             const registered = this.toolsRegistry.list();
@@ -320,6 +336,7 @@ export class PluginHost {
             mcp: this.mcpService,
             calendar: this.calendarService,
             mail: this.mailRegistry,
+            mailStyleStore: this.mailStyleStore,
         });
     }
 

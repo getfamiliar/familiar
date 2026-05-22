@@ -18,6 +18,7 @@ import {
     type HostContext,
     type Logger,
     type MailApi,
+    type MailStyleTemplate,
     type McpClient,
     type McpInfo,
     type NewEvent,
@@ -27,6 +28,7 @@ import {
     type StepResultUnsubscribe,
 } from "@getfamiliar/shared";
 import { inspectPidFile } from "../commands/pidfile.js";
+import type { MailStyleStore } from "../mail/MailStyleStore.js";
 import type { PluginMcpService } from "../mcp/PluginMcpService.js";
 
 /**
@@ -67,7 +69,7 @@ export interface HostContextImplDeps {
      */
     scratchDir: string;
     /**
-     * Absolute path of the daemon's pidfile (`<dataDir>/.daemon.pid`).
+     * Absolute path of the daemon's pidfile (`<tmpDir>/.daemon.pid`).
      * Used by `ctx.isDaemonRunning()` to decide whether the host
      * daemon is live without going through the bastion.
      */
@@ -90,6 +92,12 @@ export interface HostContextImplDeps {
      * by the core `mail_*` tools. No DB layer (no mail cache).
      */
     mail: MailApi;
+    /**
+     * Shared per-mailbox style-template store. One instance per host
+     * process. Backs both `ctx.getMailStyleTemplate` (plugin read path)
+     * and the core `mailstyle_*` agent tools (write path).
+     */
+    mailStyleStore: MailStyleStore;
 }
 
 /**
@@ -135,6 +143,11 @@ export class HostContextImpl implements HostContext {
     get mail(): MailApi {
         return this.deps.mail;
     }
+
+    getMailStyleTemplate = (
+        mailbox: string,
+        name?: string,
+    ): Promise<MailStyleTemplate | undefined> => this.deps.mailStyleStore.get(mailbox, name);
 
     readonly scratch = {
         addFiles: (eventId: string, files: readonly EventFile[]): Promise<readonly string[]> =>

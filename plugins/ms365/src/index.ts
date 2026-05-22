@@ -2,6 +2,7 @@ import path from "node:path";
 import { definePlugin } from "@getfamiliar/shared";
 import { buildMs365Commands } from "./Commands.js";
 import { startMs365Daemon } from "./Ms365Daemon.js";
+import { buildSentSampleTool } from "./mail/SentSampleTool.js";
 
 /**
  * Microsoft 365 host-side plugin.
@@ -28,5 +29,6 @@ export default definePlugin({
     host: {
         start: (ctx) => startMs365Daemon(ctx),
         commands: (ctx) => buildMs365Commands(ctx),
+        tools: () => [buildSentSampleTool()],
     },
 });

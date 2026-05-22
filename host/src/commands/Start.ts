@@ -281,6 +281,7 @@ export const startCommand = defineCommand({
             mcp: pluginHost.mcp,
             calendar: pluginHost.calendar,
             mail: pluginHost.mail,
+            mailStyleStore: pluginHost.mailStyle,
         });
         const workspaceWatcher = new WorkspaceWatcher({
             workspaceDir: boot.workspaceDir,
