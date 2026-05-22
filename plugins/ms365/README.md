@@ -174,7 +174,38 @@ cache file and is polled separately.
 Lists every cached login, marks each as `✓` or `✗`, lists configured
 mailboxes, and shows the current `allowSend` setting. No daemon required.
 
-### 4. (Optional) Configure mailboxes / behavior
+### 4. Train your mail style
+
+The plugin sends outbound mail through the core mail-style template at
+`data/mail/templates/<mailbox>/default.json`. Until that file exists for a mailbox,
+**every mail you send through that mailbox goes out as bare rendered HTML — no font, no
+signature**. Recipients see the agent's content in their mail client's default style.
+
+To produce the template, fire the `mail/extract-style` workspace handler from cli-chat
+once per mailbox you want styled:
+
+```
+./cli.sh chat
+> /mail/extract-style Extract for adam@example.com
+```
+
+The handler will:
+
+1. Call `ms365_get_sent_sample` to harvest recent reply / forward / new mails from that
+   mailbox's Sent Items.
+2. Read them and decide your signature, your default text style (CSS), whether you write
+   plain text or HTML, and whether you include your signature on replies / forwards.
+3. Write the result to `data/mail/templates/<mailbox>/default.json`.
+
+The send path reads that file fresh on every outgoing mail (mtime-cached, no daemon
+restart needed), so the next send picks it up immediately. Re-run the slash command any
+time your signature or font preference changes; it's idempotent and overwrites.
+
+If the prompt to the handler doesn't name a mailbox, it asks back and stops — so always
+include the address. One mailbox per invocation; if you have multiple, fire the command
+multiple times.
+
+### 5. (Optional) Configure mailboxes / behavior
 
 ```yaml
 ms365:
