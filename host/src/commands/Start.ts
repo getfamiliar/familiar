@@ -283,6 +283,11 @@ export const startCommand = defineCommand({
             calendar: pluginHost.calendar,
             mail: pluginHost.mail,
             mailStyleStore: pluginHost.mailStyle,
+            // Daemon-internal context: the daemon owns its own shutdown,
+            // so there's no "other daemon" to watch. A fresh, never-
+            // aborted signal keeps the {@link HostContext} contract
+            // (signal always present) without spuriously firing.
+            daemonDownSignal: new AbortController().signal,
         });
         const workspaceWatcher = new WorkspaceWatcher({
             workspaceDir: boot.workspaceDir,
@@ -338,6 +343,15 @@ export const startCommand = defineCommand({
             log.info(`draining (signal=${signal})`);
 
             const orderedSteps = async (): Promise<"done"> => {
+                // Remove the pidfile *first* so any long-running CLI
+                // (cli-chat, future REPLs) polling daemon liveness sees
+                // the daemon go away before postgres or the bastion are
+                // torn down. That lets the CLI react via
+                // `ctx.daemonDownSignal` and exit cleanly instead of
+                // hanging on a NOTIFY that will never come — or worse,
+                // flooding stderr with pg-pool reconnect errors as the
+                // postgres container disappears underneath it.
+                removePidFile(boot.pidFile);
                 scratchGc.stop();
                 await safeStop(log, "scheduled-handler scheduler", () =>
                     scheduledHandlerScheduler.stop(),
@@ -350,7 +364,6 @@ export const startCommand = defineCommand({
                 await safeStop(log, "bastion", () => bastion.stop());
                 await safeStop(log, "postgres", () => postgres.stop());
                 stopContainerLogStream(containerLogStream);
-                removePidFile(boot.pidFile);
                 return "done";
             };
 

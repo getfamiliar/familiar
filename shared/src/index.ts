@@ -87,7 +87,7 @@ export type {
     PluginTool,
     PluginToolCallContext,
 } from "./Plugin.js";
-export { definePlugin } from "./Plugin.js";
+export { DaemonStoppedError, definePlugin } from "./Plugin.js";
 export {
     type NotificationHandler,
     POSTGRES_DB,

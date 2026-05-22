@@ -284,6 +284,41 @@ export interface HostContext {
          */
         getByPackage(pkg: string, source?: string): Client;
     };
+    /**
+     * Aborts when the host daemon is no longer running — i.e. when the
+     * `./cli.sh start` process backing this context has stopped or
+     * crashed. Always present; consumers don't need to null-check.
+     *
+     * Intended use: one-shot CLI commands (`./cli.sh <plugin> ...`,
+     * `./cli.sh cli-chat`, etc.) race long waits (`emit().settled`,
+     * polling loops, interactive prompts) against this signal and exit
+     * cleanly when it fires instead of hanging on a postgres connection
+     * the dying daemon took with it.
+     *
+     * For daemon-internal contexts (cron, scheduled handlers, plugin
+     * `start`/tool contexts that live inside the daemon process itself)
+     * this signal never fires under normal operation — there is no
+     * "other daemon" to watch; the daemon owns its own shutdown.
+     *
+     * When fired by the CLI-side watcher, the abort reason is the
+     * string `"daemon-stopped"`. Consumers that need to distinguish
+     * daemon-down from other aborts can check {@link DaemonStoppedError}
+     * on rejected promises from `ctx.events.emit().settled`.
+     */
+    readonly daemonDownSignal: AbortSignal;
+}
+
+/**
+ * Thrown by `ctx.events.emit().settled` when the host daemon stops
+ * (or crashes) while a one-shot CLI command was waiting for the event
+ * to reach a terminal state. Catch and exit cleanly — there is no
+ * postgres on the other side to recover state from.
+ */
+export class DaemonStoppedError extends Error {
+    constructor(message = "Host daemon stopped") {
+        super(message);
+        this.name = "DaemonStoppedError";
+    }
 }
 
 /**

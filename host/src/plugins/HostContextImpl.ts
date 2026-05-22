@@ -9,6 +9,7 @@ import {
     ChatMessageBus,
     type ChatUnsubscribe,
     type ConfigService,
+    DaemonStoppedError,
     type EmitHandle,
     type EmitOptions,
     EVENTS_STATE_CHANNEL,
@@ -98,6 +99,15 @@ export interface HostContextImplDeps {
      * and the core `mailstyle_*` agent tools (write path).
      */
     mailStyleStore: MailStyleStore;
+    /**
+     * Signal exposed to plugins as `ctx.daemonDownSignal`. CLI
+     * invocations wire it to a pidfile watcher that aborts when the
+     * daemon disappears; daemon-internal contexts pass a never-firing
+     * signal. The context just forwards it — the watcher lives on
+     * whoever constructs the context (typically
+     * {@link import("./PluginHost.js").PluginHost.wrapForExit}).
+     */
+    daemonDownSignal: AbortSignal;
 }
 
 /**
@@ -174,6 +184,10 @@ export class HostContextImpl implements HostContext {
 
     get config(): ConfigService {
         return this.deps.config;
+    }
+
+    get daemonDownSignal(): AbortSignal {
+        return this.deps.daemonDownSignal;
     }
 
     /**
@@ -340,8 +354,24 @@ export class HostContextImpl implements HostContext {
             throw err;
         }
 
+        const daemonDownSignal = this.deps.daemonDownSignal;
+        const onDaemonDown = () => {
+            // Wake the `settled` loop so it can observe `signal.aborted`
+            // and throw DaemonStoppedError instead of hanging on a
+            // NOTIFY from a dying postgres.
+            for (const wake of wakers.splice(0)) {
+                wake();
+            }
+        };
+        if (!daemonDownSignal.aborted) {
+            daemonDownSignal.addEventListener("abort", onDaemonDown, { once: true });
+        }
+
         const settled: Promise<string> = (async () => {
             try {
+                if (daemonDownSignal.aborted) {
+                    throw new DaemonStoppedError();
+                }
                 // Close the early-settle race: NOTIFY may have fired
                 // between the INSERT and our setting `waitedFor`.
                 const current = await fetchEventState(conn, row.id);
@@ -350,6 +380,9 @@ export class HostContextImpl implements HostContext {
                 }
 
                 while (!terminalState) {
+                    if (daemonDownSignal.aborted) {
+                        throw new DaemonStoppedError();
+                    }
                     await new Promise<void>((resolve) => {
                         wakers.push(resolve);
                     });
@@ -363,13 +396,14 @@ export class HostContextImpl implements HostContext {
                 }
                 return (await fetchFinalResultText(conn, row.id)) ?? "";
             } finally {
+                daemonDownSignal.removeEventListener("abort", onDaemonDown);
                 if (stepUnsubscribe) {
-                    await stepUnsubscribe();
+                    await stepUnsubscribe().catch(() => {});
                 }
                 if (agentRunUnsubscribe) {
-                    await agentRunUnsubscribe();
+                    await agentRunUnsubscribe().catch(() => {});
                 }
-                await conn.unlisten(EVENTS_STATE_CHANNEL, handler);
+                await conn.unlisten(EVENTS_STATE_CHANNEL, handler).catch(() => {});
             }
         })();
 

@@ -1,5 +1,6 @@
 import path from "node:path";
 import {
+    DaemonStoppedError,
     EVENT_PRIORITY,
     HandlerCatalog,
     type HostContext,
@@ -12,6 +13,7 @@ import { RunRenderer } from "./RunRenderer.js";
 
 const CLI_CHANNEL = "cli";
 const ANSI_CLEAR_SCREEN = "\x1b[2J\x1b[H";
+const DAEMON_GOODBYE = "The daemon has stopped. Goodbye.";
 
 /**
  * Run the cli-chat REPL until the user exits (`/exit`, Ctrl-C, or
@@ -41,6 +43,18 @@ export async function runRepl(ctx: HostContext): Promise<void> {
     const sessionAbort = new AbortController();
     const onSigint = () => sessionAbort.abort();
     process.on("SIGINT", onSigint);
+
+    // Fold the host's daemon-down signal into the session abort so the
+    // REPL drops out of its prompt and out of any in-flight `handle.settled`
+    // wait the moment the daemon goes away. The outer loop then notices
+    // `daemonDownSignal.aborted` (vs. a plain user Ctrl-C) and prints the
+    // farewell line below.
+    const onDaemonDown = () => sessionAbort.abort();
+    if (ctx.daemonDownSignal.aborted) {
+        sessionAbort.abort();
+    } else {
+        ctx.daemonDownSignal.addEventListener("abort", onDaemonDown, { once: true });
+    }
 
     // In-memory only, scoped to this REPL session. Up/Down inside the
     // prompt walks through these in submission order, oldest first.
@@ -93,6 +107,10 @@ export async function runRepl(ctx: HostContext): Promise<void> {
         }
     } finally {
         process.off("SIGINT", onSigint);
+        ctx.daemonDownSignal.removeEventListener("abort", onDaemonDown);
+        if (ctx.daemonDownSignal.aborted) {
+            process.stdout.write(`${chalk.gray(DAEMON_GOODBYE)}\n`);
+        }
     }
 }
 
@@ -209,6 +227,20 @@ async function runTurn(
             return;
         }
         if (typeof result === "object" && "failed" in result) {
+            // Daemon-down rejected `settled` with `DaemonStoppedError`
+            // (or `sessionSignal` aborted slightly later and the
+            // `failed` branch carries whatever postgres complained
+            // about as the daemon went away). Either way the run
+            // didn't really "fail" in the handler sense — suppress
+            // the red `renderer.failed(...)` and let `runRepl`'s
+            // outer goodbye line cover it.
+            if (
+                ctx.daemonDownSignal.aborted ||
+                result.failed instanceof DaemonStoppedError
+            ) {
+                renderer.stop();
+                return;
+            }
             const message =
                 result.failed instanceof Error ? result.failed.message : String(result.failed);
             renderer.failed(message);
@@ -216,7 +248,12 @@ async function runTurn(
         }
         renderer.done();
     } finally {
-        await unsubscribe();
+        await unsubscribe().catch(() => {
+            // Daemon-down is the dominant failure mode for this
+            // teardown — postgres may already be gone. Swallow so we
+            // don't paper over the goodbye message with a stack
+            // trace.
+        });
     }
 }
 
@@ -332,12 +369,17 @@ export async function runOneShot(
             renderer.done();
             return 0;
         } catch (err) {
+            if (err instanceof DaemonStoppedError) {
+                renderer.stop();
+                process.stderr.write(`${chalk.gray(DAEMON_GOODBYE)}\n`);
+                return 1;
+            }
             const message = err instanceof Error ? err.message : String(err);
             renderer.failed(message);
             return 1;
         }
     } finally {
-        await unsubscribe();
+        await unsubscribe().catch(() => {});
     }
 }
 
@@ -371,11 +413,15 @@ async function runOneShotReturnOnly(
             }
             return 0;
         } catch (err) {
+            if (err instanceof DaemonStoppedError) {
+                process.stderr.write(`${DAEMON_GOODBYE}\n`);
+                return 1;
+            }
             const message = err instanceof Error ? err.message : String(err);
             process.stderr.write(`event failed: ${message}\n`);
             return 1;
         }
     } finally {
-        await unsubscribe();
+        await unsubscribe().catch(() => {});
     }
 }

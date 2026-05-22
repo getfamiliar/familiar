@@ -23,9 +23,19 @@ import { buildMailStyleTools } from "../mail/MailStyleTools.js";
 import { buildMailTools } from "../mail/MailTools.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
 import { PluginMcpService } from "../mcp/PluginMcpService.js";
+import { inspectPidFile } from "../commands/pidfile.js";
 import { HostContextImpl } from "./HostContextImpl.js";
 import { plugins } from "./Registry.js";
 import type { PluginToolsRegistry } from "./ToolsRegistry.js";
+
+/**
+ * Poll cadence for the daemon-pidfile watcher in CLI mode. Has to be
+ * tight enough that a user pressing `./cli.sh stop` in another
+ * terminal sees their long-running CLI ({@link plugins/cli-chat})
+ * exit cleanly within a beat, and slack enough that the
+ * `inspectPidFile` syscall isn't a hot loop. 500 ms picks the middle.
+ */
+const DAEMON_PIDFILE_POLL_MS = 500;
 
 /**
  * Fallback bastion loopback URL used by {@link PluginHost} when no
@@ -63,6 +73,14 @@ export class PluginHost {
     private bastionBaseUrl: string = DEFAULT_BASTION_BASE_URL;
     private connection: PostgresConnection | undefined;
     private prepared = false;
+    /**
+     * One controller shared by every plugin {@link HostContext} built
+     * by this PluginHost. {@link wrapForExit} arms it from the pidfile
+     * watcher in CLI mode; daemon mode never fires it (the daemon owns
+     * its own shutdown). Process-scoped: once aborted, stays aborted —
+     * matches "daemon went down" semantics.
+     */
+    private readonly daemonDownController = new AbortController();
 
     constructor(boot: Bootstrap, log: Logger, config?: ConfigService, mcpRegistry?: McpRegistry) {
         this.boot = boot;
@@ -337,6 +355,7 @@ export class PluginHost {
             calendar: this.calendarService,
             mail: this.mailRegistry,
             mailStyleStore: this.mailStyleStore,
+            daemonDownSignal: this.daemonDownController.signal,
         });
     }
 
@@ -381,13 +400,50 @@ export class PluginHost {
             ...cmd,
             run: async (ctx) => {
                 this.prepareAll();
+                const stopWatcher = this.startDaemonPidfileWatcher();
                 try {
                     return await (original as (c: typeof ctx) => unknown)(ctx);
                 } finally {
+                    stopWatcher();
                     await this.close();
                 }
             },
         });
+    }
+
+    /**
+     * Start a poller that aborts {@link daemonDownController} the
+     * moment the daemon's pidfile becomes vacant/stale/malformed.
+     * Returns a stop function the caller must invoke from `finally`.
+     *
+     * Used by {@link wrapForExit} so every plugin one-shot CLI command
+     * gets `ctx.daemonDownSignal` wired to actual daemon liveness for
+     * the duration of the invocation. Pure-CLI scenario: the daemon
+     * isn't running at all when the command starts, so the very first
+     * check aborts the signal — which is the correct behavior for
+     * commands that needed the daemon (they observe `aborted`
+     * synchronously on `ctx.daemonDownSignal`); commands that don't
+     * care simply ignore the signal.
+     *
+     * The interval is `unref()`'d so it can't keep the event loop
+     * alive past `original.run` returning — non-waiting one-shots
+     * still exit promptly.
+     */
+    private startDaemonPidfileWatcher(): () => void {
+        const check = () => {
+            if (this.daemonDownController.signal.aborted) {
+                return;
+            }
+            if (inspectPidFile(this.boot.pidFile).kind !== "alive") {
+                this.daemonDownController.abort("daemon-stopped");
+            }
+        };
+        check();
+        const handle = setInterval(check, DAEMON_PIDFILE_POLL_MS);
+        handle.unref();
+        return () => {
+            clearInterval(handle);
+        };
     }
 }
 
