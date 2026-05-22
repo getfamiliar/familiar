@@ -1,5 +1,4 @@
-Skills:
-* List of "installed" skills in system prompt
+Memory Plugin!
 
 Features:
 * Token Limits checken und warnen in verschiedenen Stufen - Token-Schätzung mit Faktor 3 reicht.

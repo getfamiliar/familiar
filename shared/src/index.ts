@@ -79,6 +79,7 @@ export type {
     AnyCommandDef,
     EmitHandle,
     EmitOptions,
+    EventContextProvider,
     HostContext,
     McpClient,
     McpInfo,

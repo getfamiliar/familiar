@@ -194,9 +194,9 @@ describe("buildSystemPrompt — systemPrompt mode", () => {
         return HandlerFile.read(relativePath);
     }
 
-    it("includes Identity / Environment / Context by default (full mode)", () => {
+    it("includes Identity / Environment / Context by default (full mode)", async () => {
         const handler = loadHandler("handler-full.md", "Do the thing.\n");
-        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        const prompt = await buildSystemPrompt(handler, ["send_chat"], "test", false, null);
         assert.match(prompt, /^# Identity\n\nI am the soul\./m);
         assert.match(prompt, /^# Environment\n\nI am the environment\./m);
         assert.match(prompt, /^# Context\n\nI am the context\./m);
@@ -205,12 +205,12 @@ describe("buildSystemPrompt — systemPrompt mode", () => {
         assert.match(prompt, /^# Runtime$/m);
     });
 
-    it("includes Identity but skips Environment / Context for only-soul", () => {
+    it("includes Identity but skips Environment / Context for only-soul", async () => {
         const handler = loadHandler(
             "handler-only-soul.md",
             "---\nsystemPrompt: only-soul\n---\nDo the thing.\n",
         );
-        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        const prompt = await buildSystemPrompt(handler, ["send_chat"], "test", false, null);
         assert.match(prompt, /^# Identity\n\nI am the soul\./m);
         assert.doesNotMatch(prompt, /^# Environment$/m);
         assert.doesNotMatch(prompt, /^# Context$/m);
@@ -218,12 +218,12 @@ describe("buildSystemPrompt — systemPrompt mode", () => {
         assert.match(prompt, /^# Runtime$/m);
     });
 
-    it("skips Identity / Environment / Context for none", () => {
+    it("skips Identity / Environment / Context for none", async () => {
         const handler = loadHandler(
             "handler-none.md",
             "---\nsystemPrompt: none\n---\nDo the thing.\n",
         );
-        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        const prompt = await buildSystemPrompt(handler, ["send_chat"], "test", false, null);
         assert.doesNotMatch(prompt, /^# Identity$/m);
         assert.doesNotMatch(prompt, /^# Environment$/m);
         assert.doesNotMatch(prompt, /^# Context$/m);
@@ -266,17 +266,17 @@ describe("buildSystemPrompt — skills section", () => {
         return HandlerFile.read(relativePath);
     }
 
-    it("omits the section entirely when skills/ does not exist", () => {
+    it("omits the section entirely when skills/ does not exist", async () => {
         resetSkills();
         const handler = loadHandler(
             "no-skills.md",
             "---\nsystemPrompt: none\n---\nDo the thing.\n",
         );
-        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        const prompt = await buildSystemPrompt(handler, ["send_chat"], "test", false, null);
         assert.doesNotMatch(prompt, /^# Available skills$/m);
     });
 
-    it("renders (read) for a skill without tools and no marker when tools are set", () => {
+    it("renders (read) for a skill without tools and no marker when tools are set", async () => {
         resetSkills();
         writeSkill(
             "listfiles",
@@ -290,13 +290,13 @@ describe("buildSystemPrompt — skills section", () => {
             "with-skills.md",
             "---\nsystemPrompt: none\n---\nDo the thing.\n",
         );
-        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        const prompt = await buildSystemPrompt(handler, ["send_chat"], "test", false, null);
         assert.match(prompt, /^# Available skills$/m);
         assert.match(prompt, /^- `jira_issues`: Create and update Jira issues\.$/m);
         assert.match(prompt, /^- `listfiles` \(read\): How to keep lists in files\.$/m);
     });
 
-    it("places the skills section before # Available tools", () => {
+    it("places the skills section before # Available tools", async () => {
         resetSkills();
         writeSkill(
             "listfiles",
@@ -306,14 +306,14 @@ describe("buildSystemPrompt — skills section", () => {
             "order-skills.md",
             "---\nsystemPrompt: none\n---\nDo the thing.\n",
         );
-        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        const prompt = await buildSystemPrompt(handler, ["send_chat"], "test", false, null);
         const skillsIdx = prompt.indexOf("# Available skills");
         const toolsIdx = prompt.indexOf("# Available tools");
         assert.ok(skillsIdx >= 0 && toolsIdx >= 0);
         assert.ok(skillsIdx < toolsIdx, "skills section must appear before tools section");
     });
 
-    it("skips entries that are malformed or non-compliant", () => {
+    it("skips entries that are malformed or non-compliant", async () => {
         resetSkills();
         // Valid one so the section still renders.
         writeSkill("good", "---\nname: good\ndescription: A real skill.\n---\nbody\n");
@@ -334,7 +334,7 @@ describe("buildSystemPrompt — skills section", () => {
             "robust-skills.md",
             "---\nsystemPrompt: none\n---\nDo the thing.\n",
         );
-        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        const prompt = await buildSystemPrompt(handler, ["send_chat"], "test", false, null);
         assert.match(prompt, /^- `good` \(read\): A real skill\.$/m);
         for (const id of [
             "empty-folder",
@@ -352,7 +352,7 @@ describe("buildSystemPrompt — skills section", () => {
         }
     });
 
-    it("truncates descriptions longer than 256 chars with an ellipsis", () => {
+    it("truncates descriptions longer than 256 chars with an ellipsis", async () => {
         resetSkills();
         const longDescription = "x".repeat(300);
         writeSkill("long", `---\nname: long\ndescription: ${longDescription}\n---\nbody\n`);
@@ -360,14 +360,14 @@ describe("buildSystemPrompt — skills section", () => {
             "long-skill.md",
             "---\nsystemPrompt: none\n---\nDo the thing.\n",
         );
-        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        const prompt = await buildSystemPrompt(handler, ["send_chat"], "test", false, null);
         const bulletMatch = prompt.match(/^- `long` \(read\): (x+…)$/m);
         assert.ok(bulletMatch, "expected truncated bullet line");
         const rendered = bulletMatch?.[1] ?? "";
         assert.equal(rendered.length, 257, "256 x's plus the ellipsis");
     });
 
-    it("renders skills sorted by id", () => {
+    it("renders skills sorted by id", async () => {
         resetSkills();
         writeSkill("zeta", "---\nname: zeta\ndescription: z.\n---\nbody\n");
         writeSkill("alpha", "---\nname: alpha\ndescription: a.\n---\nbody\n");
@@ -376,7 +376,7 @@ describe("buildSystemPrompt — skills section", () => {
             "sorted-skills.md",
             "---\nsystemPrompt: none\n---\nDo the thing.\n",
         );
-        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        const prompt = await buildSystemPrompt(handler, ["send_chat"], "test", false, null);
         const alphaIdx = prompt.indexOf("- `alpha`");
         const muIdx = prompt.indexOf("- `mu`");
         const zetaIdx = prompt.indexOf("- `zeta`");

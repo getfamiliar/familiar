@@ -14,6 +14,7 @@ import { CalendarSafety } from "../calendar/CalendarSafety.js";
 import { CalendarService } from "../calendar/CalendarService.js";
 import { CalendarStore } from "../calendar/CalendarStore.js";
 import { buildCalendarTools } from "../calendar/CalendarTools.js";
+import { inspectPidFile } from "../commands/pidfile.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { MailRegistry } from "../mail/MailRegistry.js";
@@ -23,7 +24,7 @@ import { buildMailStyleTools } from "../mail/MailStyleTools.js";
 import { buildMailTools } from "../mail/MailTools.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
 import { PluginMcpService } from "../mcp/PluginMcpService.js";
-import { inspectPidFile } from "../commands/pidfile.js";
+import { EventContextRegistry } from "./EventContextRegistry.js";
 import { HostContextImpl } from "./HostContextImpl.js";
 import { plugins } from "./Registry.js";
 import type { PluginToolsRegistry } from "./ToolsRegistry.js";
@@ -69,6 +70,7 @@ export class PluginHost {
     private readonly mailRegistry: MailRegistry;
     private readonly mailSafety: MailSafety;
     private readonly mailStyleStore: MailStyleStore;
+    private readonly eventContextRegistry: EventContextRegistry;
     private toolsRegistry: PluginToolsRegistry | undefined;
     private bastionBaseUrl: string = DEFAULT_BASTION_BASE_URL;
     private connection: PostgresConnection | undefined;
@@ -106,6 +108,18 @@ export class PluginHost {
         this.mailStyleStore = new MailStyleStore(boot.dataDir, (msg) =>
             log.child({ component: "mail-style" }).warn(msg),
         );
+        this.eventContextRegistry = new EventContextRegistry();
+    }
+
+    /**
+     * The shared event-context registry backing every plugin's
+     * `ctx.events.registerContextProvider`. Exposed so the bastion's
+     * {@link import("../bastion/EventContextGateway.js").EventContextGateway}
+     * can read the live list of registered providers and fan calls
+     * out in parallel.
+     */
+    get eventContext(): EventContextRegistry {
+        return this.eventContextRegistry;
     }
 
     /**
@@ -345,6 +359,7 @@ export class PluginHost {
      */
     private context(pluginId: string): HostContext {
         return new HostContextImpl({
+            pluginId,
             ensureConnection: () => this.ensureConnection(),
             config: this.config,
             log: this.log.child({ component: `plugin:${pluginId}` }),
@@ -355,6 +370,7 @@ export class PluginHost {
             calendar: this.calendarService,
             mail: this.mailRegistry,
             mailStyleStore: this.mailStyleStore,
+            eventContextRegistry: this.eventContextRegistry,
             daemonDownSignal: this.daemonDownController.signal,
         });
     }

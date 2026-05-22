@@ -8,7 +8,7 @@ import type {
 } from "@getfamiliar/shared";
 import { type ModelMessage, stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
-import { optionalEnvBool } from "../env.js";
+import { optionalEnvBool, requireEnv } from "../env.js";
 import { HandlerFile } from "../HandlerFile.js";
 import { ModelFactory } from "../models/ModelFactory.js";
 import { buildPrompt, buildScratchListing, buildSystemPrompt } from "../PromptBuilder.js";
@@ -169,11 +169,17 @@ export class AgentRunner {
                 : `${toolNames.length} tools — ${toolNames.join(", ")}`;
         ctx.log.info(`agentrun toolset resolved: ${toolList}`);
 
-        const systemPrompt = buildSystemPrompt(
+        const systemPrompt = await buildSystemPrompt(
             handler,
             toolNames,
             ctx.row.topic,
             ctx.row.privileged,
+            {
+                bastionUrl: requireEnv("BASTION_URL"),
+                eventId: ctx.row.eventId,
+                agentrunId: ctx.row.id,
+                log: ctx.log,
+            },
         );
 
         // Stamp the resolved model — and, when the operator opted in

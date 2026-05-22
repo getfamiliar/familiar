@@ -16,6 +16,7 @@ import { defineCommand } from "citty";
 import type { Bootstrap } from "../Bootstrap.js";
 import { bootstrap, isDevMode } from "../Bootstrap.js";
 import { Bastion } from "../bastion/Bastion.js";
+import { EventContextGateway } from "../bastion/EventContextGateway.js";
 import { buildProviders, ReverseProxy } from "../bastion/ReverseProxy.js";
 import { ChatCompactor } from "../chat/ChatCompactor.js";
 import { lintOrThrow } from "../config/ConfigLinter.js";
@@ -199,9 +200,14 @@ export const startCommand = defineCommand({
             ensureConnection: () => pluginHost.ensureConnection(),
             log: log.child({ component: "plugin-tools-gateway" }),
         });
+        const eventContextGateway = new EventContextGateway({
+            registry: pluginHost.eventContext,
+            ensureConnection: () => pluginHost.ensureConnection(),
+            log: log.child({ component: "event-context-gateway" }),
+        });
         const bastion = new Bastion({
             log: log.child({ component: "bastion" }),
-            modules: [reverseProxy, mcpGateway, pluginToolsGateway],
+            modules: [reverseProxy, mcpGateway, pluginToolsGateway, eventContextGateway],
         });
 
         await ensureNetwork(SHARED_NETWORK_NAME);
@@ -273,6 +279,7 @@ export const startCommand = defineCommand({
         // chat message the agent produces in response (send_chat) ends
         // up on an empty channel and no chat plugin claims it.
         const cronCtx = new HostContextImpl({
+            pluginId: "core",
             ensureConnection: () => pluginHost.ensureConnection(),
             config,
             log: log.child({ component: "cron-scheduler" }),
@@ -283,6 +290,7 @@ export const startCommand = defineCommand({
             calendar: pluginHost.calendar,
             mail: pluginHost.mail,
             mailStyleStore: pluginHost.mailStyle,
+            eventContextRegistry: pluginHost.eventContext,
             // Daemon-internal context: the daemon owns its own shutdown,
             // so there's no "other daemon" to watch. A fresh, never-
             // aborted signal keeps the {@link HostContext} contract

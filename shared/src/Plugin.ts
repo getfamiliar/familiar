@@ -43,6 +43,28 @@ export type AnyCommandDef = CommandDef<any>;
  * plugins surface them.
  */
 /**
+ * Async function a plugin registers via
+ * `ctx.events.registerContextProvider(fn)` to contribute per-event
+ * situational knowledge to the system prompt of the handler that is
+ * about to run. Receives the agentrun about to execute and its parent
+ * event; returns the markdown body to inject below the
+ * `# Available tools` section. Returning `null`, `undefined`, or an
+ * empty/whitespace string contributes nothing — useful for "only speak
+ * up when relevant" providers.
+ *
+ * The function is called once per `buildSystemPrompt` (i.e. once per
+ * agentrun start). It runs in the host process — providers may close
+ * over plugin-local services (DB handles, caches) without going through
+ * the bastion. The PromptBuilder reaches the registry through the
+ * bastion's `/event-context/` gateway, which fans out to every
+ * registered provider in parallel; one bad provider must not poison
+ * the prompt, so the gateway isolates rejections and per-call timeouts.
+ */
+export interface EventContextProvider {
+    (agentrun: AgentRunRow, event: EventRow): Promise<string | null | undefined>;
+}
+
+/**
  * Optional callbacks passed alongside `ctx.events.emit`. Bundled into
  * an options object so additional per-emit hooks (e.g. cancellation,
  * progress) can be added without breaking the call signature.
@@ -124,6 +146,29 @@ export interface HostContext {
      */
     readonly events: {
         emit(event: NewEvent, options?: EmitOptions): Promise<EmitHandle>;
+        /**
+         * Register an async function called once per agentrun start with
+         * the agentrun row and its parent event. Its returned string is
+         * injected below the `# Available tools` section in the system
+         * prompt the handler runs against. Use this to teach the agent
+         * situational facts a plugin knows — e.g. "the sender of this
+         * mail is currently in a meeting", "this chat thread has 14
+         * unread mails attached to it".
+         *
+         * Providers must be cheap to run: the PromptBuilder fans out to
+         * every registered provider in parallel via the bastion's
+         * `/event-context/` gateway and waits on them before assembling
+         * the prompt. Slow providers delay the start of every agentrun.
+         *
+         * A provider that returns `null`, `undefined`, or whitespace
+         * contributes nothing — typical for "only speak up when
+         * relevant" cases. Exceptions thrown inside the provider are
+         * isolated by the gateway and logged with the plugin id; the
+         * prompt still assembles with the remaining providers' output.
+         *
+         * Plugins typically call this from their `start(ctx)` hook.
+         */
+        registerContextProvider(fn: EventContextProvider): void;
     };
     /**
      * Chat capabilities.

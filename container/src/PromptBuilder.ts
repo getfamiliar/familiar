@@ -95,13 +95,18 @@ const MAX_PAYLOAD_CHARS = 5000;
  * @param privileged Whether the agentrun descends from a trusted
  *   user-input source. Surfaced in the `# Runtime` section so the
  *   agent knows which trust-gated tools are available to it.
+ * @param eventContext Identifiers needed to fetch plugin-contributed
+ *   event-context sections from the bastion's `/event-context/`
+ *   gateway. Pass `null` to skip the fetch entirely — used by tests
+ *   and one-off harnesses that don't have a live bastion.
  */
-export function buildSystemPrompt(
+export async function buildSystemPrompt(
     handler: HandlerFile,
     toolNames: readonly string[],
     topic: string,
     privileged: boolean,
-): string {
+    eventContext: EventContextFetchInput | null,
+): Promise<string> {
     const sections: string[] = [];
     const mode = handler.header.systemPrompt ?? "full";
 
@@ -137,9 +142,103 @@ export function buildSystemPrompt(
         toolNames.length > 0 ? toolNames.map((name) => `- ${name}`).join("\n") : "(none)";
     sections.push(`# Available tools\n\n${toolList}`);
 
+    if (eventContext !== null) {
+        const eventContextSections = await fetchEventContextSections(eventContext);
+        for (const section of eventContextSections) {
+            sections.push(`# Event context (from ${section.pluginId})\n\n${section.text.trim()}`);
+        }
+    }
+
     sections.push(`# Runtime\n\n${buildRuntimeSection(handler, topic, privileged)}`);
 
     return truncate(sections.join("\n\n"), MAX_SYSTEM_CHARS);
+}
+
+/**
+ * Inputs the PromptBuilder needs to ask the bastion for plugin-
+ * contributed event-context sections. Carried as a single record so
+ * test harnesses can pass `null` to skip the fetch without a runtime
+ * env shim.
+ */
+export interface EventContextFetchInput {
+    /** Bastion base URL (the container's `BASTION_URL` env value). */
+    readonly bastionUrl: string;
+    /** Event id this agentrun is processing. */
+    readonly eventId: string;
+    /** Agentrun id about to start running. */
+    readonly agentrunId: string;
+    /**
+     * Logger child for warnings about fetch failures. The PromptBuilder
+     * keeps fetch errors non-fatal — event context is best-effort
+     * enrichment, not a hard dependency — but the operator should see
+     * a warning when a gateway is misbehaving.
+     */
+    readonly log: { warn: (record: object, message: string) => void };
+    /**
+     * Optional override for the overall fetch timeout. Defaults to 10s
+     * — providers are already bounded internally by the gateway, so
+     * this only catches gateway-level hangs.
+     */
+    readonly timeoutMs?: number;
+}
+
+/** One section as returned by the bastion. Mirrors the gateway type. */
+interface EventContextSection {
+    readonly pluginId: string;
+    readonly text: string;
+}
+
+/** Response shape served by `POST /event-context/`. */
+interface EventContextResponse {
+    readonly sections: readonly EventContextSection[];
+}
+
+const EVENT_CONTEXT_FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Fetch plugin-contributed sections from the bastion's
+ * `/event-context/` gateway. Best-effort: on any fetch failure
+ * (network error, timeout, non-200, malformed body) the helper logs a
+ * warning and returns an empty list so the system prompt still
+ * assembles. The bastion fans out to every registered provider in
+ * parallel and isolates per-provider rejections, so this side only
+ * has to deal with transport-layer concerns.
+ */
+async function fetchEventContextSections(
+    input: EventContextFetchInput,
+): Promise<readonly EventContextSection[]> {
+    const url = `${input.bastionUrl.replace(/\/$/, "")}/event-context/`;
+    const timeoutMs = input.timeoutMs ?? EVENT_CONTEXT_FETCH_TIMEOUT_MS;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ eventId: input.eventId, agentrunId: input.agentrunId }),
+            signal: controller.signal,
+        });
+        if (!res.ok) {
+            const body = await res.text().catch(() => "");
+            input.log.warn(
+                { status: res.status, body: body.slice(0, 200) },
+                "event-context gateway returned non-200",
+            );
+            return [];
+        }
+        const parsed = (await res.json()) as EventContextResponse;
+        if (!parsed || !Array.isArray(parsed.sections)) {
+            input.log.warn({}, "event-context gateway returned malformed body");
+            return [];
+        }
+        return parsed.sections;
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        input.log.warn({ err: message }, "event-context fetch failed");
+        return [];
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 /**

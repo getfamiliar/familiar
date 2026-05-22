@@ -14,6 +14,7 @@ import {
     type EmitOptions,
     EVENTS_STATE_CHANNEL,
     EventBus,
+    type EventContextProvider,
     type EventFile,
     type EventRow,
     type HostContext,
@@ -31,6 +32,7 @@ import {
 import { inspectPidFile } from "../commands/pidfile.js";
 import type { MailStyleStore } from "../mail/MailStyleStore.js";
 import type { PluginMcpService } from "../mcp/PluginMcpService.js";
+import type { EventContextRegistry } from "./EventContextRegistry.js";
 
 /**
  * Dependencies a {@link HostContextImpl} needs from its owner. The
@@ -38,6 +40,15 @@ import type { PluginMcpService } from "../mcp/PluginMcpService.js";
  * lifecycle; the context only borrows it.
  */
 export interface HostContextImplDeps {
+    /**
+     * Id of the plugin this context belongs to. Captured at construction
+     * time so register-style surfaces that don't take an explicit id on
+     * the wire (e.g. `events.registerContextProvider`) can stamp the
+     * registering plugin onto the registry entry for logging and
+     * fan-out attribution. `"core"` is reserved for daemon-internal
+     * contexts (cron, future approval gate).
+     */
+    pluginId: string;
     /** Open (or return the already-open) shared postgres connection. */
     ensureConnection(): Promise<PostgresConnection>;
     /**
@@ -100,6 +111,13 @@ export interface HostContextImplDeps {
      */
     mailStyleStore: MailStyleStore;
     /**
+     * Shared registry backing `ctx.events.registerContextProvider`. One
+     * instance per host process — owns the per-plugin function list
+     * the bastion's `/event-context/` gateway fans out on every prompt
+     * assembly.
+     */
+    eventContextRegistry: EventContextRegistry;
+    /**
      * Signal exposed to plugins as `ctx.daemonDownSignal`. CLI
      * invocations wire it to a pidfile watcher that aborts when the
      * daemon disappears; daemon-internal contexts pass a never-firing
@@ -132,6 +150,9 @@ export class HostContextImpl implements HostContext {
     readonly events = {
         emit: (event: NewEvent, options?: EmitOptions): Promise<EmitHandle> =>
             this.emitAndAwait(event, options),
+        registerContextProvider: (fn: EventContextProvider): void => {
+            this.deps.eventContextRegistry.register(this.deps.pluginId, fn);
+        },
     };
 
     readonly chat = {
