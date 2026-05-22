@@ -100,7 +100,7 @@ export async function runJsonTool(
     return {
         truncated: true,
         fullResultAt,
-        reason: `result exceeded ${ctx.limit} bytes`,
+        reason: `result exceeded ${ctx.limit} bytes — file_read the path (it's paginated)`,
     } satisfies OffloadedJson;
 }
 
@@ -200,7 +200,7 @@ export async function runTextTool(
  * code point. Surrogate pairs (code points beyond the BMP) are kept
  * together.
  */
-function truncateUtf8(str: string, maxBytes: number): string {
+export function truncateUtf8(str: string, maxBytes: number): string {
     if (maxBytes <= 0) {
         return "";
     }

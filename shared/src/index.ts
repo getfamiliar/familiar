@@ -141,4 +141,5 @@ export {
     runTextTool,
     ToolError,
     type ToolRunContext,
+    truncateUtf8,
 } from "./ToolRunner.js";

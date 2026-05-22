@@ -6,6 +6,7 @@ import {
     runJsonTool,
     ToolError,
     type ToolRunContext,
+    truncateUtf8,
 } from "@getfamiliar/shared";
 import type { Tool, ToolSet } from "ai";
 import { jsonSchema, tool } from "ai";
@@ -139,23 +140,56 @@ function refusePrivilege(): never {
 
 interface FileReadInput {
     readonly path: string;
+    readonly offset?: number;
+    readonly limit?: number;
 }
 
 /**
- * Build the `file_read` tool. Reads a workspace file as UTF-8 and
- * returns its full contents alongside a `totalLines` count so the
- * model can decide whether to ask for a follow-up slice. Stripped to
- * a single `path` property while we shake out tool-call reliability —
- * slicing via offset/limit can come back once the simple shape is
- * reliable.
+ * Conservative upper bound on the header text the body prepends to the
+ * file content. The header looks like
+ * `<file: <path>, bytes <A>-<B> of <TOTAL>, truncated>\n`; long
+ * workspace paths plus 8-digit byte counts come in well under this
+ * value. Reserving a generous overhead means we can pre-cap the
+ * content slice such that `header + content` always fits `ctx.limit`,
+ * which is the load-bearing invariant that prevents the offload
+ * wrapper from ever firing for `file_read` (and thus prevents the
+ * file_read→offload→file_read→… loop).
  */
-function buildFileReadTool(ctx: ToolRunContext): Tool<FileReadInput, object> {
-    return tool<FileReadInput, object>({
+const FILE_READ_HEADER_OVERHEAD = 200;
+
+/**
+ * Build the `file_read` tool — text-mode and paginated. Returns the
+ * raw UTF-8 file content (no JSON wrapping) preceded by a single
+ * header line that names the file, the inclusive 1-based byte range
+ * returned, the file's total byte size, and whether the response is
+ * truncated. Pre-caps the chunk so the total output always fits
+ * `ctx.limit`; consequently bypasses {@link runJsonTool} /
+ * {@link runTextTool} entirely — wrapping with either would re-spill
+ * an oversized result and reintroduce the offload loop the pagination
+ * exists to prevent.
+ *
+ * Header shapes:
+ *   `<file: <path>, bytes <A>-<B> of <TOTAL>[, truncated]>`
+ *   `<file: <path>, empty>`
+ *   `<file: <path>, offset <N> past end of <TOTAL> bytes>`
+ *
+ * The trailing `, truncated` clause invites the agent to request the
+ * next chunk via `offset: <B + 1>`. Multi-byte UTF-8 characters at the
+ * natural cut boundary are kept whole.
+ */
+function buildFileReadTool(ctx: ToolRunContext): Tool<FileReadInput, string> {
+    return tool<FileReadInput, string>({
         description:
-            "Read a file and return its UTF-8 contents. Paths are workspace-" +
-            "relative (e.g. `SOUL.md`, `people/anna.md`) — except absolute " +
-            "paths under `/scratch/<event-id>/...` are also accepted, for per-" +
-            "event files (e.g. mail attachments) shared with MCP tools.",
+            "Read a chunk of a file as UTF-8. Paths are workspace-relative " +
+            "(`SOUL.md`, `people/anna.md`); absolute paths under " +
+            "`/scratch/<event-id>/...` are also accepted, for per-event files " +
+            "(e.g. mail attachments, offloaded tool results) shared with MCP " +
+            "tools. Returns a header line of the form " +
+            "`<file: PATH, bytes A-B of TOTAL[, truncated]>` followed by a " +
+            "newline and the raw file content. When the header ends in " +
+            "`, truncated`, call again with `offset: <B + 1>` to read the " +
+            "next chunk. For searching very large files (e.g. offloaded tool " +
+            "results), prefer `fs_grep` over walking the file with `file_read`.",
         inputSchema: jsonSchema<FileReadInput>({
             type: "object",
             additionalProperties: false,
@@ -163,33 +197,93 @@ function buildFileReadTool(ctx: ToolRunContext): Tool<FileReadInput, object> {
             properties: {
                 path: {
                     type: "string",
-                    description: "Workspace-relative path to the file to read.",
+                    description:
+                        "Workspace-relative path or absolute path under " +
+                        "`/scratch/<event-id>/...` to the file to read.",
+                },
+                offset: {
+                    type: "integer",
+                    minimum: 1,
+                    description:
+                        "1-based byte offset of the first byte to read. Defaults to 1. To " +
+                        "continue after a truncated chunk reporting `bytes A-B of TOTAL`, " +
+                        "pass `offset: B + 1`.",
+                },
+                limit: {
+                    type: "integer",
+                    minimum: 1,
+                    description:
+                        "Maximum bytes of file content to return in this call. Defaults to " +
+                        "whatever fits the inline tool-call budget. The actual returned " +
+                        "chunk may be slightly smaller if the natural cut would split a " +
+                        "multi-byte UTF-8 character.",
                 },
             },
         }),
-        execute: (params) =>
-            runJsonTool(async () => {
-                const p = params.path;
-                const absolute = resolveWorkspacePath(p);
-                let content: string;
-                try {
-                    content = await fs.readFile(absolute, "utf8");
-                } catch (err) {
-                    const code = (err as NodeJS.ErrnoException).code;
-                    if (code === "ENOENT") {
-                        throw new ToolError("FileNotFound", `file not found: ${p}`);
-                    }
-                    if (code === "EISDIR") {
-                        throw new ToolError(
-                            "IsADirectory",
-                            `path is a directory, not a file: ${p}`,
-                        );
-                    }
-                    throw err;
+        execute: async (params) => {
+            const p = params.path;
+            const offset1 = Math.max(1, params.offset ?? 1);
+            const absolute = resolveWorkspacePath(p);
+
+            let stat: Awaited<ReturnType<typeof fs.stat>>;
+            try {
+                stat = await fs.stat(absolute);
+            } catch (err) {
+                const code = (err as NodeJS.ErrnoException).code;
+                if (code === "ENOENT") {
+                    throw new ToolError("FileNotFound", `file not found: ${p}`);
                 }
-                const totalLines = content.split("\n").length;
-                return { content, totalLines };
-            }, ctx),
+                throw err;
+            }
+            if (stat.isDirectory()) {
+                throw new ToolError("IsADirectory", `path is a directory, not a file: ${p}`);
+            }
+            if (!stat.isFile()) {
+                throw new ToolError("BadPath", `path is not a regular file: ${p}`);
+            }
+
+            const totalBytes = stat.size;
+            if (totalBytes === 0) {
+                return `<file: ${p}, empty>\n`;
+            }
+            if (offset1 > totalBytes) {
+                return `<file: ${p}, offset ${offset1} past end of ${totalBytes} bytes>\n`;
+            }
+
+            const contentBudget = Math.max(1, ctx.limit - FILE_READ_HEADER_OVERHEAD);
+            const requested =
+                params.limit !== undefined
+                    ? Math.max(1, Math.min(params.limit, contentBudget))
+                    : contentBudget;
+
+            const startByte0 = offset1 - 1;
+            const remaining = totalBytes - startByte0;
+            // Read a few extra bytes so the UTF-8 truncation always has
+            // the partial trailing code point in hand.
+            const toRead = Math.min(remaining, requested + 4);
+
+            const handle = await fs.open(absolute, "r");
+            let raw: Buffer;
+            try {
+                const buf = Buffer.alloc(toRead);
+                const { bytesRead } = await handle.read(buf, 0, toRead, startByte0);
+                raw = buf.subarray(0, bytesRead);
+            } finally {
+                await handle.close();
+            }
+
+            const decoded = raw.toString("utf8");
+            const content = truncateUtf8(decoded, requested);
+            const bytesReturned = Buffer.byteLength(content, "utf8");
+
+            const lastByte1 = offset1 + bytesReturned - 1;
+            const truncated = startByte0 + bytesReturned < totalBytes;
+            const header =
+                `<file: ${p}, bytes ${offset1}-${lastByte1} of ${totalBytes}` +
+                `${truncated ? ", truncated" : ""}>\n`;
+
+            return header + content;
+        },
     });
 }
 
