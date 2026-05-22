@@ -66,6 +66,14 @@ export class Ms365MailProvider implements MailProvider {
      */
     private readonly ctx: HostContext;
 
+    /**
+     * Per-process dedup set for the "no template on disk" warn in
+     * `composeBody`. Sends happen often; we want the operator to
+     * notice once per mailbox after a daemon boot, not on every
+     * outgoing message.
+     */
+    private readonly warnedMissingTemplate = new Set<string>();
+
     constructor(ctx: HostContext, mailboxMap: readonly MailboxTarget[] = []) {
         this.ctx = ctx;
         this.mailboxMap = mailboxMap;
@@ -98,6 +106,19 @@ export class Ms365MailProvider implements MailProvider {
     ): Promise<GraphOutgoingBody> {
         const tpl = await this.ctx.getMailStyleTemplate(mailbox);
         if (tpl === undefined) {
+            // Silent bare-HTML sends are easy to miss — log once per
+            // mailbox so the operator notices the missing template and
+            // can fire `/mail/extract-style` against it. The set
+            // dedups across the daemon's process lifetime; a restart
+            // re-warns once.
+            if (!this.warnedMissingTemplate.has(mailbox)) {
+                this.warnedMissingTemplate.add(mailbox);
+                this.ctx.log(
+                    `ms365: no mail style template for ${mailbox} — sending bare HTML ` +
+                        "without styling or signature. Fire `/mail/extract-style Extract " +
+                        `for ${mailbox}\` from cli-chat to populate it.`,
+                );
+            }
             return { contentType: "HTML", content: renderMarkdownToHtml(markdownBody) };
         }
 
