@@ -1,3 +1,4 @@
+import path from "node:path";
 import { definePlugin } from "@getfamiliar/shared";
 import { buildMs365Commands } from "./Commands.js";
 import { startMs365Daemon } from "./Ms365Daemon.js";
@@ -23,6 +24,7 @@ import { startMs365Daemon } from "./Ms365Daemon.js";
  */
 export default definePlugin({
     id: "ms365",
+    workspaceTemplate: path.join(import.meta.dirname, "..", "workspace-template"),
     host: {
         start: (ctx) => startMs365Daemon(ctx),
         commands: (ctx) => buildMs365Commands(ctx),

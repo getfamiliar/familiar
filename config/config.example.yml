@@ -157,6 +157,10 @@ inference:
 #     mailboxes: []          # empty = every logged-in account's primary inbox
 #     pollingInterval: 15    # minutes between polls
 #     pollingBackoff: 1      # minutes; base of exponential backoff on poll errors
+#     extractFormatting:
+#       enabled: true              # harvest font+signature from each mailbox's Sent folder, wrap outbound mail in it
+#       refreshCron: "everyday 4:00am"  # friendly cron; refresh per-mailbox templates daily
+#       exampleCount: 3            # how many examples to sample per kind (reply / forward / new)
 #   calendar:
 #     enabled: true          # master switch; false disables polling + the ms365 cal_* provider
 #     calendars: []          # empty = primary calendar only; otherwise list of calendar display names to subscribe to

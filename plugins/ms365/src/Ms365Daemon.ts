@@ -1,4 +1,5 @@
-import type { HostContext } from "@getfamiliar/shared";
+import { type HostContext, parseCron } from "@getfamiliar/shared";
+import { Cron } from "croner";
 import { setActiveLogins } from "./auth/ActiveLogins.js";
 import type { GraphAuth } from "./auth/GraphAuth.js";
 import { LoginStore, loginDirectory } from "./auth/LoginStore.js";
@@ -10,9 +11,11 @@ import {
 } from "./Config.js";
 import { CalendarPoller } from "./calendar/CalendarPoller.js";
 import { Ms365CalendarProvider } from "./calendar/Ms365CalendarProvider.js";
-import { buildMailboxMap } from "./mail/MailboxMap.js";
+import { buildMailboxMap, type MailboxTarget } from "./mail/MailboxMap.js";
 import { MailPoller } from "./mail/MailPoller.js";
 import { Ms365MailProvider } from "./mail/Ms365MailProvider.js";
+import { TemplateCache } from "./mail/TemplateCache.js";
+import { TemplateExtractor } from "./mail/TemplateExtractor.js";
 
 /**
  * Boot the Microsoft 365 plugin: load logins, hand the live store to
@@ -49,12 +52,27 @@ export async function startMs365Daemon(ctx: HostContext): Promise<void> {
             log(`mail: configured mailboxes: ${summary}`);
         }
 
+        // Per-mailbox HTML wrapper cache. `null` when extraction is
+        // disabled — the provider then emits bare rendered HTML, the
+        // pre-feature behaviour.
+        const templates = mail.extractFormatting.enabled ? new TemplateCache(ctx.dataDir) : null;
+
         // Register the provider before the poller runs so the core
         // `mail_*` tools can dispatch to ms365 the moment the daemon
         // resolves — even when polling is off, the agent can act on
         // mails referenced by id from a chat handler, and `mail_search`
         // can hit every configured mailbox.
-        ctx.mail.registerProvider(new Ms365MailProvider(mailboxMap));
+        ctx.mail.registerProvider(new Ms365MailProvider(mailboxMap, templates));
+
+        // Per-mailbox formatting extraction: harvest the user's font /
+        // signature from Sent Items, wrap outbound mail in it. Boot
+        // pass fills missing files; cron pass refreshes the lot.
+        if (mail.extractFormatting.enabled && mailboxMap.length > 0) {
+            startTemplateExtraction(ctx, mailboxMap, mail.extractFormatting, log).catch((err) => {
+                const message = err instanceof Error ? err.message : String(err);
+                log(`mail: template extraction boot pass failed: ${message}`);
+            });
+        }
         if (!mail.polling) {
             log("mail: polling disabled via ms365.mail.polling=false; tools remain available");
         } else if (mailboxMap.length === 0) {
@@ -168,6 +186,54 @@ function runPollLoop(
     // without doing I/O — host startup isn't blocked on the first
     // Graph round-trip.
     schedule(0);
+}
+
+/**
+ * Run the per-mailbox template-extraction boot pass and (if the
+ * configured cron is parseable) install the recurring refresh job.
+ *
+ * Boot pass: only mailboxes / kinds whose template file is missing get
+ * an extraction event; a daemon restart with everything on disk does
+ * no work. Subsequent refreshes overwrite unconditionally to pick up
+ * changes in the user's signature or font preference.
+ */
+async function startTemplateExtraction(
+    ctx: HostContext,
+    mailboxMap: readonly MailboxTarget[],
+    cfg: { readonly refreshCron: string; readonly exampleCount: number },
+    log: (msg: string) => void,
+): Promise<void> {
+    const extractor = new TemplateExtractor({
+        ctx,
+        mailboxMap,
+        exampleCount: cfg.exampleCount,
+    });
+    await extractor.refreshMissingTemplates();
+    const parsed = parseCron(cfg.refreshCron);
+    if (parsed === null) {
+        log(
+            `mail: invalid extractFormatting.refreshCron "${cfg.refreshCron}" ` +
+                "(neither friendly-cron nor raw cron parsed it); refresh disabled",
+        );
+        return;
+    }
+    try {
+        const job = new Cron(parsed.expression, () => {
+            void extractor.refreshAll().catch((err) => {
+                const message = err instanceof Error ? err.message : String(err);
+                log(`mail: template refresh job error: ${message}`);
+            });
+        });
+        const tail = parsed.source === "friendly" ? ` → ${parsed.expression}` : "";
+        log(`mail: template refresh cron scheduled (${cfg.refreshCron}${tail})`);
+        // Reference held so the cron isn't GC'd while the daemon runs.
+        // Croner registers the timer globally too, but stashing the
+        // handle keeps the contract obvious.
+        void job;
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        log(`mail: template refresh cron failed to register: ${message}`);
+    }
 }
 
 /**

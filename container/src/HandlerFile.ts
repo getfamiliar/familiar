@@ -85,6 +85,26 @@ export interface HandlerFileHeader {
      */
     readonly mergeMode?: "merge" | "replace";
     /**
+     * Controls how much framing the system prompt carries beyond the
+     * handler body itself.
+     *
+     * - `full` (default) — include `SOUL.md`, `ENVIRONMENT.md`, and
+     *   `CONTEXT.md` ahead of the handler. Right default for handlers
+     *   that reason like an assistant across the user's world.
+     * - `only-soul` — include `SOUL.md` only. Drops the environment and
+     *   situational context layers for handlers that still want
+     *   identity grounding but no world framing.
+     * - `none` — drop `SOUL.md`, `ENVIRONMENT.md`, and `CONTEXT.md`
+     *   entirely. Use for very fixed tasks where the handler body
+     *   fully specifies the work and the "you are an agent" framing
+     *   would only bias the model.
+     *
+     * The handler body, the tool list, and the runtime section are
+     * always included regardless — they are operational scaffolding,
+     * not personality.
+     */
+    readonly systemPrompt?: "full" | "only-soul" | "none";
+    /**
      * Byte budget for inline tool-call results before the runner spills
      * the full result to a scratch file. Resolved per-call against the
      * value the host injected via `TOOL_CALL_OFFLOADING_LIMIT` (sourced
@@ -351,6 +371,7 @@ function mergeDeclared(parent: HandlerFileHeader, child: HandlerFileHeader): Han
         outputChat: child.outputChat ?? parent.outputChat,
         cron: child.cron ?? parent.cron,
         mergeMode: child.mergeMode ?? parent.mergeMode,
+        systemPrompt: child.systemPrompt ?? parent.systemPrompt,
         toolCallOffloadingLimit: child.toolCallOffloadingLimit ?? parent.toolCallOffloadingLimit,
     };
 }
@@ -414,6 +435,7 @@ function parseHandler(filePath: string, source: string): DeclaredFile {
         outputChat: optionalBoolean(filePath, raw, "outputChat"),
         cron: optionalString(filePath, raw, "cron"),
         mergeMode: optionalEnum(filePath, raw, "mergeMode", ["merge", "replace"]),
+        systemPrompt: optionalEnum(filePath, raw, "systemPrompt", ["full", "only-soul", "none"]),
         toolCallOffloadingLimit: optionalPositiveInteger(filePath, raw, "toolCallOffloadingLimit"),
     };
 
@@ -438,6 +460,7 @@ function mergeDefaults(
         outputChat: declared.outputChat ?? defaults.outputChat,
         cron: declared.cron ?? defaults.cron,
         mergeMode: declared.mergeMode ?? defaults.mergeMode,
+        systemPrompt: declared.systemPrompt ?? defaults.systemPrompt,
         toolCallOffloadingLimit:
             declared.toolCallOffloadingLimit ?? defaults.toolCallOffloadingLimit,
     };

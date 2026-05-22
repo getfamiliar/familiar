@@ -65,9 +65,19 @@ const MAX_PAYLOAD_CHARS = 5000;
  * safety net. Truncated values get a `…[truncated, original N chars]`
  * marker so the model knows the value is incomplete.
  *
- * @param handler The resolved handler file. Body becomes the `# Task`
+ * The handler's `systemPrompt` frontmatter chooses which of those three
+ * framing files are included:
+ *
+ * - `full` (default) — SOUL + ENVIRONMENT + CONTEXT.
+ * - `only-soul` — SOUL only.
+ * - `none` — none of them.
+ *
+ * The handler body, the tool list, and the runtime section are always
+ * included regardless of mode.
+ *
+ * @param handler The resolved handler file. Body becomes the `# Handler`
  *   section; path / inheritance / `outputChat` feed the `# Runtime`
- *   section at the end.
+ *   section at the end. `header.systemPrompt` selects the framing mode.
  * @param toolNames Ids of tools the agent is permitted to call for
  *   this run. Listed under "Available tools"; an empty array produces
  *   "(none)".
@@ -85,20 +95,25 @@ export function buildSystemPrompt(
     privileged: boolean,
 ): string {
     const sections: string[] = [];
+    const mode = handler.header.systemPrompt ?? "full";
 
-    const soul = readWorkspaceFile("SOUL.md");
-    if (soul !== null) {
-        sections.push(`# Identity\n\n${soul}`);
+    if (mode === "full" || mode === "only-soul") {
+        const soul = readWorkspaceFile("SOUL.md");
+        if (soul !== null) {
+            sections.push(`# Identity\n\n${soul}`);
+        }
     }
 
-    const environment = readWorkspaceFile("ENVIRONMENT.md");
-    if (environment !== null) {
-        sections.push(`# Environment\n\n${environment}`);
-    }
+    if (mode === "full") {
+        const environment = readWorkspaceFile("ENVIRONMENT.md");
+        if (environment !== null) {
+            sections.push(`# Environment\n\n${environment}`);
+        }
 
-    const context = readWorkspaceFile("CONTEXT.md");
-    if (context !== null) {
-        sections.push(`# Context\n\n${context}`);
+        const context = readWorkspaceFile("CONTEXT.md");
+        if (context !== null) {
+            sections.push(`# Context\n\n${context}`);
+        }
     }
 
     if (handler.body.trim().length > 0) {

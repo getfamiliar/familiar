@@ -53,12 +53,22 @@ const googleAuth: AuthApplier = (headers, apiKey) => {
  * handlers can put on `model` (e.g. `anthropic/claude-opus-4-7`).
  */
 export const NATIVE_PROVIDERS: Readonly<Record<string, NativeProviderSpec>> = {
+    // Each `upstreamBase` mirrors the `/v1` (or similar) prefix the
+    // corresponding `@ai-sdk/<provider>` package carries in its default
+    // baseURL. The container hands the SDK `http://bastion/llm/<id>`
+    // as baseURL, which strips that prefix; the SDK then only appends
+    // its endpoint-relative path (e.g. `/chat/completions`,
+    // `/messages`). The bastion has to put the version segment back in
+    // on the upstream side, otherwise the API returns a path-not-found
+    // 404. `deepseek` and `google` don't follow the `/v1` convention —
+    // their SDKs build the version into the per-request path instead,
+    // so the bases stay unversioned.
     openai: {
-        upstreamBase: "https://api.openai.com",
+        upstreamBase: "https://api.openai.com/v1",
         applyAuth: bearerAuth,
     },
     anthropic: {
-        upstreamBase: "https://api.anthropic.com",
+        upstreamBase: "https://api.anthropic.com/v1",
         applyAuth: anthropicAuth,
     },
     google: {
@@ -66,11 +76,11 @@ export const NATIVE_PROVIDERS: Readonly<Record<string, NativeProviderSpec>> = {
         applyAuth: googleAuth,
     },
     grok: {
-        upstreamBase: "https://api.x.ai",
+        upstreamBase: "https://api.x.ai/v1",
         applyAuth: bearerAuth,
     },
     groq: {
-        upstreamBase: "https://api.groq.com/openai",
+        upstreamBase: "https://api.groq.com/openai/v1",
         applyAuth: bearerAuth,
     },
     deepseek: {
@@ -78,7 +88,7 @@ export const NATIVE_PROVIDERS: Readonly<Record<string, NativeProviderSpec>> = {
         applyAuth: bearerAuth,
     },
     mistral: {
-        upstreamBase: "https://api.mistral.ai",
+        upstreamBase: "https://api.mistral.ai/v1",
         applyAuth: bearerAuth,
     },
 };

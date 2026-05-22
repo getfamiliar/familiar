@@ -60,11 +60,54 @@ export interface Ms365MailConfig {
     readonly pollingIntervalMinutes: number;
     /** Base (minutes) for the exponential-backoff schedule on poll errors. */
     readonly pollingBackoffMinutes: number;
+    /**
+     * Per-mailbox HTML template extraction from each mailbox's Sent
+     * Items folder. The extracted template captures the user's normal
+     * font, colour, and signature so outbound mail (reply / forward /
+     * new) wraps the agent's content in something that matches the
+     * user's everyday style. Graph doesn't expose signatures as a
+     * queryable resource, so harvesting recent sent mail is the only
+     * route.
+     */
+    readonly extractFormatting: Ms365MailExtractFormattingConfig;
+}
+
+/** Slice at `ms365.mail.extractFormatting.*`. */
+export interface Ms365MailExtractFormattingConfig {
+    /**
+     * Master switch. `true` (default) → daemon registers the boot pass
+     * (fill in missing per-mailbox / per-kind templates) and the cron
+     * job. `false` → no extraction, outbound mail uses bare rendered
+     * HTML with no template wrapper (the pre-feature behaviour).
+     */
+    readonly enabled: boolean;
+    /**
+     * Friendly cron expression for the periodic refresh. Parsed by
+     * `parseCron` from shared; falls back to "every day at 04:00" when
+     * missing. An invalid expression disables the cron at boot (logged
+     * once) — existing template files keep being used.
+     */
+    readonly refreshCron: string;
+    /**
+     * How many examples to keep per kind (reply / forward / new) when
+     * sampling Sent Items. The agent gets at most this many recent
+     * examples per category in its extraction prompt. Higher = better
+     * signal but a longer prompt; the default 5 has been enough in
+     * practice to surface the dominant font / signature.
+     */
+    readonly exampleCount: number;
 }
 
 const DEFAULT_POLLING_INTERVAL_MINUTES = 15;
 const DEFAULT_POLLING_BACKOFF_MINUTES = 1;
 const DEFAULT_TENANT_ID = "common";
+
+// friendly-node-cron requires an explicit "at" between the day token
+// and the time, and "4am" without minutes is silently dropped — so the
+// default uses the unambiguous colon-separated 24-hour form (matches
+// the calendar refresh default below).
+const DEFAULT_EXTRACT_FORMATTING_CRON = "every day at 04:00";
+const DEFAULT_EXTRACT_FORMATTING_EXAMPLE_COUNT = 3;
 
 const DEFAULT_CALENDAR_REMINDER_MINUTES = 15;
 const DEFAULT_CALENDAR_LOOKBACK_DAYS = 365;
@@ -149,6 +192,7 @@ export function readMs365MailConfig(ctx: HostContext): Ms365MailConfig {
         "ms365.mail.pollingBackoff",
         DEFAULT_POLLING_BACKOFF_MINUTES,
     );
+    const extractFormatting = readExtractFormattingConfig(ctx);
     return {
         enabled: ctx.config.getBool("ms365.mail.enabled", true) !== false,
         polling: ctx.config.getBool("ms365.mail.polling", true) !== false,
@@ -159,6 +203,35 @@ export function readMs365MailConfig(ctx: HostContext): Ms365MailConfig {
                 : DEFAULT_POLLING_INTERVAL_MINUTES,
         pollingBackoffMinutes:
             typeof backoff === "number" && backoff > 0 ? backoff : DEFAULT_POLLING_BACKOFF_MINUTES,
+        extractFormatting,
+    };
+}
+
+/**
+ * Read the per-mailbox template-extraction slice at
+ * `ms365.mail.extractFormatting.*`. Operational defaults: enabled,
+ * refresh every day at 4am, 3 examples per kind.
+ */
+function readExtractFormattingConfig(ctx: HostContext): Ms365MailExtractFormattingConfig {
+    const refreshCron =
+        ctx.config.getString(
+            "ms365.mail.extractFormatting.refreshCron",
+            DEFAULT_EXTRACT_FORMATTING_CRON,
+        ) ?? DEFAULT_EXTRACT_FORMATTING_CRON;
+    const exampleCount = ctx.config.getNumber(
+        "ms365.mail.extractFormatting.exampleCount",
+        DEFAULT_EXTRACT_FORMATTING_EXAMPLE_COUNT,
+    );
+    return {
+        enabled: ctx.config.getBool("ms365.mail.extractFormatting.enabled", true) !== false,
+        refreshCron:
+            typeof refreshCron === "string" && refreshCron.length > 0
+                ? refreshCron
+                : DEFAULT_EXTRACT_FORMATTING_CRON,
+        exampleCount:
+            typeof exampleCount === "number" && exampleCount > 0
+                ? Math.floor(exampleCount)
+                : DEFAULT_EXTRACT_FORMATTING_EXAMPLE_COUNT,
     };
 }
 

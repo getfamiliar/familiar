@@ -12,10 +12,19 @@ import {
 } from "@getfamiliar/shared";
 import { getActiveLogins } from "../auth/ActiveLogins.js";
 import type { LoginStore } from "../auth/LoginStore.js";
-import { GraphClient, GraphError, type GraphRecipient } from "../graph/GraphClient.js";
+import {
+    GraphClient,
+    GraphError,
+    type GraphOutgoingBody,
+    type GraphRecipient,
+} from "../graph/GraphClient.js";
 import { FOLDER_IDS, FolderAliasResolver } from "./Folders.js";
 import type { MailboxTarget } from "./MailboxMap.js";
+import { signatureToPlainText } from "./MailStyleTemplate.js";
 import { buildMailHit } from "./MessageShape.js";
+import type { MailKind } from "./SentSampler.js";
+import { injectStyle, STYLED_TAGS } from "./StyleInjector.js";
+import type { TemplateCache } from "./TemplateCache.js";
 
 /** Plugin id this provider registers under. Matches the package id. */
 export const MS365_MAIL_PROVIDER_ID = "ms365";
@@ -49,8 +58,67 @@ export class Ms365MailProvider implements MailProvider {
      */
     private readonly mailboxMap: readonly MailboxTarget[];
 
-    constructor(mailboxMap: readonly MailboxTarget[] = []) {
+    /**
+     * Per-mailbox style-template cache. `null` when the extraction
+     * feature is disabled — the send path then skips styling and
+     * signature entirely and emits the bare rendered HTML (pre-feature
+     * behaviour). Populated by {@link TemplateExtractor} on its boot /
+     * cron passes; read here via {@link composeBody} on every send.
+     */
+    private readonly templates: TemplateCache | null;
+
+    constructor(mailboxMap: readonly MailboxTarget[] = [], templates: TemplateCache | null = null) {
         this.mailboxMap = mailboxMap;
+        this.templates = templates;
+    }
+
+    /**
+     * Compose the wire body for an outgoing mail by applying the
+     * mailbox's style template to the agent-authored markdown:
+     *
+     *  - No template cache, or no file on disk yet ⇒ pre-feature
+     *    fallback: render markdown → HTML and ship it bare, no styling,
+     *    no signature.
+     *  - `usePlainText` on a `new` mail ⇒ ship the raw markdown as
+     *    plain text (markdown reads fine as plain text); append the
+     *    signature as plain text below.
+     *  - Otherwise ⇒ render markdown → HTML, inject the user's CSS on
+     *    every styled tag (unless `usePlainText`, in which case the
+     *    reply/forward `comment` is forced into HTML but skips the
+     *    style injection), and conditionally append the HTML signature
+     *    based on the per-kind boolean.
+     *
+     * The kind drives signature inclusion only — text style is shared
+     * across reply/forward/new because users tend to have one font
+     * preference, not three.
+     */
+    private async composeBody(
+        mailbox: string,
+        kind: MailKind,
+        markdownBody: string,
+    ): Promise<GraphOutgoingBody> {
+        if (this.templates === null) {
+            return { contentType: "HTML", content: renderMarkdownToHtml(markdownBody) };
+        }
+        const tpl = await this.templates.get(mailbox);
+        if (tpl === null) {
+            return { contentType: "HTML", content: renderMarkdownToHtml(markdownBody) };
+        }
+
+        if (tpl.usePlainText && kind === "new") {
+            const sigText = signatureToPlainText(tpl.signature);
+            const content = sigText.length > 0 ? `${markdownBody}\n\n${sigText}` : markdownBody;
+            return { contentType: "Text", content };
+        }
+
+        let html = renderMarkdownToHtml(markdownBody);
+        if (!tpl.usePlainText && tpl.textStyle.length > 0) {
+            html = injectStyle(html, tpl.textStyle, STYLED_TAGS);
+        }
+        if (shouldAppendSignature(kind, tpl.useSignatureOnReplies, tpl.useSignatureOnForwards)) {
+            html = `${html}${tpl.signature}`;
+        }
+        return { contentType: "HTML", content: html };
     }
 
     async fetchBody(mailbox: string, messageId: string): Promise<string> {
@@ -104,8 +172,13 @@ export class Ms365MailProvider implements MailProvider {
     async draftReply(mailbox: string, messageId: string, input: ReplyInput): Promise<string> {
         return mapGraphErrors(async () => {
             const client = await this.clientForMailbox(mailbox);
-            const html = renderMarkdownToHtml(input.bodyMarkdown);
-            const draft = await client.createReplyDraft(mailbox, messageId, input.replyAll, html);
+            const body = await this.composeBody(mailbox, "reply", input.bodyMarkdown);
+            const draft = await client.createReplyDraft(
+                mailbox,
+                messageId,
+                input.replyAll,
+                body.content,
+            );
             return draft.id;
         });
     }
@@ -113,13 +186,13 @@ export class Ms365MailProvider implements MailProvider {
     async draftForward(mailbox: string, messageId: string, input: ForwardInput): Promise<string> {
         return mapGraphErrors(async () => {
             const client = await this.clientForMailbox(mailbox);
-            const html = renderMarkdownToHtml(input.commentMarkdown);
+            const body = await this.composeBody(mailbox, "forward", input.commentMarkdown);
             const draft = await client.createForwardDraft(
                 mailbox,
                 messageId,
                 toGraphRecipients(input.to),
                 toGraphRecipients(input.cc),
-                html,
+                body.content,
             );
             return draft.id;
         });
@@ -128,10 +201,10 @@ export class Ms365MailProvider implements MailProvider {
     async draftNew(mailbox: string, input: NewMailInput): Promise<string> {
         return mapGraphErrors(async () => {
             const client = await this.clientForMailbox(mailbox);
-            const html = renderMarkdownToHtml(input.bodyMarkdown);
+            const body = await this.composeBody(mailbox, "new", input.bodyMarkdown);
             const draft = await client.createDraft(mailbox, {
                 subject: input.subject,
-                bodyHtml: html,
+                body,
                 to: toGraphRecipients(input.to),
                 cc: toGraphRecipients(input.cc),
             });
@@ -142,21 +215,21 @@ export class Ms365MailProvider implements MailProvider {
     async sendReply(mailbox: string, messageId: string, input: ReplyInput): Promise<void> {
         return mapGraphErrors(async () => {
             const client = await this.clientForMailbox(mailbox);
-            const html = renderMarkdownToHtml(input.bodyMarkdown);
-            await client.sendReply(mailbox, messageId, input.replyAll, html);
+            const body = await this.composeBody(mailbox, "reply", input.bodyMarkdown);
+            await client.sendReply(mailbox, messageId, input.replyAll, body.content);
         });
     }
 
     async sendForward(mailbox: string, messageId: string, input: ForwardInput): Promise<void> {
         return mapGraphErrors(async () => {
             const client = await this.clientForMailbox(mailbox);
-            const html = renderMarkdownToHtml(input.commentMarkdown);
+            const body = await this.composeBody(mailbox, "forward", input.commentMarkdown);
             await client.sendForward(
                 mailbox,
                 messageId,
                 toGraphRecipients(input.to),
                 toGraphRecipients(input.cc),
-                html,
+                body.content,
             );
         });
     }
@@ -164,10 +237,10 @@ export class Ms365MailProvider implements MailProvider {
     async sendNew(mailbox: string, input: NewMailInput): Promise<void> {
         return mapGraphErrors(async () => {
             const client = await this.clientForMailbox(mailbox);
-            const html = renderMarkdownToHtml(input.bodyMarkdown);
+            const body = await this.composeBody(mailbox, "new", input.bodyMarkdown);
             await client.sendMail(mailbox, {
                 subject: input.subject,
-                bodyHtml: html,
+                body,
                 to: toGraphRecipients(input.to),
                 cc: toGraphRecipients(input.cc),
             });
@@ -307,6 +380,26 @@ export class Ms365MailProvider implements MailProvider {
         }
         return new GraphClient(() => auth.getAccessTokenSilent());
     }
+}
+
+/**
+ * Decide whether to append the user's signature given the mail kind
+ * and the two per-kind booleans. New mails always get the signature
+ * (no reason yet to make that conditional); reply / forward decisions
+ * follow the template flags.
+ */
+function shouldAppendSignature(
+    kind: MailKind,
+    useSignatureOnReplies: boolean,
+    useSignatureOnForwards: boolean,
+): boolean {
+    if (kind === "new") {
+        return true;
+    }
+    if (kind === "reply") {
+        return useSignatureOnReplies;
+    }
+    return useSignatureOnForwards;
 }
 
 /**

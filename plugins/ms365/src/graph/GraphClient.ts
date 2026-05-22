@@ -168,6 +168,30 @@ export interface GraphMailMessage {
 }
 
 /**
+ * Sent-folder projection used by template extraction. Carries the raw
+ * HTML body and several thread-linkage signals the poller doesn't
+ * need.
+ *
+ * `conversationIndex` is the load-bearing field for reply detection:
+ * Outlook stamps a 22-byte FILETIME header on a thread root and
+ * appends 5 bytes for every reply, so a base64-decoded length > 22 is
+ * a hard "this is a reply". `internetMessageHeaders` is included
+ * defensively (some Graph tenants return `In-Reply-To` / `References`
+ * here, many don't — we treat its presence as a bonus signal, not the
+ * primary one).
+ */
+export interface GraphMailMessageWithBody {
+    readonly id: string;
+    readonly subject: string | null;
+    readonly sentDateTime: string;
+    readonly hasAttachments: boolean;
+    readonly body?: { readonly content?: string; readonly contentType?: string } | null;
+    readonly conversationId?: string;
+    readonly conversationIndex?: string;
+    readonly internetMessageHeaders?: ReadonlyArray<{ name?: string; value?: string }>;
+}
+
+/**
  * Raw Graph attachment as returned by `?$expand=attachments(...)`.
  * `contentBytes` is base64 when Graph inlines the bytes — only present
  * for non-inline attachments under Graph's inline-bytes ceiling (~3 MB).
@@ -187,11 +211,22 @@ export interface GraphRecipient {
     readonly name?: string;
 }
 
-/** Either an HTML-bodied draft or a send payload. */
+/**
+ * Body content for an outgoing mail. `contentType` is whichever Graph
+ * expects — `"HTML"` for the common case (rendered markdown wrapped
+ * with styling + signature) or `"Text"` when the mailbox owner
+ * predominantly writes plain text and `Ms365MailProvider.composeBody`
+ * decided to ship the raw markdown straight through.
+ */
+export interface GraphOutgoingBody {
+    readonly contentType: "HTML" | "Text";
+    readonly content: string;
+}
+
+/** Either an HTML-bodied or text-bodied draft / send payload. */
 export interface GraphOutgoing {
     readonly subject: string;
-    /** HTML body — render markdown upstream via `renderMarkdownToHtml`. */
-    readonly bodyHtml: string;
+    readonly body: GraphOutgoingBody;
     readonly to: readonly GraphRecipient[];
     readonly cc?: readonly GraphRecipient[];
 }
@@ -227,6 +262,24 @@ export class GraphError extends Error {
         this.code = decoded.code;
         this.graphMessage = decoded.message;
     }
+}
+
+/**
+ * Locate the RFC 2822 header/body separator in a MIME blob — the first
+ * blank line, expressed as either `CRLF CRLF` or `LF LF`. Returns the
+ * index of the start of that blank line so the caller can `slice(0, idx)`
+ * to keep only the header section. `-1` when no separator is present.
+ */
+function findBlankLine(s: string): number {
+    const crlf = s.indexOf("\r\n\r\n");
+    const lf = s.indexOf("\n\n");
+    if (crlf >= 0 && (lf < 0 || crlf <= lf)) {
+        return crlf;
+    }
+    if (lf >= 0) {
+        return lf;
+    }
+    return -1;
 }
 
 /**
@@ -461,6 +514,135 @@ export class GraphClient {
             body?: { content?: string; contentType?: string };
         };
         return json.body?.content ?? "";
+    }
+
+    /**
+     * Fetch one message's body as HTML. Same shape as
+     * {@link getMessageBodyText} but requests `outlook.body-content-type="html"`
+     * so Graph returns the raw HTML body (signatures, fonts, inline styles
+     * intact). Used by the template-extraction path that needs to see the
+     * wrapper Outlook stamped onto sent mails.
+     */
+    async getMessageBodyHtml(userId: string, messageId: string): Promise<string> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}?$select=body`;
+        const response = await this.request("GET", url, {
+            preferTokens: ['outlook.body-content-type="html"'],
+        });
+        const json = (await response.json()) as {
+            body?: { content?: string; contentType?: string };
+        };
+        return json.body?.content ?? "";
+    }
+
+    /**
+     * Fetch a message's MIME representation via `/$value` and return only
+     * the RFC 2822 header block (everything before the first blank line).
+     * That's the most reliable way to see every header Exchange stored
+     * for a message — including ones Graph's parsed `internetMessageHeaders`
+     * omits from list calls.
+     *
+     * Streams the response so we don't pay to download attachment bodies
+     * for messages with multi-MB payloads — the reader is cancelled the
+     * moment the blank-line delimiter shows up. A 256 KB safety cap stops
+     * a malformed message (no blank line at all) from buffering forever.
+     *
+     * Returns `null` on any Graph error or when the message has no
+     * resolvable MIME (drafts in certain states), so the verbose dump
+     * can fall back gracefully without aborting the whole scan.
+     */
+    async getMessageMimeHeaders(userId: string, messageId: string): Promise<string | null> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/$value`;
+        let response: Response;
+        try {
+            response = await this.request("GET", url);
+        } catch {
+            return null;
+        }
+        const body = response.body;
+        if (body === null) {
+            return null;
+        }
+        const reader = body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        const cap = 256 * 1024;
+        let buf = "";
+        try {
+            while (buf.length < cap) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    break;
+                }
+                buf += decoder.decode(value, { stream: true });
+                const blank = findBlankLine(buf);
+                if (blank >= 0) {
+                    return buf.slice(0, blank);
+                }
+            }
+            return buf.length > 0 ? buf.slice(0, cap) : null;
+        } finally {
+            // Best-effort cleanup — once we have the headers we don't
+            // care about the rest of the MIME body.
+            try {
+                reader.releaseLock();
+            } catch {
+                // releaseLock throws if the stream is already done; ignore.
+            }
+            body.cancel().catch(() => undefined);
+        }
+    }
+
+    /**
+     * Walk the most-recently-sent messages of `folderId`, yielding each
+     * with its full HTML body and `internetMessageHeaders`. Unlike
+     * {@link searchMessages} this skips Graph's `$search` index — we
+     * want a stable "most recent N" view, not a relevance-ranked
+     * full-text query.
+     *
+     * Async iterator instead of a single fetch so callers (e.g.
+     * `SentSampler`) can stop as soon as their buckets are full —
+     * Graph then never has to serve the next page. `hardCap` is the
+     * worst-case ceiling on how many messages we'll ever scan; raise
+     * it when the user's Sent folder is dominated by mails that get
+     * filtered out (calendar invites, oversized chains) so the rare
+     * keeper category still gets enough examples.
+     */
+    async *iterateFolderMessages(
+        userId: string,
+        folderId: string,
+        hardCap: number,
+    ): AsyncIterable<GraphMailMessageWithBody> {
+        if (hardCap <= 0) {
+            return;
+        }
+        const select =
+            "id,subject,sentDateTime,hasAttachments,body,conversationId,conversationIndex," +
+            "internetMessageHeaders,parentFolderId";
+        const pageSize = Math.min(hardCap, 100);
+        const params = new URLSearchParams({
+            $select: select,
+            $top: String(pageSize),
+            $orderby: "sentDateTime desc",
+        });
+        const path = `/users/${encodeURIComponent(userId)}/mailFolders/${encodeURIComponent(folderId)}/messages`;
+        let url: string | null = `${GRAPH_BASE_URL}${path}?${params.toString()}`;
+        let yielded = 0;
+        while (url !== null && yielded < hardCap) {
+            const response = await this.request("GET", url, {
+                preferTokens: ['outlook.body-content-type="html"'],
+            });
+            const json = (await response.json()) as {
+                value?: readonly GraphMailMessageWithBody[];
+                "@odata.nextLink"?: string;
+            };
+            for (const message of json.value ?? []) {
+                yield message;
+                yielded += 1;
+                if (yielded >= hardCap) {
+                    break;
+                }
+            }
+            url = typeof json["@odata.nextLink"] === "string" ? json["@odata.nextLink"] : null;
+        }
     }
 
     /**
@@ -778,7 +960,7 @@ export class GraphClient {
     private buildMessageBody(outgoing: GraphOutgoing): Record<string, unknown> {
         return {
             subject: outgoing.subject,
-            body: { contentType: "HTML", content: outgoing.bodyHtml },
+            body: { contentType: outgoing.body.contentType, content: outgoing.body.content },
             toRecipients: mapGraphRecipients(outgoing.to),
             ccRecipients: mapGraphRecipients(outgoing.cc ?? []),
             isDraft: true,

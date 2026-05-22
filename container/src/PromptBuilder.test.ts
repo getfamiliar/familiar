@@ -1,6 +1,10 @@
 import { strict as assert } from "node:assert";
-import { describe, it } from "node:test";
-import { buildPrompt, formatRuntimeTime } from "./PromptBuilder.js";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { after, before, describe, it } from "node:test";
+import { HandlerFile } from "./HandlerFile.js";
+import { buildPrompt, buildSystemPrompt, formatRuntimeTime } from "./PromptBuilder.js";
 
 /** Pull the JSON block out of a rendered prompt for shape assertions. */
 function extractPayloadJson(rendered: string): string | null {
@@ -159,5 +163,72 @@ describe("formatRuntimeTime", () => {
     it("UTC round-trips the underlying instant", () => {
         const out = formatRuntimeTime(fixed, "UTC");
         assert.equal(out, "Tuesday, 2026-05-19T16:43:12 in timezone UTC");
+    });
+});
+
+describe("buildSystemPrompt — systemPrompt mode", () => {
+    let workspaceRoot: string;
+    let previousWorkspaceRoot: string;
+
+    before(() => {
+        previousWorkspaceRoot = HandlerFile.getWorkspaceRoot();
+        workspaceRoot = mkdtempSync(path.join(tmpdir(), "familiar-prompt-test-"));
+        writeFileSync(path.join(workspaceRoot, "SOUL.md"), "I am the soul.\n", "utf8");
+        writeFileSync(
+            path.join(workspaceRoot, "ENVIRONMENT.md"),
+            "I am the environment.\n",
+            "utf8",
+        );
+        writeFileSync(path.join(workspaceRoot, "CONTEXT.md"), "I am the context.\n", "utf8");
+        HandlerFile.setWorkspaceRoot(workspaceRoot);
+    });
+
+    after(() => {
+        HandlerFile.setWorkspaceRoot(previousWorkspaceRoot);
+        rmSync(workspaceRoot, { recursive: true, force: true });
+    });
+
+    /** Write a handler file under the temp workspace and load it back. */
+    function loadHandler(relativePath: string, contents: string): HandlerFile {
+        writeFileSync(path.join(workspaceRoot, relativePath), contents, "utf8");
+        return HandlerFile.read(relativePath);
+    }
+
+    it("includes Identity / Environment / Context by default (full mode)", () => {
+        const handler = loadHandler("handler-full.md", "Do the thing.\n");
+        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        assert.match(prompt, /^# Identity\n\nI am the soul\./m);
+        assert.match(prompt, /^# Environment\n\nI am the environment\./m);
+        assert.match(prompt, /^# Context\n\nI am the context\./m);
+        assert.match(prompt, /^# Handler\n\nDo the thing\./m);
+        assert.match(prompt, /^# Available tools$/m);
+        assert.match(prompt, /^# Runtime$/m);
+    });
+
+    it("includes Identity but skips Environment / Context for only-soul", () => {
+        const handler = loadHandler(
+            "handler-only-soul.md",
+            "---\nsystemPrompt: only-soul\n---\nDo the thing.\n",
+        );
+        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        assert.match(prompt, /^# Identity\n\nI am the soul\./m);
+        assert.doesNotMatch(prompt, /^# Environment$/m);
+        assert.doesNotMatch(prompt, /^# Context$/m);
+        assert.match(prompt, /^# Handler\n\nDo the thing\./m);
+        assert.match(prompt, /^# Runtime$/m);
+    });
+
+    it("skips Identity / Environment / Context for none", () => {
+        const handler = loadHandler(
+            "handler-none.md",
+            "---\nsystemPrompt: none\n---\nDo the thing.\n",
+        );
+        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        assert.doesNotMatch(prompt, /^# Identity$/m);
+        assert.doesNotMatch(prompt, /^# Environment$/m);
+        assert.doesNotMatch(prompt, /^# Context$/m);
+        assert.match(prompt, /^# Handler\n\nDo the thing\./m);
+        assert.match(prompt, /^# Available tools$/m);
+        assert.match(prompt, /^# Runtime$/m);
     });
 });

@@ -44,6 +44,18 @@ const MAX_PAGES_PER_POLL = 50;
  */
 const TRANSIENT_RETRY_DELAYS_MS = [2_000, 5_000] as const;
 
+/**
+ * Threshold for self-healing a poisoned delta cursor. Graph occasionally
+ * returns 5xx (typically 504) on `/calendarView/delta` for a *specific*
+ * persisted `$deltatoken` for reasons that do not trigger a 410 — backend
+ * moves, stale snapshots, internal index rebuilds. The inline retry above
+ * absorbs single blips; what it does not absorb is a token that fails
+ * every poll. After this many consecutive poll cycles fail against the
+ * same persisted cursor, we drop it (same path as 410) so the next cycle
+ * walks the window from scratch and gets a fresh delta link.
+ */
+const STUCK_CURSOR_RESET_AFTER_FAILURES = 3;
+
 /** Inputs the daemon hands the poller at construction. */
 export interface CalendarPollerOptions {
     readonly ctx: HostContext;
@@ -86,6 +98,14 @@ export class CalendarPoller {
     private readonly cursorStore: CalendarCursorStore;
     private targets: ReadonlyArray<PollTarget>;
     private refreshJob: Cron | undefined;
+    /**
+     * Consecutive failed-poll counter per target, keyed by
+     * `${upn}\0${graphCalendarId}`. Counts only failures that hit the
+     * persisted cursor on the first page (not page-chain noise) so a
+     * stuck `$deltatoken` self-heals after
+     * `STUCK_CURSOR_RESET_AFTER_FAILURES` cycles.
+     */
+    private readonly stuckCursorFailures = new Map<string, number>();
 
     private constructor(
         opts: CalendarPollerOptions,
@@ -245,7 +265,11 @@ export class CalendarPoller {
 
     private async pollOneIncremental(target: PollTarget): Promise<void> {
         const client = new GraphClient(() => target.auth.getAccessTokenSilent());
-        let cursor: string | null = this.cursorStore.get(target.upn, target.graphCalendarId);
+        const initialCursor: string | null = this.cursorStore.get(
+            target.upn,
+            target.graphCalendarId,
+        );
+        let cursor: string | null = initialCursor;
         const isFreshWalk = cursor === null;
         // The window is only needed when there's no cursor yet (initial walk or
         // post-410 reset). On subsequent pages the next/delta link carries the
@@ -266,9 +290,17 @@ export class CalendarPoller {
                         `calendar ${target.row.name}: delta cursor expired (410); resetting`,
                     );
                     await this.cursorStore.drop(target.upn, target.graphCalendarId);
+                    this.stuckCursorFailures.delete(this.stuckKey(target));
                     cursor = null;
                     window = this.windowIso();
                     continue;
+                }
+                // Only the first-page failure against a persisted cursor counts
+                // as a "stuck cursor" candidate. Failures on a page-chain
+                // continuation (cursor came from page.nextLink) are transient
+                // mid-walk noise, not a poisoned starting token.
+                if (pages === 1 && initialCursor !== null) {
+                    await this.handleStuckCursorFailure(target, err);
                 }
                 throw err;
             }
@@ -289,6 +321,36 @@ export class CalendarPoller {
         if (nextDeltaLink !== null) {
             await this.cursorStore.set(target.upn, target.graphCalendarId, nextDeltaLink);
         }
+        // Reaching here means the poll completed without throwing — clear any
+        // accumulated stuck-cursor failures for this target.
+        this.stuckCursorFailures.delete(this.stuckKey(target));
+    }
+
+    /** Stable map key shared with `CalendarCursorStore` semantics. */
+    private stuckKey(target: PollTarget): string {
+        return `${target.upn}\0${target.graphCalendarId}`;
+    }
+
+    /**
+     * Increment the consecutive-failure counter for a persisted cursor and,
+     * once `STUCK_CURSOR_RESET_AFTER_FAILURES` is reached, drop the cursor so
+     * the next poll cycle does a fresh walk. The error is still rethrown by
+     * the caller — this only ensures the *next* cycle self-heals.
+     */
+    private async handleStuckCursorFailure(target: PollTarget, err: unknown): Promise<void> {
+        const key = this.stuckKey(target);
+        const next = (this.stuckCursorFailures.get(key) ?? 0) + 1;
+        if (next >= STUCK_CURSOR_RESET_AFTER_FAILURES) {
+            const reason = err instanceof Error ? err.message : String(err);
+            this.opts.log(
+                `calendar ${target.row.name}: delta cursor stuck after ${next} consecutive ` +
+                    `failures (${reason}); resetting`,
+            );
+            await this.cursorStore.drop(target.upn, target.graphCalendarId);
+            this.stuckCursorFailures.delete(key);
+            return;
+        }
+        this.stuckCursorFailures.set(key, next);
     }
 
     private async refreshOne(target: PollTarget): Promise<void> {

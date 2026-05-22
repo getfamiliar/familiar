@@ -5,8 +5,8 @@ import { buildProviders } from "./ReverseProxy.js";
 describe("buildProviders", () => {
     it("maps known native providers to their built-in upstream URLs and auth headers", () => {
         const providers = buildProviders({ openai: "okey", anthropic: "akey" }, {});
-        assert.equal(providers.openai?.upstreamBase, "https://api.openai.com");
-        assert.equal(providers.anthropic?.upstreamBase, "https://api.anthropic.com");
+        assert.equal(providers.openai?.upstreamBase, "https://api.openai.com/v1");
+        assert.equal(providers.anthropic?.upstreamBase, "https://api.anthropic.com/v1");
 
         const openaiHeaders: Record<string, string | string[]> = {};
         providers.openai?.applyAuth(openaiHeaders);
