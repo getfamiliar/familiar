@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -230,5 +230,157 @@ describe("buildSystemPrompt — systemPrompt mode", () => {
         assert.match(prompt, /^# Handler\n\nDo the thing\./m);
         assert.match(prompt, /^# Available tools$/m);
         assert.match(prompt, /^# Runtime$/m);
+    });
+});
+
+describe("buildSystemPrompt — skills section", () => {
+    let workspaceRoot: string;
+    let previousWorkspaceRoot: string;
+
+    before(() => {
+        previousWorkspaceRoot = HandlerFile.getWorkspaceRoot();
+        workspaceRoot = mkdtempSync(path.join(tmpdir(), "familiar-skills-test-"));
+        HandlerFile.setWorkspaceRoot(workspaceRoot);
+    });
+
+    after(() => {
+        HandlerFile.setWorkspaceRoot(previousWorkspaceRoot);
+        rmSync(workspaceRoot, { recursive: true, force: true });
+    });
+
+    /** Write a skill at `skills/<id>/SKILL.md` with the given source. */
+    function writeSkill(id: string, source: string): void {
+        const dir = path.join(workspaceRoot, "skills", id);
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(path.join(dir, "SKILL.md"), source, "utf8");
+    }
+
+    /** Reset the skills/ directory between cases. */
+    function resetSkills(): void {
+        rmSync(path.join(workspaceRoot, "skills"), { recursive: true, force: true });
+    }
+
+    /** Build a throwaway handler under the temp workspace. */
+    function loadHandler(relativePath: string, contents: string): HandlerFile {
+        writeFileSync(path.join(workspaceRoot, relativePath), contents, "utf8");
+        return HandlerFile.read(relativePath);
+    }
+
+    it("omits the section entirely when skills/ does not exist", () => {
+        resetSkills();
+        const handler = loadHandler(
+            "no-skills.md",
+            "---\nsystemPrompt: none\n---\nDo the thing.\n",
+        );
+        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        assert.doesNotMatch(prompt, /^# Available skills$/m);
+    });
+
+    it("renders (read) for a skill without tools and no marker when tools are set", () => {
+        resetSkills();
+        writeSkill(
+            "listfiles",
+            "---\nname: listfiles\ndescription: How to keep lists in files.\n---\nbody\n",
+        );
+        writeSkill(
+            "jira_issues",
+            "---\nname: jira_issues\ndescription: Create and update Jira issues.\ntools: jira_create,jira_update\n---\nbody\n",
+        );
+        const handler = loadHandler(
+            "with-skills.md",
+            "---\nsystemPrompt: none\n---\nDo the thing.\n",
+        );
+        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        assert.match(prompt, /^# Available skills$/m);
+        assert.match(prompt, /^- `jira_issues`: Create and update Jira issues\.$/m);
+        assert.match(prompt, /^- `listfiles` \(read\): How to keep lists in files\.$/m);
+    });
+
+    it("places the skills section before # Available tools", () => {
+        resetSkills();
+        writeSkill(
+            "listfiles",
+            "---\nname: listfiles\ndescription: How to keep lists in files.\n---\nbody\n",
+        );
+        const handler = loadHandler(
+            "order-skills.md",
+            "---\nsystemPrompt: none\n---\nDo the thing.\n",
+        );
+        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        const skillsIdx = prompt.indexOf("# Available skills");
+        const toolsIdx = prompt.indexOf("# Available tools");
+        assert.ok(skillsIdx >= 0 && toolsIdx >= 0);
+        assert.ok(skillsIdx < toolsIdx, "skills section must appear before tools section");
+    });
+
+    it("skips entries that are malformed or non-compliant", () => {
+        resetSkills();
+        // Valid one so the section still renders.
+        writeSkill("good", "---\nname: good\ndescription: A real skill.\n---\nbody\n");
+        // Missing SKILL.md.
+        mkdirSync(path.join(workspaceRoot, "skills", "empty-folder"), { recursive: true });
+        // Loose file directly under skills/ (not a folder).
+        writeFileSync(path.join(workspaceRoot, "skills", "notafolder.md"), "loose\n", "utf8");
+        // Malformed YAML frontmatter.
+        writeSkill("malformed", "---\nname: malformed\ndescription: : : :\n  bad\n---\nbody\n");
+        // No frontmatter at all.
+        writeSkill("no-frontmatter", "# just a body, no frontmatter\n");
+        // Frontmatter present but no description.
+        writeSkill("no-desc", "---\nname: no-desc\n---\nbody\n");
+        // Empty description.
+        writeSkill("empty-desc", '---\nname: empty-desc\ndescription: "   "\n---\nbody\n');
+
+        const handler = loadHandler(
+            "robust-skills.md",
+            "---\nsystemPrompt: none\n---\nDo the thing.\n",
+        );
+        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        assert.match(prompt, /^- `good` \(read\): A real skill\.$/m);
+        for (const id of [
+            "empty-folder",
+            "notafolder",
+            "malformed",
+            "no-frontmatter",
+            "no-desc",
+            "empty-desc",
+        ]) {
+            assert.doesNotMatch(
+                prompt,
+                new RegExp(`^- \`${id}\``, "m"),
+                `expected skill "${id}" to be skipped`,
+            );
+        }
+    });
+
+    it("truncates descriptions longer than 256 chars with an ellipsis", () => {
+        resetSkills();
+        const longDescription = "x".repeat(300);
+        writeSkill("long", `---\nname: long\ndescription: ${longDescription}\n---\nbody\n`);
+        const handler = loadHandler(
+            "long-skill.md",
+            "---\nsystemPrompt: none\n---\nDo the thing.\n",
+        );
+        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        const bulletMatch = prompt.match(/^- `long` \(read\): (x+…)$/m);
+        assert.ok(bulletMatch, "expected truncated bullet line");
+        const rendered = bulletMatch?.[1] ?? "";
+        assert.equal(rendered.length, 257, "256 x's plus the ellipsis");
+    });
+
+    it("renders skills sorted by id", () => {
+        resetSkills();
+        writeSkill("zeta", "---\nname: zeta\ndescription: z.\n---\nbody\n");
+        writeSkill("alpha", "---\nname: alpha\ndescription: a.\n---\nbody\n");
+        writeSkill("mu", "---\nname: mu\ndescription: m.\n---\nbody\n");
+        const handler = loadHandler(
+            "sorted-skills.md",
+            "---\nsystemPrompt: none\n---\nDo the thing.\n",
+        );
+        const prompt = buildSystemPrompt(handler, ["send_chat"], "test", false);
+        const alphaIdx = prompt.indexOf("- `alpha`");
+        const muIdx = prompt.indexOf("- `mu`");
+        const zetaIdx = prompt.indexOf("- `zeta`");
+        assert.ok(alphaIdx >= 0 && muIdx >= 0 && zetaIdx >= 0);
+        assert.ok(alphaIdx < muIdx && muIdx < zetaIdx, "skills must be sorted by id");
     });
 });

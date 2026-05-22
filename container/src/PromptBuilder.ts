@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 import { getCoreTimezone } from "./env.js";
 import { HandlerFile } from "./HandlerFile.js";
 
@@ -28,6 +29,13 @@ const MAX_SYSTEM_CHARS = 32000;
 
 /** Hard cap on the assembled user prompt. */
 const MAX_PROMPT_CHARS = 16000;
+
+/**
+ * Maximum characters preserved on a skill description when rendering
+ * the `# Available skills` section. Anything beyond is cut and marked
+ * with a single `…` so the agent sees the value was clipped.
+ */
+const MAX_SKILL_DESCRIPTION_CHARS = 256;
 
 /**
  * Maximum characters preserved on a single key in a payload object.
@@ -118,6 +126,11 @@ export function buildSystemPrompt(
 
     if (handler.body.trim().length > 0) {
         sections.push(`# Handler\n\n${truncate(handler.body, MAX_FILE_CHARS)}`);
+    }
+
+    const skillsSection = buildAvailableSkillsSection();
+    if (skillsSection !== null) {
+        sections.push(skillsSection);
     }
 
     const toolList =
@@ -318,6 +331,124 @@ function capString(value: string, max: number): string {
         return value;
     }
     return `${value.slice(0, max)}…[truncated, original ${value.length} chars]`;
+}
+
+/**
+ * Scan `<workspaceRoot>/skills/` for shared-recipe skills and render
+ * them as the `# Available skills` system-prompt section.
+ *
+ * A skill is `skills/<id>/SKILL.md` where the SKILL.md has at least a
+ * `description` field in its YAML frontmatter. Entries that don't match
+ * this shape (loose files, folders without SKILL.md, malformed YAML,
+ * missing description) are silently skipped — the catalog is
+ * best-effort, not a validation surface.
+ *
+ * The `(read)` marker is rendered for skills whose frontmatter does
+ * not declare a non-empty `tools` field: with no tools the skill is
+ * pure context and can be consumed by `file_read` alone; otherwise it
+ * has to be invoked via `call_handler` so the agent execution context
+ * grants those tools.
+ *
+ * @returns The fully-formatted section (heading + preamble + bullets),
+ *   or `null` when the `skills/` directory is missing or contains no
+ *   valid skills (in which case the section is omitted entirely).
+ */
+function buildAvailableSkillsSection(): string | null {
+    const skillsRoot = path.join(HandlerFile.getWorkspaceRoot(), "skills");
+
+    let entries: string[];
+    try {
+        entries = readdirSync(skillsRoot);
+    } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+            return null;
+        }
+        throw err;
+    }
+
+    const bullets: { id: string; line: string }[] = [];
+    for (const id of entries) {
+        const skillDir = path.join(skillsRoot, id);
+        let stat: ReturnType<typeof statSync>;
+        try {
+            stat = statSync(skillDir);
+        } catch {
+            continue;
+        }
+        if (!stat.isDirectory()) {
+            continue;
+        }
+        const skillFile = path.join(skillDir, "SKILL.md");
+        let raw: string;
+        try {
+            raw = readFileSync(skillFile, "utf8");
+        } catch {
+            continue;
+        }
+        const frontmatter = parseSkillFrontmatter(raw);
+        if (frontmatter === null) {
+            continue;
+        }
+        const description = frontmatter.description;
+        if (typeof description !== "string" || description.trim().length === 0) {
+            continue;
+        }
+        const tools = frontmatter.tools;
+        const hasTools = typeof tools === "string" && tools.trim().length > 0;
+        const trimmedDescription = description.trim();
+        const cappedDescription =
+            trimmedDescription.length > MAX_SKILL_DESCRIPTION_CHARS
+                ? `${trimmedDescription.slice(0, MAX_SKILL_DESCRIPTION_CHARS)}…`
+                : trimmedDescription;
+        const marker = hasTools ? "" : " (read)";
+        bullets.push({ id, line: `- \`${id}\`${marker}: ${cappedDescription}` });
+    }
+
+    if (bullets.length === 0) {
+        return null;
+    }
+
+    bullets.sort((a, b) => a.id.localeCompare(b.id));
+
+    const preamble = [
+        "The following skills are available in the `skills/` folder.",
+        'Use like `file_read({path: "skills/<id>/SKILL.md"})` or',
+        '`call_handler({topic: "skills:<id>", handler: "SKILL", prompt?, payload?})`.',
+        "If reading is sufficient, this is marked in the list.",
+    ].join(" ");
+
+    return `# Available skills\n\n${preamble}\n\n${bullets.map((b) => b.line).join("\n")}`;
+}
+
+/**
+ * Parse the YAML frontmatter block out of a SKILL.md source string.
+ * Returns the parsed mapping, or `null` if there is no frontmatter,
+ * the YAML is malformed, or it doesn't parse to a mapping.
+ *
+ * This is intentionally separate from {@link HandlerFile}'s
+ * `parseHandler` — that function does typed handler-header validation
+ * (model, temperature, …) we don't want to inherit here. The regex is
+ * the same shape as in `HandlerFile`.
+ */
+function parseSkillFrontmatter(source: string): Record<string, unknown> | null {
+    const trimmed = source.trim();
+    const match = trimmed.match(/^---\r?\n([\s\S]*?)\r?\n?---\r?\n?([\s\S]*)$/);
+    if (!match) {
+        return null;
+    }
+    let parsed: unknown;
+    try {
+        parsed = parseYaml(match[1] ?? "");
+    } catch {
+        return null;
+    }
+    if (parsed === null || parsed === undefined) {
+        return null;
+    }
+    if (typeof parsed !== "object" || Array.isArray(parsed)) {
+        return null;
+    }
+    return parsed as Record<string, unknown>;
 }
 
 /**
