@@ -74,7 +74,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
     lintInferenceProviders(config, defaultProvider, errors);
 
     optionalPositiveInt(config, "core.logRetentionDays", warnings);
-    optionalPositiveInt(config, "core.agentTimeout", warnings);
+    optionalPositiveInt(config, "core.agentStepTimeout", warnings);
     optionalPositiveInt(config, "core.toolCallOffloadingLimit", warnings);
     optionalBool(config, "core.logSystemPrompt", warnings);
     optionalIanaTimezone(config, "core.timezone", warnings);

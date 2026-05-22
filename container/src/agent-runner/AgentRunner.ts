@@ -58,9 +58,10 @@ export interface AgentRunnerContext {
     /** The agentrun this invocation is for. State is already `running`. */
     readonly row: AgentRunRow;
     /**
-     * Scheduler-owned abort signal. Fires on shutdown or per-agentrun
-     * timeout. The runner threads it into `agent.generate`. When
-     * `signal.aborted` and `signal.reason instanceof AgentRunTimeoutError`,
+     * Scheduler-owned abort signal. Fires on shutdown or per-step
+     * timeout (the Scheduler arms a per-step budget and resets it on
+     * every completed step). The runner threads it into `agent.generate`.
+     * When `signal.aborted` and `signal.reason instanceof AgentRunTimeoutError`,
      * the runner rethrows the timeout typed; for other reasons (e.g.
      * a generic shutdown abort) the underlying SDK error is rethrown
      * for the Scheduler to classify.
@@ -99,6 +100,13 @@ export interface AgentRunnerContext {
      */
     readonly recordStep: (step: NewStepResult) => Promise<void>;
     /**
+     * Fires after every SDK step the runner completes (right after
+     * {@link recordStep} resolves). The Scheduler uses it to reset
+     * the per-step timeout: each finished step is evidence the runner
+     * is still making progress, so the cap restarts for the next step.
+     */
+    readonly onStepFinished: () => void;
+    /**
      * Stamp resolved model id (and optionally the system prompt) onto
      * the agentrun row right after `ModelFactory.build`. The Scheduler
      * forwards to `AgentRunBus.update`. Done before the first
@@ -128,8 +136,8 @@ export interface AgentRunnerContext {
  *   computed `delayMs` plus the per-handler `maxRetries` override
  *   so the Scheduler can decide postpone-vs-fail.
  * - {@link AgentRunTimeoutError} — `ctx.signal` was aborted with a
- *   timeout reason; the SDK's abort path translates to this typed
- *   exception so the Scheduler can settle with a clear message.
+ *   per-step timeout reason; the SDK's abort path translates to this
+ *   typed exception so the Scheduler can settle with a clear message.
  * - Other `Error` — anything non-retryable: handler load failures,
  *   model construction errors, 4xx from the provider, SDK bugs.
  *   The Scheduler settles `failed` with the formatted message.
@@ -413,6 +421,7 @@ export class AgentRunner {
             toolResults: step.toolResults,
             rawResult: CAPTURE_RAW_STEP_RESULT ? safeJsonClone(step) : undefined,
         });
+        ctx.onStepFinished();
     }
 }
 

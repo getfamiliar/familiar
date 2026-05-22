@@ -97,7 +97,7 @@ async function main(): Promise<void> {
     const recovery = new AgentrunRecovery(connection, log.child({ component: "recovery" }));
     const timezone = getCoreTimezone();
 
-    const defaultTimeoutMs = (optionalEnvInt("AGENT_TIMEOUT_SECONDS") ?? 60) * 1000;
+    const stepTimeoutMs = (optionalEnvInt("AGENTSTEP_TIMEOUT_SECONDS") ?? 150) * 1000;
     const retryCap = optionalEnvInt("INFERENCE_MAX_RETRIES") ?? 3;
     const toolCallOffloadingLimit =
         optionalEnvInt("TOOL_CALL_OFFLOADING_LIMIT") ?? DEFAULT_TOOL_CALL_OFFLOADING_LIMIT;
@@ -115,7 +115,7 @@ async function main(): Promise<void> {
         pluginToolsClient,
         chat,
         recovery,
-        defaultTimeoutMs,
+        stepTimeoutMs,
         retryCap,
         toolCallOffloadingLimit,
         maxConcurrentExecuting: 1,

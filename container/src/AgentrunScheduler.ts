@@ -63,11 +63,17 @@ export interface SchedulerDeps {
     /** Startup recovery helper. Implementations expose `recover()` only. */
     readonly recovery: Pick<AgentrunRecovery, "recover">;
     /**
-     * Per-agentrun wall-clock budget for actual execution time. The
-     * timer is paused while a runner is parked on `waitForSubagent`,
-     * so this counts only time the runner is making progress.
+     * Per-*step* wall-clock budget for `agent.generate()` progress.
+     * The Scheduler arms a single timer with this budget at start,
+     * resets it on every completed SDK step (via the
+     * `onStepFinished` callback the runner fires from the SDK's
+     * `onStepFinish`), and pauses it while a runner is parked on
+     * `waitForSubagent` (so a slow child handler does not consume
+     * the parent's step budget). The cap catches a single wedged
+     * step (hung tool call, stuck model) without penalising
+     * long-but-healthy runs of many short steps.
      */
-    readonly defaultTimeoutMs: number;
+    readonly stepTimeoutMs: number;
     /** Default retry cap; overridden per-handler via YAML frontmatter. */
     readonly retryCap: number;
     /**
@@ -113,16 +119,12 @@ interface ActiveAgent {
     readonly waiters: Map<string, Waiter>;
     /** `true` while the runner is parked on at least one waiter. */
     paused: boolean;
-    /** Active timeout. Cleared during pauses, reinstalled on resume. */
-    timeoutHandle: TimerHandle | null;
     /**
-     * Per-run budget that hasn't been consumed yet, in ms. Decreases by
-     * `clock.now() - lastResumedAt` whenever the runner pauses; the
-     * remainder is what we re-arm the timer with on resume.
+     * Active per-step timeout. Re-armed on every completed step via
+     * {@link AgentrunScheduler.resetStepTimeout}; cleared during pauses
+     * and re-armed (with a fresh full step budget) on resume.
      */
-    remainingBudgetMs: number;
-    /** `clock.now()` at start or most recent resume. */
-    lastResumedAt: number;
+    timeoutHandle: TimerHandle | null;
 }
 
 /**
@@ -162,9 +164,11 @@ type RunOutcome =
  *    `calltype='called'` sibling is also settled, the parent moves
  *    `waiting → pending` and the next pick picks it up as a resume.
  * 5. **Timeouts, retries, failure routing.** Owns the abort
- *    controller, the per-run timer, and the classification of run
- *    promise outcomes (ok / retryable / timeout / shutdown / failed).
- *    The runner stays free of any DB / lifecycle plumbing.
+ *    controller, the per-step timer (reset on every completed step
+ *    via the runner's `onStepFinished` callback, paused during
+ *    `waitForSubagent`), and the classification of run promise
+ *    outcomes (ok / retryable / timeout / shutdown / failed). The
+ *    runner stays free of any DB / lifecycle plumbing.
  */
 export class AgentrunScheduler {
     private readonly active = new Map<string, ActiveAgent>();
@@ -316,7 +320,7 @@ export class AgentrunScheduler {
      * and launches `runner.run(ctx)` fire-and-forget.
      */
     private async startFresh(row: AgentRunRow): Promise<void> {
-        const { agentRunBus, log, clock, runnerFactory } = this.deps;
+        const { agentRunBus, log, runnerFactory } = this.deps;
 
         await agentRunBus.update(row.id, { state: "running" });
 
@@ -328,8 +332,6 @@ export class AgentrunScheduler {
             waiters: new Map(),
             paused: false,
             timeoutHandle: null,
-            remainingBudgetMs: this.deps.defaultTimeoutMs,
-            lastResumedAt: clock.now(),
         };
         active.timeoutHandle = this.armTimeout(active);
 
@@ -356,13 +358,16 @@ export class AgentrunScheduler {
     /**
      * Resume a paused runner. Flips state `pending → running` (the
      * parent transitions to `pending` when its last called child
-     * settled), re-arms the timeout for the remaining budget, marks
-     * the entry executing, and resolves every parked waiter with its
-     * corresponding child's settled row. Tool callbacks unblock; the
-     * runner's `agent.generate` continues from the next step.
+     * settled), arms a fresh full per-step timeout for the resumed
+     * step (the tool call that triggered `waitForSubagent` is about
+     * to return; the SDK continues that step until its next
+     * `onStepFinish`), marks the entry executing, and resolves every
+     * parked waiter with its corresponding child's settled row. Tool
+     * callbacks unblock; the runner's `agent.generate` continues from
+     * the next step.
      */
     private async resumePaused(row: AgentRunRow): Promise<void> {
-        const { agentRunBus, clock } = this.deps;
+        const { agentRunBus } = this.deps;
         const active = this.active.get(row.id);
         if (!active) {
             // Defensive: pickAndDispatch only routes here when the
@@ -373,7 +378,6 @@ export class AgentrunScheduler {
         await agentRunBus.update(row.id, { state: "running" });
 
         active.paused = false;
-        active.lastResumedAt = clock.now();
         active.timeoutHandle = this.armTimeout(active);
 
         // Resolve every parked waiter. Fetch each child's settled row
@@ -404,17 +408,19 @@ export class AgentrunScheduler {
             throw new Error(`waitForSubagent: parent ${parentId} is not in the active map`);
         }
 
-        // First waiter in this pause window: stop the timer, fold the
-        // elapsed exec time into the remaining budget, mark paused,
-        // flip DB state. Subsequent waiters from parallel tool calls
-        // skip the bookkeeping — the parent is already paused.
+        // First waiter in this pause window: stop the timer, mark
+        // paused, flip DB state. The parent is parked mid-step inside
+        // the tool call that triggered this — its step timer must not
+        // tick while the child runs through its own (possibly many)
+        // steps. On resume we arm a fresh full step budget for the
+        // continuation of the suspended step.
+        // Subsequent waiters from parallel tool calls skip the
+        // bookkeeping — the parent is already paused.
         if (!active.paused) {
             if (active.timeoutHandle !== null) {
                 clock.clearTimeout(active.timeoutHandle);
                 active.timeoutHandle = null;
             }
-            const elapsed = clock.now() - active.lastResumedAt;
-            active.remainingBudgetMs = Math.max(0, active.remainingBudgetMs - elapsed);
             active.paused = true;
             await agentRunBus.update(parentId, { state: "waiting" });
             // Pausing freed our executing slot — let the picker run.
@@ -570,14 +576,33 @@ export class AgentrunScheduler {
         return { kind: "failed", error: new Error(String(err)) };
     }
 
-    /** Arm (or re-arm) the per-run timeout. Returns the new handle. */
+    /** Arm a fresh per-step timeout with the configured budget. */
     private armTimeout(active: ActiveAgent): TimerHandle {
         const start = this.deps.clock.now();
-        const budget = active.remainingBudgetMs;
+        const budget = this.deps.stepTimeoutMs;
         return this.deps.clock.setTimeout(() => {
             const elapsed = this.deps.clock.now() - start;
             active.abortController.abort(new AgentRunTimeoutError(elapsed));
         }, budget);
+    }
+
+    /**
+     * Reset the per-step timeout after a successful SDK step. Called
+     * from the per-row `onStepFinished` closure threaded into the
+     * runner context. No-ops while paused as a defence in depth — the
+     * SDK shouldn't be emitting steps while the runner is parked on
+     * `waitForSubagent`, but if it did we'd otherwise re-arm a timer
+     * the pause path just cleared.
+     */
+    private resetStepTimeout(active: ActiveAgent): void {
+        if (active.paused) {
+            return;
+        }
+        if (active.timeoutHandle !== null) {
+            this.deps.clock.clearTimeout(active.timeoutHandle);
+            active.timeoutHandle = null;
+        }
+        active.timeoutHandle = this.armTimeout(active);
     }
 
     /**
@@ -642,6 +667,7 @@ export class AgentrunScheduler {
             recordStep: async (step: NewStepResult) => {
                 await stepBus.add(step);
             },
+            onStepFinished: () => this.resetStepTimeout(active),
             stampModel: async (model, systemPrompt) => {
                 await agentRunBus.update(row.id, {
                     model,

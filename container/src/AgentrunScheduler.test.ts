@@ -55,7 +55,7 @@ interface Harness {
 
 interface HarnessOptions {
     readonly behaviors: Record<string, MockBehavior>;
-    readonly defaultTimeoutMs?: number;
+    readonly stepTimeoutMs?: number;
     readonly retryCap?: number;
     readonly maxConcurrentExecuting?: number;
 }
@@ -117,7 +117,7 @@ function buildHarness(opts: HarnessOptions): Harness {
         pluginToolsClient,
         chat,
         recovery,
-        defaultTimeoutMs: opts.defaultTimeoutMs ?? 60_000,
+        stepTimeoutMs: opts.stepTimeoutMs ?? 60_000,
         retryCap: opts.retryCap ?? 3,
         maxConcurrentExecuting: opts.maxConcurrentExecuting ?? 1,
         subscribeChanges: (handler) => agentRunBus.subscribe(() => handler()),
@@ -462,12 +462,13 @@ describe("AgentrunScheduler — retries", () => {
 });
 
 describe("AgentrunScheduler — timeouts", () => {
-    it("aborts a runner exceeding defaultTimeoutMs and settles failed", async () => {
+    it("aborts a wedged step exceeding stepTimeoutMs and settles failed", async () => {
         const harness = buildHarness({
             behaviors: {
                 index: async (ctx) =>
                     new Promise<string>((_resolve, reject) => {
-                        // Park forever; the Scheduler should abort us.
+                        // Park forever without ever firing onStepFinished;
+                        // the Scheduler's per-step timer should abort us.
                         const onAbort = () => {
                             // The runner converts the abort into the typed
                             // error per the production AgentRunner; the
@@ -482,7 +483,7 @@ describe("AgentrunScheduler — timeouts", () => {
                         ctx.signal.addEventListener("abort", onAbort, { once: true });
                     }),
             },
-            defaultTimeoutMs: 1000,
+            stepTimeoutMs: 1000,
         });
         try {
             const { root } = await seedRootAgentrun(harness.eventBus, harness.agentRunBus, "index");
@@ -499,19 +500,56 @@ describe("AgentrunScheduler — timeouts", () => {
 
             const settled = await waitForTerminal(harness.agentRunBus, harness.store, root.id);
             assert.equal(settled.state, "failed");
-            assert.match(settled.error ?? "", /timed out/i);
+            assert.match(settled.error ?? "", /step timed out/i);
         } finally {
             await harness.stop();
         }
     });
 
-    it("pause time is excluded from the timeout budget", async () => {
+    it("step boundaries reset the per-step timeout", async () => {
+        // A behavior that loops well past the cumulative step budget,
+        // calling `onStepFinished` between each iteration and advancing
+        // the clock by just under the per-step budget. The agentrun
+        // should NOT time out — each completed step resets the timer.
+        let clock!: MockClock;
+        const stepBudget = 1000;
+        const stepsToRun = 5;
+
+        const behavior: MockBehavior = async (ctx) => {
+            for (let i = 0; i < stepsToRun; i++) {
+                // Advance just under the per-step budget — no timeout
+                // would fire if the timer is reset on each boundary.
+                clock.advance(stepBudget - 10);
+                ctx.onStepFinished();
+            }
+            return "done";
+        };
+
+        const harness = buildHarness({
+            behaviors: { index: behavior },
+            stepTimeoutMs: stepBudget,
+        });
+        clock = harness.clock;
+        try {
+            const { root } = await seedRootAgentrun(harness.eventBus, harness.agentRunBus, "index");
+            const settled = await waitForTerminal(harness.agentRunBus, harness.store, root.id);
+            assert.equal(settled.state, "done");
+            assert.equal(settled.resultText, "done");
+        } finally {
+            await harness.stop();
+        }
+    });
+
+    it("parent's step timer does not count time spent paused on waitForSubagent", async () => {
         let agentRunBus!: MockAgentRunBus;
         let clock!: MockClock;
 
         const parentBehavior: MockBehavior = async (ctx) => {
-            // Spend 300ms of execution, then suspend, wait while clock
-            // jumps 2000ms in pause, then resume and finish fast.
+            // Spend 300ms of execution (well within the 1000ms step
+            // budget), then suspend on a child. While paused, the clock
+            // will jump far past the step budget — but the parent's
+            // step timer must be paused too, so resume gets a fresh
+            // budget and the parent finishes cleanly.
             clock.advance(300);
             const child = await agentRunBus.add({
                 eventId: ctx.row.eventId,
@@ -530,11 +568,11 @@ describe("AgentrunScheduler — timeouts", () => {
             behaviors: {
                 index: parentBehavior,
                 slow: async () => {
-                    // Child consumes its OWN budget; for this test the child returns immediately.
+                    // Child consumes its OWN per-step budget; returns immediately here.
                     return "done";
                 },
             },
-            defaultTimeoutMs: 1000,
+            stepTimeoutMs: 1000,
         });
         agentRunBus = harness.agentRunBus;
         clock = harness.clock;
@@ -744,7 +782,7 @@ describe("AgentrunScheduler — disaster recovery", () => {
                 },
             },
             recovery,
-            defaultTimeoutMs: 60_000,
+            stepTimeoutMs: 60_000,
             retryCap: 3,
             maxConcurrentExecuting: 1,
             subscribeChanges: (handler) => agentRunBus.subscribe(() => handler()),

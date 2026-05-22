@@ -101,13 +101,15 @@ export interface AgentContainerConfig {
      */
     readonly toolCallOffloadingLimit: number;
     /**
-     * Hard cap (in seconds) on a single `agent.generate()` call.
-     * Prevents a wedged upstream LLM from parking the agentrun
-     * watcher slot indefinitely. Reflected to the container as
-     * `AGENT_TIMEOUT_SECONDS`. Sourced from `core.agentTimeout` in
-     * `config.yml`, defaulting to 60.
+     * Hard cap (in seconds) on a *single SDK step* of `agent.generate()`.
+     * The Scheduler resets this timer on every completed step, so it
+     * bounds the slowest step rather than the whole agentrun — catching
+     * a wedged tool call or stuck model without penalising
+     * long-but-healthy runs. Reflected to the container as
+     * `AGENTSTEP_TIMEOUT_SECONDS`. Sourced from `core.agentStepTimeout`
+     * in `config.yml`, defaulting to 150.
      */
-    readonly agentTimeoutSeconds: number;
+    readonly agentStepTimeoutSeconds: number;
     /**
      * When `true`, AgentRunner JSON-serializes the full SDK step
      * result into `stepresults.raw_result`. Reflected to the
@@ -208,7 +210,7 @@ export class AgentContainer {
             "-e",
             `TOOL_CALL_OFFLOADING_LIMIT=${this.config.toolCallOffloadingLimit}`,
             "-e",
-            `AGENT_TIMEOUT_SECONDS=${this.config.agentTimeoutSeconds}`,
+            `AGENTSTEP_TIMEOUT_SECONDS=${this.config.agentStepTimeoutSeconds}`,
             "-e",
             `INFERENCE_CAPTURE_RAW_STEP_RESULT=${this.config.captureRawStepResultToDatabase}`,
             "-e",

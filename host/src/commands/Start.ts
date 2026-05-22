@@ -106,7 +106,7 @@ export const startCommand = defineCommand({
         const defaultProvider = config.getString("inference.defaultProvider");
         const defaultModel = config.getString("inference.defaultModel");
         const inferenceMaxRetries = config.getNumber("inference.maxRetries", 3);
-        const agentTimeoutSeconds = config.getNumber("core.agentTimeout", 60);
+        const agentStepTimeoutSeconds = config.getNumber("core.agentStepTimeout", 150);
         const toolCallOffloadingLimit = config.getNumber(
             "core.toolCallOffloadingLimit",
             DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
@@ -246,7 +246,7 @@ export const startCommand = defineCommand({
             defaultModel,
             inferenceMaxRetries,
             toolCallOffloadingLimit,
-            agentTimeoutSeconds,
+            agentStepTimeoutSeconds,
             logSystemPrompt,
             captureRawStepResultToDatabase,
             providerTypes,
