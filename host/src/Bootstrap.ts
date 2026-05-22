@@ -14,8 +14,25 @@ import { resolve } from "node:path";
  */
 export interface Bootstrap {
     readonly dataDir: string;
+    /**
+     * Pidfile written by the daemon and consumed by `./cli.sh stop`.
+     * Lives under `tmp/` because it's only meaningful while the daemon
+     * is alive; safe to delete when the daemon isn't running.
+     */
     readonly pidFile: string;
+    /**
+     * File recording the loopback host port that `familiar-postgres`
+     * is published on. Lives under `tmp/` because it's only meaningful
+     * while the postgres container is up; rewritten on each
+     * `./cli.sh start`.
+     */
     readonly postgresPortFile: string;
+    /**
+     * LLM debug-capture directory written by `ReverseProxy` when
+     * `inference.captureModelHttpRequestBodies` is on. Ephemeral,
+     * gitignored, safe to wipe.
+     */
+    readonly llmDebugDir: string;
     readonly workspaceDir: string;
     /**
      * Absolute host path of `data/workspace-template/`. Copied into
@@ -120,12 +137,14 @@ export function isDevMode(): boolean {
 export function bootstrap(): Bootstrap {
     const projectRoot = resolve(import.meta.dirname, "../..");
     const dataDir = `${projectRoot}/data`;
+    const tmpDir = `${projectRoot}/tmp`;
     const containerSrcDir = `${projectRoot}/container/src`;
     const sharedBuildDir = `${projectRoot}/shared/build`;
     return Object.freeze({
         dataDir,
-        pidFile: `${dataDir}/.daemon.pid`,
-        postgresPortFile: `${dataDir}/.postgres-port`,
+        pidFile: `${tmpDir}/.daemon.pid`,
+        postgresPortFile: `${tmpDir}/.postgres-port`,
+        llmDebugDir: `${tmpDir}/llm-debug`,
         workspaceDir: `${dataDir}/workspace`,
         workspaceTemplateDir: `${dataDir}/workspace-template`,
         postgresDataDir: `${dataDir}/postgres`,
@@ -135,8 +154,8 @@ export function bootstrap(): Bootstrap {
         sharedBuildDir,
         configFile: `${projectRoot}/config/config.yml`,
         mcpConfigFile: `${projectRoot}/config/mcp.yml`,
-        tmpDir: `${projectRoot}/tmp`,
-        scratchDir: `${projectRoot}/tmp/scratch`,
+        tmpDir,
+        scratchDir: `${tmpDir}/scratch`,
         hostUid: process.getuid?.() ?? 0,
         hostGid: process.getgid?.() ?? 0,
     });

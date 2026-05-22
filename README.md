@@ -29,7 +29,7 @@ still has the old `ea` role and database baked in. The renamed daemon expects
 
 ```bash
 ./cli.sh stop                       # if it was running
-rm -rf data/postgres data/.postgres-port
+rm -rf data/postgres tmp/.postgres-port
 ./cli.sh start                      # recreates the cluster as familiar/familiar
 ```
 

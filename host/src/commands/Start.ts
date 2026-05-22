@@ -176,7 +176,7 @@ export const startCommand = defineCommand({
             providers,
             log: log.child({ component: "reverse-proxy" }),
             captureModelHttpRequestBodies,
-            captureDir: `${boot.dataDir}/llm-debug`,
+            captureDir: boot.llmDebugDir,
         });
         const mcpGateway = new McpGateway({
             registry: mcpRegistry,
