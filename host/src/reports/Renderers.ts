@@ -216,7 +216,6 @@ export function renderStepResult(run: AgentRunRow, step: StepResultRow): string 
             const match = id
                 ? results.find((r) => (r as { toolCallId?: string }).toolCallId === id)
                 : undefined;
-            const output = match ? (match as { output?: unknown }).output : undefined;
             lines.push(`**Tool call:** \`${name}\``);
             lines.push("");
             lines.push("```json");
@@ -225,13 +224,40 @@ export function renderStepResult(run: AgentRunRow, step: StepResultRow): string 
             lines.push("");
             lines.push("→");
             lines.push("");
-            lines.push("```json");
-            lines.push(truncateJson(output));
-            lines.push("```");
-            lines.push("");
+            if (match && (match as { type?: string }).type === "tool-error") {
+                const errorText = (match as { error?: unknown }).error;
+                pushBlockquote(lines, asErrorText(errorText));
+                lines.push("");
+            } else {
+                const output = match ? (match as { output?: unknown }).output : undefined;
+                lines.push("```json");
+                lines.push(truncateJson(output));
+                lines.push("```");
+                lines.push("");
+            }
         }
     }
     return joinSection(lines);
+}
+
+/**
+ * Coerce a persisted `tool-error.error` field to a renderable string.
+ * `AgentRunner` already flattens errors to `<code>: <message>` strings
+ * before persisting, but older rows (or future SDK changes) may carry
+ * other shapes — handle them defensively.
+ */
+function asErrorText(value: unknown): string {
+    if (typeof value === "string" && value.length > 0) {
+        return value;
+    }
+    if (value === undefined || value === null) {
+        return "tool error";
+    }
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
+    }
 }
 
 /**

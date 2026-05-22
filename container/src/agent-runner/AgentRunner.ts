@@ -16,6 +16,7 @@ import { fetchAncestorChain } from "./AgentRunLineage.js";
 import { AgentRunTimeoutError } from "./AgentRunTimeoutError.js";
 import { computeRetryDelay } from "./computeRetryDelay.js";
 import { formatInferenceError } from "./formatInferenceError.js";
+import { mergeToolErrorsIntoResults } from "./mergeToolErrorsIntoResults.js";
 import { RetryableModelException } from "./RetryableModelException.js";
 import { synthesizeResultText } from "./synthesizeResultText.js";
 
@@ -387,6 +388,7 @@ export class AgentRunner {
             step.finishReason === "error" ||
             step.finishReason === "unknown";
         const logLevel: "warn" | "debug" = isInconclusive ? "warn" : "debug";
+        const persistedToolResults = mergeToolErrorsIntoResults(step.toolResults, step.content);
         ctx.log[logLevel](
             {
                 stepNumber: step.stepNumber,
@@ -397,7 +399,7 @@ export class AgentRunner {
                 reasoning: step.reasoningText ?? null,
                 text: step.text || null,
                 toolCalls: summarizeToolCalls(step.toolCalls),
-                toolResults: step.toolResults,
+                toolResults: persistedToolResults,
                 contentBlocks: isInconclusive ? step.content : undefined,
                 warnings: step.warnings ?? undefined,
             },
@@ -418,7 +420,7 @@ export class AgentRunner {
             outputTokensText: step.usage.outputTokenDetails?.textTokens ?? null,
             outputTokensReasoning: step.usage.outputTokenDetails?.reasoningTokens ?? null,
             toolCalls: step.toolCalls,
-            toolResults: step.toolResults,
+            toolResults: persistedToolResults,
             rawResult: CAPTURE_RAW_STEP_RESULT ? safeJsonClone(step) : undefined,
         });
         ctx.onStepFinished();
