@@ -46,9 +46,14 @@ itself is gitignored and safe to `rm -rf` whenever a clean slate is wanted; the 
 > mount — by docker semantics the last `-v` wins. We don't validate this; if a specific MCP needs
 > to mount something else at `/work`, it's allowed.
 
-The `command` field is **ignored** for npm/pypi sources. The entry point is fixed to `npx -y` /
-`uvx` to keep the runtime contract predictable. Use `source: docker-mcp-registry` with a custom
-image for anything else.
+The `command` field is honored for `npm` and `pypi` sources when the package's published
+executable name differs from the package name. Setting `command: <bin>` switches the invocation to
+`npx -y --package <pkg>[@<ver>] <bin>` / `uvx --from <pkg>[==<ver>] <bin>`; with `command` unset,
+the simpler `npx -y <pkg>` / `uvx <pkg>` form runs (which assumes the entry-point name matches the
+package name). `args` then act as the command's CLI args.
+
+For `docker-mcp-registry` and `external` sources, `command` is currently ignored — those have no
+CLI entrypoint to override. Use a custom image if you need to.
 
 ## Adding an MCP by hand: `fetch` walkthrough
 
@@ -90,7 +95,7 @@ doubles as a tools-DSL group name — see "Built-in groups" below.
 | `env` | array | no | `[]` | Environment variables; see below. |
 | `volumes` | array of strings | no | `[]` | Bind mounts as `host:container[:ro]`. |
 | `args` | array of strings | no | `[]` | CLI args appended after the image's `CMD`. |
-| `command` | string \| null | no | `null` | When set, overrides the image's `ENTRYPOINT`. |
+| `command` | string \| null | no | `null` | For `npm`/`pypi`: executable to run when it differs from the package name (switches to `--package` / `--from` form). Ignored for `docker-mcp-registry` and `external`. |
 | `network` | mapping | no | see below | Network constraints. |
 | `idleTimeoutSeconds` | positive integer | no | `1800` | Seconds of stdio inactivity after which the child is closed and reaped. Next request cold-spawns. Has no effect on HTTP / external transports. |
 

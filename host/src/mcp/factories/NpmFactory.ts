@@ -41,10 +41,10 @@ export interface NpmFactoryConfig extends RuntimeContainerConfig {
  * can pass `--login` (or any other CLI tail) without losing the
  * mcp.yml `args:` block — flags like `--org-mode` always apply.
  *
- * The `entry.command` field is ignored for npm sources — the entry
- * point is fixed to `npx -y` to keep the runtime image's contract
- * predictable. Users who need a custom entrypoint should pick the
- * `docker-mcp-registry` source with their own image.
+ * When `entry.command` is set, the package and executable are
+ * split via `npx -y --package <pkg>[@<ver>] <command>` — required
+ * when the package's published binary name differs from the
+ * package name. `entry.args` then act as the command's CLI args.
  */
 export function buildNpmDockerArgs(
     entry: McpEntry,
@@ -111,7 +111,11 @@ export function buildNpmDockerArgs(
     }
 
     const versionSuffix = entry.version === undefined ? "" : `@${entry.version}`;
-    args.push(`${entry.package}${versionSuffix}`);
+    if (entry.command === null) {
+        args.push(`${entry.package}${versionSuffix}`);
+    } else {
+        args.push("--package", `${entry.package}${versionSuffix}`, entry.command);
+    }
 
     // mcp.yml args always apply; user-supplied `appendArgs` tail them.
     // The order matters for tools that consume args positionally —

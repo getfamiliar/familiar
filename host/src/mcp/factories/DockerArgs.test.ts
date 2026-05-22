@@ -86,6 +86,42 @@ describe("buildPypiDockerArgs — appendArgs tails entry.args", () => {
     });
 });
 
+describe("buildPypiDockerArgs — command splits package from executable", () => {
+    it("emits `--from <pkg>==<ver> <command>` when entry.command is set", () => {
+        const entry = entryFixture({
+            source: "pypi",
+            package: "iflow-mcp_ctvidic-whoop-mcp-server",
+            version: "0.1.0",
+            command: "whoop-mcp-server",
+            args: ["--verbose"],
+        });
+        const argv = buildPypiDockerArgs(entry, runtime, { appendArgs: ["--debug"] });
+        const tail = argv.slice(argv.indexOf("--from"));
+        assert.deepEqual(tail, [
+            "--from",
+            "iflow-mcp_ctvidic-whoop-mcp-server==0.1.0",
+            "whoop-mcp-server",
+            "--verbose",
+            "--debug",
+        ]);
+    });
+});
+
+describe("buildNpmDockerArgs — command splits package from executable", () => {
+    it("emits `--package <pkg>@<ver> <command>` when entry.command is set", () => {
+        const entry = entryFixture({
+            source: "npm",
+            package: "@scope/some-pkg",
+            version: "1.2.3",
+            command: "some-bin",
+            args: ["--flag"],
+        });
+        const argv = buildNpmDockerArgs(entry, runtime);
+        const tail = argv.slice(argv.indexOf("--package"));
+        assert.deepEqual(tail, ["--package", "@scope/some-pkg@1.2.3", "some-bin", "--flag"]);
+    });
+});
+
 describe("buildDockerRegistryArgs — appendArgs tails entry.args", () => {
     it("concatenates entry.args + appendArgs after the image", () => {
         const entry = entryFixture({

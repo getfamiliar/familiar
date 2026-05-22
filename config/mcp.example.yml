@@ -58,3 +58,22 @@ fetch:
 #   source: npm
 #   package: "@dangahagan/weather-mcp"
 #   version: "1.6.1"
+
+# Example of a pypi-source MCP whose published executable name differs
+# from the package name. Without `command:`, `uvx <pkg>` would look for
+# an `iflow-mcp_ctvidic-whoop-mcp-server` bin and fail; setting
+# `command:` switches the invocation to `uvx --from <pkg> <bin>`.
+#
+# whoop:
+#   title: "Whoop"
+#   description: "Access Whoop sleep, recovery, workout, and cycle data."
+#   source: pypi
+#   package: iflow-mcp_ctvidic-whoop-mcp-server
+#   version: 0.1.0
+#   command: whoop-mcp-server
+#   env:
+#     - name: WHOOP_EMAIL
+#       value: you@example.com
+#     - name: WHOOP_PASSWORD
+#       value: REPLACE_ME
+#       is_secret: true

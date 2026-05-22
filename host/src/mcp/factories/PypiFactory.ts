@@ -30,7 +30,12 @@ export interface PypiFactoryConfig extends RuntimeContainerConfig {
  * npm helper for how `interactive`, `containerName`, and
  * `appendArgs` interact with the bastion defaults.
  *
- * `entry.command` is ignored — see the matching note in NpmFactory.
+ * When `entry.command` is set, the package and command are split
+ * via `uvx --from <pkg>[==<ver>] <command>` — required when the
+ * published executable name differs from the package name (e.g.
+ * package `iflow-mcp_ctvidic-whoop-mcp-server` ships a
+ * `whoop-mcp-server` entry point). `entry.args` and `appendArgs`
+ * then act as the command's CLI args.
  */
 export function buildPypiDockerArgs(
     entry: McpEntry,
@@ -85,7 +90,11 @@ export function buildPypiDockerArgs(
     }
 
     const versionSuffix = entry.version === undefined ? "" : `==${entry.version}`;
-    args.push(`${entry.package}${versionSuffix}`);
+    if (entry.command === null) {
+        args.push(`${entry.package}${versionSuffix}`);
+    } else {
+        args.push("--from", `${entry.package}${versionSuffix}`, entry.command);
+    }
 
     // mcp.yml args always apply; user-supplied `appendArgs` tail them.
     for (const a of entry.args) {
