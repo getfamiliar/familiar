@@ -120,6 +120,12 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS start_handler text;
 -- descends from a trusted input. Default false: any plugin that doesn't
 -- explicitly opt in produces non-privileged events.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS privileged boolean NOT NULL DEFAULT false;
+-- When true and the event ends in 'failed', \`HostContextImpl.emitAndAwait\`
+-- writes a role='assistant' chatmessage with the failure text before
+-- rejecting handle.settled. Default false: only chat plugins (cli-chat,
+-- telegram) opt in. See [[outputChatOnFailure]] on NewEvent for the
+-- rationale.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS output_chat_on_failure boolean NOT NULL DEFAULT false;
 
 CREATE INDEX IF NOT EXISTS events_state_priority_idx
   ON events (state, priority DESC, id ASC);

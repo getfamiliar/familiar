@@ -137,6 +137,8 @@ export class HostContextImpl implements HostContext {
     readonly chat = {
         subscribe: (filter: ChatFilter, handler: ChatHandler): Promise<ChatUnsubscribe> =>
             this.subscribeChat(filter, handler),
+        appendAssistantMessage: (eventId: string, text: string): Promise<void> =>
+            this.appendChatMessage(eventId, "assistant", text),
     };
 
     readonly mcp = {
@@ -204,6 +206,23 @@ export class HostContextImpl implements HostContext {
         const conn = await this.deps.ensureConnection();
         const bus = new ChatMessageBus(conn);
         return bus.subscribe(filter, handler);
+    }
+
+    /**
+     * Insert a chatmessage attached to `eventId`. Used by
+     * {@link HostContext.chat.appendUserMessage} and
+     * `appendAssistantMessage`. Thin wrapper over
+     * {@link ChatMessageBus.insert} so plugin code never reaches into
+     * the bus directly.
+     */
+    private async appendChatMessage(
+        eventId: string,
+        role: "assistant",
+        text: string,
+    ): Promise<void> {
+        const conn = await this.deps.ensureConnection();
+        const bus = new ChatMessageBus(conn);
+        await bus.insert({ eventId, role, textContent: text });
     }
 
     /**
@@ -390,6 +409,25 @@ export class HostContextImpl implements HostContext {
 
                 if (terminalState === "failed") {
                     const err = await fetchFailureError(conn, row.id);
+                    if (event.outputChatOnFailure === true) {
+                        // Surface the failure through the same chat
+                        // subscription path that delivers normal
+                        // assistant replies. Await the INSERT so the
+                        // NOTIFY fires (and the subscriber renders)
+                        // before this promise rejects to the caller.
+                        const bus = new ChatMessageBus(conn);
+                        await bus
+                            .insert({
+                                eventId: row.id,
+                                role: "assistant",
+                                textContent: `Something went wrong processing the chat message: ${err ?? "(no error message)"}`,
+                            })
+                            .catch(() => {
+                                // Best-effort: a write failure here
+                                // shouldn't mask the original event
+                                // failure that the caller actually needs.
+                            });
+                    }
                     throw new Error(
                         `Event ${row.id} (${event.topic}) failed: ${err ?? "(no error message)"}`,
                     );

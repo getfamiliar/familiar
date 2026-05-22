@@ -357,6 +357,11 @@ async function emitChatEvent(
             // sender against the operator allowlist, so the resulting
             // agentrun tree may use privileged-only system tools.
             privileged: true,
+            // Route agentrun failures through chatmessages so the
+            // Telegram subscriber renders them to the user just like a
+            // normal reply, instead of the failure vanishing into the
+            // daemon log.
+            outputChatOnFailure: true,
             payload: {
                 telegram: {
                     update_id: updateId,

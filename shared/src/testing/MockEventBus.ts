@@ -33,6 +33,7 @@ export class MockEventBus {
             prompt: event.prompt ?? null,
             startHandler: event.startHandler ?? null,
             privileged: event.privileged === true,
+            outputChatOnFailure: event.outputChatOnFailure === true,
             createdAt: now,
             updatedAt: now,
         };

@@ -16,6 +16,7 @@ interface RawEventRow {
     prompt: string | null;
     start_handler: string | null;
     privileged: boolean;
+    output_chat_on_failure: boolean;
     created_at: Date;
     updated_at: Date;
 }
@@ -118,8 +119,8 @@ export class EventBus {
                 `INSERT INTO events
                    (topic, payload, priority, state, idempotency_key,
                     is_chat, preferred_chat_channel_id, prompt, privileged,
-                    start_handler)
-                 VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10)
+                    start_handler, output_chat_on_failure)
+                 VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                  RETURNING *`,
                 [
                     event.topic,
@@ -132,15 +133,33 @@ export class EventBus {
                     prompt,
                     event.privileged ?? false,
                     event.startHandler ?? null,
+                    event.outputChatOnFailure ?? false,
                 ],
             );
             const row = mapRow(result.rows[0]);
 
-            if (isChat) {
+            // Atomic user-chatmessage insert. Two modes:
+            //   - `userChatMessage` set: insert that text verbatim,
+            //     irrespective of isChat. Used by plugins (cli-chat
+            //     direct calls) that want a chatmessage text different
+            //     from `prompt`.
+            //   - else `isChat: true`: insert `prompt` (back-compat
+            //     with chat-event emitters that don't know about the
+            //     new field).
+            //
+            // Doing the INSERT here, inside the same transaction as the
+            // event INSERT, ensures the FK row-lock is released before
+            // NOTIFY events_new fires post-commit — otherwise the
+            // input-event watcher's `FOR UPDATE SKIP LOCKED` claim can
+            // race with the chatmessages lock and leave the event
+            // stuck `pending` forever (the NOTIFY waiter is consumed
+            // even though `claim()` returned zero rows).
+            const chatMessageText = event.userChatMessage ?? (isChat ? prompt : undefined);
+            if (chatMessageText !== undefined) {
                 await client.query(
                     `INSERT INTO chatmessages (event_id, role, text_content)
                      VALUES ($1, 'user', $2)`,
-                    [row.id, prompt],
+                    [row.id, chatMessageText],
                 );
             }
 
@@ -403,6 +422,7 @@ function mapRow(raw: RawEventRow): EventRow {
         prompt: raw.prompt ?? "",
         startHandler: raw.start_handler,
         privileged: raw.privileged,
+        outputChatOnFailure: raw.output_chat_on_failure,
         createdAt: raw.created_at,
         updatedAt: raw.updated_at,
     };

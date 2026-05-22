@@ -20,6 +20,14 @@ export type ParsedInput =
           readonly topic?: string;
           readonly startHandler?: string;
           readonly prompt: string;
+          /**
+           * Trimmed raw input line, before slash-command parsing. For
+           * direct calls (`/topic/handler …`) this is what cli-chat
+           * persists as the `role='user'` chatmessage so subsequent
+           * chat-handler turns see exactly what the operator typed.
+           * For plain prompts this equals `prompt`.
+           */
+          readonly rawInput: string;
       }
     | { readonly kind: "builtin"; readonly command: CliChatBuiltin };
 
@@ -38,7 +46,7 @@ export type ParsedInput =
 export function parseInput(raw: string): ParsedInput {
     const line = raw.trim();
     if (!line.startsWith("/")) {
-        return { kind: "handler", prompt: line };
+        return { kind: "handler", prompt: line, rawInput: line };
     }
     const spaceIdx = line.indexOf(" ");
     const commandPart = spaceIdx === -1 ? line : line.slice(0, spaceIdx);
@@ -58,11 +66,17 @@ export function parseInput(raw: string): ParsedInput {
     if (segments.length >= 2) {
         const startHandler = segments[segments.length - 1];
         const topic = segments.slice(0, -1).join(":");
-        return { kind: "handler", topic, startHandler, prompt: messagePart };
+        return {
+            kind: "handler",
+            topic,
+            startHandler,
+            prompt: messagePart,
+            rawInput: line,
+        };
     }
 
     // Single-segment `/foo` that isn't a recognised builtin — let the
     // literal line through as a plain prompt rather than erroring, so
     // typos don't block the user.
-    return { kind: "handler", prompt: line };
+    return { kind: "handler", prompt: line, rawInput: line };
 }

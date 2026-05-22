@@ -114,6 +114,15 @@ export interface EventRow {
      * workflows).
      */
     readonly privileged: boolean;
+    /**
+     * When `true` and the event terminates in `failed`, the host writes
+     * a `role='assistant'` chatmessage `"Something went wrong processing
+     * the chat message: <error>"` to this event before signalling settle.
+     * Lets chat plugins surface failures through the ordinary chat
+     * subscription path without each needing its own catch-block
+     * rendering. No-op on `done`.
+     */
+    readonly outputChatOnFailure: boolean;
     /** Insert timestamp — postgres `now()` at INSERT. */
     readonly createdAt: Date;
     /** Last `update()` timestamp — bumped to `now()` on every update. */
@@ -202,6 +211,36 @@ export interface NewEvent {
      * {@link EventRow.privileged} for the trust-model rationale.
      */
     readonly privileged?: boolean;
+    /**
+     * When `true` and the event terminates in `failed`, the host writes
+     * a `role='assistant'` chatmessage carrying the failure text to this
+     * event before `handle.settled` rejects. Default `false` — the SQL
+     * column default covers omission. Chat plugins (cli-chat, telegram)
+     * set this to `true` so users see failures through the same chat
+     * subscription path that delivers normal replies. See
+     * {@link EventRow.outputChatOnFailure}.
+     */
+    readonly outputChatOnFailure?: boolean;
+    /**
+     * When set, EventBus.add inserts a `role='user'` chatmessage with
+     * this text in the same transaction as the event INSERT.
+     *
+     * Atomicity matters: a post-emit chatmessages INSERT acquires an
+     * FK row-lock on the events row that conflicts with the input-event
+     * watcher's `FOR UPDATE SKIP LOCKED` claim. If the watcher races
+     * the chatmessage write, `SKIP LOCKED` skips the row and — because
+     * the events_new NOTIFY has already been consumed — the event sits
+     * pending forever. Doing the chatmessage INSERT inside the same
+     * transaction closes the window: the FK lock is released before
+     * NOTIFY events_new fires post-commit.
+     *
+     * Use this for plugin emitters that want a chatmessage text
+     * different from `prompt` (e.g. cli-chat persists the slash-
+     * prefixed `/topic/handler …` line while the handler sees only
+     * the trailing prompt text). When unset and `isChat: true`, the
+     * existing path inserts `prompt` itself.
+     */
+    readonly userChatMessage?: string;
     /**
      * Override which handler markdown the root agentrun runs. When
      * omitted, the input-event watcher uses `'index'` (i.e. resolves

@@ -154,9 +154,18 @@ async function runTurn(
     }
 
     const renderer = new RunRenderer(isTty);
+    // Tracks whether any assistant message arrived via the chat
+    // subscription during this turn — from a handler with `outputChat:
+    // true`, from a `send_chat` tool call, or from the centralized
+    // failure-write in `HostContextImpl.emitAndAwait`. If nothing
+    // arrived by the time `handle.settled` resolves with a non-empty
+    // `result_text` we persist that text ourselves so direct-call
+    // handlers (`/mail/draft …`) still leave a reply in history.
+    let sawChatAnswer = false;
     const unsubscribe = await ctx.chat.subscribe(
         { channelId: CLI_CHANNEL, role: "assistant" },
         async (m) => {
+            sawChatAnswer = true;
             renderer.chatAnswer(m.textContent);
             return true;
         },
@@ -217,7 +226,9 @@ async function runTurn(
             }
         });
         const result = await Promise.race([
-            handle.settled.then(() => "done" as const).catch((e) => ({ failed: e })),
+            handle.settled
+                .then((text) => ({ done: text }) as const)
+                .catch((e) => ({ failed: e }) as const),
             abortPromise,
         ]);
 
@@ -226,7 +237,7 @@ async function runTurn(
             renderer.stop();
             return;
         }
-        if (typeof result === "object" && "failed" in result) {
+        if ("failed" in result) {
             // Daemon-down rejected `settled` with `DaemonStoppedError`
             // (or `sessionSignal` aborted slightly later and the
             // `failed` branch carries whatever postgres complained
@@ -234,17 +245,35 @@ async function runTurn(
             // didn't really "fail" in the handler sense — suppress
             // the red `renderer.failed(...)` and let `runRepl`'s
             // outer goodbye line cover it.
-            if (
-                ctx.daemonDownSignal.aborted ||
-                result.failed instanceof DaemonStoppedError
-            ) {
+            if (ctx.daemonDownSignal.aborted || result.failed instanceof DaemonStoppedError) {
                 renderer.stop();
                 return;
             }
-            const message =
-                result.failed instanceof Error ? result.failed.message : String(result.failed);
-            renderer.failed(message);
+            // For ordinary agentrun failures the host already wrote a
+            // `Something went wrong processing the chat message: …`
+            // assistant chatmessage to this event (driven by
+            // `outputChatOnFailure: true` in `buildNewEvent`). It
+            // arrives through `renderer.chatAnswer` like any other
+            // reply, so we only need to fall back to `renderer.failed`
+            // when nothing came through — e.g. the failure-write
+            // itself errored, or the NOTIFY hasn't been delivered yet.
+            if (!sawChatAnswer) {
+                const message =
+                    result.failed instanceof Error ? result.failed.message : String(result.failed);
+                renderer.failed(message);
+            } else {
+                renderer.stop();
+            }
             return;
+        }
+        // Success path: persist the agentrun's `result_text` as an
+        // assistant chatmessage when no handler-emitted reply showed
+        // up. Direct calls to non-chat handlers (e.g. `/mail/draft`)
+        // typically don't have `outputChat: true`, so without this
+        // they leave the chat record with a user line and no reply.
+        const resultText = result.done.trim();
+        if (!sawChatAnswer && resultText.length > 0) {
+            await ctx.chat.appendAssistantMessage(handle.id, resultText);
         }
         renderer.done();
     } finally {
@@ -273,6 +302,10 @@ function buildNewEvent(parsed: Extract<ParsedInput, { kind: "handler" }>): NewEv
             preferredChatChannelId: CLI_CHANNEL,
             prompt: parsed.prompt,
             privileged: true,
+            // Surface model / handler failures through the chat
+            // subscription so the operator sees a visible reply
+            // instead of a silent transcript on error.
+            outputChatOnFailure: true,
         };
     }
     return {
@@ -280,13 +313,20 @@ function buildNewEvent(parsed: Extract<ParsedInput, { kind: "handler" }>): NewEv
         startHandler: parsed.startHandler,
         // Direct handler calls are not "chat messages from the user"
         // — they're operator-triggered runs. Skipping `isChat` keeps
-        // the prompt off chatmessages and the spawned agentrun reads
-        // the prompt straight from `event.prompt`.
+        // the AgentRunner on the agentrun-lineage context path (no
+        // chat-history feed) and lets the spawned agentrun read its
+        // prompt straight from `event.prompt`. The operator's slash-
+        // command line still lands in chatmessages via
+        // `userChatMessage`, inserted atomically with the event by
+        // EventBus.add so the input-event watcher's claim can't race
+        // the FK row-lock.
         isChat: false,
         priority: EVENT_PRIORITY.CHAT,
         preferredChatChannelId: CLI_CHANNEL,
         prompt: parsed.prompt.length > 0 ? parsed.prompt : `(handler invoked from cli-chat)`,
         privileged: true,
+        outputChatOnFailure: true,
+        userChatMessage: parsed.rawInput,
     };
 }
 
@@ -351,9 +391,11 @@ export async function runOneShot(
     }
 
     const renderer = new RunRenderer(isTty);
+    let sawChatAnswer = false;
     const unsubscribe = await ctx.chat.subscribe(
         { channelId: CLI_CHANNEL, role: "assistant" },
         async (m) => {
+            sawChatAnswer = true;
             renderer.chatAnswer(m.textContent);
             return true;
         },
@@ -365,7 +407,10 @@ export async function runOneShot(
         });
         renderer.eventQueued(handle.id);
         try {
-            await handle.settled;
+            const resultText = (await handle.settled).trim();
+            if (!sawChatAnswer && resultText.length > 0) {
+                await ctx.chat.appendAssistantMessage(handle.id, resultText);
+            }
             renderer.done();
             return 0;
         } catch (err) {
@@ -374,8 +419,12 @@ export async function runOneShot(
                 process.stderr.write(`${chalk.gray(DAEMON_GOODBYE)}\n`);
                 return 1;
             }
-            const message = err instanceof Error ? err.message : String(err);
-            renderer.failed(message);
+            if (!sawChatAnswer) {
+                const message = err instanceof Error ? err.message : String(err);
+                renderer.failed(message);
+            } else {
+                renderer.stop();
+            }
             return 1;
         }
     } finally {
@@ -407,6 +456,14 @@ async function runOneShotReturnOnly(
         const handle = await ctx.events.emit(buildNewEvent(parsed));
         try {
             const resultText = await handle.settled;
+            const trimmedResult = resultText.trim();
+            // Persist the agentrun's result as an assistant chatmessage
+            // when nothing else did (direct calls to non-chat handlers).
+            // Mirrors the live-mode behaviour so history stays consistent
+            // regardless of which entrypoint the operator used.
+            if (lastChatText === undefined && trimmedResult.length > 0) {
+                await ctx.chat.appendAssistantMessage(handle.id, trimmedResult);
+            }
             const output = lastChatText ?? resultText;
             if (output && output.length > 0) {
                 process.stdout.write(output.endsWith("\n") ? output : `${output}\n`);

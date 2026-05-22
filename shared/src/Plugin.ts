@@ -126,19 +126,40 @@ export interface HostContext {
         emit(event: NewEvent, options?: EmitOptions): Promise<EmitHandle>;
     };
     /**
-     * Chat capabilities. Currently exposes only `subscribe` — user
-     * messages flow through the ordinary event pipeline (events with
-     * `isChat=true`) so there is intentionally no parallel send API.
+     * Chat capabilities.
      *
-     * Delivery is at-least-once: when no listener returned `true`
-     * during a message's lifetime, a future subscriber matching the
-     * filter will receive it on registration via the bus's replay
+     * `subscribe` taps the host's chatmessages NOTIFY stream for live
+     * delivery. Delivery is at-least-once: when no listener returned
+     * `true` during a message's lifetime, a future subscriber matching
+     * the filter will receive it on registration via the bus's replay
      * pass. Listeners must therefore tolerate being called for an
      * already-displayed message; the typical pattern is to render and
      * return `true` unconditionally.
+     *
+     * `appendAssistantMessage` is a **history maintenance** helper,
+     * not a parallel send API. The user → agent direction still flows
+     * exclusively through events. Use it for recording an agent reply
+     * that wasn't produced by the AgentRunner's `outputChat` path or
+     * by `send_chat` — e.g. the result text of a direct cli-chat
+     * handler call after `handle.settled` resolves.
+     *
+     * User-side messages have **no** equivalent post-emit helper: doing
+     * a chatmessages INSERT after `events.emit` returns can race the
+     * input-event watcher's claim (FK row-lock vs.
+     * `FOR UPDATE SKIP LOCKED`) and strand the event in `pending`.
+     * Use {@link NewEvent.userChatMessage} for atomic insertion of a
+     * user chatmessage at emit time instead.
      */
     readonly chat: {
         subscribe(filter: ChatFilter, handler: ChatHandler): Promise<ChatUnsubscribe>;
+        /**
+         * Insert a `role='assistant'` chatmessage attached to `eventId`.
+         * Channel is resolved via the event's
+         * `preferred_chat_channel_id`. Safe to call only after the
+         * event has settled (agentruns done / failed) — earlier calls
+         * can deadlock the input-event watcher's claim.
+         */
+        appendAssistantMessage(eventId: string, text: string): Promise<void>;
     };
     /**
      * Per-event scratch directory operations. Each event the bus
