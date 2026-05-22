@@ -185,7 +185,7 @@ To produce the template, fire the `mail/extract-style` workspace handler from cl
 once per mailbox you want styled:
 
 ```
-./cli.sh chat
+./cli.sh cli-chat
 > /mail/extract-style Extract for adam@example.com
 ```
 
