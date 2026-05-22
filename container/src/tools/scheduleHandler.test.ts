@@ -142,6 +142,26 @@ describe("schedule_handler — immediate mode (no `when`)", () => {
         assert.equal(child.eventId, parent.eventId);
         assert.equal(scheduled.rows.size, 0);
     });
+
+    it("slash-shaped handler with no topic resolves to derived topic + basename", async () => {
+        setupWorkspaceWithHandler("mail", "send-digest");
+        const store = new MockBusStore();
+        const agentruns = new MockAgentRunBus(store);
+        const scheduled = new FakeScheduledHandlerBus();
+        // Parent's topic is "demo"; the slash-shaped handler should
+        // override it via the derived topic from leading segments.
+        const parent = buildParent("42");
+
+        const out = (await callTool(agentruns, scheduled, parent, {
+            handler: "mail/send-digest.md",
+        })) as { agentrunId: string };
+
+        const child = store.agentruns.get(out.agentrunId);
+        assert.ok(child);
+        assert.equal(child.topic, "mail");
+        assert.equal(child.handler, "send-digest");
+        assert.equal(child.calltype, "queued");
+    });
 });
 
 describe("schedule_handler — scheduled mode (future `when`)", () => {

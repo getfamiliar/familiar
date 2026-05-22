@@ -6,12 +6,12 @@ import {
     renderInZone,
     runJsonTool,
     type ScheduledHandlerBus,
-    TOPIC_PATTERN,
     ToolError,
     type ToolRunContext,
 } from "@getfamiliar/shared";
 import { jsonSchema, type Tool, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
+import { normalizeHandlerSpec } from "./HandlerSpec.js";
 
 interface ScheduleHandlerInput {
     readonly handler: string;
@@ -26,7 +26,6 @@ interface ScheduleHandlerInput {
  * agent to reuse (e.g. `briefing_<eventId>`) without colliding with
  * other agents' keys, but strict enough to avoid surprises in logs. */
 const KEY_PATTERN = /^[A-Za-z0-9_:.-]{1,128}$/;
-const TOPIC_REGEXP = new RegExp(TOPIC_PATTERN);
 
 /**
  * Build the `schedule_handler` tool — the one verb for spawning a
@@ -69,8 +68,10 @@ export function buildScheduleHandlerTool(
             "`2026-05-22T13:55:00`) to defer it as a fresh event at that time; pass a stable `key` " +
             "to make rescheduling idempotent (reusing a key overwrites the previous schedule). A " +
             "`when` in the past is silently treated as immediate. Topic defaults to the current " +
-            "agentrun's topic. Inherits priority and trust level from this run. Use " +
-            "`unschedule_handler` to cancel a scheduled wake-up.",
+            "agentrun's topic, but can also be embedded in `handler` with `/` as the separator " +
+            '(e.g. `handler: "mail/whatsapp/send"` is the same as `topic: "mail:whatsapp", ' +
+            'handler: "send"`); a trailing `.md` is silently stripped. Inherits priority and ' +
+            "trust level from this run. Use `unschedule_handler` to cancel a scheduled wake-up.",
         inputSchema: jsonSchema<ScheduleHandlerInput>({
             type: "object",
             additionalProperties: false,
@@ -119,13 +120,11 @@ export function buildScheduleHandlerTool(
         }),
         execute: ({ handler, topic, prompt, payload, when, key }) =>
             runJsonTool(async () => {
-                const resolvedTopic = topic ?? parent.topic;
-                if (!TOPIC_REGEXP.test(resolvedTopic)) {
-                    throw new ToolError(
-                        "BadTopic",
-                        `topic "${resolvedTopic}" must match ${TOPIC_PATTERN}`,
-                    );
-                }
+                const { topic: resolvedTopic, handler: resolvedHandler } = normalizeHandlerSpec(
+                    topic,
+                    handler,
+                    parent.topic,
+                );
 
                 if (payload !== undefined) {
                     let serialized: string | undefined;
@@ -146,7 +145,7 @@ export function buildScheduleHandlerTool(
                 }
 
                 try {
-                    HandlerFile.load(resolvedTopic, handler);
+                    HandlerFile.load(resolvedTopic, resolvedHandler);
                 } catch (err) {
                     throw new ToolError(
                         "HandlerNotFound",
@@ -185,7 +184,7 @@ export function buildScheduleHandlerTool(
                         eventId: parent.eventId,
                         parentAgentrunId: parent.id,
                         topic: resolvedTopic,
-                        handler,
+                        handler: resolvedHandler,
                         priority: parent.priority,
                         prompt: prompt ?? null,
                         payload: payload ?? {},
@@ -199,7 +198,7 @@ export function buildScheduleHandlerTool(
                     key: key ?? randomUUID(),
                     fireAt: fireAtUtc,
                     topic: resolvedTopic,
-                    handler,
+                    handler: resolvedHandler,
                     prompt: prompt ?? null,
                     payload: payload ?? {},
                     priority: parent.priority,

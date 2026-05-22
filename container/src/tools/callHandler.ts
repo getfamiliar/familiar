@@ -8,6 +8,7 @@ import {
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
+import { normalizeHandlerSpec } from "./HandlerSpec.js";
 
 interface CallHandlerInput {
     readonly topic?: string;
@@ -58,10 +59,12 @@ export function buildCallHandlerTool(
             "Spawn a subagent and WAIT for its result. The current agentrun suspends; once the " +
             "subagent settles, this tool returns the subagent's final text. Use " +
             "`schedule_handler` (without `when`) instead when you don't need the subagent's " +
-            "output. Topic defaults to the current agentrun's topic; override with the `topic` " +
-            "argument to call cross-topic. Inherits the event and trust level from this run. " +
-            "If the subagent fails, the tool surfaces an error so the calling handler can " +
-            "decide how to react.",
+            "output. Topic defaults to the current agentrun's topic, but can also be embedded " +
+            'in `handler` with `/` as the separator (e.g. `handler: "mail/whatsapp/send"` is ' +
+            'the same as `topic: "mail:whatsapp", handler: "send"`); a trailing `.md` is ' +
+            "silently stripped. Inherits the event and trust level from this run. If the " +
+            "subagent fails, the tool surfaces an error so the calling handler can decide how " +
+            "to react.",
         inputSchema: jsonSchema<CallHandlerInput>({
             type: "object",
             additionalProperties: false,
@@ -94,7 +97,11 @@ export function buildCallHandlerTool(
         }),
         execute: ({ topic, handler, prompt, payload }) =>
             runTextTool(async () => {
-                const resolvedTopic = topic ?? parent.topic;
+                const { topic: resolvedTopic, handler: resolvedHandler } = normalizeHandlerSpec(
+                    topic,
+                    handler,
+                    parent.topic,
+                );
 
                 if (payload !== undefined) {
                     let serialized: string | undefined;
@@ -115,7 +122,7 @@ export function buildCallHandlerTool(
                 }
 
                 try {
-                    HandlerFile.load(resolvedTopic, handler);
+                    HandlerFile.load(resolvedTopic, resolvedHandler);
                 } catch (err) {
                     throw new ToolError(
                         "HandlerNotFound",
@@ -129,7 +136,7 @@ export function buildCallHandlerTool(
                         eventId: parent.eventId,
                         parentAgentrunId: parent.id,
                         topic: resolvedTopic,
-                        handler,
+                        handler: resolvedHandler,
                         priority: parent.priority,
                         prompt: prompt ?? null,
                         payload: payload ?? {},
