@@ -185,6 +185,33 @@ describe("ToolFilter — operators", () => {
         assert.equal(out.has("atlassian_confluence_get_page"), true);
         assert.equal(out.has("fetch_fetch"), false);
     });
+
+    it("`,` unions matches the same way `+` does", () => {
+        assert.deepEqual(resolve("fetch_fetch, atlassian_jira_search"), [
+            "atlassian_jira_search",
+            "fetch_fetch",
+        ]);
+    });
+
+    it("`,` and `+` are interchangeable within one expression", () => {
+        const commaForm = resolve("fetch_fetch, atlassian_jira_search + atlassian_jira_get_issue");
+        const plusForm = resolve("fetch_fetch + atlassian_jira_search + atlassian_jira_get_issue");
+        assert.deepEqual(commaForm, plusForm);
+    });
+
+    it("`,` shares precedence with `+` against `&`: a, b & c == a + (b & c)", () => {
+        assert.deepEqual(resolve("fetch_fetch, atlassian_jira_search & *_search"), [
+            "atlassian_jira_search",
+            "fetch_fetch",
+        ]);
+    });
+
+    it("whitespace around `,` is optional", () => {
+        const tight = resolve("fetch_fetch,atlassian_jira_search");
+        const loose = resolve("fetch_fetch , atlassian_jira_search");
+        assert.deepEqual(tight, ["atlassian_jira_search", "fetch_fetch"]);
+        assert.deepEqual(loose, ["atlassian_jira_search", "fetch_fetch"]);
+    });
 });
 
 describe("ToolFilter — precedence", () => {

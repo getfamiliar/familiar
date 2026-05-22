@@ -250,7 +250,16 @@ function resolveMatched(args: {
     if (args.toolsExpression === undefined || args.toolsExpression.trim().length === 0) {
         return new Set(args.systemKeys);
     }
-    const ast = parseExpression(args.toolsExpression);
+    const expressionForError = JSON.stringify(args.toolsExpression);
+    let ast: ReturnType<typeof parseExpression>;
+    try {
+        ast = parseExpression(args.toolsExpression);
+    } catch (err) {
+        throw new Error(
+            `Cannot parse tools frontmatter attribute ${expressionForError}, aborting: ${errorMessage(err)}`,
+            { cause: err },
+        );
+    }
     // Per-MCP and per-plugin entries land first; `system` and `mcp`
     // are written afterwards so they win on the (lint-prevented)
     // chance of a sanitized id colliding with a reserved name.
@@ -272,7 +281,25 @@ function resolveMatched(args: {
     builtins.set(SYSTEM_GROUP_NAME, args.systemKeys);
     builtins.set(MCP_GROUP_NAME, args.mcpKeys);
     const lookup = args.lookup ?? rejectAnyLookup;
-    return evaluate(ast, args.available, lookup, builtins);
+    try {
+        return evaluate(ast, args.available, lookup, builtins);
+    } catch (err) {
+        throw new Error(
+            `Cannot resolve tools frontmatter attribute ${expressionForError}, aborting: ${errorMessage(err)}`,
+            { cause: err },
+        );
+    }
+}
+
+/**
+ * Best-effort extraction of a human-readable message from a thrown value.
+ * Falls back to `String(err)` when `err` is not an `Error`.
+ */
+function errorMessage(err: unknown): string {
+    if (err instanceof Error) {
+        return err.message;
+    }
+    return String(err);
 }
 
 /**

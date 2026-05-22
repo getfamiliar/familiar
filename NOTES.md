@@ -1,19 +1,11 @@
-Mail:
-* Signatur, Fonts usw ziehen aus dem Sent Ordner
-* Erweiterte Mailbox Config: allowSend per Mailbox.
-* Signatur-Templates auch aus direkter E-Mail 
-
 Skills:
 * List of "installed" skills in system prompt
 
 Features:
-* Compression
 * Token Limits checken und warnen in verschiedenen Stufen - Token-Schätzung mit Faktor 3 reicht.
 * True bash
 * Besseres Reporting Format
 * Self-Reflection Tools: List of events (auch CLI) mit search, event report, plugin status, system status 
-* Tool Call Offloading in temp files
-
 
 Reflect and learn from things when memory plugin is ready:
 * Mail Digest

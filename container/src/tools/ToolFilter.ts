@@ -6,7 +6,7 @@ import { ALL_GROUP_NAME, IDENT_PATTERN, NONE_GROUP_NAME } from "@getfamiliar/sha
  * Expression grammar (recursive descent):
  *
  *     expr        := plusMinus
- *     plusMinus   := and (('+' | '-') and)*
+ *     plusMinus   := and ((('+' | ',') | '-') and)*
  *     and         := atom ('&' atom)*
  *     atom        := bareword | '(' expr ')'
  *
@@ -14,7 +14,9 @@ import { ALL_GROUP_NAME, IDENT_PATTERN, NONE_GROUP_NAME } from "@getfamiliar/sha
  *
  * Operators:
  *
- * - `a + b` — both `a` and `b` together (set union).
+ * - `a + b` — both `a` and `b` together (set union). `,` is an
+ *   alias for `+`, so `a, b` ≡ `a + b`; mix freely in one
+ *   expression.
  * - `a - b` — `a` without the tools in `b` (set difference).
  * - `a & b` — tools in `a` and `b` both (set intersection).
  *
@@ -211,7 +213,7 @@ function tokenize(src: string): Token[] {
             i++;
             continue;
         }
-        if (c === "+") {
+        if (c === "+" || c === ",") {
             tokens.push({ kind: "plus", pos: i });
             i++;
             continue;
