@@ -31,10 +31,15 @@ function fakeLogins(): LoginStore {
     } as unknown as LoginStore;
 }
 
-function example(kind: SentExample["kind"], innerHtml: string, contentType = "html"): SentExample {
+function example(
+    kind: SentExample["kind"],
+    innerHtml: string,
+    contentType = "html",
+    subject = `Subject ${kind}`,
+): SentExample {
     return {
         kind,
-        subject: `Subject ${kind}`,
+        subject,
         sentDateTime: "2026-05-21T12:00:00Z",
         innerHtml,
         contentType,
@@ -86,12 +91,49 @@ function fakeCallCtx(captured: {
     };
 }
 
-test("ms365_get_sent_sample stages three sample files with a shared random suffix", async () => {
+test("ms365_get_sent_sample stages one .html file per example with shared hex suffix", async () => {
     setActiveLogins(fakeLogins());
     const restore = stubSampler({
         reply: [example("reply", "<p>thanks</p>")],
         forward: [example("forward", "<p>fyi</p>")],
-        new: [example("new", "<p>hello</p><div>sig</div>")],
+        new: [example("new", "<p>hello one</p>"), example("new", "<p>hello two</p>")],
+    });
+    try {
+        const captured = { writes: [] as { name: string; contents: Buffer }[] };
+        const t = buildSentSampleTool();
+        await t.execute({ mailbox: "alice@example.com" }, fakeCallCtx(captured));
+        assert.equal(captured.writes.length, 4);
+        const namePattern = /^sample\.(reply|forward|new)\.\d+\.[0-9a-f]{6}\.html$/;
+        for (const w of captured.writes) {
+            assert.match(w.name, namePattern, `bad filename: ${w.name}`);
+        }
+        const suffixes = captured.writes.map(
+            (w) => w.name.match(/sample\.\w+\.\d+\.([0-9a-f]{6})\.html$/)?.[1],
+        );
+        assert.equal(new Set(suffixes).size, 1, "all files should share one suffix");
+        // 1-based index within kind, plus innerHtml verbatim as file body.
+        const newFiles = captured.writes
+            .filter((w) => w.name.startsWith("sample.new."))
+            .sort((a, b) => a.name.localeCompare(b.name));
+        assert.equal(newFiles.length, 2);
+        assert.ok(newFiles[0].name.startsWith("sample.new.1."));
+        assert.ok(newFiles[1].name.startsWith("sample.new.2."));
+        assert.equal(newFiles[0].contents.toString("utf8"), "<p>hello one</p>");
+        assert.equal(newFiles[1].contents.toString("utf8"), "<p>hello two</p>");
+        const replyFile = captured.writes.find((w) => w.name.startsWith("sample.reply.1."));
+        assert.ok(replyFile, "expected a reply file");
+        assert.equal(replyFile.contents.toString("utf8"), "<p>thanks</p>");
+    } finally {
+        restore();
+    }
+});
+
+test("ms365_get_sent_sample returns summary + markdown table with the expected columns", async () => {
+    setActiveLogins(fakeLogins());
+    const restore = stubSampler({
+        reply: [example("reply", "<p>ok</p>", "text", "Re: Foo")],
+        forward: [],
+        new: [example("new", "<p>fresh</p>", "html", "Hello there")],
     });
     try {
         const captured = { writes: [] as { name: string; contents: Buffer }[] };
@@ -99,54 +141,45 @@ test("ms365_get_sent_sample stages three sample files with a shared random suffi
         const result = (await t.execute(
             { mailbox: "alice@example.com" },
             fakeCallCtx(captured),
-        )) as {
-            sampleFiles: { reply: string; forward: string; new: string };
-            summary: Record<string, number>;
-        };
-        assert.equal(captured.writes.length, 3);
-        // All three filenames share the same 6-hex-char suffix.
-        const names = captured.writes.map((w) => w.name);
-        const suffixes = names.map((n) => n.match(/sample\.\w+\.([0-9a-f]+)\.md/)?.[1]);
-        assert.ok(suffixes.every((s) => s && s.length === 6 && /^[0-9a-f]+$/.test(s)));
-        assert.equal(new Set(suffixes).size, 1, "all three files should share one suffix");
-        // The returned paths line up with the writes.
-        assert.ok(result.sampleFiles.reply.endsWith(names.find((n) => n.includes("reply"))!));
-        assert.ok(result.sampleFiles.forward.endsWith(names.find((n) => n.includes("forward"))!));
-        assert.ok(result.sampleFiles.new.endsWith(names.find((n) => n.includes("new"))!));
-        // Summary is passed through verbatim.
-        assert.equal(result.summary.scanned, 100);
+        )) as string;
+        assert.equal(typeof result, "string");
+        assert.match(
+            result,
+            /Scanned 100, kept 2\. Dropped: meeting 50, oversize 5, bucket-full 30, empty-after-strip 5\./,
+        );
+        assert.match(result, /\| filepath \| subject \| bodyContentType \| sent \|/);
+        assert.match(result, /\|---\|---\|---\|---\|/);
+        // Reply row: text bodyContentType, subject from example.
+        assert.match(
+            result,
+            /\| \/scratch\/evt-1\/sample\.reply\.1\.[0-9a-f]{6}\.html \| Re: Foo \| text \| 2026-05-21T12:00:00Z \|/,
+        );
+        // New row: html bodyContentType.
+        assert.match(
+            result,
+            /\| \/scratch\/evt-1\/sample\.new\.1\.[0-9a-f]{6}\.html \| Hello there \| html \| 2026-05-21T12:00:00Z \|/,
+        );
+        // No forward row.
+        assert.doesNotMatch(result, /sample\.forward\./);
     } finally {
         restore();
     }
 });
 
-test("ms365_get_sent_sample writes sampler summary + bodyContentType header in each file", async () => {
+test("ms365_get_sent_sample stages nothing and renders no-examples when all buckets empty", async () => {
     setActiveLogins(fakeLogins());
-    const restore = stubSampler({
-        reply: [example("reply", "<p>ok</p>", "text")],
-        forward: [],
-        new: [example("new", "<p>fresh</p>", "html")],
-    });
+    const restore = stubSampler({ reply: [], forward: [], new: [] });
     try {
         const captured = { writes: [] as { name: string; contents: Buffer }[] };
         const t = buildSentSampleTool();
-        await t.execute({ mailbox: "alice@example.com" }, fakeCallCtx(captured));
-        const replyFile = captured.writes
-            .find((w) => w.name.includes("reply"))!
-            .contents.toString("utf8");
-        assert.match(replyFile, /kind: reply/);
-        assert.match(replyFile, /bodyContentType: text/);
-        assert.match(replyFile, /Sampler summary: scanned 100/);
-        const forwardFile = captured.writes
-            .find((w) => w.name.includes("forward"))!
-            .contents.toString("utf8");
-        // Empty bucket file still carries the header + summary.
-        assert.match(forwardFile, /Got 0 examples/);
-        assert.match(forwardFile, /no examples/);
-        const newFile = captured.writes
-            .find((w) => w.name.includes("new"))!
-            .contents.toString("utf8");
-        assert.match(newFile, /bodyContentType: html/);
+        const result = (await t.execute(
+            { mailbox: "alice@example.com" },
+            fakeCallCtx(captured),
+        )) as string;
+        assert.equal(captured.writes.length, 0);
+        assert.match(result, /Scanned 100, kept 0\./);
+        assert.match(result, /_\(no examples\)_/);
+        assert.doesNotMatch(result, /\| filepath \|/);
     } finally {
         restore();
     }
