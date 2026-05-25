@@ -10,8 +10,6 @@ Reflect and learn from things when memory plugin is ready:
 * Mail Digest
 * ...
 
-Zeitlimit per Step, nicht über den gesamten Agent Execution - wir wollen ihn ja lange laufen lassen können.
-
 Neues CLI Tool: `logs`
 * `logs tail` tails the current data/logs/ log file but pretty prints the JSON objects in it.
 
@@ -42,7 +40,10 @@ MCP functions: keep or remove the renaming of "-"?
 Extreme:
 - Check handler files for tool name mentions that do not exist
 - Check models if they exist
+
+plugins:
 - Check if chat/compaction/index.md exists and is parseable
+- check if skills/memory/save.md exists and is parseable
 
 
 ## Before release

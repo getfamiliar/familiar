@@ -51,6 +51,16 @@ core:
   # If unset, defaults to the first default calendar the system finds.
   # defaultCalendar: Calendar
 
+  # Workspace-relative paths the assistant treats as its own curated
+  # memory. A glob string or a list of glob strings (substring-with-*
+  # grammar, e.g. `wiki/**`). These paths are BOTH (a) writable by
+  # non-privileged agentruns — the normal `.md` / `toolgroups/` privilege
+  # gate is bypassed for them, so handlers like `memory_save` can write
+  # them regardless of trust level — AND (b) quoted in full by the memory
+  # plugin (matches outside the list demote to a "See also" mention).
+  # Falls back to ["wiki/**"] when unset.
+  # writablePaths: ["wiki/**"]
+
 inference:
   # Provider id used when a handler does not put a provider prefix on
   # its `model` frontmatter field. Must match either an entry under
@@ -130,6 +140,32 @@ inference:
 
 # --- Plugin-owned subtrees below. Each plugin parses + validates its
 # --- own keys; the platform linter does not police them.
+
+# Memory plugin. Indexes every .md file under data/workspace/ with an
+# Orama hybrid (vector + BM25) index and surfaces relevant snippets in
+# the system prompt. `embeddings.provider` + `embeddings.model` are
+# required; everything else has a default. The provider id references
+# an entry already declared under `inference.apiKeys.<id>` or
+# `inference.customProviders.<id>` — credentials are not restated here.
+# memory:
+#   embeddings:
+#     provider: openai                  # must match an enabled inference provider
+#     model: text-embedding-3-small     # embedding model id under the provider
+#   minScoreToEmbed: 0.75               # hits above this get a full snippet injected into the system prompt
+#   minScoreToMention: 0.55             # hits between minScoreToMention..minScoreToEmbed get a path-only mention
+#   minVectorSimilarity: 0.3            # cosine-similarity floor for vector hits
+#   maxChunksPerFile: 3                 # cap on full snippets per file in the prompt; surplus collapses to "And N more..."
+#   maxSystemPromptMemoryResults: 8     # max hits the contextProvider asks Orama for per agentrun
+#   maxToolMemoryResults: 5             # default `limit` for the memory_search tool when the agent omits it
+#   excludeGlobs: []                    # carve-outs from indexing (substring-with-* grammar)
+#   # Which hits get full-snippet injection (vs. a path-only "See also"
+#   # mention) is driven by core.writablePaths above — the same paths
+#   # non-privileged runs may write. There is no separate memory key.
+#   language: english                   # stemmer + stopwords language; unknown values fall back to english
+#   hybridWeights:
+#     vector: 0.5                       # weight of vector similarity in the hybrid score
+#     text: 0.5                         # weight of BM25 lexical match in the hybrid score
+#   persistToDiskDelay: 30              # seconds of index idleness before the dirty .msp gets flushed
 
 # Telegram plugin. botToken comes from BotFather (/newbot). Leave the
 # user id null on first boot — the bot enters discovery mode and
