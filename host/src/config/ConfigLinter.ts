@@ -79,6 +79,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
     optionalBool(config, "core.logSystemPrompt", warnings);
     optionalIanaTimezone(config, "core.timezone", warnings);
     optionalString(config, "core.defaultCalendar", warnings);
+    optionalStringOrStringList(config, "core.writablePaths", warnings);
     optionalNonNegativeInt(config, "inference.maxRetries", warnings);
     optionalBool(config, "inference.captureModelHttpRequestBodies", warnings);
     optionalBool(config, "inference.captureRawStepResultToDatabase", warnings);
@@ -281,6 +282,39 @@ function optionalString(root: Record<string, unknown>, path: string, warnings: s
     if (typeof value !== "string" || value.length === 0) {
         warnings.push(`${path} should be a non-empty string (got ${describe(value)}).`);
     }
+}
+
+/**
+ * Validate that an optional path, when present, is either a non-empty
+ * string or an array of non-empty strings ("string or list of strings"
+ * shape, e.g. `core.writablePaths`). Records a warning if malformed;
+ * `getStringList` falls back to its default at read time, so this is
+ * not a hard error.
+ */
+function optionalStringOrStringList(
+    root: Record<string, unknown>,
+    path: string,
+    warnings: string[],
+): void {
+    const value = readPath(root, path);
+    if (value === undefined) {
+        return;
+    }
+    if (typeof value === "string") {
+        if (value.length === 0) {
+            warnings.push(`${path} should be a non-empty string or a list of strings.`);
+        }
+        return;
+    }
+    if (Array.isArray(value)) {
+        if (!value.every((entry) => typeof entry === "string" && entry.length > 0)) {
+            warnings.push(`${path}: every list entry must be a non-empty string.`);
+        }
+        return;
+    }
+    warnings.push(
+        `${path} should be a non-empty string or a list of strings (got ${describe(value)}).`,
+    );
 }
 
 /**

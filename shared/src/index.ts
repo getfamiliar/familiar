@@ -75,6 +75,7 @@ export {
 } from "./MailStyleTemplate.js";
 export { renderMarkdownToHtml } from "./markdownHtml.js";
 export { renderMarkdown } from "./markdownTerminal.js";
+export { matchesAnyGlob, matchesGlob } from "./PathGlob.js";
 export type {
     AnyCommandDef,
     EmitHandle,

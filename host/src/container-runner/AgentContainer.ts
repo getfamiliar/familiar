@@ -148,6 +148,15 @@ export interface AgentContainerConfig {
      * → the container falls back to its system timezone.
      */
     readonly coreTimezone: string;
+    /**
+     * Workspace-relative globs from `core.writablePaths` (normalized to
+     * a string list). Forwarded as `CORE_WRITABLE_PATHS` (JSON array)
+     * and consumed by the container's fs tools: a non-privileged run
+     * may write paths matching any of these, bypassing the `.md` /
+     * `toolgroups/` privilege gate. Empty list → strict gate (only
+     * privileged runs write `.md`).
+     */
+    readonly writablePaths: readonly string[];
 }
 
 /**
@@ -217,6 +226,8 @@ export class AgentContainer {
             `INFERENCE_LOG_SYSTEM_PROMPT=${this.config.logSystemPrompt}`,
             "-e",
             `CORE_TIMEZONE=${this.config.coreTimezone}`,
+            "-e",
+            `CORE_WRITABLE_PATHS=${JSON.stringify(this.config.writablePaths)}`,
             "-e",
             `FAMILIAR_LOG_LEVEL=${this.config.verbose ? "debug" : "info"}`,
             "-v",

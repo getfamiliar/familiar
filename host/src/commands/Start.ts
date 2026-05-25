@@ -123,6 +123,11 @@ export const startCommand = defineCommand({
         // container falls back to its own system tz, matching how the
         // host plugins fall back via getCoreTimezone().
         const coreTimezone = config.getString("core.timezone", "") ?? "";
+        // Paths writable by non-privileged runs (and quoted in full by
+        // the memory plugin). Accepts a bare string or a list; defaults
+        // to the curated wiki. Forwarded to the agent container's fs
+        // gate as CORE_WRITABLE_PATHS.
+        const writablePaths = config.getStringList("core.writablePaths", ["wiki/**"]);
         // Touch the chat-channel default so a missing value fails the
         // daemon now rather than at first chat event.
         config.getString("core.defaultChatChannel");
@@ -259,6 +264,7 @@ export const startCommand = defineCommand({
             providerTypes,
             verbose: debugLogging,
             coreTimezone,
+            writablePaths,
         });
 
         await container.start();

@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
     type AgentRunRow,
+    matchesAnyGlob,
     runJsonLinesTool,
     runJsonTool,
     ToolError,
@@ -10,6 +11,7 @@ import {
 } from "@getfamiliar/shared";
 import type { Tool, ToolSet } from "ai";
 import { jsonSchema, tool } from "ai";
+import { getWritablePaths } from "../env.js";
 import { HandlerFile } from "../HandlerFile.js";
 
 /**
@@ -97,6 +99,15 @@ function resolveWorkspacePath(input: string): string {
 const TOOLGROUPS_DIR = "toolgroups";
 
 /**
+ * Operator-configured allowlist of workspace-relative globs
+ * (`core.writablePaths`, forwarded as `CORE_WRITABLE_PATHS`). A path
+ * matching any of these is writable by non-privileged runs and is the
+ * curated memory the memory plugin quotes in full — read once at module
+ * load since the env is fixed for the container's lifetime.
+ */
+const WRITABLE_PATH_GLOBS = getWritablePaths();
+
+/**
  * True when writing this absolute path requires a privileged
  * agentrun. Two cases:
  *
@@ -105,21 +116,29 @@ const TOOLGROUPS_DIR = "toolgroups";
  *   files declare which MCP tools handlers may use, so widening
  *   them is privilege escalation in spirit.
  *
- * Scratch paths (`/scratch/<event-id>/...`) bypass both checks: scratch
- * is per-event ephemeral storage shared with MCPs, never a handler
- * source, and the privilege gate would only get in the way of
- * legitimate work (e.g. saving an intermediate `.md` artifact for a
- * child agentrun to read).
+ * Two carve-outs return `false` before either gate:
+ *
+ * - Scratch paths (`/scratch/<event-id>/...`) — per-event ephemeral
+ *   storage shared with MCPs, never a handler source, and the privilege
+ *   gate would only get in the way of legitimate work (e.g. saving an
+ *   intermediate `.md` artifact for a child agentrun to read).
+ * - Paths matching `core.writablePaths` ({@link WRITABLE_PATH_GLOBS}) —
+ *   the operator's explicit allowlist of the assistant's own curated
+ *   memory (default `wiki/**`), which non-privileged runs (e.g. a
+ *   `memory_save` triggered by an inbound mail) must be able to write.
  */
 function requiresPrivilegedWrite(absolute: string): boolean {
     if (absolute === SCRATCH_ROOT || absolute.startsWith(`${SCRATCH_ROOT}/`)) {
         return false;
     }
+    const root = HandlerFile.getWorkspaceRoot();
+    const rel = path.relative(root, absolute);
+    if (matchesAnyGlob(WRITABLE_PATH_GLOBS, rel)) {
+        return false;
+    }
     if (absolute.toLowerCase().endsWith(".md")) {
         return true;
     }
-    const root = HandlerFile.getWorkspaceRoot();
-    const rel = path.relative(root, absolute);
     if (rel === TOOLGROUPS_DIR || rel.startsWith(`${TOOLGROUPS_DIR}${path.sep}`)) {
         return true;
     }
@@ -132,7 +151,9 @@ const PRIVILEGE_REFUSAL_MESSAGE =
     "workspace/toolgroups/. This run is non-privileged. Those files " +
     "(handlers, SOUL.md, people/*, toolgroup definitions) can only be " +
     "modified by runs descending from trusted user input (cli-chat REPL " +
-    "or the operator on Telegram). Reads are still allowed.";
+    "or the operator on Telegram). Reads are still allowed. Paths matching " +
+    "core.writablePaths (the assistant's curated memory, e.g. wiki/**) are " +
+    "exempt and writable here.";
 
 function refusePrivilege(): never {
     throw new ToolError("PrivilegeDenied", PRIVILEGE_REFUSAL_MESSAGE);

@@ -89,6 +89,19 @@ export class HostConfigService implements ConfigService {
         throw missingError(key, "array", value);
     }
 
+    getStringList(key: string, defaultValue: readonly string[]): readonly string[] {
+        const value = readPath(this.ensureLoaded(), key);
+        if (typeof value === "string") {
+            return value.length > 0 ? [value] : defaultValue;
+        }
+        if (Array.isArray(value)) {
+            return value.filter(
+                (entry): entry is string => typeof entry === "string" && entry.length > 0,
+            );
+        }
+        return defaultValue;
+    }
+
     /**
      * Read a YAML mapping under a dotted path. Returns the raw record
      * so callers can enumerate keys (e.g. listing every configured

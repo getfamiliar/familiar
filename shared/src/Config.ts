@@ -59,6 +59,20 @@ export interface ConfigService {
     getArray<T>(key: string, defaultValue: T): readonly unknown[] | T;
 
     /**
+     * Read a "string or list of strings" config value as a normalized
+     * `string[]`. A bare string becomes a one-element list; an array is
+     * filtered down to its non-empty string members; anything else (or
+     * a missing key) falls back to `defaultValue`. Lets the operator
+     * write either `key: foo/**` or `key: ["foo/**", "bar/*"]` and have
+     * both read back the same way.
+     *
+     * Distinct from {@link getArray}, which returns the default (losing
+     * the value) when the config holds a bare string rather than an
+     * array.
+     */
+    getStringList(key: string, defaultValue: readonly string[]): readonly string[];
+
+    /**
      * Set a single dotted-path key and persist atomically (write
      * temp + rename). Creates intermediate maps as needed.
      *

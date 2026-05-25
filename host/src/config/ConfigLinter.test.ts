@@ -173,4 +173,48 @@ inference:
             `unexpected timezone warning in: ${JSON.stringify(result.warnings)}`,
         );
     });
+
+    it("accepts core.writablePaths as a bare string or a string list", () => {
+        for (const value of ['"wiki/**"', '["wiki/**", "scratchpad/*.md"]']) {
+            const file = write(`
+core:
+  postgresPassword: secret
+  defaultChatChannel: cli
+  writablePaths: ${value}
+inference:
+  defaultProvider: openai
+  defaultModel: gpt-5
+  apiKeys:
+    openai: REAL_KEY
+`);
+            const result = lintConfigFile(file);
+            assert.equal(result.ok, true);
+            assert.equal(
+                result.warnings.some((w) => w.includes("core.writablePaths")),
+                false,
+                `unexpected writablePaths warning for ${value}: ${JSON.stringify(result.warnings)}`,
+            );
+        }
+    });
+
+    it("warns (not errors) on a malformed core.writablePaths", () => {
+        const file = write(`
+core:
+  postgresPassword: secret
+  defaultChatChannel: cli
+  writablePaths: 42
+inference:
+  defaultProvider: openai
+  defaultModel: gpt-5
+  apiKeys:
+    openai: REAL_KEY
+`);
+        const result = lintConfigFile(file);
+        assert.equal(result.ok, true, "malformed writablePaths must not block boot");
+        assert.equal(
+            result.warnings.some((w) => w.includes("core.writablePaths")),
+            true,
+            `expected a writablePaths warning in: ${JSON.stringify(result.warnings)}`,
+        );
+    });
 });
