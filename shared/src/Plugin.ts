@@ -11,6 +11,7 @@ import type { MailApi } from "./Mail.js";
 import type { MailStyleTemplate } from "./MailStyleTemplate.js";
 import type { StepResultRow } from "./StepResult.js";
 import type { ToolRunContext } from "./ToolRunner.js";
+import type { WorkspaceWatcherApi } from "./WorkspaceFile.js";
 
 export type { ChatHandler, Client as McpClient };
 
@@ -330,6 +331,23 @@ export interface HostContext {
         mailbox: string,
         name?: string,
     ) => Promise<MailStyleTemplate | undefined>;
+    /**
+     * Observe changes to markdown files in the workspace. Plugins
+     * subscribe via `ctx.workspace.onFileUpdate(filter, cb)` and receive
+     * notifications when files are added, changed, or removed under the
+     * filter (matched against frontmatter and/or workspace-relative path).
+     *
+     * The subscription is live for the lifetime of the host process or
+     * until the returned unsubscribe handle is invoked. No initial replay
+     * of existing matches — plugins that need a baseline snapshot do their
+     * own scan in `start()`.
+     *
+     * Only available inside the daemon: one-shot CLI invocations (`./cli.sh
+     * <plugin> …`) do not spin up the watcher, so calling `onFileUpdate`
+     * from a CLI command throws synchronously. Daemon plugins are the
+     * intended consumer.
+     */
+    readonly workspace: WorkspaceWatcherApi;
     readonly mcp: {
         /**
          * Snapshot of every MCP declared in `mcp.yml` as `{ key, source,

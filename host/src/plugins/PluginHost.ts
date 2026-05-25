@@ -24,6 +24,7 @@ import { buildMailStyleTools } from "../mail/MailStyleTools.js";
 import { buildMailTools } from "../mail/MailTools.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
 import { PluginMcpService } from "../mcp/PluginMcpService.js";
+import type { WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
 import { EventContextRegistry } from "./EventContextRegistry.js";
 import { HostContextImpl } from "./HostContextImpl.js";
 import { plugins } from "./Registry.js";
@@ -72,6 +73,7 @@ export class PluginHost {
     private readonly mailStyleStore: MailStyleStore;
     private readonly eventContextRegistry: EventContextRegistry;
     private toolsRegistry: PluginToolsRegistry | undefined;
+    private workspaceWatcher: WorkspaceWatcher | undefined;
     private bastionBaseUrl: string = DEFAULT_BASTION_BASE_URL;
     private connection: PostgresConnection | undefined;
     private prepared = false;
@@ -130,6 +132,18 @@ export class PluginHost {
      */
     setToolsRegistry(registry: PluginToolsRegistry): void {
         this.toolsRegistry = registry;
+    }
+
+    /**
+     * Wire the shared workspace watcher that backs `ctx.workspace` for
+     * every plugin context this host builds. Daemon mode calls this after
+     * `WorkspaceWatcher.start()` resolves and before `startDaemons()` so
+     * plugins can call `ctx.workspace.onFileUpdate(...)` from inside
+     * `start(ctx)`. One-shot CLI invocations leave it unset; calling
+     * `ctx.workspace.onFileUpdate` from a CLI command throws.
+     */
+    setWorkspaceWatcher(watcher: WorkspaceWatcher): void {
+        this.workspaceWatcher = watcher;
     }
 
     /**
@@ -371,6 +385,7 @@ export class PluginHost {
             mail: this.mailRegistry,
             mailStyleStore: this.mailStyleStore,
             eventContextRegistry: this.eventContextRegistry,
+            workspaceWatcher: this.workspaceWatcher,
             daemonDownSignal: this.daemonDownController.signal,
         });
     }

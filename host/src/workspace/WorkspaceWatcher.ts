@@ -1,34 +1,16 @@
 import { readFileSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import type { Logger } from "@getfamiliar/shared";
+import type { Logger, WorkspaceFileFilter } from "@getfamiliar/shared";
 import chokidar, { type FSWatcher } from "chokidar";
 import { parse as parseYaml } from "yaml";
 
 /**
- * Filter describing which workspace files a consumer cares about.
- *
- * All fields are optional and combined with AND semantics. An empty
- * filter matches every `.md` file under the workspace.
+ * Internal alias matching the public `WorkspaceFileFilter` shape from
+ * `@getfamiliar/shared`. Kept as a local re-export so existing in-host
+ * consumers (`CronjobScheduler`, etc.) need not touch their imports.
  */
-export interface FileFilter {
-    /**
-     * Frontmatter key → search expression. The file matches iff every
-     * key listed here is present in the file's YAML frontmatter AND
-     * the stringified value matches the expression.
-     *
-     * The expression is a substring matcher with `*` as the any-chars
-     * wildcard. `"*"` alone means "key present with any value". `"foo"`
-     * means "value contains the substring `foo`". `"foo*bar"` means
-     * "value contains `foo` somewhere, then `bar` later".
-     */
-    readonly frontmatter?: Readonly<Record<string, string>>;
-    /**
-     * Optional substring-with-`*` glob applied to the workspace-relative
-     * path. Same wildcard grammar as the frontmatter values.
-     */
-    readonly pathGlob?: string;
-}
+export type FileFilter = WorkspaceFileFilter;
 
 /**
  * A workspace file observed by the watcher.

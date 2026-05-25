@@ -28,10 +28,14 @@ import {
     type PostgresConnection,
     StepResultBus,
     type StepResultUnsubscribe,
+    type WorkspaceFileEvent,
+    type WorkspaceFileFilter,
+    type WorkspaceWatcherApi,
 } from "@getfamiliar/shared";
 import { inspectPidFile } from "../commands/pidfile.js";
 import type { MailStyleStore } from "../mail/MailStyleStore.js";
 import type { PluginMcpService } from "../mcp/PluginMcpService.js";
+import type { WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
 import type { EventContextRegistry } from "./EventContextRegistry.js";
 
 /**
@@ -118,6 +122,13 @@ export interface HostContextImplDeps {
      */
     eventContextRegistry: EventContextRegistry;
     /**
+     * Shared workspace watcher backing `ctx.workspace`. Optional because
+     * one-shot CLI invocations (`./cli.sh <plugin> …`) do not spin one
+     * up; daemon contexts always pass it. When absent, every
+     * `ctx.workspace.onFileUpdate` call throws synchronously.
+     */
+    workspaceWatcher?: WorkspaceWatcher;
+    /**
      * Signal exposed to plugins as `ctx.daemonDownSignal`. CLI
      * invocations wire it to a pidfile watcher that aborts when the
      * daemon disappears; daemon-internal contexts pass a never-firing
@@ -185,6 +196,31 @@ export class HostContextImpl implements HostContext {
     readonly scratch = {
         addFiles: (eventId: string, files: readonly EventFile[]): Promise<readonly string[]> =>
             this.addScratchFiles(eventId, files),
+    };
+
+    readonly workspace: WorkspaceWatcherApi = {
+        onFileUpdate: (
+            filter: WorkspaceFileFilter,
+            callback: (event: WorkspaceFileEvent) => void,
+        ): (() => void) => {
+            const watcher = this.deps.workspaceWatcher;
+            if (!watcher) {
+                throw new Error(
+                    "ctx.workspace.onFileUpdate is only available inside the daemon (no workspace watcher in CLI mode)",
+                );
+            }
+            return watcher.onFileUpdate(filter, (file) => {
+                // The watcher's WorkspaceFile carries an optional `type`
+                // tag on update notifications; defensively coerce to a
+                // non-optional `kind` for the plugin-facing event.
+                const kind = file.type ?? "changed";
+                callback({
+                    kind,
+                    relativePath: file.relativePath,
+                    absolutePath: file.absolutePath,
+                });
+            });
+        },
     };
 
     log(message: string): void {
