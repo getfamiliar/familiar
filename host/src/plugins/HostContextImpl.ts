@@ -226,6 +226,10 @@ export class HostContextImpl implements HostContext {
         this.deps.log.info(message);
     }
 
+    get logger(): Logger {
+        return this.deps.log;
+    }
+
     get dataDir(): string {
         return this.deps.dataDir;
     }

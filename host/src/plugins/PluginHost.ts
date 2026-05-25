@@ -352,12 +352,36 @@ export class PluginHost {
     }
 
     /**
-     * Tear down host-side resources held by plugins: every cached MCP
-     * client, then the shared postgres connection (if it was opened).
-     * MCP first because some clients may want to log lifecycle lines
-     * the postgres-backed sink relays.
+     * Tear down host-side resources held by plugins:
+     *  1. Each plugin's `stop(ctx)` hook, in reverse registration order
+     *     (LIFO of `start`). Failures are logged and the drain
+     *     continues — one bad plugin must not strand another's flush.
+     *  2. Every cached MCP client.
+     *  3. The shared postgres connection (if it was opened).
+     *
+     * MCP is closed after plugin stops because plugin `stop` hooks may
+     * still want to log lifecycle lines, and the postgres-backed log
+     * sink relays through host services that are alive at this point.
      */
     async close(): Promise<void> {
+        for (let i = plugins.length - 1; i >= 0; i--) {
+            const plugin = plugins[i];
+            const stop = plugin?.host?.stop;
+            if (!stop) {
+                continue;
+            }
+            try {
+                await stop(this.context(plugin.id));
+            } catch (err) {
+                this.log.error(
+                    {
+                        plugin: plugin.id,
+                        err: err instanceof Error ? err.message : String(err),
+                    },
+                    "plugin stop hook threw",
+                );
+            }
+        }
         await this.mcpService.close();
         if (!this.connection) {
             return;

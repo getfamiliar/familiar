@@ -238,6 +238,18 @@ export interface HostContext {
     /** Structured-ish log line. Future: scoped by plugin id, severity, etc. */
     readonly log: (message: string) => void;
     /**
+     * The pino-style {@link Logger} that backs {@link log}, exposed
+     * directly so plugins that need leveled output (`.debug`, `.warn`,
+     * `.error`) or per-call structured fields don't have to route
+     * everything through the plain `.log(msg)` shorthand. Already
+     * scoped to the plugin by the host, so records carry a stable
+     * `component` tag without the plugin doing anything.
+     *
+     * The `.log(msg)` function above is a convenience for the common
+     * info-level case and stays supported.
+     */
+    readonly logger: Logger;
+    /**
      * Absolute host path of the project's `data/` directory.
      *
      * Plugins that need to persist host-side state (auth tokens that
@@ -513,6 +525,25 @@ export interface PluginHostManifest {
      * visible by the time any `start` body runs.
      */
     start?(ctx: HostContext): Promise<void>;
+    /**
+     * Drain hook called during daemon shutdown. Awaited in reverse
+     * registration order (LIFO of `start`), wrapped in a `safeStop`
+     * so a throw is logged but does not abort the rest of the drain.
+     *
+     * Use this for plugins that own dirty in-memory state which must
+     * be flushed to disk before the process exits — the memory
+     * plugin's Orama index is the motivating case.
+     *
+     * Hard rules: must resolve within the daemon-wide drain budget
+     * (see `DRAINING_DEADLINE_MS` in `host/src/commands/Start.ts`).
+     * The shared budget covers every plugin's stop plus the postgres
+     * + bastion teardown, so individual stops should keep their work
+     * tight — a single bad flush should not eat the whole budget.
+     *
+     * Not called for one-shot CLI command runs — only on daemon
+     * shutdown via `PluginHost.close()`.
+     */
+    stop?(ctx: HostContext): Promise<void>;
     /**
      * Declarative list of {@link PluginTool}s this plugin contributes
      * to the agent. Collected once, **after** the plugin's `start`
