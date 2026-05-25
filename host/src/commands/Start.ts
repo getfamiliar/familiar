@@ -25,6 +25,7 @@ import {
     AGENT_IMAGE_TAG,
     AgentContainer,
     ensureAgentImage,
+    type LogSystemPromptMode,
 } from "../container-runner/AgentContainer.js";
 import { CronjobScheduler } from "../cron/CronjobScheduler.js";
 import { ScheduledHandlerScheduler } from "../cron/ScheduledHandlerScheduler.js";
@@ -115,10 +116,10 @@ export const startCommand = defineCommand({
         );
         // In dev mode, default the inference debug captures to on when
         // the operator hasn't pinned a value in config.yml. Explicit
-        // `true`/`false` in config always wins; in production both
-        // default to `false` so handler iteration doesn't add load to
-        // a deployed daemon.
-        const logSystemPrompt = config.getBool("core.logSystemPrompt", undefined) ?? dev;
+        // `true`/`false`/`"full"`/`"non-static"` in config always wins;
+        // in production the default is `"off"` so handler iteration
+        // doesn't add load to a deployed daemon.
+        const logSystemPromptMode: LogSystemPromptMode = resolveLogSystemPromptMode(config, dev);
         // Operator's preferred timezone. Empty when unset; the agent
         // container falls back to its own system tz, matching how the
         // host plugins fall back via getCoreTimezone().
@@ -259,7 +260,7 @@ export const startCommand = defineCommand({
             inferenceMaxRetries,
             toolCallOffloadingLimit,
             agentStepTimeoutSeconds,
-            logSystemPrompt,
+            logSystemPromptMode,
             captureRawStepResultToDatabase,
             providerTypes,
             verbose: debugLogging,
@@ -578,4 +579,25 @@ function ensureDirs(boot: ReturnType<typeof bootstrap>): void {
     mkdirSync(boot.logsDir, { recursive: true });
     mkdirSync(boot.mcpLogsDir, { recursive: true });
     mkdirSync(boot.scratchDir, { recursive: true });
+}
+
+/**
+ * Resolve `core.logSystemPrompt` (which may be a boolean or the
+ * strings `"full"` / `"non-static"`) into the {@link LogSystemPromptMode}
+ * the agent container actually consumes. When unset, defaults to
+ * `"full"` in dev and `"off"` in prod. Malformed values would already
+ * have been flagged by the lint pass, but the helper still falls back
+ * to the default in that case rather than throwing — the daemon would
+ * otherwise refuse to boot over an audit-only knob.
+ */
+function resolveLogSystemPromptMode(config: ConfigService, dev: boolean): LogSystemPromptMode {
+    const asBool = config.getBool("core.logSystemPrompt", undefined);
+    if (typeof asBool === "boolean") {
+        return asBool ? "full" : "off";
+    }
+    const asStr = config.getString("core.logSystemPrompt", undefined);
+    if (asStr === "full" || asStr === "non-static") {
+        return asStr;
+    }
+    return dev ? "full" : "off";
 }

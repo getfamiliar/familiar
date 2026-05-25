@@ -46,6 +46,21 @@ export function optionalEnvBool(name: string): boolean {
 }
 
 /**
+ * Read a string env var. Returns the trimmed value when set and
+ * non-empty, otherwise `undefined` so the caller can chain to a
+ * default with `??`. Used for string-valued knobs the host forwards
+ * via `${value}` interpolation (e.g. `INFERENCE_LOG_SYSTEM_PROMPT_MODE`).
+ */
+export function optionalEnvString(name: string): string | undefined {
+    const raw = process.env[name];
+    if (typeof raw !== "string") {
+        return undefined;
+    }
+    const trimmed = raw.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
  * Workspace-relative glob patterns the operator marked as
  * `core.writablePaths`: paths a non-privileged agentrun may write
  * (bypassing the `.md` / `toolgroups/` privilege gate) and that the

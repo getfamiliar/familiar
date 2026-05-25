@@ -76,7 +76,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
     optionalPositiveInt(config, "core.logRetentionDays", warnings);
     optionalPositiveInt(config, "core.agentStepTimeout", warnings);
     optionalPositiveInt(config, "core.toolCallOffloadingLimit", warnings);
-    optionalBool(config, "core.logSystemPrompt", warnings);
+    optionalLogSystemPromptMode(config, "core.logSystemPrompt", warnings);
     optionalIanaTimezone(config, "core.timezone", warnings);
     optionalString(config, "core.defaultCalendar", warnings);
     optionalStringOrStringList(config, "core.writablePaths", warnings);
@@ -267,6 +267,35 @@ function optionalBool(root: Record<string, unknown>, path: string, warnings: str
     if (typeof value !== "boolean") {
         warnings.push(`${path} should be a boolean (got ${describe(value)}).`);
     }
+}
+
+/**
+ * Validate `core.logSystemPrompt`. Accepts `false`, `true`, `"full"`,
+ * or `"non-static"`. `true` is an alias for `"full"`; both stamp the
+ * resolved system prompt verbatim onto `agentruns.system_prompt`.
+ * `"non-static"` stamps it with the three workspace-root framing
+ * files (SOUL.md, ENVIRONMENT.md, CONTEXT.md) replaced by
+ * placeholders. `false` disables stamping. Anything else warns;
+ * `Start.ts` falls back to its dev/prod default in that case.
+ */
+function optionalLogSystemPromptMode(
+    root: Record<string, unknown>,
+    path: string,
+    warnings: string[],
+): void {
+    const value = readPath(root, path);
+    if (value === undefined) {
+        return;
+    }
+    if (typeof value === "boolean") {
+        return;
+    }
+    if (value === "full" || value === "non-static") {
+        return;
+    }
+    warnings.push(
+        `${path} should be a boolean or one of "full" / "non-static" (got ${describe(value)}).`,
+    );
 }
 
 /**

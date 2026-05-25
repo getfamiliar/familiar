@@ -31,12 +31,18 @@ core:
   # Optional; falls back to 150 when omitted.
   # agentStepTimeout: 150
 
-  # When true, every agentrun's resolved system prompt (SOUL.md +
-  # CONTEXT.md + handler body + tool list, often several KB) is
-  # persisted into agentruns.system_prompt. The report layer
-  # surfaces it in the Agentrun Start section when the consumer
-  # opts into `--details`. Off by default — turn on while debugging
-  # a handler, off again after.
+  # Controls whether — and how — each agentrun's resolved system
+  # prompt is persisted into agentruns.system_prompt. The report
+  # layer surfaces it in the Agentrun Start section when the
+  # consumer opts into `--details`. Off by default — turn on while
+  # debugging a handler, off again after. Accepted values:
+  #   false        — don't stamp the prompt (default).
+  #   true / "full" — stamp it verbatim.
+  #   "non-static" — stamp it with SOUL.md / ENVIRONMENT.md /
+  #                  CONTEXT.md replaced by `<content of file …>`
+  #                  placeholders, keeping the per-run signal
+  #                  (handler body, tool list, event-context blocks,
+  #                  runtime block) without the framing-file bulk.
   # logSystemPrompt: false
 
   # User's preferred IANA timezone — used by every plugin / tool

@@ -83,6 +83,14 @@ const MAX_PAYLOAD_CHARS = 5000;
  * The handler body, the tool list, and the runtime section are always
  * included regardless of mode.
  *
+ * Returns both the verbatim prompt (`full`, what inference sees) and a
+ * `redacted` variant where the three framing-file sections have their
+ * file body swapped for a `<content of file …>` placeholder. The
+ * caller chooses which one to persist onto `agentruns.system_prompt`
+ * based on `core.logSystemPrompt`; the variant fed to the model is
+ * always `full`. When the handler's mode excludes the framing files,
+ * `full === redacted`.
+ *
  * @param handler The resolved handler file. Body becomes the `# Handler`
  *   section; path / inheritance / `outputChat` feed the `# Runtime`
  *   section at the end. `header.systemPrompt` selects the framing mode.
@@ -106,52 +114,106 @@ export async function buildSystemPrompt(
     topic: string,
     privileged: boolean,
     eventContext: EventContextFetchInput | null,
-): Promise<string> {
-    const sections: string[] = [];
+): Promise<BuiltSystemPrompt> {
+    const sections: SystemPromptSection[] = [];
     const mode = handler.header.systemPrompt ?? "full";
 
     if (mode === "full" || mode === "only-soul") {
         const soul = readWorkspaceFile("SOUL.md");
         if (soul !== null) {
-            sections.push(`# Identity\n\n${soul}`);
+            sections.push(framingFileSection("Identity", "SOUL.md", soul));
         }
     }
 
     if (mode === "full") {
         const environment = readWorkspaceFile("ENVIRONMENT.md");
         if (environment !== null) {
-            sections.push(`# Environment\n\n${environment}`);
+            sections.push(framingFileSection("Environment", "ENVIRONMENT.md", environment));
         }
 
         const context = readWorkspaceFile("CONTEXT.md");
         if (context !== null) {
-            sections.push(`# Context\n\n${context}`);
+            sections.push(framingFileSection("Context", "CONTEXT.md", context));
         }
     }
 
     if (handler.body.trim().length > 0) {
-        sections.push(`# Handler\n\n${truncate(handler.body, MAX_FILE_CHARS)}`);
+        sections.push(verbatim(`# Handler\n\n${truncate(handler.body, MAX_FILE_CHARS)}`));
     }
 
     const skillsSection = buildAvailableSkillsSection();
     if (skillsSection !== null) {
-        sections.push(skillsSection);
+        sections.push(verbatim(skillsSection));
     }
 
     const toolList =
         toolNames.length > 0 ? toolNames.map((name) => `- ${name}`).join("\n") : "(none)";
-    sections.push(`# Available tools\n\n${toolList}`);
+    sections.push(verbatim(`# Available tools\n\n${toolList}`));
 
     if (eventContext !== null) {
         const eventContextSections = await fetchEventContextSections(eventContext);
         for (const section of eventContextSections) {
-            sections.push(`# Event context (from ${section.pluginId})\n\n${section.text.trim()}`);
+            sections.push(
+                verbatim(`# Event context (from ${section.pluginId})\n\n${section.text.trim()}`),
+            );
         }
     }
 
-    sections.push(`# Runtime\n\n${buildRuntimeSection(handler, topic, privileged)}`);
+    sections.push(verbatim(`# Runtime\n\n${buildRuntimeSection(handler, topic, privileged)}`));
 
-    return truncate(sections.join("\n\n"), MAX_SYSTEM_CHARS);
+    return {
+        full: truncate(sections.map((s) => s.full).join("\n\n"), MAX_SYSTEM_CHARS),
+        redacted: truncate(sections.map((s) => s.redacted).join("\n\n"), MAX_SYSTEM_CHARS),
+    };
+}
+
+/**
+ * One assembled section of the system prompt, in two parallel
+ * variants:
+ *
+ * - `full` is what the agent receives at inference time (the same
+ *   string that used to be the only output of {@link buildSystemPrompt}).
+ * - `redacted` is what gets persisted onto `agentruns.system_prompt`
+ *   when the operator has selected `core.logSystemPrompt: "non-static"`.
+ *   For the three workspace-root framing files (SOUL.md / ENVIRONMENT.md
+ *   / CONTEXT.md) the file body is replaced with a single-line
+ *   `<content of file …>` placeholder; for every other section the two
+ *   variants are identical.
+ */
+interface SystemPromptSection {
+    readonly full: string;
+    readonly redacted: string;
+}
+
+/** Both variants of the assembled prompt; see {@link SystemPromptSection}. */
+export interface BuiltSystemPrompt {
+    /** The verbatim prompt fed to inference. */
+    readonly full: string;
+    /**
+     * The prompt with the three workspace-root framing files replaced
+     * by `<content of file …>` placeholders. Equal to {@link full} when
+     * the handler's `systemPrompt` mode excludes those files (no
+     * placeholders to substitute).
+     */
+    readonly redacted: string;
+}
+
+/** A section that is identical between the inference and audit-log views. */
+function verbatim(text: string): SystemPromptSection {
+    return { full: text, redacted: text };
+}
+
+/**
+ * A framing-file section (`# Identity` / `# Environment` / `# Context`).
+ * The full variant carries the file body verbatim; the redacted variant
+ * replaces the body with a `<content of file …>` placeholder so the
+ * audit log keeps per-run signal without the bulky framing-file noise.
+ */
+function framingFileSection(heading: string, fileName: string, body: string): SystemPromptSection {
+    return {
+        full: `# ${heading}\n\n${body}`,
+        redacted: `# ${heading}\n\n<content of file ${fileName}>`,
+    };
 }
 
 /**

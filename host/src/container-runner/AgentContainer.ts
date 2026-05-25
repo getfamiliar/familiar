@@ -11,6 +11,20 @@ import {
 const CONTAINER_NAME = "familiar-agent";
 
 /**
+ * Tri-state mode for `core.logSystemPrompt`:
+ *
+ * - `"off"` — don't stamp `agentruns.system_prompt`.
+ * - `"full"` — stamp the prompt verbatim.
+ * - `"non-static"` — stamp the prompt with SOUL.md / ENVIRONMENT.md /
+ *   CONTEXT.md replaced by `<content of file …>` placeholders so the
+ *   audit log keeps per-run signal without the framing-file noise.
+ *
+ * Forwarded to the container as the string env var
+ * `INFERENCE_LOG_SYSTEM_PROMPT_MODE`.
+ */
+export type LogSystemPromptMode = "off" | "full" | "non-static";
+
+/**
  * Image tag for the long-running agent container. Built from
  * `container/Dockerfile` on demand by {@link ensureAgentImage}.
  */
@@ -119,13 +133,14 @@ export interface AgentContainerConfig {
      */
     readonly captureRawStepResultToDatabase: boolean;
     /**
-     * When `true`, AgentRunner persists each agentrun's resolved
-     * system prompt onto `agentruns.system_prompt`. Reflected to
-     * the container as `INFERENCE_LOG_SYSTEM_PROMPT=true|false`;
-     * sourced from `core.logSystemPrompt` in `config.yml`,
-     * defaulting to `false`.
+     * Controls whether — and how — AgentRunner persists each agentrun's
+     * resolved system prompt onto `agentruns.system_prompt`. Reflected
+     * to the container as `INFERENCE_LOG_SYSTEM_PROMPT_MODE=off|full|non-static`;
+     * sourced from `core.logSystemPrompt` in `config.yml` (accepting
+     * booleans and the two mode strings — normalized by `Start.ts`).
+     * Default: `"full"` in dev, `"off"` in prod.
      */
-    readonly logSystemPrompt: boolean;
+    readonly logSystemPromptMode: LogSystemPromptMode;
     /**
      * Map of enabled provider id → SDK type. Native ids (`openai`,
      * `anthropic`, `grok`, …) map to themselves; custom ids declared
@@ -223,7 +238,7 @@ export class AgentContainer {
             "-e",
             `INFERENCE_CAPTURE_RAW_STEP_RESULT=${this.config.captureRawStepResultToDatabase}`,
             "-e",
-            `INFERENCE_LOG_SYSTEM_PROMPT=${this.config.logSystemPrompt}`,
+            `INFERENCE_LOG_SYSTEM_PROMPT_MODE=${this.config.logSystemPromptMode}`,
             "-e",
             `CORE_TIMEZONE=${this.config.coreTimezone}`,
             "-e",

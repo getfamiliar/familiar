@@ -8,10 +8,15 @@ import type {
 } from "@getfamiliar/shared";
 import { type ModelMessage, stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
-import { optionalEnvBool, requireEnv } from "../env.js";
+import { optionalEnvBool, optionalEnvString, requireEnv } from "../env.js";
 import { HandlerFile } from "../HandlerFile.js";
 import { ModelFactory } from "../models/ModelFactory.js";
-import { buildPrompt, buildScratchListing, buildSystemPrompt } from "../PromptBuilder.js";
+import {
+    type BuiltSystemPrompt,
+    buildPrompt,
+    buildScratchListing,
+    buildSystemPrompt,
+} from "../PromptBuilder.js";
 import { fetchAncestorChain } from "./AgentRunLineage.js";
 import { AgentRunTimeoutError } from "./AgentRunTimeoutError.js";
 import { computeRetryDelay } from "./computeRetryDelay.js";
@@ -27,6 +32,32 @@ import { synthesizeResultText } from "./synthesizeResultText.js";
  * so a daemon restart is required to flip it. Off by default.
  */
 const CAPTURE_RAW_STEP_RESULT = optionalEnvBool("INFERENCE_CAPTURE_RAW_STEP_RESULT");
+
+/**
+ * Pick which variant of the just-built system prompt to persist onto
+ * `agentruns.system_prompt`, based on `INFERENCE_LOG_SYSTEM_PROMPT_MODE`
+ * (forwarded by the host from `core.logSystemPrompt`):
+ *
+ *   "off" / unset / unknown → `null` (no stamping).
+ *   "full"                  → the verbatim prompt.
+ *   "non-static"            → the variant with SOUL.md / ENVIRONMENT.md /
+ *                             CONTEXT.md replaced by `<content of file …>`
+ *                             placeholders.
+ *
+ * Unknown values fall back to `null` (no stamping) rather than throwing
+ * — the lint pass has already flagged anything malformed, and the
+ * audit-log knob shouldn't be able to fail an agentrun.
+ */
+function selectLoggedSystemPrompt(built: BuiltSystemPrompt): string | null {
+    const mode = optionalEnvString("INFERENCE_LOG_SYSTEM_PROMPT_MODE");
+    if (mode === "full") {
+        return built.full;
+    }
+    if (mode === "non-static") {
+        return built.redacted;
+    }
+    return null;
+}
 
 /**
  * Hard cap on the number of steps the agent loop may take per agentrun.
@@ -186,13 +217,21 @@ export class AgentRunner {
         // via core.logSystemPrompt, the resolved system prompt — on
         // the row before invoking the agent. Done through the Scheduler-
         // owned callback so the runner stays bus-free.
-        const LOG_SYSTEM_PROMPT = optionalEnvBool("INFERENCE_LOG_SYSTEM_PROMPT");
-        await ctx.stampModel(modelLabel, LOG_SYSTEM_PROMPT ? systemPrompt : null);
+        //
+        // Three log modes (forwarded as INFERENCE_LOG_SYSTEM_PROMPT_MODE):
+        //   "off"        → don't stamp.
+        //   "full"       → stamp the verbatim prompt.
+        //   "non-static" → stamp the variant with SOUL.md / ENVIRONMENT.md
+        //                  / CONTEXT.md replaced by `<content of file …>`
+        //                  placeholders so the audit log keeps the per-
+        //                  run signal without the framing-file noise.
+        const promptToLog = selectLoggedSystemPrompt(systemPrompt);
+        await ctx.stampModel(modelLabel, promptToLog);
 
         const agent = new ToolLoopAgent<never, ToolSet>({
             model,
             tools,
-            instructions: systemPrompt,
+            instructions: systemPrompt.full,
             temperature: handler.header.temperature,
             maxOutputTokens: handler.header.maxOutputTokens,
             // The Scheduler owns retry policy via the RetryableModelException
@@ -283,7 +322,7 @@ export class AgentRunner {
                 model: handler.header.model,
                 temperature: handler.header.temperature,
                 maxOutputTokens: handler.header.maxOutputTokens,
-                systemPrompt: systemPrompt,
+                systemPrompt: systemPrompt.full,
                 prompt,
                 runPrompt: ctx.row.prompt,
                 tools: toolNames,
