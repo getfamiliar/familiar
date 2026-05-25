@@ -12,7 +12,7 @@ import {
 import { DateTime } from "luxon";
 import type { CalendarSafety } from "./CalendarSafety.js";
 import type { CalendarService } from "./CalendarService.js";
-import { type AgentEventView, readCoreTimezone, renderEventForAgent } from "./EventRenderer.js";
+import { readCoreTimezone, renderEventForAgent } from "./EventRenderer.js";
 
 /**
  * Inline-attachment ceiling per Graph's `fileAttachment` resource —

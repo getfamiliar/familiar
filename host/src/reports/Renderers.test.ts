@@ -57,9 +57,7 @@ function fakeStep(over: Partial<StepResultRow>): StepResultRow {
 describe("renderStepResult — tool error rendering", () => {
     it("renders a matched tool-error as a blockquote with the flattened message", () => {
         const step = fakeStep({
-            toolCalls: [
-                { toolCallId: "c1", toolName: "mail_fetch_body", input: {} },
-            ],
+            toolCalls: [{ toolCallId: "c1", toolName: "mail_fetch_body", input: {} }],
             toolResults: [
                 {
                     type: "tool-error",
@@ -78,12 +76,8 @@ describe("renderStepResult — tool error rendering", () => {
 
     it("still renders successful tool-result calls with a JSON output block", () => {
         const step = fakeStep({
-            toolCalls: [
-                { toolCallId: "c1", toolName: "mail_fetch_body", input: { mail_id: "x" } },
-            ],
-            toolResults: [
-                { type: "tool-result", toolCallId: "c1", output: "hello" },
-            ],
+            toolCalls: [{ toolCallId: "c1", toolName: "mail_fetch_body", input: { mail_id: "x" } }],
+            toolResults: [{ type: "tool-result", toolCallId: "c1", output: "hello" }],
         });
         const md = renderStepResult(fakeRun(), step);
         assert.match(md, /```json\n"hello"\n```/);

@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import type { Logger, WorkspaceFileFilter } from "@getfamiliar/shared";
+import type { Logger, WorkspaceFile, WorkspaceFileFilter } from "@getfamiliar/shared";
 import chokidar, { type FSWatcher } from "chokidar";
 import { parse as parseYaml } from "yaml";
+
+export type { WorkspaceFile } from "@getfamiliar/shared";
 
 /**
  * Internal alias matching the public `WorkspaceFileFilter` shape from
@@ -11,28 +13,6 @@ import { parse as parseYaml } from "yaml";
  * consumers (`CronjobScheduler`, etc.) need not touch their imports.
  */
 export type FileFilter = WorkspaceFileFilter;
-
-/**
- * A workspace file observed by the watcher.
- *
- * Returned both by {@link WorkspaceWatcher.listFiles} (snapshot, no
- * `type`) and by {@link WorkspaceWatcher.onFileUpdate} subscriptions
- * (`type` set to the change kind that triggered the notification).
- *
- * `removed` may be synthetic: a file whose frontmatter changed such
- * that it no longer matches a subscription's filter is reported as
- * `removed` even though the file still exists on disk. The file is
- * gone *from the subscriber's point of view*, which is the only thing
- * the consumer can act on.
- */
-export interface WorkspaceFile {
-    /** Path relative to the watched workspace root (POSIX separators). */
-    readonly relativePath: string;
-    /** Absolute path on disk. */
-    readonly absolutePath: string;
-    /** Only set on update notifications; omitted by listFiles. */
-    readonly type?: "added" | "changed" | "removed";
-}
 
 /** Internal cache entry per known workspace file. */
 interface FileEntry {
@@ -51,13 +31,16 @@ interface Subscription {
  * Generalized file watcher over the workspace directory.
  *
  * Consumers express interest with a {@link FileFilter} and receive
- * either a one-shot snapshot ({@link listFiles}) or a long-lived
- * stream of changes ({@link onFileUpdate}). The watcher hides chokidar
- * and the frontmatter-parse caching behind both methods so consumers
- * never re-read or re-parse the same file.
+ * either a one-shot snapshot ({@link listMarkdownFiles}) or a long-lived
+ * stream of changes ({@link onMarkdownFileUpdate}). The watcher hides
+ * chokidar and the frontmatter-parse caching behind both methods so
+ * consumers never re-read or re-parse the same file.
  *
- * Only `.md` files are tracked. Other features can widen this later;
- * cron and the foreseeable next consumers are markdown-only.
+ * **Scope: markdown only.** Only `.md` files are tracked; every chokidar
+ * event handler bails on non-`.md` paths via {@link isMarkdownPath}, so
+ * the in-memory cache never sees other extensions. The method names
+ * (`listMarkdownFiles`, `onMarkdownFileUpdate`) keep that scope obvious
+ * at every call site.
  */
 export class WorkspaceWatcher {
     private readonly workspaceDir: string;
@@ -74,8 +57,9 @@ export class WorkspaceWatcher {
 
     /**
      * Begin watching the workspace. Resolves once the initial scan has
-     * settled so that {@link listFiles} reflects a complete snapshot
-     * immediately afterwards. Safe to call once; double-start throws.
+     * settled so that {@link listMarkdownFiles} reflects a complete
+     * snapshot immediately afterwards. Safe to call once; double-start
+     * throws.
      */
     async start(): Promise<void> {
         if (this.watcher) {
@@ -137,14 +121,19 @@ export class WorkspaceWatcher {
     }
 
     /**
-     * Return every currently-known file matching the filter. Awaits the
-     * initial scan if it hasn't settled yet, so a caller invoked early
-     * (e.g. from another component's `start`) still sees a complete
-     * snapshot rather than a partial one.
+     * Snapshot of every currently-known `.md` file matching the filter.
+     * Reads from the in-memory cache populated by chokidar — no fresh
+     * disk scan. Awaits the initial scan if it hasn't settled yet, so a
+     * caller invoked early (e.g. from another component's `start`)
+     * still sees a complete snapshot rather than a partial one.
+     *
+     * Pair with {@link onMarkdownFileUpdate} for the snapshot-then-diff
+     * pattern — see the class-level doc. Returned entries have `kind`
+     * omitted (only update notifications carry a transition kind).
      */
-    async listFiles(filter: FileFilter): Promise<readonly WorkspaceFile[]> {
+    async listMarkdownFiles(filter: FileFilter): Promise<readonly WorkspaceFile[]> {
         if (!this.watcher) {
-            throw new Error("WorkspaceWatcher.listFiles called before start()");
+            throw new Error("WorkspaceWatcher.listMarkdownFiles called before start()");
         }
         if (this.ready) {
             await this.ready;
@@ -162,17 +151,22 @@ export class WorkspaceWatcher {
     }
 
     /**
-     * Subscribe to changes affecting files that match the filter. The
-     * callback fires with `type: "added"` on the *transition* from
-     * not-matching to matching (creation, or a frontmatter edit that
-     * brings the file into scope), `type: "changed"` for content
-     * changes while still matching, and `type: "removed"` on the
-     * reverse transition (deletion, or a frontmatter edit that takes
-     * the file out of scope).
+     * Subscribe to transitions affecting `.md` files that match the
+     * filter. The callback fires with `kind: "added"` on the
+     * *transition* from not-matching to matching (creation, or a
+     * frontmatter edit that brings the file into scope),
+     * `kind: "changed"` for content changes while still matching, and
+     * `kind: "removed"` on the reverse transition (deletion, or a
+     * frontmatter edit that takes the file out of scope).
+     *
+     * Pre-existing matches at subscription time are **not** replayed —
+     * call {@link listMarkdownFiles} for the baseline. The two
+     * together form the snapshot-then-diff pattern documented on the
+     * class.
      *
      * The returned function is the unsubscribe handle.
      */
-    onFileUpdate(filter: FileFilter, callback: (file: WorkspaceFile) => void): () => void {
+    onMarkdownFileUpdate(filter: FileFilter, callback: (file: WorkspaceFile) => void): () => void {
         const sub: Subscription = {
             filter,
             callback,
@@ -242,13 +236,13 @@ export class WorkspaceWatcher {
     private dispatch(
         sub: Subscription,
         entry: FileEntry,
-        type: "added" | "changed" | "removed",
+        kind: "added" | "changed" | "removed",
     ): void {
         try {
             sub.callback({
                 relativePath: entry.relativePath,
                 absolutePath: entry.absolutePath,
-                type,
+                kind,
             });
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
@@ -316,7 +310,7 @@ async function walk(dir: string, visit: (absolutePath: string) => Promise<void>)
 
 /**
  * Test whether a file entry matches a filter. Exported for unit tests;
- * the production callers are `listFiles` and the subscription dispatch.
+ * the production callers are `listMarkdownFiles` and the subscription dispatch.
  */
 export function matchesFilter(entry: FileEntry, filter: FileFilter): boolean {
     if (filter.pathGlob !== undefined && !matchSearchExpr(filter.pathGlob, entry.relativePath)) {

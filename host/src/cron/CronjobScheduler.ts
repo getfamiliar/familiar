@@ -5,9 +5,10 @@ import {
     type NewEvent,
     type ParsedCron,
     parseCron,
+    type WorkspaceFile,
 } from "@getfamiliar/shared";
 import { Cron } from "croner";
-import type { WorkspaceFile, WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
+import type { WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
 
 /** A single scheduled cron entry — the parsed expression plus its live job. */
 interface ScheduledEntry {
@@ -57,11 +58,13 @@ export class CronjobScheduler {
 
     /** Initial scan + subscribe for live updates. Call once at daemon start. */
     async start(): Promise<void> {
-        const files = await this.watcher.listFiles(CRON_FILTER);
+        const files = await this.watcher.listMarkdownFiles(CRON_FILTER);
         for (const file of files) {
             this.register(file);
         }
-        this.unsubscribe = this.watcher.onFileUpdate(CRON_FILTER, (file) => this.onUpdate(file));
+        this.unsubscribe = this.watcher.onMarkdownFileUpdate(CRON_FILTER, (file) =>
+            this.onUpdate(file),
+        );
         this.log.info({ count: this.jobs.size }, "cronjob scheduler ready");
     }
 
@@ -92,7 +95,7 @@ export class CronjobScheduler {
     }
 
     private onUpdate(file: WorkspaceFile): void {
-        if (file.type === "removed") {
+        if (file.kind === "removed") {
             this.unregister(file.relativePath);
             return;
         }

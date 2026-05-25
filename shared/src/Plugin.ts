@@ -332,20 +332,17 @@ export interface HostContext {
         name?: string,
     ) => Promise<MailStyleTemplate | undefined>;
     /**
-     * Observe changes to markdown files in the workspace. Plugins
-     * subscribe via `ctx.workspace.onFileUpdate(filter, cb)` and receive
-     * notifications when files are added, changed, or removed under the
-     * filter (matched against frontmatter and/or workspace-relative path).
+     * Observe markdown files in the workspace. The snapshot-then-diff
+     * pattern: `ctx.workspace.listMarkdownFiles(filter)` for the
+     * baseline, `ctx.workspace.onMarkdownFileUpdate(filter, cb)` for
+     * live transitions (added / changed / removed under the filter
+     * matched against frontmatter and/or workspace-relative path). See
+     * {@link WorkspaceWatcherApi} for the full contract.
      *
-     * The subscription is live for the lifetime of the host process or
-     * until the returned unsubscribe handle is invoked. No initial replay
-     * of existing matches — plugins that need a baseline snapshot do their
-     * own scan in `start()`.
-     *
-     * Only available inside the daemon: one-shot CLI invocations (`./cli.sh
-     * <plugin> …`) do not spin up the watcher, so calling `onFileUpdate`
-     * from a CLI command throws synchronously. Daemon plugins are the
-     * intended consumer.
+     * Only available inside the daemon: one-shot CLI invocations
+     * (`./cli.sh <plugin> …`) do not spin up the watcher, so calling
+     * either method from a CLI command throws synchronously. Daemon
+     * plugins are the intended consumer.
      */
     readonly workspace: WorkspaceWatcherApi;
     readonly mcp: {

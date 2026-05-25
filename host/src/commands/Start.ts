@@ -270,10 +270,11 @@ export const startCommand = defineCommand({
         const containerLogStream = streamContainerLogs(log, "familiar-agent");
 
         // The workspace watcher must exist before plugin daemons start
-        // because plugins reach it via `ctx.workspace.onFileUpdate(...)`
-        // from inside their `start(ctx)` hook. Starting the watcher first
-        // also means subscriptions land after the initial scan settles,
-        // so they only fire on actual changes (no initial-replay flood).
+        // because plugins reach it via `ctx.workspace.onMarkdownFileUpdate(...)`
+        // (or `listMarkdownFiles`) from inside their `start(ctx)` hook.
+        // Starting the watcher first also means subscriptions land after the
+        // initial scan settles, so they only fire on actual changes (no
+        // initial-replay flood).
         const workspaceWatcher = new WorkspaceWatcher({
             workspaceDir: boot.workspaceDir,
             log: log.child({ component: "workspace-watcher" }),

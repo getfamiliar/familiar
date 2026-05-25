@@ -28,7 +28,7 @@ import {
     type PostgresConnection,
     StepResultBus,
     type StepResultUnsubscribe,
-    type WorkspaceFileEvent,
+    type WorkspaceFile,
     type WorkspaceFileFilter,
     type WorkspaceWatcherApi,
 } from "@getfamiliar/shared";
@@ -125,7 +125,7 @@ export interface HostContextImplDeps {
      * Shared workspace watcher backing `ctx.workspace`. Optional because
      * one-shot CLI invocations (`./cli.sh <plugin> …`) do not spin one
      * up; daemon contexts always pass it. When absent, every
-     * `ctx.workspace.onFileUpdate` call throws synchronously.
+     * `ctx.workspace.*` call throws synchronously.
      */
     workspaceWatcher?: WorkspaceWatcher;
     /**
@@ -199,27 +199,26 @@ export class HostContextImpl implements HostContext {
     };
 
     readonly workspace: WorkspaceWatcherApi = {
-        onFileUpdate: (
+        listMarkdownFiles: (filter: WorkspaceFileFilter): Promise<readonly WorkspaceFile[]> => {
+            const watcher = this.deps.workspaceWatcher;
+            if (!watcher) {
+                throw new Error(
+                    "ctx.workspace.listMarkdownFiles is only available inside the daemon (no workspace watcher in CLI mode)",
+                );
+            }
+            return watcher.listMarkdownFiles(filter);
+        },
+        onMarkdownFileUpdate: (
             filter: WorkspaceFileFilter,
-            callback: (event: WorkspaceFileEvent) => void,
+            callback: (file: WorkspaceFile) => void,
         ): (() => void) => {
             const watcher = this.deps.workspaceWatcher;
             if (!watcher) {
                 throw new Error(
-                    "ctx.workspace.onFileUpdate is only available inside the daemon (no workspace watcher in CLI mode)",
+                    "ctx.workspace.onMarkdownFileUpdate is only available inside the daemon (no workspace watcher in CLI mode)",
                 );
             }
-            return watcher.onFileUpdate(filter, (file) => {
-                // The watcher's WorkspaceFile carries an optional `type`
-                // tag on update notifications; defensively coerce to a
-                // non-optional `kind` for the plugin-facing event.
-                const kind = file.type ?? "changed";
-                callback({
-                    kind,
-                    relativePath: file.relativePath,
-                    absolutePath: file.absolutePath,
-                });
-            });
+            return watcher.onMarkdownFileUpdate(filter, callback);
         },
     };
 

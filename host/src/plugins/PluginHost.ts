@@ -138,9 +138,10 @@ export class PluginHost {
      * Wire the shared workspace watcher that backs `ctx.workspace` for
      * every plugin context this host builds. Daemon mode calls this after
      * `WorkspaceWatcher.start()` resolves and before `startDaemons()` so
-     * plugins can call `ctx.workspace.onFileUpdate(...)` from inside
-     * `start(ctx)`. One-shot CLI invocations leave it unset; calling
-     * `ctx.workspace.onFileUpdate` from a CLI command throws.
+     * plugins can call `ctx.workspace.onMarkdownFileUpdate(...)` (or
+     * `listMarkdownFiles`) from inside `start(ctx)`. One-shot CLI
+     * invocations leave it unset; calling either method from a CLI
+     * command throws.
      */
     setWorkspaceWatcher(watcher: WorkspaceWatcher): void {
         this.workspaceWatcher = watcher;

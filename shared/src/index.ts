@@ -145,7 +145,7 @@ export {
     truncateUtf8,
 } from "./ToolRunner.js";
 export type {
-    WorkspaceFileEvent,
+    WorkspaceFile,
     WorkspaceFileFilter,
     WorkspaceWatcherApi,
 } from "./WorkspaceFile.js";
