@@ -456,6 +456,24 @@ export interface PluginTool<TInput = unknown, TOutput = unknown> {
      * surface a tool error to the agent.
      */
     execute(args: TInput, ctx: PluginToolCallContext): Promise<TOutput>;
+    /**
+     * Promote this tool into the `system` DSL group, alongside the
+     * container's built-in tools (`file_*`, `schedule_handler`, …).
+     * When `true`, the tool becomes part of the implicit default tool
+     * set every handler that omits `tools:` receives, **and** part of
+     * the explicit `tools: system` expansion. The per-plugin auto-group
+     * still works as before — a flagged tool stays addressable under
+     * its plugin id too.
+     *
+     * Default `false`. Use sparingly: anything in `system` is presented
+     * to every handler that doesn't customize `tools:`, so the tool's
+     * `description` must read cleanly out of any context, not just the
+     * scenarios the plugin author had in mind. Reserved for genuinely
+     * ambient capabilities (long-term memory, …) — not for
+     * domain-specific surfaces (mail, calendar) that handlers should
+     * opt into deliberately.
+     */
+    readonly system?: boolean;
 }
 
 /**

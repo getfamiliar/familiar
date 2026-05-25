@@ -112,8 +112,10 @@ export class PluginToolsGateway implements BastionModule {
     }
 
     /**
-     * Reply with `[{ key, description, inputSchema }, ...]`. Only `GET`
-     * is supported; other methods get 405.
+     * Reply with `[{ key, pluginId, description, inputSchema, system },
+     * ...]`. Only `GET` is supported; other methods get 405. `system`
+     * tells the container which plugin tools should join its built-in
+     * `system` DSL group (and thus the implicit default tool set).
      */
     private replyCatalog(req: IncomingMessage, res: ServerResponse): void {
         if (req.method !== "GET") {
@@ -125,6 +127,7 @@ export class PluginToolsGateway implements BastionModule {
             pluginId: t.pluginId,
             description: t.description,
             inputSchema: t.inputSchema,
+            system: t.system,
         }));
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(catalog));

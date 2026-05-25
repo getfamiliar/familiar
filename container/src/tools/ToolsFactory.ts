@@ -105,6 +105,16 @@ export interface ToolsFactoryContext {
      */
     readonly pluginKeysById?: ReadonlyMap<string, ReadonlySet<string>>;
     /**
+     * Plugin tool keys whose authors flagged `PluginTool.system: true`.
+     * Folded into the `system` DSL group (and the implicit-default
+     * tool set) alongside the container's built-in system tools, so
+     * "ambient" plugin tools (e.g. `memory_search`, `memory_save`)
+     * reach handlers that haven't customized `tools:`. The per-plugin
+     * auto-group still works as before — these keys remain reachable
+     * via `tools: <pluginId>` too.
+     */
+    readonly pluginSystemKeys?: ReadonlySet<string>;
+    /**
      * Per-call runner context (byte budget + spill function). Threaded
      * into every container-side tool wrapper so the three
      * {@link import("@getfamiliar/shared").runJsonTool}-family runners
@@ -201,7 +211,25 @@ export class ToolsFactory {
         const mcpTools = context.mcpTools ?? {};
         const pluginTools = context.pluginTools ?? {};
         const allTools: ToolSet = { ...systemTools, ...mcpTools, ...pluginTools };
-        const systemKeys = new Set(Object.keys(systemTools));
+        // The effective `system` set is the union of the container's
+        // built-in system tools (registered above) and any plugin tool
+        // whose author opted in via `PluginTool.system: true`. Both
+        // the implicit default (no `tools:` frontmatter) and the
+        // explicit `tools: system` expansion read from this single
+        // set, so the two paths always agree.
+        const systemKeys = new Set<string>(Object.keys(systemTools));
+        if (context.pluginSystemKeys) {
+            for (const key of context.pluginSystemKeys) {
+                // Defensive: only include keys that actually landed in
+                // the merged pool. A flagged plugin tool that never
+                // showed up (host registry returned an empty catalog,
+                // bastion fetch failed, …) should not silently appear
+                // in the DSL `system` group.
+                if (allTools[key] !== undefined) {
+                    systemKeys.add(key);
+                }
+            }
+        }
         const mcpKeys = new Set(Object.keys(mcpTools));
         const availableKeys = new Set(Object.keys(allTools));
 

@@ -1,10 +1,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import { ToolError } from "@getfamiliar/shared";
-import {
-    mergeToolErrorsIntoResults,
-    stringifyToolError,
-} from "./mergeToolErrorsIntoResults.js";
+import { mergeToolErrorsIntoResults, stringifyToolError } from "./mergeToolErrorsIntoResults.js";
 
 describe("mergeToolErrorsIntoResults", () => {
     it("returns successes verbatim when content has no tool-error blocks", () => {

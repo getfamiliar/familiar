@@ -36,6 +36,13 @@ interface CatalogEntry {
     readonly pluginId: string;
     readonly description: string;
     readonly inputSchema: object;
+    /**
+     * Plugin author flagged this tool as belonging to the `system` DSL
+     * group (and thus the implicit default tool set). Mirrors
+     * `PluginTool.system` from the shared manifest; defaults to `false`
+     * when the bastion serves an older catalog without the field.
+     */
+    readonly system: boolean;
 }
 
 /**
@@ -82,10 +89,15 @@ export class PluginToolsClient {
         eventId: string,
         agentrunId: string,
         toolCallOffloadingLimit: number,
-    ): Promise<{ tools: ToolSet; keysById: ReadonlyMap<string, ReadonlySet<string>> }> {
+    ): Promise<{
+        tools: ToolSet;
+        keysById: ReadonlyMap<string, ReadonlySet<string>>;
+        systemKeys: ReadonlySet<string>;
+    }> {
         const catalog = await this.fetchCatalog();
         const toolSet: ToolSet = {};
         const keysById = new Map<string, Set<string>>();
+        const systemKeys = new Set<string>();
         for (const entry of catalog) {
             toolSet[entry.key] = tool({
                 description: entry.description,
@@ -99,12 +111,15 @@ export class PluginToolsClient {
                 keysById.set(entry.pluginId, set);
             }
             set.add(entry.key);
+            if (entry.system) {
+                systemKeys.add(entry.key);
+            }
         }
         const frozen = new Map<string, ReadonlySet<string>>();
         for (const [id, keys] of keysById) {
             frozen.set(id, keys);
         }
-        return { tools: toolSet, keysById: frozen };
+        return { tools: toolSet, keysById: frozen, systemKeys };
     }
 
     /**
@@ -133,12 +148,22 @@ export class PluginToolsClient {
                 typeof (item as { inputSchema?: unknown }).inputSchema === "object" &&
                 (item as { inputSchema?: unknown }).inputSchema !== null
             ) {
-                const e = item as CatalogEntry;
+                const e = item as Partial<CatalogEntry> & {
+                    key: string;
+                    pluginId: string;
+                    description: string;
+                    inputSchema: object;
+                };
                 out.push({
                     key: e.key,
                     pluginId: e.pluginId,
                     description: e.description,
                     inputSchema: e.inputSchema,
+                    // Defaults to false when the field is missing
+                    // (older host serving older catalog) — preserves
+                    // the pre-`system: true` behavior on rolling
+                    // upgrades.
+                    system: e.system === true,
                 });
             }
         }

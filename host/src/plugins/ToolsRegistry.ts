@@ -33,6 +33,15 @@ export interface RegisteredPluginTool {
     readonly log: Logger;
     /** The plugin-provided execute function. */
     readonly execute: PluginTool["execute"];
+    /**
+     * Tool opted into the `system` DSL group via
+     * {@link PluginTool.system}. The bastion's `/plugin-tools/` listing
+     * forwards this flag to the container so its `ToolsFactory` can
+     * fold the key into both the implicit default tool set and the
+     * explicit `tools: system` expansion. Always `false` for core
+     * tools — they live in `core`, not `system`.
+     */
+    readonly system: boolean;
 }
 
 /**
@@ -125,6 +134,7 @@ export class PluginToolsRegistry {
                 hostContext,
                 log: pluginLog,
                 execute: tool.execute.bind(tool),
+                system: tool.system === true,
             });
         }
         this.pluginIds.add(pluginId);
@@ -166,6 +176,10 @@ export class PluginToolsRegistry {
                 hostContext,
                 log: coreLog,
                 execute: tool.execute.bind(tool),
+                // Core tools belong to the `core` group only — never
+                // auto-promoted into `system`. Handlers that want them
+                // must opt in via `tools: core`.
+                system: false,
             });
         }
     }
