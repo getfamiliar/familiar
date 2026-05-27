@@ -560,23 +560,23 @@ export class MemoryStore {
             }
         }
 
-        if (
+        const changed =
             toRemove.length > 0 ||
             toEmbed.length > 0 ||
-            toTouch.some((d) => d.lastModified !== mtime)
-        ) {
-            this.markDirty();
-        }
+            toTouch.some((d) => d.lastModified !== mtime);
 
-        this.opts.log.info(
-            {
-                path: relativePath,
-                chunks: chunks.length,
-                reembedded: toEmbed.length,
-                removed: toRemove.length,
-            },
-            `memory: indexed "${relativePath}" — ${chunks.length} chunk${chunks.length === 1 ? "" : "s"} total, ${toEmbed.length} re-embedded, ${toRemove.length} removed`,
-        );
+        if (changed) {
+            this.markDirty();
+            this.opts.log.info(
+                {
+                    path: relativePath,
+                    chunks: chunks.length,
+                    reembedded: toEmbed.length,
+                    removed: toRemove.length,
+                },
+                `memory: indexed "${relativePath}" — ${chunks.length} chunk${chunks.length === 1 ? "" : "s"} total, ${toEmbed.length} re-embedded, ${toRemove.length} removed`,
+            );
+        }
     }
 
     /** Drop every chunk for this path. */

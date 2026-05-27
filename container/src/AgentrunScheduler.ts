@@ -187,8 +187,7 @@ export class AgentrunScheduler {
         const { log } = this.deps;
         log.info("agentrun scheduler starting");
 
-        const outcome = await this.deps.recovery.recover();
-        log.info(outcome, "agentrun recovery complete");
+        await this.deps.recovery.recover();
 
         const unsubscribe = this.deps.subscribeChanges(() => this.tick());
 

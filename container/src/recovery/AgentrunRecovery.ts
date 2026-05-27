@@ -62,7 +62,8 @@ export class AgentrunRecovery {
         if (failedAgentruns > 0 || rependedEvents > 0) {
             this.log.warn(
                 { failedAgentruns, rependedEvents },
-                "agentrun recovery: orphaned rows from a previous daemon were unwound",
+                `agentrun recovery: re-pended ${rependedEvents} stale event(s) and terminated ` +
+                    `${failedAgentruns} hung agentrun(s) from a previous daemon`,
             );
         }
 
