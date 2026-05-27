@@ -325,6 +325,7 @@ export const startCommand = defineCommand({
                 return { id: handle.id };
             },
             log: log.child({ component: "cron-scheduler" }),
+            writablePathGlobs: writablePaths,
         });
         await cronScheduler.start();
 

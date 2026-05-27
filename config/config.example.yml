@@ -58,8 +58,8 @@ core:
   # defaultCalendar: Calendar
 
   # Workspace-relative paths the assistant treats as its own curated
-  # memory. A glob string or a list of glob strings (substring-with-*
-  # grammar, e.g. `wiki/**`). These paths are BOTH (a) writable by
+  # memory. A glob string or a list of glob strings (`*`-glob grammar
+  # anchored at the workspace root, e.g. `wiki/**`). These paths are BOTH (a) writable by
   # non-privileged agentruns — the normal `.md` / `toolgroups/` privilege
   # gate is bypassed for them, so handlers like `memory_save` can write
   # them regardless of trust level — AND (b) quoted in full by the memory
@@ -163,7 +163,7 @@ inference:
 #   maxChunksPerFile: 3                 # cap on full snippets per file in the prompt; surplus collapses to "And N more..."
 #   maxSystemPromptMemoryResults: 8     # max hits the contextProvider asks Orama for per agentrun
 #   maxToolMemoryResults: 5             # default `limit` for the memory_search tool when the agent omits it
-#   excludeGlobs: []                    # carve-outs from indexing (substring-with-* grammar)
+#   excludeGlobs: []                    # carve-outs from indexing (`*`-glob, rooted at workspace root)
 #   # Which hits get full-snippet injection (vs. a path-only "See also"
 #   # mention) is driven by core.writablePaths above — the same paths
 #   # non-privileged runs may write. There is no separate memory key.

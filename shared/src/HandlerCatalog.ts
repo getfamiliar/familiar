@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { matchesAnyGlob } from "./PathGlob.js";
 
 /**
  * One handler entry surfaced by {@link HandlerCatalog.list}.
@@ -53,9 +54,19 @@ const RESERVED_TOP_DIRS = new Set(["skills"]);
  */
 export class HandlerCatalog {
     private readonly workspaceDir: string;
+    private readonly writablePathGlobs: readonly string[];
 
-    constructor(workspaceDir: string) {
+    /**
+     * @param workspaceDir Absolute path of the `workspace/` directory.
+     * @param writablePathGlobs `core.writablePaths` globs (e.g. `wiki/**`).
+     *   Files under these are writable by non-privileged runs and are
+     *   therefore never handlers — they are excluded from {@link list}
+     *   and {@link resolve} so they are never proposed or resolved as a
+     *   handler. Mirrors the container's `HandlerFile.load` guard.
+     */
+    constructor(workspaceDir: string, writablePathGlobs: readonly string[] = []) {
         this.workspaceDir = workspaceDir;
+        this.writablePathGlobs = writablePathGlobs;
     }
 
     /**
@@ -77,7 +88,13 @@ export class HandlerCatalog {
             return [];
         }
         const results: HandlerPath[] = [];
-        await walkMarkdown(this.workspaceDir, [], results, this.workspaceDir);
+        await walkMarkdown(
+            this.workspaceDir,
+            [],
+            results,
+            this.workspaceDir,
+            this.writablePathGlobs,
+        );
         results.sort((a, b) => a.slashPath.localeCompare(b.slashPath));
         return results;
     }
@@ -99,8 +116,15 @@ export class HandlerCatalog {
         const segments = topic.split(":");
         for (let depth = segments.length; depth >= 1; depth--) {
             const rel = path.join(...segments.slice(0, depth), `${handler}.md`);
+            const relPosix = rel.split(path.sep).join("/");
             const absolute = path.join(this.workspaceDir, rel);
             if (await fileExists(absolute)) {
+                // A file under `core.writablePaths` is never a handler, even
+                // when it exists — mirror the container's `HandlerFile.load`
+                // guard so host-side callers agree it does not resolve.
+                if (matchesAnyGlob(this.writablePathGlobs, relPosix)) {
+                    return null;
+                }
                 return absolute;
             }
         }
@@ -119,6 +143,7 @@ async function walkMarkdown(
     segments: readonly string[],
     out: HandlerPath[],
     workspaceDir: string,
+    writablePathGlobs: readonly string[],
 ): Promise<void> {
     let entries: import("node:fs").Dirent[];
     try {
@@ -136,6 +161,7 @@ async function walkMarkdown(
                 [...segments, entry.name],
                 out,
                 workspaceDir,
+                writablePathGlobs,
             );
             continue;
         }
@@ -155,6 +181,11 @@ async function walkMarkdown(
         const topic = segments.join(":");
         const absolutePath = path.join(dir, entry.name);
         const relativePath = path.relative(workspaceDir, absolutePath).split(path.sep).join("/");
+        // Files under `core.writablePaths` (e.g. `wiki/**`) are writable by
+        // non-privileged runs and are never handlers — never propose them.
+        if (matchesAnyGlob(writablePathGlobs, relativePath)) {
+            continue;
+        }
         const slashPath = `/${[...segments, handlerBase].join("/")}`;
         out.push({ topic, handler: handlerBase, absolutePath, relativePath, slashPath });
     }

@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { matchesAnyGlob } from "@getfamiliar/shared";
 import { parse as parseYaml } from "yaml";
+import { getWritablePaths } from "./env.js";
 
 /**
  * Parsed shape of a handler file's YAML frontmatter.
@@ -250,6 +252,22 @@ export class HandlerFile {
         if (existingDeepestFirst.length === 0) {
             throw new Error(
                 `Handler not found for topic="${topic}" basename="${basename}". Tried: ${candidatesDeepestFirst.join(", ")}`,
+            );
+        }
+
+        // Security boundary: a handler file living under `core.writablePaths`
+        // (e.g. `wiki/**`) must never execute. Those paths are writable by
+        // non-privileged runs, so executing one as a handler would let a
+        // non-privileged run author its own (potentially privileged) handler.
+        // The leaf is the file whose header (model, tools, privilege) and body
+        // actually run, so it is the one we gate. Re-read the env per call so
+        // the check needs no module-load ordering and stays test-friendly.
+        const leafRel = existingDeepestFirst[0].rel;
+        if (matchesAnyGlob(getWritablePaths(), leafRel)) {
+            throw new Error(
+                `Refusing to load handler "${leafRel}": it lives under a core.writablePaths ` +
+                    `location, which non-privileged runs can write. Files in writable paths ` +
+                    `(e.g. wiki/**) are never executable as handlers.`,
             );
         }
 

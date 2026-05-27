@@ -29,7 +29,8 @@ const DAEMON_GOODBYE = "The daemon has stopped. Goodbye.";
  */
 export async function runRepl(ctx: HostContext, prompt: ChatPromptFn = chatPrompt): Promise<void> {
     const isTty = process.stdout.isTTY === true;
-    const catalog = new HandlerCatalog(path.join(ctx.dataDir, "workspace"));
+    const writablePaths = ctx.config.getStringList("core.writablePaths", ["wiki/**"]);
+    const catalog = new HandlerCatalog(path.join(ctx.dataDir, "workspace"), writablePaths);
 
     if (isTty) {
         const owl = supportsUtf8() ? "🦉 " : "";
@@ -445,7 +446,8 @@ export async function runOneShot(
     options: { readonly returnOnly: boolean },
 ): Promise<number> {
     const isTty = process.stdout.isTTY === true;
-    const catalog = new HandlerCatalog(path.join(ctx.dataDir, "workspace"));
+    const writablePaths = ctx.config.getStringList("core.writablePaths", ["wiki/**"]);
+    const catalog = new HandlerCatalog(path.join(ctx.dataDir, "workspace"), writablePaths);
     const parsed = parseInput(message);
 
     if (parsed.kind === "builtin") {

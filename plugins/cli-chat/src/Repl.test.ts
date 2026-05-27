@@ -41,6 +41,9 @@ function makeCtx(options: {
     const ctx = {
         dataDir: "/nonexistent-workspace-for-test",
         daemonDownSignal: new AbortController().signal,
+        config: {
+            getStringList: (_key: string, fallback: readonly string[]) => fallback,
+        },
         chat: {
             async subscribe(_filter: unknown, handler: ChatHandler) {
                 captured = handler;

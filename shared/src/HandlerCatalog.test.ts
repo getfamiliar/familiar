@@ -86,3 +86,29 @@ test("resolve returns null when nothing matches", async () => {
     const miss = await catalog.resolve("chat", "missing");
     assert.equal(miss, null);
 });
+
+test("list excludes files under writable paths", async () => {
+    await touch("mail/index.md");
+    await touch("wiki/index.md");
+    await touch("wiki/notes/recipe.md");
+
+    const catalog = new HandlerCatalog(root, ["wiki/**"]);
+    assert.deepEqual(
+        (await catalog.list()).map((h) => h.slashPath),
+        ["/mail/index"],
+    );
+});
+
+test("resolve refuses a handler under a writable path even when it exists", async () => {
+    await touch("wiki/index.md");
+    const catalog = new HandlerCatalog(root, ["wiki/**"]);
+
+    assert.equal(await catalog.resolve("wiki", "index"), null);
+});
+
+test("writable globs do not affect non-writable handlers", async () => {
+    await touch("mail/index.md");
+    const catalog = new HandlerCatalog(root, ["wiki/**"]);
+
+    assert.equal(await catalog.resolve("mail", "index"), path.join(root, "mail/index.md"));
+});

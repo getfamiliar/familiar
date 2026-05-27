@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import {
     EVENT_PRIORITY,
     type Logger,
+    matchesAnyGlob,
     type NewEvent,
     type ParsedCron,
     parseCron,
@@ -43,6 +44,7 @@ export class CronjobScheduler {
     private readonly watcher: WorkspaceWatcher;
     private readonly emit: (event: NewEvent) => Promise<{ id: string }>;
     private readonly log: Logger;
+    private readonly writablePathGlobs: readonly string[];
     private readonly jobs = new Map<string, ScheduledEntry>();
     private unsubscribe: (() => void) | undefined;
 
@@ -50,10 +52,18 @@ export class CronjobScheduler {
         watcher: WorkspaceWatcher;
         emit: (event: NewEvent) => Promise<{ id: string }>;
         log: Logger;
+        /**
+         * `core.writablePaths` globs (e.g. `wiki/**`). A `cron:` field
+         * inside one of these paths is ignored — those files are writable
+         * by non-privileged runs and are never handlers, so they must not
+         * schedule a job. Mirrors the container's `HandlerFile.load` guard.
+         */
+        writablePathGlobs?: readonly string[];
     }) {
         this.watcher = opts.watcher;
         this.emit = opts.emit;
         this.log = opts.log;
+        this.writablePathGlobs = opts.writablePathGlobs ?? [];
     }
 
     /** Initial scan + subscribe for live updates. Call once at daemon start. */
@@ -109,6 +119,13 @@ export class CronjobScheduler {
         if (verbatim === undefined) {
             // Filter matched a moment ago but the file has changed
             // again; nothing to do.
+            return;
+        }
+        if (matchesAnyGlob(this.writablePathGlobs, file.relativePath)) {
+            this.log.warn(
+                { path: file.relativePath },
+                `cron found on file ${file.relativePath} under core.writablePaths, skipping (writable files are never handlers)`,
+            );
             return;
         }
         const target = pathToHandlerTarget(file.relativePath);
