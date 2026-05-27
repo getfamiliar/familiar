@@ -7,7 +7,7 @@ import {
     type NewEvent,
 } from "@getfamiliar/shared";
 import chalk from "chalk";
-import { chatPrompt } from "./ChatPrompt.js";
+import { type ChatPromptFn, chatPrompt } from "./ChatPrompt.js";
 import { CLI_CHAT_BUILTINS, type ParsedInput, parseInput } from "./InputParser.js";
 import { RunRenderer } from "./RunRenderer.js";
 
@@ -27,7 +27,7 @@ const DAEMON_GOODBYE = "The daemon has stopped. Goodbye.";
  * which doesn't compose with a live input buffer underneath. If we
  * need concurrency back later it should be a separate mode.
  */
-export async function runRepl(ctx: HostContext): Promise<void> {
+export async function runRepl(ctx: HostContext, prompt: ChatPromptFn = chatPrompt): Promise<void> {
     const isTty = process.stdout.isTTY === true;
     const catalog = new HandlerCatalog(path.join(ctx.dataDir, "workspace"));
 
@@ -60,17 +60,82 @@ export async function runRepl(ctx: HostContext): Promise<void> {
     // prompt walks through these in submission order, oldest first.
     const history: string[] = [];
 
+    // One renderer for the whole session: turn replies and proactive
+    // messages share its spinner state, so they never fight two
+    // renderers for `log-update`. The renderer's own `spinner` field
+    // is the "is a turn active" discriminator that routes a chat
+    // message either into the active spinner's suffix or straight to
+    // stdout (see RunRenderer.chatAnswer).
+    const renderer = new RunRenderer(isTty);
+    // True only while `runTurn` is blocking. Tells the chat handler
+    // whether a proactive message should interrupt the idle prompt
+    // (it shouldn't while a turn owns the screen).
+    let turnActive = false;
+    // Monotonic count of assistant chatmessages delivered this session.
+    // `runTurn` snapshots it to derive "did a reply arrive during my
+    // turn" without a per-turn subscription.
+    let chatMsgCount = 0;
+    // Per-iteration handle the chat handler aborts to kick the idle
+    // prompt into a graceful "interrupted" resolve.
+    let promptAbort: AbortController | undefined;
+    // Buffer carried over from a prompt that was interrupted by a
+    // proactive message, re-seeded into the next prompt so no typed
+    // keystrokes are lost.
+    let pendingBuffer = "";
+    // Proactive / backlog messages that arrived while no prompt was
+    // active. They are NOT rendered from the subscription handler —
+    // writing to stdout under a live inquirer prompt corrupts its line
+    // accounting and leaves ghost prompts. Instead they queue here and
+    // the loop flushes them at the top of an iteration, when the
+    // terminal is clean (no prompt mounted yet).
+    const pendingMessages: string[] = [];
+
+    // Single session-long subscription to the cli assistant channel.
+    // Opened before the first prompt so the bus's replay pass enqueues
+    // any startup backlog immediately — letting the model "speak
+    // first". Live proactive messages enqueue the same way while idle.
+    const unsubscribe = await ctx.chat.subscribe(
+        { channelId: CLI_CHANNEL, role: "assistant" },
+        async (m) => {
+            chatMsgCount += 1;
+            if (turnActive) {
+                // A turn owns the screen: its spinner absorbs the reply.
+                renderer.chatAnswer(m.textContent);
+            } else {
+                // Idle: queue the text and bounce the prompt so the loop
+                // renders it cleanly above a fresh, redrawn prompt.
+                pendingMessages.push(m.textContent);
+                promptAbort?.abort();
+            }
+            return true;
+        },
+    );
+
     try {
         while (!sessionAbort.signal.aborted) {
-            const handlerPaths = (await catalog.list()).map((h) => h.slashPath);
+            // Create the interrupt handle before flushing so a message
+            // arriving mid-flush aborts *this* iteration's prompt; its
+            // on-mount aborted-check then bounces us straight back here.
+            promptAbort = new AbortController();
 
-            let raw: string;
+            // Render anything queued while no prompt was active. Safe to
+            // write to stdout now — no inquirer prompt is mounted yet.
+            if (pendingMessages.length > 0) {
+                for (const text of pendingMessages.splice(0)) {
+                    renderer.chatAnswer(text);
+                }
+            }
+
+            const handlerPaths = (await catalog.list()).map((h) => h.slashPath);
+            let result: Awaited<ReturnType<ChatPromptFn>>;
             try {
-                raw = await chatPrompt(
+                result = await prompt(
                     {
                         builtins: CLI_CHAT_BUILTINS,
                         handlerPaths,
                         history,
+                        interruptSignal: promptAbort.signal,
+                        initialValue: pendingBuffer,
                     },
                     { signal: sessionAbort.signal },
                 );
@@ -81,6 +146,16 @@ export async function runRepl(ctx: HostContext): Promise<void> {
                 throw err;
             }
 
+            pendingBuffer = "";
+            if (result.reason === "interrupted") {
+                // A proactive message arrived. Carry the partial input
+                // forward; the next iteration flushes the queued message
+                // and redraws the prompt seeded with what was typed.
+                pendingBuffer = result.value;
+                continue;
+            }
+
+            const raw = result.value;
             const trimmedRaw = raw.trim();
             if (trimmedRaw.length > 0 && history[history.length - 1] !== trimmedRaw) {
                 history.push(trimmedRaw);
@@ -99,13 +174,37 @@ export async function runRepl(ctx: HostContext): Promise<void> {
                 }
             }
             if (parsed.kind === "handler") {
-                if (parsed.prompt.length === 0) {
+                // Skip only empty *plain* prompts (bare Enter). A
+                // handler-only line like `/calendar/today` carries a
+                // topic with an empty prompt and is a valid invocation
+                // — buildNewEvent supplies a placeholder prompt for it.
+                // Mirrors the runOneShot guard below.
+                if (parsed.prompt.length === 0 && parsed.topic === undefined) {
                     continue;
                 }
-                await runTurn(ctx, catalog, parsed, sessionAbort.signal, isTty);
+                turnActive = true;
+                const countAtStart = chatMsgCount;
+                try {
+                    await runTurn(
+                        ctx,
+                        catalog,
+                        parsed,
+                        sessionAbort.signal,
+                        renderer,
+                        () => chatMsgCount,
+                        countAtStart,
+                    );
+                } finally {
+                    turnActive = false;
+                }
             }
         }
     } finally {
+        await unsubscribe().catch(() => {
+            // Daemon-down is the dominant teardown failure here; swallow
+            // so we don't paper over the goodbye line with a stack trace.
+        });
+        renderer.stop();
         process.off("SIGINT", onSigint);
         ctx.daemonDownSignal.removeEventListener("abort", onDaemonDown);
         if (ctx.daemonDownSignal.aborted) {
@@ -130,16 +229,25 @@ function supportsUtf8(): boolean {
 
 /**
  * Process one user turn end-to-end: validate the handler (if any),
- * open the chat subscription, emit, drive the {@link RunRenderer}
- * from the emit callbacks, and tear everything down when the event
- * settles or the user hits Ctrl-C.
+ * emit, drive the shared {@link RunRenderer} from the emit callbacks,
+ * and tear down when the event settles or the user hits Ctrl-C.
+ *
+ * The chat subscription is owned by {@link runRepl} for the whole
+ * session, so this turn doesn't open its own. Whether an assistant
+ * reply arrived *during* the turn is derived from the session's
+ * monotonic message counter: `currentChatCount() > countAtStart`. That
+ * flag (`sawChatAnswer`) decides whether we persist the agentrun's
+ * `result_text` as a fallback chatmessage — needed for direct-call
+ * handlers (`/mail/draft …`) that don't emit a chat reply themselves.
  */
 async function runTurn(
     ctx: HostContext,
     catalog: HandlerCatalog,
     parsed: Extract<ParsedInput, { kind: "handler" }>,
     sessionSignal: AbortSignal,
-    isTty: boolean,
+    renderer: RunRenderer,
+    currentChatCount: () => number,
+    countAtStart: number,
 ): Promise<void> {
     if (parsed.topic !== undefined && parsed.startHandler !== undefined) {
         const resolved = await catalog.resolve(parsed.topic, parsed.startHandler);
@@ -153,137 +261,110 @@ async function runTurn(
         }
     }
 
-    const renderer = new RunRenderer(isTty);
-    // Tracks whether any assistant message arrived via the chat
-    // subscription during this turn — from a handler with `outputChat:
-    // true`, from a `send_chat` tool call, or from the centralized
-    // failure-write in `HostContextImpl.emitAndAwait`. If nothing
-    // arrived by the time `handle.settled` resolves with a non-empty
-    // `result_text` we persist that text ourselves so direct-call
-    // handlers (`/mail/draft …`) still leave a reply in history.
-    let sawChatAnswer = false;
-    const unsubscribe = await ctx.chat.subscribe(
-        { channelId: CLI_CHANNEL, role: "assistant" },
-        async (m) => {
-            sawChatAnswer = true;
-            renderer.chatAnswer(m.textContent);
-            return true;
-        },
-    );
-
     const debug = process.env.CLI_CHAT_DEBUG === "1";
     let sawAgentRun = false;
-    try {
-        const newEvent = buildNewEvent(parsed);
-        const handle = await ctx.events.emit(newEvent, {
-            onAgentRun: (row) => {
-                sawAgentRun = true;
-                if (debug) {
-                    process.stderr.write(
-                        `[cli-chat debug] onAgentRun #${row.id} state=${row.state} model=${row.model ?? "-"}\n`,
-                    );
-                }
-                renderer.agentRun(row);
-            },
-            onStep: (step) => {
-                if (debug) {
-                    process.stderr.write(
-                        `[cli-chat debug] onStep #${step.id} agentrun=${step.agentRunId} finish=${step.finishReason}\n`,
-                    );
-                }
-                renderer.step(step);
-            },
-        });
-        renderer.eventQueued(handle.id);
-        // Surface a hint when the container appears unresponsive: if
-        // no agentrun NOTIFY arrived after a few seconds, the spinner
-        // is stuck on "message queued as event #X" and the operator
-        // has no obvious clue why. Most common cause is the daemon
-        // not running or the agent container not picking up events.
-        const watchdog = setTimeout(() => {
-            if (!sawAgentRun) {
+    const newEvent = buildNewEvent(parsed);
+    const handle = await ctx.events.emit(newEvent, {
+        onAgentRun: (row) => {
+            sawAgentRun = true;
+            if (debug) {
                 process.stderr.write(
-                    chalk.yellow(
-                        "[cli-chat] no agentrun observed yet — is `./cli.sh start` running and the agent container picking up events?\n",
-                    ),
+                    `[cli-chat debug] onAgentRun #${row.id} state=${row.state} model=${row.model ?? "-"}\n`,
                 );
             }
-        }, 5_000);
-        watchdog.unref();
-
-        // Wire Ctrl-C: if the user aborts mid-run, stop the spinner
-        // and bail. The server-side agentrun keeps going — we just
-        // stop watching.
-        const abortPromise = new Promise<"aborted">((resolve) => {
-            const onAbort = () => {
-                sessionSignal.removeEventListener("abort", onAbort);
-                resolve("aborted");
-            };
-            if (sessionSignal.aborted) {
-                resolve("aborted");
-            } else {
-                sessionSignal.addEventListener("abort", onAbort);
+            renderer.agentRun(row);
+        },
+        onStep: (step) => {
+            if (debug) {
+                process.stderr.write(
+                    `[cli-chat debug] onStep #${step.id} agentrun=${step.agentRunId} finish=${step.finishReason}\n`,
+                );
             }
-        });
-        const result = await Promise.race([
-            handle.settled
-                .then((text) => ({ done: text }) as const)
-                .catch((e) => ({ failed: e }) as const),
-            abortPromise,
-        ]);
+            renderer.step(step);
+        },
+    });
+    renderer.eventQueued(handle.id);
+    // Surface a hint when the container appears unresponsive: if
+    // no agentrun NOTIFY arrived after a few seconds, the spinner
+    // is stuck on "message queued as event #X" and the operator
+    // has no obvious clue why. Most common cause is the daemon
+    // not running or the agent container not picking up events.
+    const watchdog = setTimeout(() => {
+        if (!sawAgentRun) {
+            process.stderr.write(
+                chalk.yellow(
+                    "[cli-chat] no agentrun observed yet — is `./cli.sh start` running and the agent container picking up events?\n",
+                ),
+            );
+        }
+    }, 5_000);
+    watchdog.unref();
 
-        clearTimeout(watchdog);
-        if (result === "aborted") {
+    // Wire Ctrl-C: if the user aborts mid-run, stop the spinner
+    // and bail. The server-side agentrun keeps going — we just
+    // stop watching.
+    const abortPromise = new Promise<"aborted">((resolve) => {
+        const onAbort = () => {
+            sessionSignal.removeEventListener("abort", onAbort);
+            resolve("aborted");
+        };
+        if (sessionSignal.aborted) {
+            resolve("aborted");
+        } else {
+            sessionSignal.addEventListener("abort", onAbort);
+        }
+    });
+    const result = await Promise.race([
+        handle.settled
+            .then((text) => ({ done: text }) as const)
+            .catch((e) => ({ failed: e }) as const),
+        abortPromise,
+    ]);
+
+    clearTimeout(watchdog);
+    if (result === "aborted") {
+        renderer.stop();
+        return;
+    }
+    if ("failed" in result) {
+        // Daemon-down rejected `settled` with `DaemonStoppedError`
+        // (or `sessionSignal` aborted slightly later and the
+        // `failed` branch carries whatever postgres complained
+        // about as the daemon went away). Either way the run
+        // didn't really "fail" in the handler sense — suppress
+        // the red `renderer.failed(...)` and let `runRepl`'s
+        // outer goodbye line cover it.
+        if (ctx.daemonDownSignal.aborted || result.failed instanceof DaemonStoppedError) {
             renderer.stop();
             return;
         }
-        if ("failed" in result) {
-            // Daemon-down rejected `settled` with `DaemonStoppedError`
-            // (or `sessionSignal` aborted slightly later and the
-            // `failed` branch carries whatever postgres complained
-            // about as the daemon went away). Either way the run
-            // didn't really "fail" in the handler sense — suppress
-            // the red `renderer.failed(...)` and let `runRepl`'s
-            // outer goodbye line cover it.
-            if (ctx.daemonDownSignal.aborted || result.failed instanceof DaemonStoppedError) {
-                renderer.stop();
-                return;
-            }
-            // For ordinary agentrun failures the host already wrote a
-            // `Something went wrong processing the chat message: …`
-            // assistant chatmessage to this event (driven by
-            // `outputChatOnFailure: true` in `buildNewEvent`). It
-            // arrives through `renderer.chatAnswer` like any other
-            // reply, so we only need to fall back to `renderer.failed`
-            // when nothing came through — e.g. the failure-write
-            // itself errored, or the NOTIFY hasn't been delivered yet.
-            if (!sawChatAnswer) {
-                const message =
-                    result.failed instanceof Error ? result.failed.message : String(result.failed);
-                renderer.failed(message);
-            } else {
-                renderer.stop();
-            }
-            return;
+        // For ordinary agentrun failures the host already wrote a
+        // `Something went wrong processing the chat message: …`
+        // assistant chatmessage to this event (driven by
+        // `outputChatOnFailure: true` in `buildNewEvent`). It
+        // arrives through `renderer.chatAnswer` like any other
+        // reply, so we only need to fall back to `renderer.failed`
+        // when nothing came through — e.g. the failure-write
+        // itself errored, or the NOTIFY hasn't been delivered yet.
+        if (currentChatCount() === countAtStart) {
+            const message =
+                result.failed instanceof Error ? result.failed.message : String(result.failed);
+            renderer.failed(message);
+        } else {
+            renderer.stop();
         }
-        // Success path: persist the agentrun's `result_text` as an
-        // assistant chatmessage when no handler-emitted reply showed
-        // up. Direct calls to non-chat handlers (e.g. `/mail/draft`)
-        // typically don't have `outputChat: true`, so without this
-        // they leave the chat record with a user line and no reply.
-        const resultText = result.done.trim();
-        if (!sawChatAnswer && resultText.length > 0) {
-            await ctx.chat.appendAssistantMessage(handle.id, resultText);
-        }
-        renderer.done();
-    } finally {
-        await unsubscribe().catch(() => {
-            // Daemon-down is the dominant failure mode for this
-            // teardown — postgres may already be gone. Swallow so we
-            // don't paper over the goodbye message with a stack
-            // trace.
-        });
+        return;
     }
+    // Success path: persist the agentrun's `result_text` as an
+    // assistant chatmessage when no handler-emitted reply showed
+    // up. Direct calls to non-chat handlers (e.g. `/mail/draft`)
+    // typically don't have `outputChat: true`, so without this
+    // they leave the chat record with a user line and no reply.
+    const resultText = result.done.trim();
+    if (currentChatCount() === countAtStart && resultText.length > 0) {
+        await ctx.chat.appendAssistantMessage(handle.id, resultText);
+    }
+    renderer.done();
 }
 
 /**

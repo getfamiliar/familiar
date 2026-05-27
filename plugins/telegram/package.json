@@ -21,7 +21,8 @@
         "citty": "^0.1.6",
         "@getfamiliar/plugin-transcribe-whisper": "*",
         "@getfamiliar/shared": "*",
-        "grammy": "^1.30.0"
+        "grammy": "^1.30.0",
+        "telegramify-markdown": "^1.3.3"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.4.12",

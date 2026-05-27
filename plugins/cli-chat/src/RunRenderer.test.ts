@@ -303,3 +303,57 @@ test("chatAnswer appends rendered markdown with trailing blank-line margin", () 
     assert.ok(finalSuffix.includes("Hello!"), "rendered body is in the suffix");
     assert.ok(!finalSuffix.includes("Hello!\n\n"), "trailing answer whitespace was trimmed");
 });
+
+test("chatAnswer with no active spinner (idle) writes straight to stdout", () => {
+    const { factory, instances } = createMockFactory();
+    const r = new RunRenderer(false, factory);
+
+    const captured: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+        captured.push(typeof chunk === "string" ? chunk : chunk.toString());
+        return true;
+    }) as typeof process.stdout.write;
+    try {
+        // No eventQueued() → no spinner. This is the idle / proactive
+        // path the session subscription uses between turns.
+        r.chatAnswer("proactive ping");
+    } finally {
+        process.stdout.write = original;
+    }
+
+    assert.equal(instances.length, 0, "no spinner is created on the idle path");
+    assert.ok(
+        captured.join("").includes("proactive ping"),
+        "the message is written directly to stdout",
+    );
+});
+
+test("chatAnswer during an active turn appends to the spinner suffix, not stdout", () => {
+    const { factory, instances } = createMockFactory();
+    const r = new RunRenderer(false, factory);
+
+    const captured: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+        captured.push(typeof chunk === "string" ? chunk : chunk.toString());
+        return true;
+    }) as typeof process.stdout.write;
+    try {
+        r.eventQueued("35");
+        r.agentRun(makeRun({ id: "100", eventId: "35", state: "running" }));
+        r.chatAnswer("mid-turn reply");
+    } finally {
+        process.stdout.write = original;
+    }
+
+    const finalSuffix = instances[0].suffixHistory.at(-1) ?? "";
+    assert.ok(
+        finalSuffix.includes("mid-turn reply"),
+        "reply appended to the active spinner suffix",
+    );
+    assert.ok(
+        !captured.join("").includes("mid-turn reply"),
+        "nothing leaks to stdout while a spinner is live",
+    );
+});

@@ -10,6 +10,10 @@ import { defineCommand } from "citty";
  * a normal terminal session; the host CLI exits with whatever `psql`
  * exits with.
  *
+ * History is disabled via `-v HISTFILE=/dev/null` because the container has no
+ * writable HOME (it resolves to `/`), so psql would otherwise fail to save its
+ * history to `//.psql_history` and print a "Permission denied" warning on exit.
+ *
  * Assumes the daemon is already running (i.e. `familiar-postgres` exists).
  * If it isn't, `docker exec` reports a clear "no such container" error
  * directly to the user — no point shadowing that with a custom check.
@@ -22,7 +26,18 @@ export const psqlCommand = defineCommand({
     run() {
         const result = spawnSync(
             "docker",
-            ["exec", "-it", POSTGRES_HOST, "psql", "-U", POSTGRES_USER, "-d", POSTGRES_DB],
+            [
+                "exec",
+                "-it",
+                POSTGRES_HOST,
+                "psql",
+                "-U",
+                POSTGRES_USER,
+                "-d",
+                POSTGRES_DB,
+                "-v",
+                "HISTFILE=/dev/null",
+            ],
             { stdio: "inherit" },
         );
         if (result.error) {

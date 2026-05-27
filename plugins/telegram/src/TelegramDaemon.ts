@@ -1,6 +1,7 @@
 import { transcribeAudio } from "@getfamiliar/plugin-transcribe-whisper";
 import { type EmitHandle, EVENT_PRIORITY, type HostContext } from "@getfamiliar/shared";
 import { Bot, type Context, GrammyError, HttpError } from "grammy";
+import telegramifyMarkdown from "telegramify-markdown";
 
 const TELEGRAM_CHANNEL = "telegram";
 const TELEGRAM_MESSAGE_LIMIT = 4096;
@@ -194,7 +195,7 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
         }
         try {
             for (const chunk of splitForTelegram(m.textContent)) {
-                await bot.api.sendMessage(authorizedUserId, chunk);
+                await sendWithMarkdownFallback(bot, authorizedUserId, chunk, (msg) => ctx.log(msg));
             }
         } catch (err) {
             // Ack anyway: returning false would replay forever on
@@ -240,6 +241,75 @@ export function splitForTelegram(text: string): string[] {
         chunks.push(remaining);
     }
     return chunks;
+}
+
+/**
+ * Convert ordinary Markdown (as the model writes it) into the strict
+ * MarkdownV2 dialect Telegram's Bot API expects. `telegramify-markdown`
+ * re-parses the input to an AST and re-stringifies it, so it produces
+ * correctly-escaped, well-balanced output even when the source is
+ * semi-correct (an unclosed `**bold`, a bare `.`, a stray `!`) — which
+ * is exactly what an LLM tends to emit. The `"escape"` strategy turns
+ * constructs Telegram can't render (e.g. tables) into escaped literal
+ * text rather than breaking the message.
+ *
+ * @param text Plain Markdown to convert.
+ * @returns The equivalent Telegram MarkdownV2 string.
+ */
+export function renderTelegramMarkdownV2(text: string): string {
+    return telegramifyMarkdown(text, "escape");
+}
+
+/**
+ * Send `text` to `chatId` as MarkdownV2, converting it via
+ * {@link renderTelegramMarkdownV2} first. If Telegram still rejects the
+ * entity parse (a rare edge case now that conversion is deterministic),
+ * log a warning and resend the original, unconverted `text` as plain
+ * text so the message is always delivered.
+ *
+ * Other error classes (network, 401, blocked-by-user) are re-thrown so
+ * the caller's broader `try/catch` handles them uniformly.
+ *
+ * @param bot The grammy bot whose API sends the message.
+ * @param chatId Target Telegram chat id.
+ * @param text The original Markdown text to deliver.
+ * @param log Sink for the plain-text-fallback warning.
+ * @returns Resolves once the message (or its plain-text fallback) is sent.
+ * @throws Re-throws any non-parse send error from the Telegram API.
+ */
+export async function sendWithMarkdownFallback(
+    bot: Bot,
+    chatId: number,
+    text: string,
+    log: (message: string) => void,
+): Promise<void> {
+    try {
+        await bot.api.sendMessage(chatId, renderTelegramMarkdownV2(text), {
+            parse_mode: "MarkdownV2",
+        });
+    } catch (err) {
+        if (!isMarkdownParseError(err)) {
+            throw err;
+        }
+        log(`telegram MarkdownV2 parse failed; resending as plain text: ${formatError(err)}`);
+        await bot.api.sendMessage(chatId, text);
+    }
+}
+
+/**
+ * Detect Telegram's "can't parse entities" 400 response, which is what
+ * `sendMessage` returns when MarkdownV2 syntax is malformed. Distinct
+ * from other 400s (e.g. "message is too long") which should propagate.
+ *
+ * @param err The error thrown by a `sendMessage` call.
+ * @returns `true` if the error is a MarkdownV2 entity-parse failure.
+ */
+function isMarkdownParseError(err: unknown): boolean {
+    return (
+        err instanceof GrammyError &&
+        err.error_code === 400 &&
+        err.description.includes("can't parse entities")
+    );
 }
 
 /**

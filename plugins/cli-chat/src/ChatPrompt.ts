@@ -5,13 +5,32 @@ import {
     makeTheme,
     type Status,
     type Theme,
+    useEffect,
     useKeypress,
+    useRef,
     useState,
 } from "@inquirer/core";
 import chalk from "chalk";
 
 const PROMPT = "> ";
 const MAX_SUGGESTIONS = 6;
+
+/**
+ * How a {@link chatPrompt} resolved.
+ *
+ * - `submit` — the user pressed Enter; `value` is the typed line.
+ * - `interrupted` — the REPL fired {@link ChatPromptConfig.interruptSignal}
+ *   to make room for a proactive assistant message. `value` is whatever
+ *   was typed so far, so the caller can re-seed the redrawn prompt with
+ *   it via {@link ChatPromptConfig.initialValue} (no lost keystrokes).
+ *
+ * Genuine exits (session abort / Ctrl-C) don't produce a result — they
+ * reject the prompt with `AbortPromptError` / `ExitPromptError` instead.
+ */
+export interface ChatPromptResult {
+    readonly value: string;
+    readonly reason: "submit" | "interrupted";
+}
 
 /**
  * Config accepted by {@link chatPrompt}. The two arrays drive
@@ -31,6 +50,16 @@ export interface ChatPromptConfig {
      * list isn't active.
      */
     readonly history?: readonly string[];
+    /**
+     * When fired, the prompt resolves immediately with
+     * `reason: "interrupted"` and the current buffer instead of waiting
+     * for Enter. The REPL uses this to free the terminal line for a
+     * proactive assistant message, then redraws a fresh prompt seeded
+     * with the preserved buffer.
+     */
+    readonly interruptSignal?: AbortSignal;
+    /** Initial buffer contents; defaults to empty. */
+    readonly initialValue?: string;
     /** Optional theme override; defaults to inquirer's built-in. */
     readonly theme?: Partial<Theme>;
 }
@@ -67,9 +96,13 @@ function getSuggestions(
  *   Down walks forward, with index 0 restoring the empty buffer.
  * - Enter submits the raw buffer. Parsing into builtin/handler is
  *   handled outside (see {@link parseInput}).
+ * - {@link ChatPromptConfig.interruptSignal} resolves the prompt early
+ *   with the current buffer (`reason: "interrupted"`) so the REPL can
+ *   surface a proactive assistant message and redraw without losing
+ *   what was typed.
  */
-export const chatPrompt = createPrompt<string, ChatPromptConfig>((config, done) => {
-    const [value, setValue] = useState("");
+export const chatPrompt = createPrompt<ChatPromptResult, ChatPromptConfig>((config, done) => {
+    const [value, setValue] = useState(config.initialValue ?? "");
     const [selectedIdx, setSelectedIdx] = useState(0);
     const [historyCursor, setHistoryCursor] = useState(0);
     const [status, setStatus] = useState<Status>("idle");
@@ -77,6 +110,53 @@ export const chatPrompt = createPrompt<string, ChatPromptConfig>((config, done) 
     const builtins = config.builtins ?? [];
     const handlerPaths = config.handlerPaths ?? [];
     const history = config.history ?? [];
+
+    // Seed the readline's editable buffer with the initial value on
+    // mount. `useState` above only seeds the *displayed* value; the
+    // underlying `rl.line` stays empty, so the first keypress would
+    // run `setValue(rl.line)` and wipe the preserved text. Writing it
+    // into `rl` keeps both in sync and places the cursor at the end.
+    useEffect((rl) => {
+        const seed = config.initialValue ?? "";
+        if (seed.length > 0) {
+            rl.write(seed);
+        }
+    }, []);
+
+    // Mirror the live buffer into a ref so the interrupt listener
+    // (registered once below) always reads the latest value rather
+    // than the empty string captured at first render.
+    const valueRef = useRef(value);
+    valueRef.current = value;
+
+    // Set when the prompt is closing because of an interrupt (not a
+    // submit). The final render reads it to draw *nothing* so inquirer
+    // doesn't leave the usual cyan echo of the prompt line on screen —
+    // that echo is wanted for a submit ("> hello") but would be a
+    // ghost clone above the redrawn prompt for an interrupt.
+    const interruptedRef = useRef(false);
+
+    // Resolve early — with the buffer preserved — when the REPL fires
+    // the interrupt signal to make room for a proactive message. This
+    // is distinct from inquirer's own `{ signal }` (session abort),
+    // which rejects the prompt for a genuine exit.
+    useEffect(() => {
+        const signal = config.interruptSignal;
+        if (signal === undefined) {
+            return;
+        }
+        const onInterrupt = () => {
+            interruptedRef.current = true;
+            setStatus("done");
+            done({ value: valueRef.current, reason: "interrupted" });
+        };
+        if (signal.aborted) {
+            onInterrupt();
+            return;
+        }
+        signal.addEventListener("abort", onInterrupt, { once: true });
+        return () => signal.removeEventListener("abort", onInterrupt);
+    }, [config.interruptSignal]);
 
     const suggestions = getSuggestions(value, builtins, handlerPaths);
     const showSuggestions = suggestions.length > 0 && status === "idle";
@@ -87,7 +167,7 @@ export const chatPrompt = createPrompt<string, ChatPromptConfig>((config, done) 
         }
         if (isEnterKey(key)) {
             setStatus("done");
-            done(value);
+            done({ value, reason: "submit" });
             return;
         }
         if (key.name === "tab" && showSuggestions) {
@@ -136,6 +216,13 @@ export const chatPrompt = createPrompt<string, ChatPromptConfig>((config, done) 
         }
     });
 
+    // Interrupted close: render nothing so the prompt line is cleared
+    // outright instead of being finalized as a cyan ghost above the
+    // redraw the REPL is about to issue.
+    if (status === "done" && interruptedRef.current) {
+        return "";
+    }
+
     const chevron = chalk.cyan(PROMPT);
     const rendered = status === "done" ? chalk.cyan(value) : value;
     const promptLine = `${chevron}${rendered}`;
@@ -148,3 +235,14 @@ export const chatPrompt = createPrompt<string, ChatPromptConfig>((config, done) 
         .join("\n");
     return [promptLine, list];
 });
+
+/**
+ * Callable shape of {@link chatPrompt}, narrowed to what the REPL uses.
+ * Declaring it lets {@link runRepl} accept an injected prompt in tests
+ * (mirroring {@link RunRenderer}'s `SpinnerFactory` seam) without
+ * depending on inquirer's full `Prompt` type.
+ */
+export type ChatPromptFn = (
+    config: ChatPromptConfig,
+    context?: { signal?: AbortSignal },
+) => Promise<ChatPromptResult>;
