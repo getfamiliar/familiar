@@ -195,7 +195,9 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
         }
         try {
             for (const chunk of splitForTelegram(m.textContent)) {
-                await sendWithMarkdownFallback(bot, authorizedUserId, chunk, (msg) => ctx.logger.info(msg));
+                await sendWithMarkdownFallback(bot, authorizedUserId, chunk, (msg) =>
+                    ctx.logger.info(msg),
+                );
             }
         } catch (err) {
             // Ack anyway: returning false would replay forever on
@@ -253,11 +255,56 @@ export function splitForTelegram(text: string): string[] {
  * constructs Telegram can't render (e.g. tables) into escaped literal
  * text rather than breaking the message.
  *
+ * `telegramify-markdown` 1.3.3 has a bug when it renders a Markdown *table*
+ * (which MarkdownV2 can't express, so the "escape" strategy emits the cells as
+ * escaped literal text): it escapes each cell's content once (`9-10` → `9\-10`)
+ * and then escapes the resulting backslashes again, leaving the special chars
+ * bare (`9\\-10` = literal backslash + unescaped `-`). Telegram then rejects the
+ * message with `Character '-' is reserved and must be escaped`. We repair this
+ * after conversion via {@link repairDoubleEscapedSpecials}.
+ *
  * @param text Plain Markdown to convert.
  * @returns The equivalent Telegram MarkdownV2 string.
  */
 export function renderTelegramMarkdownV2(text: string): string {
-    return telegramifyMarkdown(text, "escape");
+    return repairDoubleEscapedSpecials(telegramifyMarkdown(text, "escape"));
+}
+
+/** The 18 characters MarkdownV2 treats as reserved and requires escaping. */
+const MARKDOWN_V2_SPECIALS = "_*[]()~`>#+-=|{}.!";
+
+/** Matches a fenced code block or an inline code span — regions whose contents
+ * MarkdownV2 takes verbatim, so we must never rewrite escapes inside them. */
+const CODE_REGION = /```[\s\S]*?```|`[^`]*`/g;
+
+/**
+ * Collapse `\\<special>` (literal backslash followed by a *bare* reserved char)
+ * down to `\<special>` (a correctly-escaped reserved char). This undoes the
+ * telegramify-markdown table double-escape bug described in
+ * {@link renderTelegramMarkdownV2}.
+ *
+ * Outside code, well-formed telegramify output never legitimately places a
+ * literal backslash directly before a bare reserved char — every reserved char
+ * is already escaped — so the only source of this pattern is the bug, making the
+ * collapse safe. The transform is applied only to the non-code spans of the
+ * input; code regions (where backslashes and dashes are intentional literals)
+ * pass through untouched.
+ *
+ * @param text MarkdownV2 text produced by `telegramify-markdown`.
+ * @returns The same text with double-escaped reserved chars repaired.
+ */
+function repairDoubleEscapedSpecials(text: string): string {
+    const escapedSpecials = MARKDOWN_V2_SPECIALS.replace(/[\]\\^-]/g, "\\$&");
+    const doubleEscaped = new RegExp(`\\\\\\\\([${escapedSpecials}])`, "g");
+    const collapse = (segment: string): string => segment.replace(doubleEscaped, "\\$1");
+
+    let result = "";
+    let lastIndex = 0;
+    for (const match of text.matchAll(CODE_REGION)) {
+        result += collapse(text.slice(lastIndex, match.index)) + match[0];
+        lastIndex = match.index + match[0].length;
+    }
+    return result + collapse(text.slice(lastIndex));
 }
 
 /**
