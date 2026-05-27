@@ -72,7 +72,7 @@ export function readTelegramConfig(ctx: HostContext): TelegramConfig | null {
 export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
     const config = readTelegramConfig(ctx);
     if (!config) {
-        ctx.log("telegram disabled: telegram.botToken not set in config/config.yml");
+        ctx.logger.info("telegram disabled: telegram.botToken not set in config/config.yml");
         return;
     }
     const { token, authorizedUserId } = config;
@@ -84,16 +84,16 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
     try {
         me = await bot.api.getMe();
     } catch (err) {
-        ctx.log(`telegram disabled: getMe failed: ${formatError(err)}`);
+        ctx.logger.info(`telegram disabled: getMe failed: ${formatError(err)}`);
         return;
     }
 
     if (authorizedUserId === null) {
-        ctx.log(
+        ctx.logger.info(
             `telegram running in discovery mode (no telegram.authorizedUserId set); message @${me.username} to learn your id`,
         );
     } else {
-        ctx.log(`telegram authorized user id: ${authorizedUserId}`);
+        ctx.logger.info(`telegram authorized user id: ${authorizedUserId}`);
     }
 
     // Built only when an authorized user is configured. In discovery
@@ -104,7 +104,7 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
                   ctx,
                   bot,
                   authorizedUserId,
-                  typing: createTypingTracker(bot, authorizedUserId, (msg) => ctx.log(msg)),
+                  typing: createTypingTracker(bot, authorizedUserId, (msg) => ctx.logger.info(msg)),
               }
             : undefined;
 
@@ -155,13 +155,13 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
                 break;
             } catch (err) {
                 lastError = err;
-                ctx.log(
+                ctx.logger.info(
                     `telegram voice transcription attempt ${attempt + 1}/${VOICE_RETRY_DELAYS_MS.length} failed: ${formatError(err)}`,
                 );
             }
         }
         if (transcript === undefined) {
-            ctx.log(`telegram voice transcription failed: ${formatError(lastError)}`);
+            ctx.logger.info(`telegram voice transcription failed: ${formatError(lastError)}`);
             await gctx.reply(
                 "Sorry, I couldn't transcribe your voice message — please try again or send text.",
             );
@@ -190,18 +190,18 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
 
     await ctx.chat.subscribe({ channelId: TELEGRAM_CHANNEL, role: "assistant" }, async (m) => {
         if (authorizedUserId === null) {
-            ctx.log("dropping telegram assistant msg: no telegram.authorizedUserId");
+            ctx.logger.info("dropping telegram assistant msg: no telegram.authorizedUserId");
             return true;
         }
         try {
             for (const chunk of splitForTelegram(m.textContent)) {
-                await sendWithMarkdownFallback(bot, authorizedUserId, chunk, (msg) => ctx.log(msg));
+                await sendWithMarkdownFallback(bot, authorizedUserId, chunk, (msg) => ctx.logger.info(msg));
             }
         } catch (err) {
             // Ack anyway: returning false would replay forever on
             // permanent failures (user blocked the bot, etc.).
             // Bounded retry is a future enhancement.
-            ctx.log(`telegram send failed: ${formatError(err)}`);
+            ctx.logger.info(`telegram send failed: ${formatError(err)}`);
         }
         return true;
     });
@@ -209,9 +209,9 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
     // Don't await: bot.start() long-polls forever and only resolves on
     // bot.stop(). Errors propagate via the .catch below.
     bot.start({
-        onStart: (info) => ctx.log(`telegram online as @${info.username}`),
+        onStart: (info) => ctx.logger.info(`telegram online as @${info.username}`),
     }).catch((err) => {
-        ctx.log(`telegram poll loop crashed: ${formatError(err)}`);
+        ctx.logger.info(`telegram poll loop crashed: ${formatError(err)}`);
     });
 }
 
@@ -442,7 +442,7 @@ async function emitChatEvent(
             },
         });
     } catch (err) {
-        em.ctx.log(`telegram emit failed (update ${updateId}): ${formatError(err)}`);
+        em.ctx.logger.info(`telegram emit failed (update ${updateId}): ${formatError(err)}`);
         return;
     }
 
@@ -450,7 +450,7 @@ async function emitChatEvent(
     try {
         await handle.settled;
     } catch (err) {
-        em.ctx.log(`telegram event ${handle.id} failed: ${formatError(err)}`);
+        em.ctx.logger.info(`telegram event ${handle.id} failed: ${formatError(err)}`);
     } finally {
         em.typing.untrack(handle.id);
     }

@@ -47,7 +47,7 @@ export default definePlugin({
             if (key !== null) {
                 setApiKey(key);
             } else {
-                ctx.log(
+                ctx.logger.info(
                     "transcribe-whisper inactive: inference.apiKeys.openai not set in config/config.yml",
                 );
             }

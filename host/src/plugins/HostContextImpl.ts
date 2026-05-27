@@ -222,10 +222,6 @@ export class HostContextImpl implements HostContext {
         },
     };
 
-    log(message: string): void {
-        this.deps.log.info(message);
-    }
-
     get logger(): Logger {
         return this.deps.log;
     }

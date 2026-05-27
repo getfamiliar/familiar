@@ -235,18 +235,12 @@ export interface HostContext {
          */
         addFiles(eventId: string, files: readonly EventFile[]): Promise<readonly string[]>;
     };
-    /** Structured-ish log line. Future: scoped by plugin id, severity, etc. */
-    readonly log: (message: string) => void;
     /**
-     * The pino-style {@link Logger} that backs {@link log}, exposed
-     * directly so plugins that need leveled output (`.debug`, `.warn`,
-     * `.error`) or per-call structured fields don't have to route
-     * everything through the plain `.log(msg)` shorthand. Already
-     * scoped to the plugin by the host, so records carry a stable
-     * `component` tag without the plugin doing anything.
-     *
-     * The `.log(msg)` function above is a convenience for the common
-     * info-level case and stays supported.
+     * The pino-style {@link Logger} for the plugin. Use `.info` for the
+     * common case and `.debug` / `.warn` / `.error` for leveled output,
+     * plus per-call structured fields. Already scoped to the plugin by
+     * the host, so records carry a stable `component` tag without the
+     * plugin doing anything.
      */
     readonly logger: Logger;
     /**

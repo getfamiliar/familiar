@@ -74,7 +74,7 @@ const BROWSER_DESCRIPTION: [string, string, string] = ["familiar", "Chrome", "1.
 export function buildBaileysLogger(ctx: HostContext): BaileysLogger {
     const log = (level: "warn" | "error", obj: unknown, msg?: string): void => {
         const detail = msg ?? renderLogObject(obj);
-        ctx.log(`whatsapp baileys ${level}: ${detail}`);
+        ctx.logger.info(`whatsapp baileys ${level}: ${detail}`);
     };
     const logger: BaileysLogger = {
         level: "warn",
@@ -138,7 +138,7 @@ export async function startWhatsAppDaemon(
 ): Promise<void> {
     const auth = await loadAuth(ctx);
     if (!auth.hasExistingCreds) {
-        ctx.log("whatsapp not linked yet; run `./cli.sh whatsapp link` to pair this device");
+        ctx.logger.info("whatsapp not linked yet; run `./cli.sh whatsapp link` to pair this device");
         return;
     }
     // `creds.json` exists but `me` is only populated after a *complete*
@@ -148,7 +148,7 @@ export async function startWhatsAppDaemon(
     // "register a new device" path, which loops on QR timeouts forever
     // because no one is watching the daemon log to scan it.
     if (!auth.state.creds.me?.id) {
-        ctx.log(
+        ctx.logger.info(
             "whatsapp creds on disk are incomplete (no `me`); run `./cli.sh whatsapp logout` and re-link",
         );
         return;
@@ -171,19 +171,19 @@ async function runConnectionLoop(
 ): Promise<void> {
     const allowlist = parseGroupAllowlist(ctx.config.getArray("whatsapp.groupAllowlist", null));
     if (allowlist) {
-        ctx.log(`whatsapp group allowlist: ${allowlist.join(", ")}`);
+        ctx.logger.info(`whatsapp group allowlist: ${allowlist.join(", ")}`);
     }
     let backoffMs = RECONNECT_BACKOFF_MIN_MS;
     while (true) {
         const reason = await runConnection(ctx, auth, allowlist, registry);
         if (reason === "loggedOut") {
-            ctx.log(
+            ctx.logger.info(
                 "whatsapp logged out (device removed from phone); clearing auth and stopping. Run `./cli.sh whatsapp link` to re-pair.",
             );
             await clearAuth(ctx);
             return;
         }
-        ctx.log(`whatsapp disconnected (${reason}); reconnecting in ${backoffMs}ms`);
+        ctx.logger.info(`whatsapp disconnected (${reason}); reconnecting in ${backoffMs}ms`);
         await sleep(backoffMs);
         backoffMs = Math.min(backoffMs * 2, RECONNECT_BACKOFF_MAX_MS);
     }
@@ -226,7 +226,7 @@ async function runConnection(
             try {
                 await handleIncomingMessage(ctx, sock, groupNameCache, allowlist, msg);
             } catch (err) {
-                ctx.log(`whatsapp message handler error: ${formatError(err)}`);
+                ctx.logger.info(`whatsapp message handler error: ${formatError(err)}`);
             }
         }
     });
@@ -235,7 +235,7 @@ async function runConnection(
         sock.ev.on("connection.update", (update) => {
             if (update.connection === "open") {
                 const me = sock.user?.id ?? "unknown";
-                ctx.log(`whatsapp online as ${me}`);
+                ctx.logger.info(`whatsapp online as ${me}`);
                 return;
             }
             if (update.connection === "close") {
@@ -327,7 +327,7 @@ async function handleIncomingMessage(
         if (isDuplicateKeyError(err)) {
             return;
         }
-        ctx.log(`whatsapp emit failed (msg ${messageId}): ${formatError(err)}`);
+        ctx.logger.info(`whatsapp emit failed (msg ${messageId}): ${formatError(err)}`);
     }
 }
 
@@ -377,7 +377,7 @@ async function resolveGroupName(
     try {
         metadata = await sock.groupMetadata(jid);
     } catch (err) {
-        ctx.log(`whatsapp groupMetadata(${jid}) failed: ${formatError(err)}`);
+        ctx.logger.info(`whatsapp groupMetadata(${jid}) failed: ${formatError(err)}`);
     }
     const name = metadata?.subject ?? null;
     cache.set(jid, name);
@@ -519,7 +519,7 @@ export async function resolveWaVersion(
         const result = await fetchLatestWaWebVersion({});
         return result.version;
     } catch (err) {
-        ctx.log(
+        ctx.logger.info(
             `whatsapp version lookup failed, falling back to bundled default: ${formatError(err)}`,
         );
         return undefined;

@@ -113,7 +113,7 @@ export class Ms365MailProvider implements MailProvider {
             // re-warns once.
             if (!this.warnedMissingTemplate.has(mailbox)) {
                 this.warnedMissingTemplate.add(mailbox);
-                this.ctx.log(
+                this.ctx.logger.info(
                     `ms365: no mail style template for ${mailbox} — sending bare HTML ` +
                         "without styling or signature. Fire `/mail/extract-style Extract " +
                         `for ${mailbox}\` from cli-chat to populate it.`,
