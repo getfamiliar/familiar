@@ -1,4 +1,13 @@
-import { AgentRunBus, EventBus, renderMarkdown, StepResultBus } from "@getfamiliar/shared";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import {
+    AgentRunBus,
+    EventBus,
+    type EventRow,
+    type NewEvent,
+    renderMarkdown,
+    StepResultBus,
+} from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import ora from "ora";
 import { bootstrap } from "../Bootstrap.js";
@@ -15,6 +24,7 @@ import {
 } from "../reports/Renderers.js";
 import { ReportPoller } from "../reports/ReportPoller.js";
 import { ReportTerminalPrinter } from "../reports/ReportTerminalPrinter.js";
+import { parseEventIdSpec } from "./EventIdSpec.js";
 
 /**
  * `cli.sh events emit <topic> [prompt] [--payload JSON] [--priority N]` —
@@ -241,6 +251,154 @@ const eventsReportCommand = defineCommand({
     },
 });
 
+/**
+ * `cli.sh events replay <id-spec>` — re-emit one or more existing events
+ * as fresh events. The id-spec is a comma-separated list of event ids
+ * and/or inclusive spans:
+ *
+ *     events replay 4711
+ *     events replay 123-256
+ *     events replay 123-256, 555, 560-570
+ *
+ * Each replayed event copies the original's topic, prompt, payload,
+ * priority, and routing flags into a new `events` row. Any
+ * `idempotency_key` on the original gets a `-replay` suffix appended so
+ * the new event isn't rejected by the original's dedup window (chains
+ * of replays accumulate `-replay-replay…`).
+ *
+ * Scratch files at `<scratchDir>/<sourceId>/` are copied into
+ * `<scratchDir>/<newId>/` inside the same INSERT transaction, mirroring
+ * the emit-time staging path so the input-event watcher never observes
+ * a row without its files on disk. The source dir is left untouched
+ * (the original event keeps its scratch state). When the source dir is
+ * absent — common, since `ScratchGc` sweeps anything older than 24 h —
+ * nothing is copied and the replay still runs.
+ *
+ * Original ids that don't exist are reported on stderr and skipped; the
+ * rest of the batch still runs. The command prints one line per emitted
+ * event with the source id, the new id, and the file count.
+ */
+const eventsReplayCommand = defineCommand({
+    meta: {
+        name: "replay",
+        description: "Re-emit one or more existing events as fresh events.",
+    },
+    args: {
+        ids: {
+            type: "positional",
+            required: true,
+            description:
+                'Event id, span, or comma-separated mix (e.g. "4711", "123-256", "123-256,555,560-570").',
+        },
+    },
+    async run({ args }) {
+        const targetIds = parseEventIdSpec(args.ids);
+
+        const boot = bootstrap();
+        const config = new HostConfigService(boot.configFile);
+        const password = config.getString("core.postgresPassword");
+
+        const postgres = new PostgresContainer({
+            dataPath: boot.dataDir,
+            portFilePath: boot.postgresPortFile,
+            password,
+        });
+        const connection = postgres.getConnection();
+
+        try {
+            const bus = new EventBus(connection);
+            for (const sourceId of targetIds) {
+                const source = await bus.getById(sourceId);
+                if (!source) {
+                    process.stderr.write(`Event ${sourceId} not found, skipping.\n`);
+                    continue;
+                }
+                const { row, fileCount } = await replayOne(bus, source, boot.scratchDir);
+                process.stdout.write(
+                    `Replayed event ${sourceId} → ${row.id} (${fileCount} scratch file(s))\n`,
+                );
+            }
+        } finally {
+            await connection.close();
+        }
+    },
+});
+
+/**
+ * Insert a replay row for `source` and copy its scratch dir into the
+ * new event's scratch dir inside the same transaction. Returns the
+ * inserted row and the number of files that were copied.
+ *
+ * Roll-back path mirrors `HostContextImpl.emitAndAwait`: if anything
+ * after the source dir is read throws, the partially-staged target dir
+ * is `rm -rf`'d before the error escapes, so a failed replay never
+ * leaves orphaned scratch state.
+ */
+async function replayOne(
+    bus: EventBus,
+    source: EventRow,
+    scratchDir: string,
+): Promise<{ row: EventRow; fileCount: number }> {
+    const replay: NewEvent = {
+        topic: source.topic,
+        prompt: source.prompt,
+        payload: source.payload,
+        priority: source.priority,
+        isChat: source.isChat,
+        preferredChatChannelId: source.preferredChatChannelId,
+        privileged: source.privileged,
+        outputChatOnFailure: source.outputChatOnFailure,
+        idempotencyKey:
+            source.idempotencyKey === null ? undefined : `${source.idempotencyKey}-replay`,
+        startHandler: source.startHandler ?? undefined,
+    };
+    const sourceDir = path.join(scratchDir, source.id);
+    const sourceEntries = await listScratchFiles(sourceDir);
+
+    let stagedTargetDir: string | undefined;
+    let fileCount = 0;
+    try {
+        const row = await bus.add(replay, async (insertedRow) => {
+            if (sourceEntries.length === 0) {
+                return;
+            }
+            const targetDir = path.join(scratchDir, insertedRow.id);
+            stagedTargetDir = targetDir;
+            await fs.mkdir(targetDir, { recursive: true });
+            for (const name of sourceEntries) {
+                await fs.copyFile(path.join(sourceDir, name), path.join(targetDir, name));
+            }
+            fileCount = sourceEntries.length;
+        });
+        return { row, fileCount };
+    } catch (err) {
+        if (stagedTargetDir) {
+            await fs.rm(stagedTargetDir, { recursive: true, force: true });
+        }
+        throw err;
+    }
+}
+
+/**
+ * Return the basenames of every regular file directly under `dir`.
+ * Returns `[]` when `dir` is absent (the common case once `ScratchGc`
+ * has swept it) and ignores sub-directories — emit-time staging only
+ * ever writes flat files, so a nested dir would be operator-created
+ * state we shouldn't silently duplicate.
+ */
+async function listScratchFiles(dir: string): Promise<string[]> {
+    let entries: import("node:fs").Dirent[];
+    try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+            return [];
+        }
+        throw err;
+    }
+    return entries.filter((e) => e.isFile()).map((e) => e.name);
+}
+
 const PROMPT_PREVIEW_CHARS = 100;
 
 /**
@@ -352,15 +510,16 @@ const eventsListCommand = defineCommand({
     },
 });
 
-/** Parent command for the `events` subtree (emit, list, report, tail). */
+/** Parent command for the `events` subtree (emit, list, replay, report, tail). */
 export const eventsCommand = defineCommand({
     meta: {
         name: "events",
-        description: "Inject and inspect events on the bus (emit, list, report, tail).",
+        description: "Inject and inspect events on the bus (emit, list, replay, report, tail).",
     },
     subCommands: {
         emit: eventsEmitCommand,
         list: eventsListCommand,
+        replay: eventsReplayCommand,
         report: eventsReportCommand,
         tail: eventsTailCommand,
     },
