@@ -6,8 +6,9 @@ import { join } from "node:path";
 import { PassThrough, type Transform } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import type { Logger } from "@getfamiliar/shared";
+import type { ResolvedProvider } from "../models/ProviderResolution.js";
 import type { Bastion, BastionModule } from "./Bastion.js";
-import { NATIVE_PROVIDER_IDS, NATIVE_PROVIDERS } from "./NativeProviders.js";
+import { NPM_PROVIDER_PROFILES, resolveUpstreamBase } from "./NpmProviderProfiles.js";
 
 /** Per-provider runtime config built from `config.yml`. */
 export interface ProviderConfig {
@@ -542,86 +543,41 @@ class BodyCapture {
 }
 
 /**
- * Build the providers map from a parsed `inference.apiKeys` mapping
- * (native vendors) and `inference.customProviders` mapping (third-party
- * gateways we treat as openai-compatible). Native ids must be in the
- * baked-in whitelist; custom ids must NOT collide with a native id even
- * when no native key is set, so a custom gateway can never quietly
- * shadow native semantics. Apart from that, the linter is the primary
- * gate — this function still re-validates the bare invariants the
- * proxy depends on so a bug in the linter doesn't ship a malformed
- * provider table to the forwarding hot path.
+ * Build the proxy's provider table from already-resolved providers (key
+ * + apiKey + npmPackage + optional apiEndpoint). The npm package decides
+ * the auth style and the default upstream base via
+ * {@link NPM_PROVIDER_PROFILES}; the explicit `apiEndpoint` overrides the
+ * default when present (openai-compatible gateways require it). The
+ * linter / startup validation is the primary gate, but this function
+ * still re-derives the bare invariants the proxy depends on so a bug
+ * upstream can't ship a malformed provider table to the forwarding hot
+ * path.
+ *
+ * @throws Via {@link resolveUpstreamBase} when a provider's npm package
+ *   is unsupported or an openai-compatible provider has no apiEndpoint.
  */
 export function buildProviders(
-    apiKeys: Readonly<Record<string, unknown>>,
-    customProviders: Readonly<Record<string, unknown>>,
+    resolved: readonly ResolvedProvider[],
 ): Readonly<Record<string, ProviderConfig>> {
     const providers: Record<string, ProviderConfig> = {};
-
-    for (const [id, key] of Object.entries(apiKeys)) {
-        if (typeof key !== "string" || key.length === 0) {
-            throw new Error(`inference.apiKeys.${id}: must be a non-empty string`);
-        }
-        const native = NATIVE_PROVIDERS[id];
-        if (native === undefined) {
+    for (const provider of resolved) {
+        const profile = NPM_PROVIDER_PROFILES[provider.npmPackage];
+        if (profile === undefined) {
+            const supported = Object.keys(NPM_PROVIDER_PROFILES).join(", ");
             throw new Error(
-                `inference.apiKeys.${id} is not a known native provider — declare it under inference.customProviders.${id} instead.`,
+                `inference.apiKeys.${provider.key}: unsupported npm package "${provider.npmPackage}" (supported: ${supported})`,
             );
         }
-        providers[id] = {
-            upstreamBase: native.upstreamBase,
+        const upstreamBase = resolveUpstreamBase(provider.npmPackage, provider.apiEndpoint);
+        const apiKey = provider.apiKey;
+        providers[provider.key] = {
+            upstreamBase,
             applyAuth: (headers) => {
-                native.applyAuth(headers, key);
+                profile.applyAuth(headers, apiKey);
             },
         };
     }
-
-    for (const [id, raw] of Object.entries(customProviders)) {
-        if (NATIVE_PROVIDER_IDS.has(id)) {
-            throw new Error(
-                `inference.customProviders.${id}: id is reserved for the native provider — pick a different id.`,
-            );
-        }
-        if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-            throw new Error(`inference.customProviders.${id}: must be a mapping`);
-        }
-        const entry = raw as Record<string, unknown>;
-        const baseUrl = entry.baseUrl;
-        const apiKey = entry.apiKey;
-        const type = entry.type;
-        if (typeof baseUrl !== "string" || !baseUrl.startsWith("https://")) {
-            throw new Error(
-                `inference.customProviders.${id}.baseUrl: must be an https URL (got ${describe(baseUrl)})`,
-            );
-        }
-        if (typeof apiKey !== "string" || apiKey.length === 0) {
-            throw new Error(`inference.customProviders.${id}.apiKey: must be a non-empty string`);
-        }
-        if (type !== "openai-compatible") {
-            throw new Error(
-                `inference.customProviders.${id}.type: only "openai-compatible" is supported (got ${describe(type)})`,
-            );
-        }
-        providers[id] = {
-            upstreamBase: baseUrl.replace(/\/$/, ""),
-            applyAuth: (headers) => {
-                headers.authorization = `Bearer ${apiKey}`;
-            },
-        };
-    }
-
     return providers;
-}
-
-/** Compact, log-friendly description of a value's actual runtime shape. */
-function describe(value: unknown): string {
-    if (value === null) {
-        return "null";
-    }
-    if (Array.isArray(value)) {
-        return "array";
-    }
-    return typeof value;
 }
 
 /** Copy non-stripped inbound headers, lower-casing names. */

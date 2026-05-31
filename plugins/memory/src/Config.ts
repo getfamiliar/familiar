@@ -14,11 +14,12 @@ export interface HybridWeights {
 
 /**
  * Embedding-provider half of the memory config. The provider id
- * **references** an entry already declared under either
- * `inference.apiKeys.<id>` (native) or `inference.customProviders.<id>`
- * (third-party gateway). The plugin reads the api key and (for custom
- * providers) the base URL from that existing block — no duplication of
- * credentials in the `memory:` subtree.
+ * **references** an entry already declared under `inference.apiKeys.<id>`;
+ * the plugin resolves the api key + the provider's npm package / upstream
+ * endpoint via `ctx.inference.resolveProvider` (models.dev or a plugin
+ * descriptor) — no duplication of credentials in the `memory:` subtree.
+ * Only providers whose SDK ships embeddings work (openai, google,
+ * mistral, or an openai-compatible gateway).
  */
 export interface EmbeddingsConfig {
     /** Inference provider id; must match an enabled provider. */

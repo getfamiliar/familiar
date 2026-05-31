@@ -35,6 +35,14 @@ function makeService(): ModelMetadataService {
         tmpDir: TMP_DIR,
         // No plugin fallback in this suite — models.dev only.
         lookupPluginMeta: async () => undefined,
+        // One synthetic plugin provider to exercise the descriptor path.
+        listPluginProviders: () => [
+            {
+                key: "test-gateway",
+                npmPackage: "@ai-sdk/openai-compatible",
+                apiEndpoint: "https://gateway.example/v1",
+            },
+        ],
         log: silentLog,
     });
 }
@@ -80,6 +88,45 @@ describe("ModelMetadataService (models.dev, live)", () => {
         }
 
         const meta = await service.lookup("openai", "definitely-not-a-real-model-xyz");
+        assert.equal(meta, undefined);
+    });
+});
+
+describe("ModelMetadataService.lookupProvider", () => {
+    it("resolves provider-level npm + endpoint from models.dev", async (t) => {
+        const service = makeService();
+        await service.refreshIfStale(ONE_DAY_MS);
+
+        const openai = await service.lookupProvider("openai");
+        if (openai === undefined) {
+            t.skip("models.dev catalogue unavailable (offline and no cache)");
+            return;
+        }
+        // Dedicated-package provider: npm present, no endpoint in models.dev.
+        assert.equal(openai.npmPackage, "@ai-sdk/openai");
+        assert.equal(openai.apiEndpoint, undefined);
+
+        // openai-compatible gateway carried by models.dev: endpoint present.
+        const deepseek = await service.lookupProvider("deepseek");
+        assert.equal(deepseek?.npmPackage, "@ai-sdk/openai-compatible");
+        assert.ok(
+            (deepseek?.apiEndpoint ?? "").startsWith("https://"),
+            "deepseek carries an https endpoint",
+        );
+    });
+
+    it("falls back to a plugin descriptor for a non-models.dev provider", async () => {
+        const service = makeService();
+        const meta = await service.lookupProvider("test-gateway");
+        assert.deepEqual(meta, {
+            npmPackage: "@ai-sdk/openai-compatible",
+            apiEndpoint: "https://gateway.example/v1",
+        });
+    });
+
+    it("returns undefined for an unknown provider", async () => {
+        const service = makeService();
+        const meta = await service.lookupProvider("totally-unknown-provider-xyz");
         assert.equal(meta, undefined);
     });
 });

@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Logger } from "@getfamiliar/shared";
 import { parse, YAMLParseError } from "yaml";
-import { NATIVE_PROVIDER_IDS } from "../bastion/NativeProviders.js";
 
 /**
  * Result of a config lint pass. `errors` are platform-level
@@ -88,12 +87,16 @@ export function lintConfigFile(path: string): ConfigLintResult {
 }
 
 /**
- * Validate the `inference.apiKeys` and `inference.customProviders`
- * subtrees, plus the cross-cutting `defaultProvider` invariant. Native
- * apiKeys must be in the whitelist; custom providers must declare
- * `baseUrl`, `apiKey`, and `type: "openai-compatible"`; their ids must
- * not collide with native ids. The default provider id has to resolve
- * to one of the configured entries.
+ * Validate the structural shape of `inference.apiKeys` plus the
+ * cross-cutting `defaultProvider` invariant. Each entry must be a
+ * non-empty string (provider key → api key), and `defaultProvider` has
+ * to name one of them.
+ *
+ * Whether each key resolves to a *known* provider (present in the
+ * models.dev catalogue or declared by a plugin) is not checked here —
+ * that requires the metadata catalogue + plugin descriptors, so it lives
+ * in {@link import("../models/ProviderResolution.js").validateConfiguredProviders},
+ * run at daemon start and by `config lint`.
  */
 function lintInferenceProviders(
     root: Record<string, unknown>,
@@ -101,7 +104,6 @@ function lintInferenceProviders(
     errors: string[],
 ): void {
     const apiKeys = readPath(root, "inference.apiKeys");
-    const customProviders = readPath(root, "inference.customProviders");
 
     const apiKeyIds = new Set<string>();
     if (apiKeys !== undefined) {
@@ -109,13 +111,6 @@ function lintInferenceProviders(
             errors.push(`inference.apiKeys must be a mapping (got ${describe(apiKeys)}).`);
         } else {
             for (const [id, value] of Object.entries(apiKeys)) {
-                if (!NATIVE_PROVIDER_IDS.has(id)) {
-                    const known = Array.from(NATIVE_PROVIDER_IDS).sort().join(", ");
-                    errors.push(
-                        `inference.apiKeys.${id}: not a known native provider (allowed: ${known}). Use inference.customProviders.${id} for non-native providers.`,
-                    );
-                    continue;
-                }
                 if (typeof value !== "string" || value.length === 0) {
                     errors.push(
                         `inference.apiKeys.${id}: must be a non-empty string (got ${describe(value)}).`,
@@ -127,63 +122,9 @@ function lintInferenceProviders(
         }
     }
 
-    const customIds = new Set<string>();
-    if (customProviders !== undefined) {
-        if (!isPlainObject(customProviders)) {
-            errors.push(
-                `inference.customProviders must be a mapping (got ${describe(customProviders)}).`,
-            );
-        } else {
-            for (const [id, value] of Object.entries(customProviders)) {
-                if (NATIVE_PROVIDER_IDS.has(id)) {
-                    errors.push(
-                        `inference.customProviders.${id}: id is reserved for the native provider — pick a different id.`,
-                    );
-                    continue;
-                }
-                if (!isPlainObject(value)) {
-                    errors.push(
-                        `inference.customProviders.${id}: must be a mapping (got ${describe(value)}).`,
-                    );
-                    continue;
-                }
-                const entry = value as Record<string, unknown>;
-                let entryOk = true;
-                const baseUrl = entry.baseUrl;
-                if (typeof baseUrl !== "string" || !baseUrl.startsWith("https://")) {
-                    errors.push(
-                        `inference.customProviders.${id}.baseUrl: must be an https URL (got ${describe(baseUrl)}).`,
-                    );
-                    entryOk = false;
-                }
-                const apiKey = entry.apiKey;
-                if (typeof apiKey !== "string" || apiKey.length === 0) {
-                    errors.push(
-                        `inference.customProviders.${id}.apiKey: must be a non-empty string.`,
-                    );
-                    entryOk = false;
-                }
-                const type = entry.type;
-                if (type !== "openai-compatible") {
-                    errors.push(
-                        `inference.customProviders.${id}.type: only "openai-compatible" is supported (got ${describe(type)}).`,
-                    );
-                    entryOk = false;
-                }
-                if (entryOk) {
-                    customIds.add(id);
-                }
-            }
-        }
-    }
-
-    if (
-        defaultProvider !== undefined &&
-        !apiKeyIds.has(defaultProvider) &&
-        !customIds.has(defaultProvider)
-    ) {
+    if (defaultProvider !== undefined && !apiKeyIds.has(defaultProvider)) {
         errors.push(
-            `inference.defaultProvider "${defaultProvider}" must match an inference.apiKeys.* entry (with a key set) or an inference.customProviders.* entry.`,
+            `inference.defaultProvider "${defaultProvider}" must match an inference.apiKeys.* entry (with a key set).`,
         );
     }
 }

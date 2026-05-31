@@ -127,4 +127,17 @@ describe("featherless plugin hook", () => {
         assert.equal(await hook(ctx, "openai", "gpt-4o-mini"), undefined);
         assert.equal(await hook(ctx, FEATHERLESS_PROVIDER, "anything"), undefined);
     });
+
+    it("declares the featherless provider descriptor", () => {
+        const hook = featherlessPlugin.host?.getModelProviders;
+        assert.ok(hook, "plugin declares getModelProviders");
+        const ctx = {} as HostContext;
+        const descriptors = hook(ctx);
+        assert.equal(descriptors.length, 1);
+        assert.deepEqual(descriptors[0], {
+            key: FEATHERLESS_PROVIDER,
+            npmPackage: "@ai-sdk/openai-compatible",
+            apiEndpoint: "https://api.featherless.ai/v1",
+        });
+    });
 });

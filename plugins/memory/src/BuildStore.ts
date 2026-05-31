@@ -1,28 +1,11 @@
-import type { ConfigService, Logger } from "@getfamiliar/shared";
+import type { HostContext, Logger } from "@getfamiliar/shared";
 import type { MemoryConfig } from "./Config.js";
-import {
-    buildEmbeddingModel,
-    type EmbeddingProviderType,
-    PROVIDERS_WITHOUT_EMBEDDINGS,
-} from "./EmbeddingModelFactory.js";
+import { buildEmbeddingModel } from "./EmbeddingModelFactory.js";
 import { type HandshakeResult, handshakeEmbeddings } from "./EmbeddingsBootstrap.js";
 import { MemoryStore, memoryDataDir } from "./MemoryStore.js";
 
-/**
- * Vercel AI SDK providers we ship and that expose embeddings. Keyed
- * by id (also the URL segment under `inference.apiKeys.<id>`); value
- * is the {@link EmbeddingProviderType} the factory dispatches on.
- *
- * Native providers without embeddings (anthropic, deepseek, grok,
- * groq) are intentionally absent so the resolver below produces a
- * precise "<provider> does not expose embeddings" error rather than
- * "unknown provider".
- */
-const NATIVE_EMBEDDING_PROVIDERS: Readonly<Record<string, EmbeddingProviderType>> = {
-    openai: "openai",
-    google: "google",
-    mistral: "mistral",
-};
+/** Provider resolver, as exposed by `ctx.inference.resolveProvider`. */
+type ResolveProvider = HostContext["inference"]["resolveProvider"];
 
 /**
  * Bundle returned to the plugin's daemon `start()` after a successful
@@ -45,18 +28,18 @@ export interface BuiltStore {
  */
 export async function buildMemoryStore(
     cfg: MemoryConfig,
-    config: ConfigService,
+    resolveProvider: ResolveProvider,
     dataDir: string,
     workspaceDir: string,
     log: Logger,
 ): Promise<BuiltStore | null> {
-    const resolved = resolveEmbeddingProvider(cfg.embeddings.provider, config);
+    const resolved = await resolveEmbeddingProvider(cfg.embeddings.provider, resolveProvider);
     const embeddingModel = buildEmbeddingModel({
         provider: cfg.embeddings.provider,
-        type: resolved.type,
+        npmPackage: resolved.npmPackage,
         model: cfg.embeddings.model,
         apiKey: resolved.apiKey,
-        baseUrl: resolved.baseUrl,
+        baseUrl: resolved.apiEndpoint,
     });
 
     const memDir = memoryDataDir(dataDir);
@@ -109,49 +92,38 @@ export async function buildMemoryStore(
 }
 
 /**
- * Match a provider id against the inference config. Returns the
- * resolved embedding provider type, api key, and (for custom
- * providers) base URL. Throws — with a precise message — when:
- *  - the provider id is not declared under either inference subtree;
- *  - the provider is native but does not expose embeddings;
- *  - the custom provider's `type` is unsupported.
+ * Resolve an embedding provider id against the platform's provider
+ * resolution (`ctx.inference.resolveProvider`): the api key from
+ * `inference.apiKeys.<id>` joined with the provider's npm package +
+ * upstream endpoint from model metadata (models.dev or a plugin
+ * descriptor). The embedding client is built directly against the
+ * upstream — it does not go through the bastion — so it needs the real
+ * key + endpoint.
+ *
+ * Whether the resolved npm package actually exposes embeddings is
+ * decided by {@link buildEmbeddingModel}; this only fails when the
+ * provider isn't configured / isn't a known provider.
+ *
+ * @throws When the provider id has no api key configured or doesn't
+ *   resolve to a known provider.
  */
-function resolveEmbeddingProvider(
+async function resolveEmbeddingProvider(
     providerId: string,
-    config: ConfigService,
-): { readonly type: EmbeddingProviderType; readonly apiKey: string; readonly baseUrl?: string } {
-    // Native first — `inference.apiKeys.<id>` is a flat key→string map.
-    const nativeKey = config.getString(`inference.apiKeys.${providerId}`, null);
-    if (typeof nativeKey === "string" && nativeKey.length > 0) {
-        if (PROVIDERS_WITHOUT_EMBEDDINGS.includes(providerId)) {
-            throw new Error(
-                `memory: inference provider "${providerId}" does not expose embeddings — pick openai, google, mistral, or an openai-compatible gateway`,
-            );
-        }
-        const type = NATIVE_EMBEDDING_PROVIDERS[providerId];
-        if (!type) {
-            throw new Error(
-                `memory: inference provider "${providerId}" is not a known native provider for embeddings (known: ${Object.keys(NATIVE_EMBEDDING_PROVIDERS).join(", ")})`,
-            );
-        }
-        return { type, apiKey: nativeKey };
-    }
-    // Custom provider — read the trio `apiKey`, `baseUrl`, `type`.
-    const customApiKey = config.getString(`inference.customProviders.${providerId}.apiKey`, null);
-    if (typeof customApiKey !== "string" || customApiKey.length === 0) {
+    resolveProvider: ResolveProvider,
+): Promise<{
+    readonly npmPackage: string;
+    readonly apiKey: string;
+    readonly apiEndpoint?: string;
+}> {
+    const resolved = await resolveProvider(providerId);
+    if (resolved === undefined) {
         throw new Error(
-            `memory: embeddings provider "${providerId}" is not declared under inference.apiKeys nor inference.customProviders`,
+            `memory: embeddings provider "${providerId}" is not configured under inference.apiKeys, or is not a known provider (not in the models.dev catalogue and not declared by a plugin)`,
         );
     }
-    const baseUrl = config.getString(`inference.customProviders.${providerId}.baseUrl`);
-    const customType = config.getString(
-        `inference.customProviders.${providerId}.type`,
-        "openai-compatible",
-    );
-    if (customType !== "openai-compatible") {
-        throw new Error(
-            `memory: custom provider "${providerId}" has type "${customType}" — only "openai-compatible" is supported for embeddings`,
-        );
-    }
-    return { type: "openai-compatible", apiKey: customApiKey, baseUrl };
+    return {
+        npmPackage: resolved.npmPackage,
+        apiKey: resolved.apiKey,
+        apiEndpoint: resolved.apiEndpoint,
+    };
 }

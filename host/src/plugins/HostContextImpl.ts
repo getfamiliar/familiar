@@ -35,6 +35,7 @@ import {
 import { inspectPidFile } from "../commands/pidfile.js";
 import type { MailStyleStore } from "../mail/MailStyleStore.js";
 import type { PluginMcpService } from "../mcp/PluginMcpService.js";
+import type { ResolvedProvider } from "../models/ProviderResolution.js";
 import type { WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
 import type { EventContextRegistry } from "./EventContextRegistry.js";
 
@@ -127,6 +128,12 @@ export interface HostContextImplDeps {
      * assembly.
      */
     eventContextRegistry: EventContextRegistry;
+    /**
+     * Resolve a configured provider key into `{ apiKey, npmPackage,
+     * apiEndpoint }`, backing `ctx.inference.resolveProvider`. Wired to
+     * `PluginHost.resolveProvider`.
+     */
+    resolveProvider: (key: string) => Promise<ResolvedProvider | undefined>;
     /**
      * Shared workspace watcher backing `ctx.workspace`. Optional because
      * one-shot CLI invocations (`./cli.sh <plugin> …`) do not spin one
@@ -253,6 +260,13 @@ export class HostContextImpl implements HostContext {
     get config(): ConfigService {
         return this.deps.config;
     }
+
+    readonly inference = {
+        resolveProvider: (
+            key: string,
+        ): Promise<{ apiKey: string; npmPackage: string; apiEndpoint?: string } | undefined> =>
+            this.deps.resolveProvider(key),
+    };
 
     get daemonDownSignal(): AbortSignal {
         return this.deps.daemonDownSignal;

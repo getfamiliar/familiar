@@ -1,5 +1,10 @@
 import { promises as fs } from "node:fs";
-import { type Logger, type ModelMetaData, ModelNotSupported } from "@getfamiliar/shared";
+import {
+    type Logger,
+    type ModelMetaData,
+    ModelNotSupported,
+    type ModelProviderDescriptor,
+} from "@getfamiliar/shared";
 
 /** Provider id this plugin is authoritative for (hardcoded). */
 export const FEATHERLESS_PROVIDER = "featherless";
@@ -15,9 +20,18 @@ const FEATHERLESS_MODELS_URL = "https://api.featherless.ai/v1/models";
  */
 const USER_AGENT = "Mozilla/5.0 (compatible; familiar)";
 
-/** Constants that hold for every Featherless model. */
-const FEATHERLESS_API_BASE = "https://api.featherless.ai/v1";
-const FEATHERLESS_NPM_PACKAGE = "@ai-sdk/openai-compatible";
+/**
+ * Provider descriptor for Featherless — the single source of truth for
+ * the provider's key, SDK npm package, and upstream base. Returned from
+ * the plugin's `getModelProviders` hook (so the host can wire the proxy
+ * + container) and reused in {@link FeatherlessModels.getMetaData} so a
+ * per-model lookup reports the same `npmPackage` / `apiEndpoint`.
+ */
+export const FEATHERLESS_PROVIDER_DESCRIPTOR: ModelProviderDescriptor = {
+    key: FEATHERLESS_PROVIDER,
+    npmPackage: "@ai-sdk/openai-compatible",
+    apiEndpoint: "https://api.featherless.ai/v1",
+};
 
 /**
  * Shape of the relevant slice of one entry in the Featherless
@@ -132,8 +146,8 @@ export class FeatherlessModels {
             throw new ModelNotSupported(`featherless does not host model "${model}"`);
         }
         return {
-            npmPackage: FEATHERLESS_NPM_PACKAGE,
-            apiEndpoint: FEATHERLESS_API_BASE,
+            npmPackage: FEATHERLESS_PROVIDER_DESCRIPTOR.npmPackage,
+            apiEndpoint: FEATHERLESS_PROVIDER_DESCRIPTOR.apiEndpoint,
             toolCall: asBoolean(entry.features?.tool_use),
             // Featherless's model list exposes no reasoning flag.
             reasoning: undefined,

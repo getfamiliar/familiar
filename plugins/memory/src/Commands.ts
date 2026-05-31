@@ -137,7 +137,7 @@ async function openReadOnlyStore(ctx: HostContext): Promise<MemoryStore | null> 
     const cfg = readMemoryConfig(ctx.config);
     const built = await buildMemoryStore(
         cfg,
-        ctx.config,
+        (key) => ctx.inference.resolveProvider(key),
         ctx.dataDir,
         `${ctx.dataDir}/workspace`,
         ctx.logger,

@@ -56,7 +56,7 @@ export default definePlugin({
             try {
                 built = await buildMemoryStore(
                     cfg,
-                    ctx.config,
+                    (key) => ctx.inference.resolveProvider(key),
                     ctx.dataDir,
                     workspaceDir,
                     ctx.logger,

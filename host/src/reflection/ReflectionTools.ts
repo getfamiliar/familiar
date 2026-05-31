@@ -4,6 +4,7 @@ import type { PluginToolsRegistry } from "../plugins/ToolsRegistry.js";
 import { buildAgentrunReportTool } from "./tools/AgentrunReport.js";
 import { buildAgentrunSyspromptTool } from "./tools/AgentrunSysprompt.js";
 import { buildEventListTool } from "./tools/EventList.js";
+import { buildEventReplayTool } from "./tools/EventReplay.js";
 import { buildEventReportTool } from "./tools/EventReport.js";
 import { buildInferenceStatusTool } from "./tools/InferenceStatus.js";
 import { buildLogSearchTool } from "./tools/LogSearch.js";
@@ -51,6 +52,7 @@ export function buildReflectionTools(deps: ReflectionToolsDeps): readonly Plugin
         buildAgentrunReportTool(deps),
         buildAgentrunSyspromptTool(deps),
         buildEventListTool(deps),
+        buildEventReplayTool(deps),
         buildEventReportTool(deps),
         buildInferenceStatusTool(deps),
         buildLogSearchTool(deps),

@@ -79,7 +79,11 @@ export {
     mailStyleTemplatePath,
     signatureToPlainText,
 } from "./MailStyleTemplate.js";
-export { type ModelMetaData, ModelNotSupported } from "./ModelMetaData.js";
+export {
+    type ModelMetaData,
+    ModelNotSupported,
+    type ModelProviderDescriptor,
+} from "./ModelMetaData.js";
 export { renderMarkdownToHtml } from "./markdownHtml.js";
 export { renderMarkdown } from "./markdownTerminal.js";
 export { matchesAnyGlob, matchesGlob } from "./PathGlob.js";

@@ -36,7 +36,10 @@ import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { McpGateway } from "../mcp/McpGateway.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
-import { ModelMetadataService } from "../models/ModelMetadataService.js";
+import {
+    type ResolvedProvider,
+    validateConfiguredProviders,
+} from "../models/ProviderResolution.js";
 import { HostContextImpl } from "../plugins/HostContextImpl.js";
 import { PluginHost } from "../plugins/PluginHost.js";
 import { PluginToolsGateway } from "../plugins/ToolsGateway.js";
@@ -138,24 +141,12 @@ export const startCommand = defineCommand({
         // Touch the chat-channel default so a missing value fails the
         // daemon now rather than at first chat event.
         config.getString("core.defaultChatChannel");
-        // Build the providers map for the bastion's reverse-proxy
-        // module. Every native key under `inference.apiKeys` and every
-        // entry under `inference.customProviders` becomes a `/llm/<id>/`
-        // route; native ids are pinned to known upstream URLs and auth
-        // styles, custom ones use openai-compatible Bearer auth.
+        // Provider keys configured under inference.apiKeys. Each must
+        // resolve to a known provider (models.dev or a plugin); the
+        // reverse-proxy provider table + container env are built from the
+        // resolved set below, once the plugin host + metadata catalogue
+        // are available.
         const apiKeys = config.getMapping("inference.apiKeys", {});
-        const customProviders = config.getMapping("inference.customProviders", {});
-        const providers = buildProviders(apiKeys, customProviders);
-        // Provider type map for the agent container — native ids carry
-        // their own SDK package (id is the type), custom ids fall under
-        // the single openai-compatible client.
-        const providerTypes: Record<string, string> = {};
-        for (const id of Object.keys(apiKeys)) {
-            providerTypes[id] = id;
-        }
-        for (const id of Object.keys(customProviders)) {
-            providerTypes[id] = "openai-compatible";
-        }
 
         const log = await buildDaemonLogger(boot, config, debugLogging);
 
@@ -174,6 +165,31 @@ export const startCommand = defineCommand({
         // plugin module state (e.g. transcribe-whisper's API key) is
         // visible to siblings the moment they begin serving.
         pluginHost.prepareAll();
+
+        // Resolve every configured provider against the models.dev
+        // catalogue + plugin descriptors. Refresh the catalogue first so
+        // resolution sees a current copy (no-op when fresh). Validate up
+        // front and fail fast with one clear diagnostic, then build the
+        // reverse-proxy provider table and the container's provider→npm
+        // map from the resolved set.
+        await pluginHost.modelMetadata.refreshIfStale(ONE_DAY_MS);
+        const providerKeys = Object.keys(apiKeys);
+        const providerErrors = await validateConfiguredProviders(providerKeys, (key) =>
+            pluginHost.modelMetadata.lookupProvider(key),
+        );
+        if (providerErrors.length > 0) {
+            throw new Error(
+                `inference provider config invalid:\n  - ${providerErrors.join("\n  - ")}`,
+            );
+        }
+        const resolvedProviders = (
+            await Promise.all(providerKeys.map((key) => pluginHost.resolveProvider(key)))
+        ).filter((p): p is ResolvedProvider => p !== undefined);
+        const providers = buildProviders(resolvedProviders);
+        const providerNpmPackages: Record<string, string> = {};
+        for (const provider of resolvedProviders) {
+            providerNpmPackages[provider.key] = provider.npmPackage;
+        }
 
         const postgres = new PostgresContainer({
             dataPath: boot.dataDir,
@@ -217,13 +233,8 @@ export const startCommand = defineCommand({
             ensureConnection: () => pluginHost.ensureConnection(),
             log: log.child({ component: "event-context-gateway" }),
         });
-        const modelMetadataService = new ModelMetadataService({
-            tmpDir: boot.tmpDir,
-            lookupPluginMeta: (provider, model) => pluginHost.lookupModelMetaData(provider, model),
-            log: log.child({ component: "model-metadata" }),
-        });
         const modelMetadataGateway = new ModelMetadataGateway({
-            service: modelMetadataService,
+            service: pluginHost.modelMetadata,
             log: log.child({ component: "model-metadata-gateway" }),
         });
         const bastion = new Bastion({
@@ -283,7 +294,7 @@ export const startCommand = defineCommand({
             agentStepTimeoutSeconds,
             logSystemPromptMode,
             captureRawStepResultToDatabase,
-            providerTypes,
+            providerNpmPackages,
             verbose: debugLogging,
             coreTimezone,
             writablePaths,
@@ -333,6 +344,7 @@ export const startCommand = defineCommand({
             mail: pluginHost.mail,
             mailStyleStore: pluginHost.mailStyle,
             eventContextRegistry: pluginHost.eventContext,
+            resolveProvider: (key) => pluginHost.resolveProvider(key),
             workspaceWatcher,
             // Daemon-internal context: the daemon owns its own shutdown,
             // so there's no "other daemon" to watch. A fresh, never-
@@ -381,13 +393,10 @@ export const startCommand = defineCommand({
         });
         scratchGc.start();
 
-        // Make sure the models.dev cache exists / is recent before the
-        // first agentrun looks a model up, then keep it fresh daily.
-        // `refreshIfStale` is a no-op (no network) when the file was
-        // refetched within the last 24 h, so restarts stay fast.
-        await modelMetadataService.refreshIfStale(ONE_DAY_MS);
+        // The models.dev cache was already refreshed (refresh-if-stale)
+        // before provider resolution above; keep it fresh daily from here.
         const modelMetadataRefresher = new ModelMetadataRefresher({
-            service: modelMetadataService,
+            service: pluginHost.modelMetadata,
             log: log.child({ component: "model-metadata-refresher" }),
         });
         modelMetadataRefresher.start();

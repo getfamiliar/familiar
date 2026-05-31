@@ -28,6 +28,33 @@ export interface ModelMetaData {
 }
 
 /**
+ * Provider-level descriptor a plugin returns from
+ * {@link PluginHostManifest.getModelProviders} to declare an inference
+ * provider it owns (one the models.dev database doesn't cover). The host
+ * uses it to wire the reverse proxy (auth + upstream base) and the
+ * container's model factory (which `create*` to call), keyed off
+ * {@link npmPackage}.
+ */
+export interface ModelProviderDescriptor {
+    /**
+     * Provider key — the id used under `inference.apiKeys.<key>`, in
+     * `/llm/<key>/` proxy routes, and as the `model` prefix. Matches a
+     * models.dev provider id only when the plugin intentionally overrides
+     * one; otherwise it's a plugin-owned id like `featherless`.
+     */
+    readonly key: string;
+    /** npm package backing the provider's SDK, e.g. `@ai-sdk/openai-compatible`. */
+    readonly npmPackage: string;
+    /**
+     * Upstream API base URL the reverse proxy forwards to, e.g.
+     * `https://api.featherless.ai/v1`. Required for openai-compatible
+     * providers (no SDK default exists); for a provider whose npm package
+     * carries a built-in default base it may be omitted.
+     */
+    readonly apiEndpoint?: string;
+}
+
+/**
  * Thrown by a {@link PluginHostManifest.getModelMetaData} hook when the
  * plugin authoritatively owns the given provider and knows the model is
  * not supported there. The host treats this as a definitive "no" and

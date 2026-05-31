@@ -9,7 +9,7 @@ import type { EventFile, EventRow, NewEvent } from "./Event.js";
 import type { Logger } from "./logging/Logger.js";
 import type { MailApi } from "./Mail.js";
 import type { MailStyleTemplate } from "./MailStyleTemplate.js";
-import type { ModelMetaData } from "./ModelMetaData.js";
+import type { ModelMetaData, ModelProviderDescriptor } from "./ModelMetaData.js";
 import type { StepResultRow } from "./StepResult.js";
 import type { ToolRunContext } from "./ToolRunner.js";
 import type { WorkspaceWatcherApi } from "./WorkspaceFile.js";
@@ -62,9 +62,10 @@ export type AnyCommandDef = CommandDef<any>;
  * registered provider in parallel; one bad provider must not poison
  * the prompt, so the gateway isolates rejections and per-call timeouts.
  */
-export interface EventContextProvider {
-    (agentrun: AgentRunRow, event: EventRow): Promise<string | null | undefined>;
-}
+export type EventContextProvider = (
+    agentrun: AgentRunRow,
+    event: EventRow,
+) => Promise<string | null | undefined>;
 
 /**
  * Optional callbacks passed alongside `ctx.events.emit`. Bundled into
@@ -290,6 +291,26 @@ export interface HostContext {
      * to get a `string | null` back and self-disable on absence.
      */
     readonly config: ConfigService;
+    /**
+     * Inference-provider resolution. Lets a host-side plugin turn a
+     * provider key (as configured under `inference.apiKeys.<key>`) into
+     * the concrete `{ apiKey, npmPackage, apiEndpoint? }` it needs to
+     * talk to the provider directly — without re-implementing the
+     * models.dev + plugin-descriptor lookup the platform already owns.
+     *
+     * The motivating consumer is the memory plugin, which builds an
+     * embedding client against the real upstream (it does not go through
+     * the bastion). `resolveProvider` resolves `npmPackage` / `apiEndpoint`
+     * from the models.dev catalogue or a plugin's
+     * {@link PluginHostManifest.getModelProviders} descriptor, and reads
+     * `apiKey` from config. Returns `undefined` when the key isn't
+     * configured or doesn't resolve to a known provider.
+     */
+    readonly inference: {
+        resolveProvider(
+            key: string,
+        ): Promise<{ apiKey: string; npmPackage: string; apiEndpoint?: string } | undefined>;
+    };
     /**
      * Access to MCPs declared in `config/mcp.yml`. `getList()` returns
      * metadata only (no connections opened). The two getters return the
@@ -615,6 +636,19 @@ export interface PluginHostManifest {
         provider: string,
         model: string,
     ): Promise<ModelMetaData | undefined>;
+    /**
+     * Declare the inference provider(s) this plugin owns — providers the
+     * models.dev database doesn't cover (e.g. `featherless`). Returned
+     * synchronously from constants (no fetch); the host calls it during
+     * provider resolution to learn the provider's `npmPackage` (which
+     * `create*` to use, how to inject auth) and `apiEndpoint` (where the
+     * reverse proxy forwards). The declared `key` is what the operator
+     * puts under `inference.apiKeys.<key>`.
+     *
+     * On a key collision with models.dev, the models.dev entry wins; on a
+     * collision between two plugins, the first registered wins (logged).
+     */
+    getModelProviders?(ctx: HostContext): readonly ModelProviderDescriptor[];
     /**
      * Default command for the plugin's CLI root. When set, invoking
      * the plugin id with no subcommand (e.g. `cli.sh cli-chat`) runs

@@ -1,10 +1,14 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
+import type { ResolvedProvider } from "../models/ProviderResolution.js";
 import { buildProviders } from "./ReverseProxy.js";
 
 describe("buildProviders", () => {
-    it("maps known native providers to their built-in upstream URLs and auth headers", () => {
-        const providers = buildProviders({ openai: "okey", anthropic: "akey" }, {});
+    it("maps providers to upstream URLs + auth from their npm package", () => {
+        const providers = buildProviders([
+            { key: "openai", apiKey: "okey", npmPackage: "@ai-sdk/openai" },
+            { key: "anthropic", apiKey: "akey", npmPackage: "@ai-sdk/anthropic" },
+        ]);
         assert.equal(providers.openai?.upstreamBase, "https://api.openai.com/v1");
         assert.equal(providers.anthropic?.upstreamBase, "https://api.anthropic.com/v1");
 
@@ -18,101 +22,51 @@ describe("buildProviders", () => {
         assert.equal(anthropicHeaders["anthropic-version"], "2023-06-01");
     });
 
-    it("registers a custom provider with its declared baseUrl + apiKey + bearer auth", () => {
-        const providers = buildProviders(
-            {},
+    it("uses the explicit apiEndpoint for an openai-compatible provider", () => {
+        const providers = buildProviders([
             {
-                featherless: {
-                    baseUrl: "https://api.featherless.ai",
-                    apiKey: "fkey",
-                    type: "openai-compatible",
-                },
+                key: "featherless",
+                apiKey: "fkey",
+                npmPackage: "@ai-sdk/openai-compatible",
+                apiEndpoint: "https://api.featherless.ai/v1",
             },
-        );
-        assert.equal(providers.featherless?.upstreamBase, "https://api.featherless.ai");
+        ]);
+        assert.equal(providers.featherless?.upstreamBase, "https://api.featherless.ai/v1");
         const headers: Record<string, string | string[]> = {};
         providers.featherless?.applyAuth(headers);
         assert.equal(headers.authorization, "Bearer fkey");
     });
 
-    it("strips a trailing slash from a custom provider baseUrl", () => {
-        const providers = buildProviders(
-            {},
+    it("strips a trailing slash from the resolved upstream base", () => {
+        const providers = buildProviders([
             {
-                gateway: {
-                    baseUrl: "https://api.example.com/",
-                    apiKey: "k",
-                    type: "openai-compatible",
-                },
+                key: "gateway",
+                apiKey: "k",
+                npmPackage: "@ai-sdk/openai-compatible",
+                apiEndpoint: "https://api.example.com/",
             },
-        );
+        ]);
         assert.equal(providers.gateway?.upstreamBase, "https://api.example.com");
     });
 
-    it("throws when a native api key is empty or non-string", () => {
-        assert.throws(() => buildProviders({ openai: "" }, {}), /must be a non-empty string/);
-        assert.throws(() => buildProviders({ openai: 42 }, {}), /must be a non-empty string/);
-    });
-
-    it("throws when an apiKeys id is not a known native provider", () => {
+    it("throws for an unsupported npm package", () => {
         assert.throws(
-            () => buildProviders({ unknownprovider: "key" }, {}),
-            /unknownprovider is not a known native provider/,
+            () => buildProviders([{ key: "x", apiKey: "k", npmPackage: "@ai-sdk/cohere" }]),
+            /unsupported npm package/,
         );
     });
 
-    it("rejects a custom provider whose id collides with a native one", () => {
+    it("throws for an openai-compatible provider with no apiEndpoint", () => {
         assert.throws(
             () =>
-                buildProviders(
-                    {},
-                    {
-                        anthropic: {
-                            baseUrl: "https://example.com",
-                            apiKey: "k",
-                            type: "openai-compatible",
-                        },
-                    },
-                ),
-            /id is reserved for the native provider/,
-        );
-    });
-
-    it("rejects a custom provider with a non-https baseUrl", () => {
-        assert.throws(
-            () =>
-                buildProviders(
-                    {},
-                    {
-                        bad: {
-                            baseUrl: "http://insecure.example.com",
-                            apiKey: "k",
-                            type: "openai-compatible",
-                        },
-                    },
-                ),
-            /baseUrl: must be an https URL/,
-        );
-    });
-
-    it('rejects a custom provider whose type is not "openai-compatible"', () => {
-        assert.throws(
-            () =>
-                buildProviders(
-                    {},
-                    {
-                        weird: {
-                            baseUrl: "https://example.com",
-                            apiKey: "k",
-                            type: "something-else",
-                        },
-                    },
-                ),
-            /only "openai-compatible" is supported/,
+                buildProviders([
+                    { key: "x", apiKey: "k", npmPackage: "@ai-sdk/openai-compatible" },
+                ]),
+            /has no default base URL/,
         );
     });
 
     it("returns an empty map when nothing is configured", () => {
-        assert.deepEqual(buildProviders({}, {}), {});
+        assert.deepEqual(buildProviders([] as ResolvedProvider[]), {});
     });
 });

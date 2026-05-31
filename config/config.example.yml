@@ -68,9 +68,8 @@ core:
   # writablePaths: ["wiki/**"]
 
 inference:
-  # Provider id used when a handler does not put a provider prefix on
-  # its `model` frontmatter field. Must match either an entry under
-  # `apiKeys` (with the key set) or an entry under `customProviders`.
+  # Provider key used when a handler does not put a provider prefix on
+  # its `model` frontmatter field. Must match an entry under `apiKeys`.
   defaultProvider: featherless
 
   # Default model used when a handler omits `model` from its
@@ -91,30 +90,27 @@ inference:
   # without changing the global default).
   # maxRetries: 3
 
-  # Native providers — one entry per first-class vendor whose Vercel
-  # AI SDK class we ship. Allowed ids: openai, anthropic, google,
-  # grok, groq, deepseek, mistral. The id is also the URL segment the
-  # bastion mounts at /llm/<id>/, and the prefix handlers use on the
-  # `model` field. Each key here also becomes a route — if you don't
-  # plan to use a provider, leave it out.
+  # API keys, one entry per provider you want to use. The map KEY is
+  # the provider key — it must match a provider id in the models.dev
+  # catalogue (https://models.dev/api.json), e.g. openai, anthropic,
+  # google, xai, groq, deepseek, mistral — OR a provider key declared
+  # by an installed plugin (e.g. `featherless`, provided by the
+  # featherless plugin). The key is also the URL segment the bastion
+  # mounts at /llm/<key>/ and the prefix handlers use on the `model`
+  # field. Each provider's npm package + upstream endpoint come from
+  # model metadata; there is no separate customProviders block anymore.
+  # (Note: use `xai`, not `grok` — that's the models.dev provider id.)
+  # `./cli.sh config lint` rejects keys that don't resolve to a known
+  # provider.
   apiKeys:
     # openai: REPLACE_ME              # also read by transcribe-whisper
     # anthropic: REPLACE_ME
     # google: REPLACE_ME
-    # grok: REPLACE_ME                # xAI Grok
+    # xai: REPLACE_ME                 # xAI Grok
     # groq: REPLACE_ME
     # deepseek: REPLACE_ME
     # mistral: REPLACE_ME
-
-  # Custom providers — third-party gateways and smaller vendors we
-  # treat as OpenAI-compatible. The map key is the provider id (used
-  # in URLs and as the model prefix). Cannot collide with a native
-  # id even when no native key is set.
-  customProviders:
-    featherless:
-      baseUrl: https://api.featherless.ai
-      apiKey: REPLACE_ME
-      type: openai-compatible
+    featherless: REPLACE_ME           # provider key supplied by the featherless plugin
 
   # When true, raw HTTP request/response bodies for every
   # `/llm/<provider>/*` call are written to `data/llm-debug/`
@@ -151,8 +147,9 @@ inference:
 # Orama hybrid (vector + BM25) index and surfaces relevant snippets in
 # the system prompt. `embeddings.provider` + `embeddings.model` are
 # required; everything else has a default. The provider id references
-# an entry already declared under `inference.apiKeys.<id>` or
-# `inference.customProviders.<id>` — credentials are not restated here.
+# an entry already declared under `inference.apiKeys.<id>` — credentials
+# are not restated here. Only providers whose SDK ships embeddings work
+# (openai, google, mistral, or an openai-compatible gateway).
 # memory:
 #   embeddings:
 #     provider: openai                  # must match an enabled inference provider

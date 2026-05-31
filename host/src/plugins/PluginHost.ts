@@ -5,6 +5,7 @@ import type {
     HostContext,
     Logger,
     ModelMetaData,
+    ModelProviderDescriptor,
     PostgresConnection,
 } from "@getfamiliar/shared";
 import { EventBus, ModelNotSupported } from "@getfamiliar/shared";
@@ -25,6 +26,8 @@ import { buildMailStyleTools } from "../mail/MailStyleTools.js";
 import { buildMailTools } from "../mail/MailTools.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
 import { PluginMcpService } from "../mcp/PluginMcpService.js";
+import { ModelMetadataService } from "../models/ModelMetadataService.js";
+import type { ResolvedProvider } from "../models/ProviderResolution.js";
 import { buildReflectionTools } from "../reflection/ReflectionTools.js";
 import type { WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
 import { EventContextRegistry } from "./EventContextRegistry.js";
@@ -74,6 +77,7 @@ export class PluginHost {
     private readonly mailSafety: MailSafety;
     private readonly mailStyleStore: MailStyleStore;
     private readonly eventContextRegistry: EventContextRegistry;
+    private readonly modelMetadataService: ModelMetadataService;
     private toolsRegistry: PluginToolsRegistry | undefined;
     private workspaceWatcher: WorkspaceWatcher | undefined;
     private bastionBaseUrl: string = DEFAULT_BASTION_BASE_URL;
@@ -113,6 +117,88 @@ export class PluginHost {
             log.child({ component: "mail-style" }).warn(msg),
         );
         this.eventContextRegistry = new EventContextRegistry();
+        this.modelMetadataService = new ModelMetadataService({
+            tmpDir: boot.tmpDir,
+            lookupPluginMeta: (provider, model) => this.lookupModelMetaData(provider, model),
+            listPluginProviders: () => this.listModelProviders(),
+            log: log.child({ component: "model-metadata" }),
+        });
+    }
+
+    /**
+     * The shared {@link ModelMetadataService} (models.dev cache + plugin
+     * fallback). Owned here so provider resolution works in both daemon
+     * and one-shot CLI contexts; `Start.ts` reads it off this getter to
+     * wire the bastion gateway + the daily refresh cron.
+     */
+    get modelMetadata(): ModelMetadataService {
+        return this.modelMetadataService;
+    }
+
+    /**
+     * Collect the inference-provider descriptors every plugin declares
+     * via {@link import("@getfamiliar/shared").PluginHostManifest.getModelProviders},
+     * in registration order. Duplicate keys are dropped (first plugin
+     * wins, logged). Backs both provider-level metadata resolution and
+     * the linter's known-provider check.
+     */
+    listModelProviders(): ModelProviderDescriptor[] {
+        const out: ModelProviderDescriptor[] = [];
+        const seen = new Set<string>();
+        for (const plugin of plugins) {
+            const hook = plugin.host?.getModelProviders;
+            if (!hook) {
+                continue;
+            }
+            let descriptors: readonly ModelProviderDescriptor[];
+            try {
+                descriptors = hook(this.context(plugin.id));
+            } catch (err) {
+                this.log.warn(
+                    { plugin: plugin.id, err: err instanceof Error ? err.message : String(err) },
+                    `plugin "${plugin.id}" getModelProviders threw`,
+                );
+                continue;
+            }
+            for (const descriptor of descriptors) {
+                if (seen.has(descriptor.key)) {
+                    this.log.warn(
+                        { plugin: plugin.id, key: descriptor.key },
+                        `duplicate model provider key "${descriptor.key}" from plugin "${plugin.id}" — ignored`,
+                    );
+                    continue;
+                }
+                seen.add(descriptor.key);
+                out.push(descriptor);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Resolve a configured provider key into the concrete
+     * {@link ResolvedProvider} the reverse proxy and container need:
+     * its api key (from `inference.apiKeys.<key>`) joined with the
+     * provider-level metadata (`npmPackage` / `apiEndpoint`) from
+     * models.dev or a plugin descriptor.
+     *
+     * Returns `undefined` when the key has no api key configured or
+     * doesn't resolve to a known provider — callers (startup validation)
+     * turn that into a clear error; `ctx.inference.resolveProvider`
+     * forwards it to plugins as a soft miss.
+     *
+     * @param key Provider key as used under `inference.apiKeys.<key>`.
+     */
+    async resolveProvider(key: string): Promise<ResolvedProvider | undefined> {
+        const apiKey = this.config.getString(`inference.apiKeys.${key}`, null);
+        if (apiKey === null || apiKey.length === 0) {
+            return undefined;
+        }
+        const meta = await this.modelMetadataService.lookupProvider(key);
+        if (meta?.npmPackage === undefined) {
+            return undefined;
+        }
+        return { key, apiKey, npmPackage: meta.npmPackage, apiEndpoint: meta.apiEndpoint };
     }
 
     /**
@@ -477,6 +563,7 @@ export class PluginHost {
             mail: this.mailRegistry,
             mailStyleStore: this.mailStyleStore,
             eventContextRegistry: this.eventContextRegistry,
+            resolveProvider: (key) => this.resolveProvider(key),
             workspaceWatcher: this.workspaceWatcher,
             daemonDownSignal: this.daemonDownController.signal,
         });

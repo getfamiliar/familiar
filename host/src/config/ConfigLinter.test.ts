@@ -39,7 +39,10 @@ inference:
         assert.deepEqual(result.errors, []);
     });
 
-    it("accepts a minimal valid config with a custom provider", () => {
+    it("accepts a plugin-provided provider key under apiKeys", () => {
+        // Structural lint only: every provider lives under apiKeys now
+        // (customProviders is gone). Whether `featherless` resolves to a
+        // known provider is checked separately by validateConfiguredProviders.
         const file = write(`
 core:
   postgresPassword: secret
@@ -47,11 +50,8 @@ core:
 inference:
   defaultProvider: featherless
   defaultModel: zai-org/GLM-5.1
-  customProviders:
-    featherless:
-      baseUrl: https://api.featherless.ai
-      apiKey: REAL_KEY
-      type: openai-compatible
+  apiKeys:
+    featherless: REAL_KEY
 `);
         const result = lintConfigFile(file);
         assert.equal(result.ok, true, `unexpected errors: ${JSON.stringify(result.errors)}`);

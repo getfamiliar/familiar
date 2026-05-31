@@ -1,12 +1,21 @@
 import path from "node:path";
 import { definePlugin, type HostContext, type ModelMetaData } from "@getfamiliar/shared";
-import { FEATHERLESS_PROVIDER, FeatherlessModels } from "./FeatherlessModels.js";
+import {
+    FEATHERLESS_PROVIDER,
+    FEATHERLESS_PROVIDER_DESCRIPTOR,
+    FeatherlessModels,
+} from "./FeatherlessModels.js";
 
 /** Cache filename written under `ctx.tmpDir`. */
 const CACHE_FILENAME = "models.featherless.json";
 
-/** Config path of the Featherless API key (provider id is hardcoded). */
-const API_KEY_CONFIG = "inference.customProviders.featherless.apiKey";
+/**
+ * Config path of the Featherless API key. The provider key is hardcoded
+ * to `featherless`, so the key lives under `inference.apiKeys.featherless`
+ * like every other provider (the provider's npm package + endpoint come
+ * from this plugin's `getModelProviders` descriptor, not from config).
+ */
+const API_KEY_CONFIG = "inference.apiKeys.featherless";
 
 /** 24 hours in milliseconds — refresh cadence + staleness window. */
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -61,6 +70,7 @@ export default definePlugin({
             }
             store = undefined;
         },
+        getModelProviders: () => [FEATHERLESS_PROVIDER_DESCRIPTOR],
         getModelMetaData: async (
             _ctx: HostContext,
             provider: string,

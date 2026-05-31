@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { Logger, ModelMetaData } from "@getfamiliar/shared";
+import type { Logger, ModelMetaData, ModelProviderDescriptor } from "@getfamiliar/shared";
 
 /** Public models.dev metadata database. Plain GET, no auth. */
 const MODELS_DEV_URL = "https://models.dev/api.json";
@@ -39,6 +39,13 @@ export interface ModelMetadataServiceConfig {
         provider: string,
         model: string,
     ) => Promise<ModelMetaData | undefined>;
+    /**
+     * Plugin-declared provider descriptors (via
+     * `PluginHost.listModelProviders`). Consulted by
+     * {@link ModelMetadataService.lookupProvider} when the models.dev
+     * catalogue doesn't cover a provider key.
+     */
+    readonly listPluginProviders: () => readonly ModelProviderDescriptor[];
     /** Logger child for refresh + lookup lines. */
     readonly log: Logger;
 }
@@ -60,6 +67,7 @@ export interface ModelMetadataServiceConfig {
 export class ModelMetadataService {
     private readonly cacheFile: string;
     private readonly lookupPluginMeta: ModelMetadataServiceConfig["lookupPluginMeta"];
+    private readonly listPluginProviders: ModelMetadataServiceConfig["listPluginProviders"];
     private readonly log: Logger;
     /** Parsed catalogue, populated by {@link refresh} or a lazy disk read. */
     private catalogue: ModelsDevCatalogue | undefined;
@@ -67,6 +75,7 @@ export class ModelMetadataService {
     constructor(config: ModelMetadataServiceConfig) {
         this.cacheFile = path.join(config.tmpDir, CACHE_FILENAME);
         this.lookupPluginMeta = config.lookupPluginMeta;
+        this.listPluginProviders = config.listPluginProviders;
         this.log = config.log;
     }
 
@@ -147,6 +156,36 @@ export class ModelMetadataService {
             };
         }
         return this.lookupPluginMeta(provider, model);
+    }
+
+    /**
+     * Resolve **provider-level** metadata (`npmPackage` + optional
+     * `apiEndpoint`) for a provider key — independent of any specific
+     * model. Backs provider resolution (reverse-proxy auth/base,
+     * container `create*` selection, `ctx.inference.resolveProvider`).
+     *
+     * models.dev catalogue first (`catalogue[key].npm` / `.api`); on a
+     * miss, the first plugin descriptor whose `key` matches. Returns
+     * `undefined` when neither source knows the provider.
+     *
+     * @param key Provider key as used under `inference.apiKeys.<key>`.
+     */
+    async lookupProvider(
+        key: string,
+    ): Promise<{ npmPackage?: string; apiEndpoint?: string } | undefined> {
+        const catalogue = await this.ensureCatalogue();
+        const providerEntry = catalogue[key];
+        if (providerEntry !== undefined && asString(providerEntry.npm) !== undefined) {
+            return {
+                npmPackage: asString(providerEntry.npm),
+                apiEndpoint: asString(providerEntry.api),
+            };
+        }
+        const descriptor = this.listPluginProviders().find((d) => d.key === key);
+        if (descriptor !== undefined) {
+            return { npmPackage: descriptor.npmPackage, apiEndpoint: descriptor.apiEndpoint };
+        }
+        return undefined;
     }
 
     /**

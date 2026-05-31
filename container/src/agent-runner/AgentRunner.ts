@@ -280,6 +280,18 @@ export class AgentRunner {
             );
         }
 
+        // Tools only work if the model supports tool calls. Warn on every
+        // run whose model isn't *confirmed* to support them — `false`
+        // (known not to) and `undefined` (metadata missing or didn't say)
+        // both qualify — so a handler relying on tools against an
+        // unsuitable model is visible in the system log.
+        if (modelMetaData?.toolCall !== true) {
+            ctx.log.warn(
+                { model: modelLabel, toolCall: modelMetaData?.toolCall ?? null },
+                `model ${modelLabel} tool_call capability not confirmed (toolCall=${modelMetaData?.toolCall ?? "unknown"}) — tool calls may fail`,
+            );
+        }
+
         const agent = new ToolLoopAgent<never, ToolSet>({
             model,
             tools,
@@ -392,7 +404,7 @@ export class AgentRunner {
                 messages,
                 abortSignal: ctx.signal,
                 onStepFinish: (step) =>
-                    this.recordStep(ctx, step as Parameters<typeof this.recordStep>[1]),
+                    this.recordStep(ctx, step as Parameters<AgentRunner["recordStep"]>[1]),
             });
         } catch (err) {
             // Timeout / shutdown classification. The Scheduler aborts

@@ -142,14 +142,15 @@ export interface AgentContainerConfig {
      */
     readonly logSystemPromptMode: LogSystemPromptMode;
     /**
-     * Map of enabled provider id → SDK type. Native ids (`openai`,
-     * `anthropic`, `grok`, …) map to themselves; custom ids declared
-     * under `inference.customProviders` map to `"openai-compatible"`.
-     * The container's `ModelFactory` switches on this to instantiate
-     * the right Vercel AI SDK client and validates handler-declared
-     * provider prefixes against it.
+     * Map of enabled provider key → its SDK npm package (e.g.
+     * `openai` → `@ai-sdk/openai`, `featherless` → `@ai-sdk/openai-compatible`).
+     * Resolved by `Start.ts` from each provider's model metadata
+     * (models.dev `npm` or a plugin descriptor). Forwarded as the
+     * `INFERENCE_PROVIDERS` env var; the container's `ModelFactory`
+     * selects the right `create*` function from the npm package and
+     * validates handler-declared provider prefixes against the keys.
      */
-    readonly providerTypes: Readonly<Record<string, string>>;
+    readonly providerNpmPackages: Readonly<Record<string, string>>;
     /**
      * When true, the agent container runs at debug log level
      * (`FAMILIAR_LOG_LEVEL=debug`). Mirrors the daemon's `--verbose` flag so
@@ -228,7 +229,7 @@ export class AgentContainer {
             "-e",
             `INFERENCE_DEFAULT_MODEL=${this.config.defaultModel}`,
             "-e",
-            `INFERENCE_PROVIDERS=${JSON.stringify(this.config.providerTypes)}`,
+            `INFERENCE_PROVIDERS=${JSON.stringify(this.config.providerNpmPackages)}`,
             "-e",
             `INFERENCE_MAX_RETRIES=${this.config.inferenceMaxRetries}`,
             "-e",
