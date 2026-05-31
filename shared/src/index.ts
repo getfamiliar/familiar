@@ -127,13 +127,12 @@ export {
 } from "./Timezone.js";
 export {
     ALL_GROUP_NAME,
-    CORE_GROUP_NAME,
     IDENT_PATTERN,
     MCP_GROUP_NAME,
     NONE_GROUP_NAME,
     RESERVED_GROUP_NAMES,
-    SYSTEM_GROUP_NAME,
     sanitizeToolKey,
+    validateGroupName,
 } from "./ToolDsl.js";
 export {
     DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,

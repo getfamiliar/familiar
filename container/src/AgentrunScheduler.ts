@@ -656,7 +656,7 @@ export class AgentrunScheduler {
                     mcpKeysById: mcpPool.mcpKeysById(),
                     pluginTools: pluginToolset.tools,
                     pluginKeysById: pluginToolset.keysById,
-                    pluginSystemKeys: pluginToolset.systemKeys,
+                    pluginGroupKeys: pluginToolset.groupKeys,
                     toolRunContext,
                     log,
                 });

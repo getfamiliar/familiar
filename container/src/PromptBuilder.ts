@@ -8,7 +8,7 @@ import { HandlerFile } from "./HandlerFile.js";
  * Absolute path of the per-container scratch root. Bind-mounted to the
  * host's `tmp/scratch/` and to every MCP container at the same
  * absolute path, so `/scratch/<event-id>/<name>` is the one path string
- * the agent uses for both `file_read` and MCP tool arguments.
+ * the agent uses for both `fs_read` and MCP tool arguments.
  */
 const SCRATCH_ROOT = "/scratch";
 
@@ -506,7 +506,7 @@ function capString(value: string, max: number): string {
  *
  * The `(read)` marker is rendered for skills whose frontmatter does
  * not declare a non-empty `tools` field: with no tools the skill is
- * pure context and can be consumed by `file_read` alone; otherwise it
+ * pure context and can be consumed by `fs_read` alone; otherwise it
  * has to be invoked via `call_handler` so the agent execution context
  * grants those tools.
  *
@@ -573,7 +573,7 @@ function buildAvailableSkillsSection(): string | null {
 
     const preamble = [
         "The following skills are available in the `skills/` folder.",
-        'Use like `file_read({path: "skills/<id>/SKILL.md"})` or',
+        'Use like `fs_read({path: "skills/<id>/SKILL.md"})` or',
         '`call_handler({topic: "skills:<id>", handler: "SKILL", prompt?, payload?})`.',
         "If reading is sufficient, this is marked in the list.",
     ].join(" ");

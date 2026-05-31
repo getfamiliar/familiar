@@ -166,7 +166,7 @@ description: How to create a Jira issue (default project, due-date conventions, 
 ...
 ```
 
-Handlers reference skills by path in prose — there is no `load_skill` tool and no automatic injection. Example: a handler can include *"Before creating a Jira issue, read `skills/jira-issue/SKILL.md` and follow it."* The agent reads it on demand with the existing `file_read` tool, the same way handlers already pull in `people/<sender>.md` or topic-specific rule files.
+Handlers reference skills by path in prose — there is no `load_skill` tool and no automatic injection. Example: a handler can include *"Before creating a Jira issue, read `skills/jira-issue/SKILL.md` and follow it."* The agent reads it on demand with the existing `fs_read` tool, the same way handlers already pull in `people/<sender>.md` or topic-specific rule files.
 
 Skills carry no tools and no privileges — they are pure context. They cannot grant capabilities the calling handler does not already have via its `tools` frontmatter.
 

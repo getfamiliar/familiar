@@ -33,7 +33,7 @@ const RESERVED_ROOT_FILES = new Set(["SOUL.md", "CONTEXT.md", "ENVIRONMENT.md"])
 
 /**
  * Workspace subtrees that contain markdown but never handlers.
- * `skills/<name>/SKILL.md` is a shared recipe loaded via `file_read`,
+ * `skills/<name>/SKILL.md` is a shared recipe loaded via `fs_read`,
  * not an agent entry point.
  */
 const RESERVED_TOP_DIRS = new Set(["skills"]);

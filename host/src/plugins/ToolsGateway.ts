@@ -112,10 +112,11 @@ export class PluginToolsGateway implements BastionModule {
     }
 
     /**
-     * Reply with `[{ key, pluginId, description, inputSchema, system },
-     * ...]`. Only `GET` is supported; other methods get 405. `system`
-     * tells the container which plugin tools should join its built-in
-     * `system` DSL group (and thus the implicit default tool set).
+     * Reply with `[{ key, pluginId, description, inputSchema, groups },
+     * ...]`. Only `GET` is supported; other methods get 405. `groups`
+     * is the sorted list of curated DSL groups the tool joins
+     * (mirrors `PluginTool.groups`); the container folds each name
+     * into the per-group key map its `ToolsFactory` consults.
      */
     private replyCatalog(req: IncomingMessage, res: ServerResponse): void {
         if (req.method !== "GET") {
@@ -127,7 +128,7 @@ export class PluginToolsGateway implements BastionModule {
             pluginId: t.pluginId,
             description: t.description,
             inputSchema: t.inputSchema,
-            system: t.system,
+            groups: [...t.groups].sort(),
         }));
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(catalog));

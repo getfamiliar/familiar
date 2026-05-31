@@ -173,13 +173,13 @@ interface FileReadInput {
  * value. Reserving a generous overhead means we can pre-cap the
  * content slice such that `header + content` always fits `ctx.limit`,
  * which is the load-bearing invariant that prevents the offload
- * wrapper from ever firing for `file_read` (and thus prevents the
- * file_read→offload→file_read→… loop).
+ * wrapper from ever firing for `fs_read` (and thus prevents the
+ * fs_read→offload→fs_read→… loop).
  */
 const FILE_READ_HEADER_OVERHEAD = 200;
 
 /**
- * Build the `file_read` tool — text-mode and paginated. Returns the
+ * Build the `fs_read` tool — text-mode and paginated. Returns the
  * raw UTF-8 file content (no JSON wrapping) preceded by a single
  * header line that names the file, the inclusive 1-based byte range
  * returned, the file's total byte size, and whether the response is
@@ -198,7 +198,7 @@ const FILE_READ_HEADER_OVERHEAD = 200;
  * next chunk via `offset: <B + 1>`. Multi-byte UTF-8 characters at the
  * natural cut boundary are kept whole.
  */
-function buildFileReadTool(ctx: ToolRunContext): Tool<FileReadInput, string> {
+function buildFsReadTool(ctx: ToolRunContext): Tool<FileReadInput, string> {
     return tool<FileReadInput, string>({
         description:
             "Read a chunk of a file as UTF-8. Paths are workspace-relative " +
@@ -210,7 +210,7 @@ function buildFileReadTool(ctx: ToolRunContext): Tool<FileReadInput, string> {
             "newline and the raw file content. When the header ends in " +
             "`, truncated`, call again with `offset: <B + 1>` to read the " +
             "next chunk. For searching very large files (e.g. offloaded tool " +
-            "results), prefer `fs_grep` over walking the file with `file_read`.",
+            "results), prefer `fs_grep` over walking the file with `fs_read`.",
         inputSchema: jsonSchema<FileReadInput>({
             type: "object",
             additionalProperties: false,
@@ -314,14 +314,11 @@ interface FileWriteInput {
 }
 
 /**
- * Build the `file_write` tool. Overwrites the file at `path` with
+ * Build the `fs_write` tool. Overwrites the file at `path` with
  * `content`. Creates missing parent directories. Refuses `.md` writes
  * for non-privileged runs.
  */
-function buildFileWriteTool(
-    parent: AgentRunRow,
-    ctx: ToolRunContext,
-): Tool<FileWriteInput, object> {
+function buildFsWriteTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FileWriteInput, object> {
     return tool<FileWriteInput, object>({
         description:
             "Write or overwrite a file with the given content. Creates missing " +
@@ -361,13 +358,13 @@ interface FileStrReplaceInput {
 }
 
 /**
- * Build the `file_str_replace` tool. Replaces exactly one occurrence
+ * Build the `fs_str_replace` tool. Replaces exactly one occurrence
  * of `old_string` with `new_string`. Errors if `old_string` is not
  * found, or appears more than once (in which case the model is told
  * to add surrounding context to disambiguate). Refuses `.md` writes
  * for non-privileged runs.
  */
-function buildFileStrReplaceTool(
+function buildFsStrReplaceTool(
     parent: AgentRunRow,
     ctx: ToolRunContext,
 ): Tool<FileStrReplaceInput, object> {
@@ -444,19 +441,19 @@ interface FileAppendInput {
 }
 
 /**
- * Build the `file_append` tool. Appends `content` to the file at
+ * Build the `fs_append` tool. Appends `content` to the file at
  * `path`, creating the file (and parent directories) if missing.
  *
  * If the existing file is non-empty and doesn't end with a newline,
  * a `\n` is inserted before the appended content. Models reliably
- * call `file_append` thinking of it as "add a new line" rather than
+ * call `fs_append` thinking of it as "add a new line" rather than
  * "concatenate bytes", so this matches the natural mental model and
  * avoids accidentally gluing two records onto the same line. Files
  * that already end with `\n` are left alone (no double newlines).
  *
  * Refuses `.md` and `toolgroups/*` writes for non-privileged runs.
  */
-function buildFileAppendTool(
+function buildFsAppendTool(
     parent: AgentRunRow,
     ctx: ToolRunContext,
 ): Tool<FileAppendInput, object> {
@@ -501,7 +498,7 @@ function buildFileAppendTool(
 }
 
 /**
- * Decide whether `file_append` should prepend a `\n` before its
+ * Decide whether `fs_append` should prepend a `\n` before its
  * payload. True only when the file already exists, has at least one
  * byte, and its last byte isn't `\n`. Missing-file is the common
  * case (creates fresh) and needs no prefix.
@@ -853,7 +850,7 @@ function classifyRemovePattern(
  *   not contain glob meta, so an expansion can only touch files in one
  *   literal directory.
  * - Privilege gate. `.md` files and anything under `workspace/toolgroups/`
- *   require a privileged run, exactly matching `file_write` / `file_append`.
+ *   require a privileged run, exactly matching `fs_write` / `fs_append`.
  *   In the wildcard branch, gated matches are skipped (so a cleanup over
  *   a mixed directory still removes what it's allowed to); in the literal
  *   branch, a gated target fails the call so the model gets an explicit
@@ -869,7 +866,7 @@ function buildFsRemoveTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FsRem
             "is rejected. Never deletes directories — a directory match is " +
             "skipped (wildcard branch) or rejected (literal branch). Markdown " +
             "(.md) deletions and anything under `workspace/toolgroups/` require " +
-            "a privileged run, same as `file_write`. Scratch paths " +
+            "a privileged run, same as `fs_write`. Scratch paths " +
             "(`/scratch/<event-id>/...`) are accepted for per-event cleanup.",
         inputSchema: jsonSchema<FsRemoveInput>({
             type: "object",
@@ -960,16 +957,16 @@ function buildFsRemoveTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FsRem
 
 /**
  * Bundle all filesystem-shaped tools for one agentrun. The writing
- * tools (`file_write`, `file_str_replace`, `file_append`, `fs_remove`)
+ * tools (`fs_write`, `fs_str_replace`, `fs_append`, `fs_remove`)
  * close over `parent.privileged` so the `.md` gate is decided once at
  * registration time and the model's tool calls can't bypass it.
  */
 export function buildFsTools(parent: AgentRunRow, ctx: ToolRunContext): ToolSet {
     return {
-        file_read: buildFileReadTool(ctx),
-        file_write: buildFileWriteTool(parent, ctx),
-        file_str_replace: buildFileStrReplaceTool(parent, ctx),
-        file_append: buildFileAppendTool(parent, ctx),
+        fs_read: buildFsReadTool(ctx),
+        fs_write: buildFsWriteTool(parent, ctx),
+        fs_str_replace: buildFsStrReplaceTool(parent, ctx),
+        fs_append: buildFsAppendTool(parent, ctx),
         fs_ls: buildLsTool(ctx),
         fs_glob: buildGlobTool(ctx),
         fs_grep: buildGrepTool(ctx),

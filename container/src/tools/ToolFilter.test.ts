@@ -16,20 +16,20 @@ const POOL = new Set([
     "atlassian_confluence_get_page",
     "send_chat",
     "schedule_handler",
-    "file_read",
-    "file_write",
+    "fs_read",
+    "fs_write",
     "fs_ls",
     "fs_grep",
 ]);
 
-const SYSTEM_KEYS = new Set([
-    "send_chat",
-    "schedule_handler",
-    "file_read",
-    "file_write",
-    "fs_ls",
-    "fs_grep",
-]);
+/**
+ * The implicit-default `core` group seen by these tests. `fs_read`
+ * appears in both `core` and `fs`, exercising the multi-group
+ * membership the new `PluginTool.groups` API enables.
+ */
+const CORE_KEYS = new Set(["send_chat", "schedule_handler", "fs_read"]);
+
+const FS_KEYS = new Set(["fs_read", "fs_write", "fs_ls", "fs_grep"]);
 
 const MCP_KEYS = new Set([
     "fetch_fetch",
@@ -49,7 +49,8 @@ const ATLASSIAN_KEYS = new Set([
 const FETCH_KEYS = new Set(["fetch_fetch"]);
 
 const BUILTINS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
-    ["system", SYSTEM_KEYS],
+    ["core", CORE_KEYS],
+    ["fs", FS_KEYS],
     ["mcp", MCP_KEYS],
     ["atlassian", ATLASSIAN_KEYS],
     ["fetch", FETCH_KEYS],
@@ -105,19 +106,35 @@ describe("ToolFilter — built-in groups", () => {
         assert.deepEqual(resolve("none"), []);
     });
 
-    it("`system` returns just the system-tool keys", () => {
-        assert.deepEqual(resolve("system"), [...SYSTEM_KEYS].sort());
+    it("`core` returns just the core-group keys", () => {
+        assert.deepEqual(resolve("core"), [...CORE_KEYS].sort());
+    });
+
+    it("`fs` returns just the fs-group keys", () => {
+        assert.deepEqual(resolve("fs"), [...FS_KEYS].sort());
+    });
+
+    it("a tool listed in two groups appears in both: fs_read is in `core & fs`", () => {
+        assert.deepEqual(resolve("core & fs"), ["fs_read"]);
+    });
+
+    it("`core + fs` unions overlapping groups without duplicates", () => {
+        const out = new Set(resolve("core + fs"));
+        for (const k of [...CORE_KEYS, ...FS_KEYS]) {
+            assert.equal(out.has(k), true, `expected ${k} present`);
+        }
+        assert.equal(out.size, new Set([...CORE_KEYS, ...FS_KEYS]).size);
     });
 
     it("`mcp` returns just the MCP-tool keys", () => {
         assert.deepEqual(resolve("mcp"), [...MCP_KEYS].sort());
     });
 
-    it("`system - send_chat` — system minus one tool", () => {
-        const out = new Set(resolve("system - send_chat"));
+    it("`core - send_chat` — core minus one tool", () => {
+        const out = new Set(resolve("core - send_chat"));
         assert.equal(out.has("send_chat"), false);
-        assert.equal(out.has("file_read"), true);
-        assert.equal(out.size, SYSTEM_KEYS.size - 1);
+        assert.equal(out.has("fs_read"), true);
+        assert.equal(out.size, CORE_KEYS.size - 1);
     });
 
     it("`mcp - atlassian_*` removes every atlassian-prefixed key", () => {
@@ -155,7 +172,7 @@ describe("ToolFilter — MCP-id default groups", () => {
             assert.equal(out.has(k), false, `expected ${k} excluded`);
         }
         assert.equal(out.has("fetch_fetch"), false);
-        // System keys survive.
+        // Core keys survive.
         assert.equal(out.has("send_chat"), true);
     });
 });

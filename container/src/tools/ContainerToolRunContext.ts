@@ -6,7 +6,7 @@ import type { ToolRunContext } from "@getfamiliar/shared";
 /**
  * Build a {@link ToolRunContext} for container-side tools. Spills land
  * under `/scratch/<eventId>/` — the same bind-mount the agent reads
- * with `file_read` and the host already uses for attachments.
+ * with `fs_read` and the host already uses for attachments.
  *
  * The suggested name from the runner (e.g. `result.json`) is suffixed
  * with a short random hex so concurrent tool calls in the same agentrun

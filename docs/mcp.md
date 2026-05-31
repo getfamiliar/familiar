@@ -172,13 +172,14 @@ this stays cheap.
 ## Filtering tools per handler
 
 Handlers declare which tools they want via a `tools:` expression in their YAML header. The
-expression filters across **all** registered tools — system tools (`send_chat`,
-`schedule_handler`, `call_handler`, `unschedule_handler`, `get_scheduled_handlers`, `file_*`,
-`fs_*`) and namespaced MCP tools share one available pool.
+expression filters across **all** registered tools — container built-ins (`send_chat`,
+`schedule_handler`, `call_handler`, `unschedule_handler`, `get_scheduled_handlers`, `fs_*`),
+plugin tools (`memory_*`, `ms365_*`, …) and namespaced MCP tools share one available pool.
 
-**Omitted ⇒ implicit `system`.** A handler with no `tools:` line gets every system tool registered
-for the agentrun and no MCP tools, matching pre-filter behavior. Override with `tools: all`,
-`tools: none`, or anything more specific.
+**Omitted ⇒ implicit `core`.** A handler with no `tools:` line gets every tool whose declared
+`groups` lists `core` (`send_chat`, `call_handler`, `schedule_handler`, `unschedule_handler`,
+`fs_read`, plus opted-in plugin tools like `memory_search` / `memory_save`). Override with
+`tools: all`, `tools: none`, or anything more specific.
 
 ### Expression grammar
 
@@ -223,21 +224,26 @@ aren't alnum-only for the same reason — every id doubles as a group name.
 
 ### Built-in groups
 
-Four reserved names plus one auto-group per declared MCP are resolved by the evaluator before any
-user lookup:
+Three reserved names plus one auto-group per declared MCP / plugin id are resolved by the
+evaluator before any user lookup:
 
 | Name | Resolves to |
 | --- | --- |
-| `all` | Every key in the available pool — system tools + MCP tools. |
-| `system` | Just the system tools registered for *this* agentrun. Conditional ones (`send_chat` only when chat context is present, `schedule_handler` only when bus + parent + scheduledHandlerBus + timezone are all present, `call_handler` only when bus + parent + the Scheduler's `waitForSubagent` hook are present) are reflected automatically. **The implicit default** when `tools:` is omitted. |
+| `all` | Every key in the available pool — container built-ins + plugin tools + MCP tools. |
 | `mcp` | Just the namespaced MCP-tool keys. Useful for `mcp - some_mcp_*` style scopes. |
 | `none` | Empty set. Lets a child handler override its parent's `tools:` to nothing under the replace-merge inheritance rule. |
-| `<mcp-id>` | One auto-group per entry declared in `mcp.yml`. Resolves to every tool key that MCP exposes. So `tools: fetch` is shorthand for `tools: fetch_*`, and `tools: all - atlassian` excludes every Atlassian tool without spelling out the prefix glob. |
+| `<mcp-id>` | One auto-group per entry declared in `mcp.yml`. Resolves to every tool key that MCP exposes. So `tools: fetch` is shorthand for `tools: fetch_*`. |
+| `<plugin-id>` | One auto-group per plugin that contributes tools. Resolves to every tool key the plugin registered. |
 
-The four reserved names (`all`, `system`, `mcp`, `none`) are shadowed if a workspace
+Curated names like `core`, `fs`, `reflection` are **not** reserved — they're populated by the
+union of every tool whose declaration lists them. The container's built-ins join via a static
+table in `ToolsFactory`; plugin tools join via `PluginTool.groups`. Coining a new group is a
+matter of listing the name on one or more tools.
+
+The three reserved names (`all`, `mcp`, `none`) are shadowed if a workspace
 `toolgroups/<name>.txt` exists — the resolver never reads those files. They are **also** rejected
-as MCP ids by `./cli.sh mcp lint`, so an `mcp.yml` entry keyed `system:` fails up front instead of
-being silently shadowed.
+as MCP ids by `./cli.sh mcp lint` and as plugin-tool group names by the host plugin tool registry,
+so a name collision fails up front instead of being silently shadowed.
 
 MCP ids are constrained to lowercase alphanumeric (no hyphens, no underscores) precisely because
 they double as group names. An id like `myservice` becomes group `myservice`; ids like
@@ -276,11 +282,11 @@ fails the handlers that say `tools: foo`. Unrelated handlers run clean.
 
 ```yaml
 ---
-# (no `tools:` line)                        # implicit `system` — every system
----                                         # tool, no MCP tools
+# (no `tools:` line)                        # implicit `core` — every tool whose
+---                                         # `groups` lists `core`, no MCP tools
 
 ---
-tools: all                                  # every system + MCP tool
+tools: all                                  # every container + plugin + MCP tool
 ---
 
 ---
@@ -288,13 +294,14 @@ tools: none                                 # nothing at all (used by a child
 ---                                         # to override its parent's surface)
 
 ---
-tools: system - file_write                  # system tools, but no file_write
----                                         # (drop file_str_replace and
-                                            #  file_append too for true read-only;
-                                            #  use a group for ergonomics)
+tools: core - fs_write                      # core defaults, but no fs_write
+---                                         # (drop fs_str_replace and
+                                            #  fs_append too for true read-only;
+                                            #  or use the `fs` group / a user
+                                            #  group for ergonomics)
 
 ---
-tools: mcp                                  # all MCP tools, no system tools
+tools: mcp                                  # all MCP tools, no other tools
 ---
 
 ---
@@ -319,7 +326,7 @@ tools: reads                                # a user-defined group
 ---
 
 ---
-tools: system + reads                       # system tools + user-defined reads
+tools: core + reads                         # core defaults + user-defined reads
 ---
 
 ---

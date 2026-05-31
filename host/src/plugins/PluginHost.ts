@@ -327,7 +327,8 @@ export class PluginHost {
         // land after every plugin's `start` so any provider that
         // registered via `ctx.calendar.registerProvider` or
         // `ctx.mail.registerProvider` is reachable from the first tool
-        // call.
+        // call. The reserved id `"core"` opts the registration into
+        // the bare-key path (no plugin-id prefix) inside the registry.
         if (this.toolsRegistry) {
             const coreCtx = this.context("core");
             const coreTools = [
@@ -341,7 +342,7 @@ export class PluginHost {
                 }),
                 ...buildMailStyleTools({ store: this.mailStyleStore }),
             ];
-            this.toolsRegistry.registerCoreTools(coreCtx, coreTools);
+            this.toolsRegistry.register("core", coreCtx, coreTools);
             const registered = this.toolsRegistry.list();
             if (registered.length > 0) {
                 this.log.info(

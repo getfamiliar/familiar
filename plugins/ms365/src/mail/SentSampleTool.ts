@@ -17,7 +17,7 @@ export interface SentSampleArgs {
  * mailbox's Sent Items and reason over them.
  *
  * Each example mail is staged as its own `.html` file under
- * `/scratch/<eventId>/` — one read with `file_read` covers the whole
+ * `/scratch/<eventId>/` — one read with `fs_read` covers the whole
  * mail, so the agent never has to paginate across mail boundaries. The
  * tool result is a rendered markdown summary plus a table listing the
  * staged files: `filepath | subject | bodyContentType | sent`. The
@@ -39,7 +39,7 @@ export function buildSentSampleTool(): PluginTool<SentSampleArgs, string> {
             "`sample.new.…`), so you can group by kind from the path alone. " +
             "`perKind` defaults to 3; `maxInlineBytes` / `maxRawBytes` are the " +
             "same byte caps as SentSampler's options. Read individual files with " +
-            "`file_read` — one read per file covers the whole mail. The summary " +
+            "`fs_read` — one read per file covers the whole mail. The summary " +
             "tells you how many messages were scanned and why some were dropped, " +
             "useful when fewer examples than requested came back.",
         inputSchema: {

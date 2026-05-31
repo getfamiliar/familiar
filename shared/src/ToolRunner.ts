@@ -12,7 +12,7 @@
  *     returns either a sentinel ({@link OffloadedJson} for the JSON
  *     runner) or a partial-with-marker (JSONL / text runners). The
  *     spilled file always carries the complete content so the agent
- *     can `file_read` it for the missing portion.
+ *     can `fs_read` it for the missing portion.
  *   - **Letting throws propagate.** Failure is signalled by throwing.
  *     The Vercel AI SDK turns any throw into a `tool-error` block;
  *     tools that want a clean message catch and re-throw a
@@ -57,7 +57,7 @@ export class ToolError extends Error {
  *   - `limit`: byte budget for the inline response. Resolved per-call
  *     from handler frontmatter → env var / config → default.
  *   - `spill`: writes the full result under `/scratch/<event-id>/` and
- *     returns the absolute path the agent can later `file_read`.
+ *     returns the absolute path the agent can later `fs_read`.
  *     Implementations dedupe basenames so concurrent calls don't
  *     clobber each other.
  */
@@ -68,7 +68,7 @@ export interface ToolRunContext {
 
 /**
  * Sentinel returned by {@link runJsonTool} when the serialized result
- * exceeds the byte budget. The agent should `file_read` the path for
+ * exceeds the byte budget. The agent should `fs_read` the path for
  * the actual content.
  */
 export interface OffloadedJson {
@@ -100,7 +100,7 @@ export async function runJsonTool(
     return {
         truncated: true,
         fullResultAt,
-        reason: `result exceeded ${ctx.limit} bytes — file_read the path (it's paginated)`,
+        reason: `result exceeded ${ctx.limit} bytes — fs_read the path (it's paginated)`,
     } satisfies OffloadedJson;
 }
 

@@ -1,5 +1,5 @@
 ---
-tools: ms365_get_sent_sample + mailstyle_get + mailstyle_update + file_read
+tools: ms365_get_sent_sample + mailstyle_get + mailstyle_update + fs_read
 maxOutputTokens: 32768
 temperature: 0
 systemPrompt: none
@@ -15,7 +15,7 @@ Given the mailbox `<MAILBOX>` from the prompt:
 
 ### Get mail samples
 
-Call `ms365_get_sent_sample({mailbox: "<MAILBOX>"})` to get sample files. The tool returns the actual paths — use those with `file_read` for the following analysis.
+Call `ms365_get_sent_sample({mailbox: "<MAILBOX>"})` to get sample files. The tool returns the actual paths — use those with `fs_read` for the following analysis.
 
 ### Extract signature and style
 

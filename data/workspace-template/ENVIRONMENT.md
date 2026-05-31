@@ -37,14 +37,14 @@ The user can filter which tools a handler can use in the `tools` frontmatter pro
 
 ### Interacting with the filesystem
 
-You have multiple tools at hand to read and modify your workspace filesystem: `file_read`, `file_write`, `file_str_replace`, `file_append`, `fs_ls`, `fs_glob` and `fs_grep`.
+You have multiple tools at hand to read and modify your workspace filesystem: `fs_read`, `fs_write`, `fs_str_replace`, `fs_append`, `fs_ls`, `fs_glob` and `fs_grep`.
 
 The file paths are always relative to your workspace root, and you can use subdirectories. For example, `chat/index.md` or `data/*.json`. You can create new files by writing to a path that doesn't exist yet. Missing path segments will be created on the way. 
 
 **Only privileged runs can write to .md files**, to prevent accidental damage to handlers. All other files can be written by any run.
 
 
-Feel free to create new files to organize information as the task at hand instructs you to. Reusable how-to recipes live in `skills/<name>/SKILL.md`. Each skill is a short markdown file you can read with `file_read` when the handler's task calls for it. Current skills:
+Feel free to create new files to organize information as the task at hand instructs you to. Reusable how-to recipes live in `skills/<name>/SKILL.md`. Each skill is a short markdown file you can read with `fs_read` when the handler's task calls for it. Current skills:
 
 * `skills/listfiles/SKILL.md`: Keeping a list / table of things (for example, subscribed chat groups, open tasks, emails having arrived today)
 
@@ -52,7 +52,7 @@ Feel free to create new files to organize information as the task at hand instru
 
 Some events ship auxiliary files alongside the payload — things like email attachments. When the current event has such files, the user prompt includes a "Files staged for this event" section listing their absolute paths under `/scratch/<event-id>/`.
 
-These paths are absolute, not workspace-relative. The same path resolves to the same bytes inside every MCP container, so you can pass `/scratch/<event-id>/<name>` verbatim to MCP tools (e.g. a PDF parser) without translation. Your file tools (`file_read`, `file_write`, etc.) accept these paths too — they're the one exception to the workspace-relative rule.
+These paths are absolute, not workspace-relative. The same path resolves to the same bytes inside every MCP container, so you can pass `/scratch/<event-id>/<name>` verbatim to MCP tools (e.g. a PDF parser) without translation. Your file tools (`fs_read`, `fs_write`, etc.) accept these paths too — they're the one exception to the workspace-relative rule.
 
 Scratch files are ephemeral: directories older than 24 hours are swept automatically. Don't store anything here you want to keep — write to the workspace instead.
 

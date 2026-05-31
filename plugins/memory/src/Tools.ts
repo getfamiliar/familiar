@@ -28,12 +28,12 @@ export function buildMemoryTools(store: MemoryStore, cfg: MemoryConfig): readonl
         name: "search",
         // Long-term memory is meant to be ambient: every handler
         // benefits from being able to recall facts about people,
-        // threads, places. Flagging both memory tools as `system`
-        // promotes them into the implicit default tool set (no
-        // `tools:` line on the handler still gets them) and into the
-        // explicit `tools: system` group, alongside `file_*` and
-        // `schedule_handler`.
-        system: true,
+        // threads, places. Listing `core` here adds both memory
+        // tools to the implicit-default tool set every handler
+        // omitting `tools:` receives, alongside the container's
+        // built-in `fs_read`, `send_chat`, `call_handler`,
+        // `schedule_handler`, and `unschedule_handler`.
+        groups: ["core"],
         description:
             "Search the long-term memory, including every markdown file in the workspace with a hybrid vector + BM25 approach. Returns a markdown report of found associations.",
         inputSchema: {
@@ -67,9 +67,9 @@ export function buildMemoryTools(store: MemoryStore, cfg: MemoryConfig): readonl
 
     const saveTool: PluginTool<{ content: string }, string> = {
         name: "save",
-        // See `searchTool.system` comment above — both memory tools
-        // ride the same ambient promotion.
-        system: true,
+        // See `searchTool.groups` comment above — both memory tools
+        // ride the same ambient `core` promotion.
+        groups: ["core"],
         description:
             "Save facts, observations, notes into long-term memory. Content is handed to a dedicated reasoning agentrun, this toolcall does not wait and returns immediately.",
         inputSchema: {

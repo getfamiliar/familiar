@@ -451,23 +451,30 @@ export interface PluginTool<TInput = unknown, TOutput = unknown> {
      */
     execute(args: TInput, ctx: PluginToolCallContext): Promise<TOutput>;
     /**
-     * Promote this tool into the `system` DSL group, alongside the
-     * container's built-in tools (`file_*`, `schedule_handler`, …).
-     * When `true`, the tool becomes part of the implicit default tool
-     * set every handler that omits `tools:` receives, **and** part of
-     * the explicit `tools: system` expansion. The per-plugin auto-group
-     * still works as before — a flagged tool stays addressable under
-     * its plugin id too.
+     * Curated tool groups this tool joins, in addition to its
+     * identity-derived auto-group (the plugin id). Every name in the
+     * array becomes a DSL group that resolves to a union of every
+     * tool declaring it — built-in container tools, host-side core
+     * tools, and plugin tools all contribute through the same
+     * mechanism.
      *
-     * Default `false`. Use sparingly: anything in `system` is presented
-     * to every handler that doesn't customize `tools:`, so the tool's
-     * `description` must read cleanly out of any context, not just the
-     * scenarios the plugin author had in mind. Reserved for genuinely
-     * ambient capabilities (long-term memory, …) — not for
-     * domain-specific surfaces (mail, calendar) that handlers should
-     * opt into deliberately.
+     * Conventional names today:
+     *
+     * - `core` — the implicit default tool set every handler that
+     *   omits `tools:` receives. Reserve this for genuinely ambient
+     *   capabilities (long-term memory, basic chat reply, file read)
+     *   whose `description` reads cleanly out of any context.
+     * - `fs`, `reflection`, … — curated bundles a handler opts into
+     *   via `tools: fs` or `tools: core + reflection`. New names can
+     *   be coined freely.
+     *
+     * Each name must match {@link IDENT_PATTERN} and must not be one
+     * of the three reserved DSL names (`all`, `none`, `mcp`). A
+     * plugin tool cannot list its own plugin id (the auto-group
+     * already covers that). Registration fails loudly on either
+     * violation.
      */
-    readonly system?: boolean;
+    readonly groups?: readonly string[];
 }
 
 /**

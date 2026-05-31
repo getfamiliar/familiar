@@ -153,12 +153,12 @@ test("formatStepLines appends a tool_calls line when tools were used alongside r
             stepNumber: 0,
             finishReason: "tool-calls",
             reasoningText: "look at the files",
-            toolCalls: [{ toolName: "file_read" }, { toolName: "fs_glob" }],
+            toolCalls: [{ toolName: "fs_read" }, { toolName: "fs_glob" }],
         }),
     );
     assert.deepEqual(lines, [
         `  ↳ 1. "look at the files"`,
-        "       tool_calls: file_read, fs_glob",
+        "       tool_calls: fs_read, fs_glob",
     ]);
 });
 

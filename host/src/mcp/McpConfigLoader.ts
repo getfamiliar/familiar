@@ -139,10 +139,10 @@ function validateEntry(id: string, value: unknown, errors: string[], warnings: s
     }
     // Each MCP id is exposed as an auto-group of the same name in
     // the tools-DSL (so handlers can write `tools: fetch + atlassian`
-    // without a user toolgroup file). The four reserved names are
-    // resolved by the evaluator before any group lookup, so an MCP
-    // id that collides with one would be silently shadowed — reject
-    // it loudly here instead.
+    // without a user toolgroup file). The three reserved names
+    // (`all`, `none`, `mcp`) are resolved by the evaluator before
+    // any group lookup, so an MCP id that collides with one would be
+    // silently shadowed — reject it loudly here instead.
     if (RESERVED_GROUP_NAMES.has(id)) {
         errors.push(
             `mcp.yml: id "${id}" is a reserved tools-DSL group name (${[...RESERVED_GROUP_NAMES].join(", ")}). Pick another id.`,

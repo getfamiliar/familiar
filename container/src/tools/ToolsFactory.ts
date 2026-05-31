@@ -12,14 +12,38 @@ import { buildFsTools } from "./fs.js";
 import { buildGetScheduledHandlersTool } from "./getScheduledHandlers.js";
 import { buildScheduleHandlerTool } from "./scheduleHandler.js";
 import { buildSendChatTool } from "./sendChat.js";
-import {
-    evaluate,
-    type GroupLookup,
-    MCP_GROUP_NAME,
-    parseExpression,
-    SYSTEM_GROUP_NAME,
-} from "./ToolFilter.js";
+import { evaluate, type GroupLookup, MCP_GROUP_NAME, parseExpression } from "./ToolFilter.js";
 import { buildUnscheduleHandlerTool } from "./unscheduleHandler.js";
+
+/**
+ * Curated DSL groups every container-built-in tool joins. The
+ * `core` group is the implicit default tool set handed to handlers
+ * that omit `tools:`; `fs` bundles the filesystem family for
+ * `tools: fs`; `reflection` collects introspection tools like
+ * `get_scheduled_handlers`. Names not listed here are fine — new
+ * groups are coined by listing them in this table or in a plugin
+ * tool's `groups` field.
+ *
+ * Keys are the tool keys this factory may register; entries for
+ * tools that didn't get registered (no chat context, etc.) are
+ * silently skipped at build time so the resulting group sets only
+ * include keys that are actually live for the agentrun.
+ */
+const CONTAINER_TOOL_GROUPS: Readonly<Record<string, readonly string[]>> = {
+    send_chat: ["core"],
+    call_handler: ["core"],
+    schedule_handler: ["core"],
+    unschedule_handler: ["core"],
+    get_scheduled_handlers: ["reflection"],
+    fs_read: ["core", "fs"],
+    fs_write: ["fs"],
+    fs_str_replace: ["fs"],
+    fs_append: ["fs"],
+    fs_ls: ["fs"],
+    fs_glob: ["fs"],
+    fs_grep: ["fs"],
+    fs_remove: ["fs"],
+};
 
 /** Inputs the {@link AgentRunner} threads into the factory per agentrun. */
 export interface ToolsFactoryContext {
@@ -29,9 +53,10 @@ export interface ToolsFactoryContext {
     readonly eventId?: string;
     /**
      * Tool-filter expression from the handler's `tools:` header.
-     * When `undefined`, the implicit default `system` is used (every
-     * registered system tool, no MCP tools). See `tools/ToolFilter.ts`
-     * for the full grammar and built-in groups.
+     * When `undefined` or empty, the implicit default `core` group is
+     * used (the union of every tool — built-in, host-core, or plugin —
+     * whose `groups` lists `core`). See `tools/ToolFilter.ts` for the
+     * full grammar and reserved group names.
      */
     readonly toolsExpression?: string;
     /**
@@ -83,9 +108,8 @@ export interface ToolsFactoryContext {
      * Threaded into the evaluator's `builtins` so a handler's
      * `tools:` expression can reference an MCP id directly
      * (`tools: fetch + atlassian`) without a user-written toolgroup
-     * file. Reserved names (`all`, `system`, `mcp`, `none`) cannot
-     * appear as keys because the host's `mcp.yml` linter rejects
-     * them as ids.
+     * file. Reserved names (`all`, `mcp`, `none`) cannot appear as
+     * keys because the host's `mcp.yml` linter rejects them as ids.
      */
     readonly mcpKeysById?: ReadonlyMap<string, ReadonlySet<string>>;
     /**
@@ -105,15 +129,14 @@ export interface ToolsFactoryContext {
      */
     readonly pluginKeysById?: ReadonlyMap<string, ReadonlySet<string>>;
     /**
-     * Plugin tool keys whose authors flagged `PluginTool.system: true`.
-     * Folded into the `system` DSL group (and the implicit-default
-     * tool set) alongside the container's built-in system tools, so
-     * "ambient" plugin tools (e.g. `memory_search`, `memory_save`)
-     * reach handlers that haven't customized `tools:`. The per-plugin
-     * auto-group still works as before — these keys remain reachable
-     * via `tools: <pluginId>` too.
+     * Curated group name → set of plugin / host-core tool keys
+     * declaring membership. Mirrors each tool's `PluginTool.groups`
+     * field. Folded into the same per-group map the container's
+     * built-ins populate, so e.g. `groups: ["core"]` on the memory
+     * plugin's `memory_save` adds its key to the implicit-default
+     * `core` set without any other plumbing.
      */
-    readonly pluginSystemKeys?: ReadonlySet<string>;
+    readonly pluginGroupKeys?: ReadonlyMap<string, ReadonlySet<string>>;
     /**
      * Per-call runner context (byte budget + spill function). Threaded
      * into every container-side tool wrapper so the three
@@ -134,32 +157,32 @@ export interface ToolsFactoryContext {
  * Builds the tool set the {@link import("../agent-runner/AgentRunner").AgentRunner}
  * hands to the Vercel AI SDK's tool-loop agent.
  *
- * **One pool, one filter.** System tools (`send_chat`,
+ * **One pool, one filter.** Built-in container tools (`send_chat`,
  * `schedule_handler`, `call_handler`, `unschedule_handler`,
- * `get_scheduled_handlers`, `file_*`, `fs_*`) and MCP tools
- * (`${id}_${name}`) are merged into a single available set. The
- * handler's `tools:` expression — or, when omitted, the implicit
- * `system` default — decides what survives.
+ * `get_scheduled_handlers`, `fs_*`), MCP tools (`${id}_${name}`), and
+ * plugin tools are merged into a single available set. The handler's
+ * `tools:` expression — or, when omitted, the implicit `core` default
+ * — decides what survives.
  *
  * Built-in groups visible from any expression:
  *
- * - `all` — every key in the available pool.
- * - `system` — just the system-tool keys registered for *this*
- *   agentrun. Conditional registrations (`send_chat` only when chat
- *   context is present, `schedule_handler` only when bus + parent +
- *   scheduledHandlerBus + timezone are all present, `call_handler`
- *   only when bus + parent + the Scheduler's `waitForSubagent`
- *   callback are present) are reflected here automatically.
- * - `mcp` — just the MCP-tool keys.
+ * - `all`  — every key in the available pool.
+ * - `mcp`  — just the MCP-tool keys.
  * - `none` — empty set; lets a child handler override its parent's
  *   `tools:` to nothing under the replace-merge rule.
+ *
+ * Curated groups like `core`, `fs`, `reflection` are populated by
+ * the union of every tool whose declaration lists them — see
+ * {@link CONTAINER_TOOL_GROUPS} for container built-ins and each
+ * plugin tool's `PluginTool.groups` for the rest.
  */
 // biome-ignore lint/complexity/noStaticOnlyClass: Reserved as a growth point for tool registration.
 export class ToolsFactory {
     /**
      * Build the tool set for one agentrun. Fully evaluates the
-     * `tools:` expression (or the `system` default) against the
-     * unified system+MCP pool and returns the projected `ToolSet`.
+     * `tools:` expression (or the implicit `core` default) against
+     * the unified system + MCP + plugin pool and returns the
+     * projected `ToolSet`.
      */
     static build(context: ToolsFactoryContext = {}): ToolSet {
         const systemTools: ToolSet = {};
@@ -201,7 +224,7 @@ export class ToolsFactory {
         }
         if (context.parent) {
             // Filesystem tools are always available; the writing tools
-            // (file_write / file_str_replace / file_append) consult
+            // (fs_write / fs_str_replace / fs_append) consult
             // `parent.privileged` internally to gate `.md` paths and
             // anything under `workspace/toolgroups/`, so every agentrun
             // can read but only privileged runs can modify those.
@@ -211,34 +234,56 @@ export class ToolsFactory {
         const mcpTools = context.mcpTools ?? {};
         const pluginTools = context.pluginTools ?? {};
         const allTools: ToolSet = { ...systemTools, ...mcpTools, ...pluginTools };
-        // The effective `system` set is the union of the container's
-        // built-in system tools (registered above) and any plugin tool
-        // whose author opted in via `PluginTool.system: true`. Both
-        // the implicit default (no `tools:` frontmatter) and the
-        // explicit `tools: system` expansion read from this single
-        // set, so the two paths always agree.
-        const systemKeys = new Set<string>(Object.keys(systemTools));
-        if (context.pluginSystemKeys) {
-            for (const key of context.pluginSystemKeys) {
-                // Defensive: only include keys that actually landed in
-                // the merged pool. A flagged plugin tool that never
-                // showed up (host registry returned an empty catalog,
-                // bastion fetch failed, …) should not silently appear
-                // in the DSL `system` group.
-                if (allTools[key] !== undefined) {
-                    systemKeys.add(key);
+        const availableKeys = new Set(Object.keys(allTools));
+        const mcpKeys = new Set(Object.keys(mcpTools));
+
+        // Per-group key map. Container built-ins fold in via the
+        // static `CONTAINER_TOOL_GROUPS` table (only keys actually
+        // registered above are considered, so a scenario without
+        // chat context doesn't promote a non-existent `send_chat`
+        // into `core`). Plugin / host-core tools fold in via
+        // `pluginGroupKeys`, sourced from each `PluginTool.groups`.
+        const groupKeys = new Map<string, Set<string>>();
+        for (const key of Object.keys(systemTools)) {
+            const groups = CONTAINER_TOOL_GROUPS[key];
+            if (!groups) {
+                continue;
+            }
+            for (const group of groups) {
+                let set = groupKeys.get(group);
+                if (set === undefined) {
+                    set = new Set();
+                    groupKeys.set(group, set);
+                }
+                set.add(key);
+            }
+        }
+        if (context.pluginGroupKeys) {
+            for (const [group, keys] of context.pluginGroupKeys) {
+                let set = groupKeys.get(group);
+                if (set === undefined) {
+                    set = new Set();
+                    groupKeys.set(group, set);
+                }
+                for (const key of keys) {
+                    // Defensive: only include keys that actually
+                    // landed in the merged pool. A plugin tool that
+                    // never showed up (bastion fetch failed, …)
+                    // should not silently appear under its declared
+                    // groups.
+                    if (allTools[key] !== undefined) {
+                        set.add(key);
+                    }
                 }
             }
         }
-        const mcpKeys = new Set(Object.keys(mcpTools));
-        const availableKeys = new Set(Object.keys(allTools));
 
         const matched = resolveMatched({
             available: availableKeys,
-            systemKeys,
             mcpKeys,
             mcpKeysById: context.mcpKeysById,
             pluginKeysById: context.pluginKeysById,
+            groupKeys,
             toolsExpression: context.toolsExpression,
             lookup: context.groups,
         });
@@ -257,23 +302,25 @@ export class ToolsFactory {
 /**
  * Compute the set of tool keys that pass the handler's filter.
  *
- * - `tools:` undefined ⇒ implicit `system` (every system-tool key).
+ * - `tools:` undefined or empty ⇒ implicit `core` (the union of every
+ *   tool whose declared `groups` lists `core`; empty when no tool
+ *   opted in for this agentrun).
  * - `tools:` set ⇒ parse the expression and evaluate against the
- *   unified pool. The `system` and `mcp` built-ins are supplied via
- *   the `builtins` map; `all` and `none` are handled by the
- *   evaluator from `available`.
+ *   unified pool. Curated and identity-derived groups are supplied
+ *   via the `builtins` map; `all` and `none` are handled by the
+ *   evaluator from `available`; `mcp` resolves to the MCP-key set.
  */
 function resolveMatched(args: {
     available: ReadonlySet<string>;
-    systemKeys: ReadonlySet<string>;
     mcpKeys: ReadonlySet<string>;
     mcpKeysById: ReadonlyMap<string, ReadonlySet<string>> | undefined;
     pluginKeysById: ReadonlyMap<string, ReadonlySet<string>> | undefined;
+    groupKeys: ReadonlyMap<string, ReadonlySet<string>>;
     toolsExpression: string | undefined;
     lookup: GroupLookup | undefined;
 }): Set<string> {
     if (args.toolsExpression === undefined || args.toolsExpression.trim().length === 0) {
-        return new Set(args.systemKeys);
+        return new Set(args.groupKeys.get("core") ?? new Set());
     }
     const expressionForError = JSON.stringify(args.toolsExpression);
     let ast: ReturnType<typeof parseExpression>;
@@ -285,14 +332,14 @@ function resolveMatched(args: {
             { cause: err },
         );
     }
-    // Per-MCP and per-plugin entries land first; `system` and `mcp`
-    // are written afterwards so they win on the (lint-prevented)
-    // chance of a sanitized id colliding with a reserved name.
-    // `all` and `none` are short-circuited by the evaluator before
-    // any builtins lookup. The plugin registry guarantees plugin
-    // ids do not collide with MCP ids, so the two id maps can be
-    // merged unconditionally.
+    // Order matters only on collisions, which the host-side linters
+    // already preclude — but we still write curated groups first,
+    // then identity-derived auto-groups, then `mcp` last, so the
+    // reserved-name semantics win unambiguously.
     const builtins = new Map<string, ReadonlySet<string>>();
+    for (const [name, keys] of args.groupKeys) {
+        builtins.set(name, keys);
+    }
     if (args.mcpKeysById) {
         for (const [id, keys] of args.mcpKeysById) {
             builtins.set(id, keys);
@@ -303,7 +350,6 @@ function resolveMatched(args: {
             builtins.set(id, keys);
         }
     }
-    builtins.set(SYSTEM_GROUP_NAME, args.systemKeys);
     builtins.set(MCP_GROUP_NAME, args.mcpKeys);
     const lookup = args.lookup ?? rejectAnyLookup;
     try {

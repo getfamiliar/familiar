@@ -1,5 +1,5 @@
 ---
-tools: file_read, file_write, memory_search
+tools: fs_read, fs_write, memory_search
 # Recommended: pin a reasoning-capable model here. Filing a memory is a
 # judgement call (which folder? which slug? extend existing or write new?),
 # and a small/fast model will drop facts on the floor. Uncomment one of:

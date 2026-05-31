@@ -12,7 +12,7 @@ interface SpillCapture {
 }
 
 /**
- * Build a {@link ToolRunContext} suitable for unit-testing file_read.
+ * Build a {@link ToolRunContext} suitable for unit-testing fs_read.
  * `spill` records calls but never writes anything to disk so a test
  * accidentally producing a spill is easy to assert against.
  */
@@ -26,21 +26,21 @@ function buildTestCtx(limit: number, capture: SpillCapture): ToolRunContext {
     };
 }
 
-/** Dummy parent row — file_read doesn't use it but the factory signature requires one. */
+/** Dummy parent row — fs_read doesn't use it but the factory signature requires one. */
 const PARENT_ROW = { id: "test-parent" } as unknown as AgentRunRow;
 
-/** Locate file_read inside the assembled fs tool set. */
+/** Locate fs_read inside the assembled fs tool set. */
 function fileReadTool(ctx: ToolRunContext) {
     const tools = buildFsTools(PARENT_ROW, ctx);
-    const t = tools.file_read;
+    const t = tools.fs_read;
     if (!t?.execute) {
-        throw new Error("file_read tool not found / has no execute");
+        throw new Error("fs_read tool not found / has no execute");
     }
     return t.execute;
 }
 
 /**
- * Invoke file_read with the typed input shape; cast through the SDK's
+ * Invoke fs_read with the typed input shape; cast through the SDK's
  * (input, options) signature without faking a real ToolCallOptions.
  */
 async function readFile(
@@ -53,7 +53,7 @@ async function readFile(
     return result as string;
 }
 
-describe("file_read — paginated text mode", () => {
+describe("fs_read — paginated text mode", () => {
     let workspaceDir: string;
 
     before(() => {
@@ -94,7 +94,7 @@ describe("file_read — paginated text mode", () => {
             Buffer.byteLength(out, "utf8") <= limit,
             `response ${Buffer.byteLength(out, "utf8")} > ctx.limit ${limit}`,
         );
-        assert.equal(capture.calls.length, 0, "file_read must not trigger the offload spill");
+        assert.equal(capture.calls.length, 0, "fs_read must not trigger the offload spill");
     });
 
     it("continuation: offset = previousLastByte + 1 returns the next chunk; concat reproduces file", async () => {

@@ -30,19 +30,21 @@ interface CatalogEntry {
      * Plugin id this tool belongs to, or the reserved string `"core"`
      * for host-owned tools registered without a plugin-id prefix
      * (e.g. the `cal_*` calendar tools). Used to bucket keys into the
-     * DSL group map so a handler's `tools: core` resolves to every
-     * host-owned tool.
+     * per-plugin auto-group so a handler's `tools: <pluginId>`
+     * resolves to every key the plugin contributes.
      */
     readonly pluginId: string;
     readonly description: string;
     readonly inputSchema: object;
     /**
-     * Plugin author flagged this tool as belonging to the `system` DSL
-     * group (and thus the implicit default tool set). Mirrors
-     * `PluginTool.system` from the shared manifest; defaults to `false`
-     * when the bastion serves an older catalog without the field.
+     * Curated DSL groups this tool joins, in addition to the
+     * identity-derived auto-group for its `pluginId`. Mirrors
+     * `PluginTool.groups`. The container folds each name into the
+     * per-group key map its `ToolsFactory` consults, so e.g.
+     * `groups: ["core"]` on a plugin tool adds its key to the
+     * implicit-default `core` set.
      */
-    readonly system: boolean;
+    readonly groups: readonly string[];
 }
 
 /**
@@ -92,12 +94,12 @@ export class PluginToolsClient {
     ): Promise<{
         tools: ToolSet;
         keysById: ReadonlyMap<string, ReadonlySet<string>>;
-        systemKeys: ReadonlySet<string>;
+        groupKeys: ReadonlyMap<string, ReadonlySet<string>>;
     }> {
         const catalog = await this.fetchCatalog();
         const toolSet: ToolSet = {};
         const keysById = new Map<string, Set<string>>();
-        const systemKeys = new Set<string>();
+        const groupKeys = new Map<string, Set<string>>();
         for (const entry of catalog) {
             toolSet[entry.key] = tool({
                 description: entry.description,
@@ -105,21 +107,22 @@ export class PluginToolsClient {
                 execute: async (args: unknown) =>
                     this.invoke(entry.key, args, eventId, agentrunId, toolCallOffloadingLimit),
             });
-            let set = keysById.get(entry.pluginId);
-            if (set === undefined) {
-                set = new Set();
-                keysById.set(entry.pluginId, set);
+            let perPlugin = keysById.get(entry.pluginId);
+            if (perPlugin === undefined) {
+                perPlugin = new Set();
+                keysById.set(entry.pluginId, perPlugin);
             }
-            set.add(entry.key);
-            if (entry.system) {
-                systemKeys.add(entry.key);
+            perPlugin.add(entry.key);
+            for (const group of entry.groups) {
+                let perGroup = groupKeys.get(group);
+                if (perGroup === undefined) {
+                    perGroup = new Set();
+                    groupKeys.set(group, perGroup);
+                }
+                perGroup.add(entry.key);
             }
         }
-        const frozen = new Map<string, ReadonlySet<string>>();
-        for (const [id, keys] of keysById) {
-            frozen.set(id, keys);
-        }
-        return { tools: toolSet, keysById: frozen, systemKeys };
+        return { tools: toolSet, keysById, groupKeys };
     }
 
     /**
@@ -148,22 +151,27 @@ export class PluginToolsClient {
                 typeof (item as { inputSchema?: unknown }).inputSchema === "object" &&
                 (item as { inputSchema?: unknown }).inputSchema !== null
             ) {
-                const e = item as Partial<CatalogEntry> & {
+                const raw = item as {
                     key: string;
                     pluginId: string;
                     description: string;
                     inputSchema: object;
+                    groups?: unknown;
                 };
+                const groups: string[] = [];
+                if (Array.isArray(raw.groups)) {
+                    for (const g of raw.groups) {
+                        if (typeof g === "string") {
+                            groups.push(g);
+                        }
+                    }
+                }
                 out.push({
-                    key: e.key,
-                    pluginId: e.pluginId,
-                    description: e.description,
-                    inputSchema: e.inputSchema,
-                    // Defaults to false when the field is missing
-                    // (older host serving older catalog) — preserves
-                    // the pre-`system: true` behavior on rolling
-                    // upgrades.
-                    system: e.system === true,
+                    key: raw.key,
+                    pluginId: raw.pluginId,
+                    description: raw.description,
+                    inputSchema: raw.inputSchema,
+                    groups,
                 });
             }
         }

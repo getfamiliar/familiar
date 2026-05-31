@@ -48,16 +48,20 @@ import { ALL_GROUP_NAME, IDENT_PATTERN, NONE_GROUP_NAME } from "@getfamiliar/sha
  * Built-in groups handled by the evaluator before any user
  * lookup:
  *
- * - `all`    — every key in the available pool (system ∪ MCP).
- * - `system` — only system-tool keys, supplied via `builtins`.
+ * - `all`    — every key in the available pool.
  * - `mcp`    — only MCP-tool keys, supplied via `builtins`.
  * - `none`   — empty set. Lets a child handler override its
  *   parent's `tools:` to nothing under the replace-merge rule.
- * - `<mcp-id>` — for every entry declared in `mcp.yml`, the id is
- *   exposed as a same-named group resolving to that MCP's tool
- *   keys. Supplied via `builtins` by the caller. Reserved names
- *   (`all`, `system`, `mcp`, `none`) are rejected by the
- *   `mcp.yml` linter so they can never collide here.
+ *
+ * Curated names like `core`, `fs`, `reflection` are *not* built-in —
+ * they emerge from the union of every tool (built-in container
+ * tool, host-side core tool, or plugin tool) whose declared
+ * `groups` lists the name. The caller threads those unions into
+ * `builtins` so a single resolver path serves all groups. Per-MCP
+ * and per-plugin id auto-groups land in `builtins` the same way.
+ * The three reserved names (`all`, `mcp`, `none`) are rejected by
+ * the `mcp.yml` linter and the plugin tool registry so they can
+ * never collide here.
  */
 
 export {
@@ -66,7 +70,6 @@ export {
     MCP_GROUP_NAME,
     NONE_GROUP_NAME,
     RESERVED_GROUP_NAMES,
-    SYSTEM_GROUP_NAME,
 } from "@getfamiliar/shared";
 
 /** Pattern any single bareword (group or tool) must match. */

@@ -1,13 +1,23 @@
 import {
-    CORE_GROUP_NAME,
     type HostContext,
     IDENT_PATTERN,
     type Logger,
     type PluginTool,
     RESERVED_GROUP_NAMES,
     sanitizeToolKey,
+    validateGroupName,
 } from "@getfamiliar/shared";
 import type { McpRegistry } from "../mcp/McpRegistry.js";
+
+/**
+ * Reserved plugin id that opts a `register` call into the host's
+ * bare-key path: tool keys land as `sanitizeToolKey(tool.name)`
+ * (no plugin-id prefix), the way the agent expects to call
+ * `cal_get_events` rather than `core_cal_get_events`. Plugins
+ * cannot supply this id — it's the host's own registration handle
+ * for tools that ship with the daemon.
+ */
+const CORE_ID = "core";
 
 /**
  * One tool the registry has accepted from a plugin, ready for the
@@ -17,11 +27,15 @@ import type { McpRegistry } from "../mcp/McpRegistry.js";
  * gateway doesn't have to re-walk the registry per call.
  */
 export interface RegisteredPluginTool {
-    /** Plugin id this tool belongs to. */
+    /** Plugin id this tool belongs to, or the reserved string `"core"` for host-owned tools. */
     readonly pluginId: string;
     /** Bare tool name as the plugin declared it. */
     readonly toolName: string;
-    /** Public agent-facing key (`${pluginId}_${sanitized toolName}`). */
+    /**
+     * Public agent-facing key. For `pluginId === "core"` this is
+     * `sanitizeToolKey(toolName)`; for any other plugin it is
+     * `sanitizeToolKey(`${pluginId}_${toolName}`)`.
+     */
     readonly key: string;
     /** Description forwarded to the agent's tool list. */
     readonly description: string;
@@ -34,14 +48,14 @@ export interface RegisteredPluginTool {
     /** The plugin-provided execute function. */
     readonly execute: PluginTool["execute"];
     /**
-     * Tool opted into the `system` DSL group via
-     * {@link PluginTool.system}. The bastion's `/plugin-tools/` listing
-     * forwards this flag to the container so its `ToolsFactory` can
-     * fold the key into both the implicit default tool set and the
-     * explicit `tools: system` expansion. Always `false` for core
-     * tools — they live in `core`, not `system`.
+     * Curated DSL groups this tool joins, in addition to the
+     * identity-derived auto-group for its `pluginId`. Mirrors
+     * `PluginTool.groups`; the bastion's `/plugin-tools/` listing
+     * forwards this set to the container so its `ToolsFactory` can
+     * fold the key into each declared group (and, by convention,
+     * into the implicit-default `core` group when the tool opts in).
      */
-    readonly system: boolean;
+    readonly groups: ReadonlySet<string>;
 }
 
 /**
@@ -52,7 +66,8 @@ export interface RegisteredPluginTool {
  * {@link import("./PluginHost.js").PluginHost} populates it only
  * after each plugin's `start` resolves.
  *
- * Constraints enforced at {@link register}:
+ * Constraints enforced at {@link register} (plugin path —
+ * `pluginId !== "core"`):
  *
  * 1. Plugin id matches {@link IDENT_PATTERN} (lowercase alnum, leading
  *    letter) so the id is usable as a DSL group name. Plugins with
@@ -71,6 +86,14 @@ export interface RegisteredPluginTool {
  *    declare a `send` tool would collide as `<a>_send`/`<b>_send` already,
  *    but identical keys *within* a plugin (after sanitization) are also
  *    rejected.
+ * 6. Each entry in {@link PluginTool.groups} passes
+ *    {@link validateGroupName}, and the array does not list the
+ *    plugin's own id (the auto-group already covers that).
+ *
+ * The `"core"` path skips checks 1–3 (the reserved id is, by
+ * definition, none of the three things those guards forbid) and
+ * lays out tool keys without the plugin-id prefix. Validation of
+ * declared groups (check 6 minus the self-id rule) still applies.
  */
 export class PluginToolsRegistry {
     private readonly mcp: McpRegistry;
@@ -84,32 +107,36 @@ export class PluginToolsRegistry {
     }
 
     /**
-     * Register every tool a plugin declared via its `tools(ctx)` hook.
-     * Validates the plugin id and each tool key against the rules in
-     * the class doc; the *first* offending tool throws synchronously
-     * — partial registration of a plugin's tools is not allowed.
+     * Register every tool a plugin (or the host, via `pluginId =
+     * "core"`) declares. Validates the plugin id and each tool key /
+     * group entry against the rules in the class doc; the *first*
+     * offending tool throws synchronously — partial registration of a
+     * plugin's tools is not allowed.
      */
     register(pluginId: string, hostContext: HostContext, tools: readonly PluginTool[]): void {
         if (tools.length === 0) {
             return;
         }
-        if (!IDENT_PATTERN.test(pluginId)) {
-            throw new Error(
-                `plugin "${pluginId}" contributes tools but its id is not a valid DSL group ` +
-                    `name (must match ${IDENT_PATTERN}). Rename the plugin or drop its tools().`,
-            );
-        }
-        if (RESERVED_GROUP_NAMES.has(pluginId)) {
-            throw new Error(
-                `plugin "${pluginId}" cannot contribute tools — id collides with a reserved ` +
-                    `DSL group name (${[...RESERVED_GROUP_NAMES].join(", ")}).`,
-            );
-        }
-        if (this.mcp.get(pluginId) !== undefined) {
-            throw new Error(
-                `plugin "${pluginId}" cannot contribute tools — an MCP with the same id exists ` +
-                    `in mcp.yml; "tools: ${pluginId}" would be ambiguous.`,
-            );
+        const isCore = pluginId === CORE_ID;
+        if (!isCore) {
+            if (!IDENT_PATTERN.test(pluginId)) {
+                throw new Error(
+                    `plugin "${pluginId}" contributes tools but its id is not a valid DSL group ` +
+                        `name (must match ${IDENT_PATTERN}). Rename the plugin or drop its tools().`,
+                );
+            }
+            if (RESERVED_GROUP_NAMES.has(pluginId)) {
+                throw new Error(
+                    `plugin "${pluginId}" cannot contribute tools — id collides with a reserved ` +
+                        `DSL group name (${[...RESERVED_GROUP_NAMES].join(", ")}).`,
+                );
+            }
+            if (this.mcp.get(pluginId) !== undefined) {
+                throw new Error(
+                    `plugin "${pluginId}" cannot contribute tools — an MCP with the same id exists ` +
+                        `in mcp.yml; "tools: ${pluginId}" would be ambiguous.`,
+                );
+            }
         }
         if (this.pluginIds.has(pluginId)) {
             throw new Error(`plugin "${pluginId}" already registered tools — double call?`);
@@ -118,12 +145,26 @@ export class PluginToolsRegistry {
         const pluginLog = this.log.child({ plugin: pluginId });
 
         for (const tool of tools) {
-            const key = sanitizeToolKey(`${pluginId}_${tool.name}`);
+            const key = isCore
+                ? sanitizeToolKey(tool.name)
+                : sanitizeToolKey(`${pluginId}_${tool.name}`);
             if (this.tools.has(key)) {
                 throw new Error(
                     `plugin "${pluginId}" tool "${tool.name}" sanitizes to key "${key}" which ` +
                         `is already registered.`,
                 );
+            }
+            const declared = tool.groups ?? [];
+            const groups = new Set<string>();
+            for (const name of declared) {
+                validateGroupName(name);
+                if (!isCore && name === pluginId) {
+                    throw new Error(
+                        `plugin "${pluginId}" tool "${tool.name}" lists its own plugin id as a ` +
+                            `group — the auto-group already covers that. Drop it from groups.`,
+                    );
+                }
+                groups.add(name);
             }
             this.tools.set(key, {
                 pluginId,
@@ -134,54 +175,10 @@ export class PluginToolsRegistry {
                 hostContext,
                 log: pluginLog,
                 execute: tool.execute.bind(tool),
-                system: tool.system === true,
+                groups,
             });
         }
         this.pluginIds.add(pluginId);
-    }
-
-    /**
-     * Register core (host-owned) tools — `cal_*` today, and future
-     * non-plugin-scoped tools (approval-gate, system-introspection,
-     * …). Bare-name keys (no plugin prefix) so the agent calls them
-     * as `cal_get_events` rather than `core_cal_get_events`. The
-     * `pluginId` stamp is the reserved string `"core"` so the
-     * existing DSL filter machinery handles them uniformly with
-     * `tools: core`.
-     *
-     * Re-callable (idempotent on key collision: throws), so the
-     * caller can register the calendar tools and later, when a new
-     * core surface lands, register those too. Each *individual*
-     * tool key still has to be unique across the whole registry.
-     */
-    registerCoreTools(hostContext: HostContext, tools: readonly PluginTool[]): void {
-        if (tools.length === 0) {
-            return;
-        }
-        const coreLog = this.log.child({ plugin: CORE_GROUP_NAME });
-        for (const tool of tools) {
-            const key = sanitizeToolKey(tool.name);
-            if (this.tools.has(key)) {
-                throw new Error(
-                    `core tool "${tool.name}" sanitizes to key "${key}" which is already ` +
-                        "registered (collision with a plugin tool?).",
-                );
-            }
-            this.tools.set(key, {
-                pluginId: CORE_GROUP_NAME,
-                toolName: tool.name,
-                key,
-                description: tool.description,
-                inputSchema: tool.inputSchema,
-                hostContext,
-                log: coreLog,
-                execute: tool.execute.bind(tool),
-                // Core tools belong to the `core` group only — never
-                // auto-promoted into `system`. Handlers that want them
-                // must opt in via `tools: core`.
-                system: false,
-            });
-        }
     }
 
     /** Snapshot of every registered tool, in insertion order. */
