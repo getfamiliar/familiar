@@ -380,16 +380,26 @@ export interface CalendarApi {
     ): Promise<{ removed: number; rows: readonly CalendarEventRow[] }>;
 
     /**
-     * Upsert one event into the cache. Returns `{created: true}` when
-     * the row was a fresh INSERT, `{created: false}` for an UPDATE of
-     * an existing row. Does NOT emit any bus event — the caller (a
-     * plugin poller) decides whether to call
-     * {@link emitCalendarEvent} based on the `{created}` flag and
-     * whether the call site represents a refresh re-walk or a real
-     * change. `opts.seed` is retained as a no-op for forward
+     * Upsert one event into the cache. Returns `{created, changed}`:
+     *   - `created: true` when the row was a fresh INSERT (drives
+     *     `calendar:new`).
+     *   - `changed: true` when at least one substantive field differs
+     *     from what was previously persisted, OR when the row is new.
+     *     Pollers should gate `calendar:update` on this flag so a
+     *     stale-cursor replay (Graph re-reports events whose
+     *     `lastModifiedDateTime` bumped for non-user reasons) does not
+     *     surface as a flood of phantom updates.
+     *
+     * Does NOT emit any bus event — the caller (a plugin poller)
+     * decides whether to call {@link emitCalendarEvent} based on these
+     * flags and whether the call site represents a refresh re-walk or
+     * a real change. `opts.seed` is retained as a no-op for forward
      * compatibility with future emission policies.
      */
-    addEvent(row: NewCalendarEvent, opts: { seed: boolean }): Promise<{ created: boolean }>;
+    addEvent(
+        row: NewCalendarEvent,
+        opts: { seed: boolean },
+    ): Promise<{ created: boolean; changed: boolean }>;
 
     removeEvent(id: string): Promise<void>;
 

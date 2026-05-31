@@ -214,7 +214,10 @@ describe("CalendarService.addEvent", () => {
     it("does not emit anything by itself — emission is the caller's job", async () => {
         const calendar = sampleCalendar({ id: "1", pluginId: "ms365" });
         const captured: NewEvent[] = [];
-        const upsertResults: Array<{ created: boolean }> = [{ created: true }, { created: false }];
+        const upsertResults: Array<{ created: boolean; changed: boolean }> = [
+            { created: true, changed: true },
+            { created: false, changed: false },
+        ];
         const svc = build({
             calendars: [calendar],
             events: [],
@@ -232,8 +235,8 @@ describe("CalendarService.addEvent", () => {
         };
         const a = await svc.addEvent(newRow, { seed: false });
         const b = await svc.addEvent(newRow, { seed: false });
-        assert.deepEqual(a, { created: true });
-        assert.deepEqual(b, { created: false });
+        assert.deepEqual(a, { created: true, changed: true });
+        assert.deepEqual(b, { created: false, changed: false });
         assert.equal(captured.length, 0);
     });
 });
@@ -281,7 +284,7 @@ interface BuildOptions {
     readonly calendars: readonly CalendarRow[];
     readonly events?: readonly CalendarEventRow[];
     readonly captureEmits?: NewEvent[];
-    readonly upsertResults?: Array<{ created: boolean }>;
+    readonly upsertResults?: Array<{ created: boolean; changed: boolean }>;
     readonly endRefreshRows?: readonly CalendarEventRow[];
     readonly configMap?: Record<string, string>;
 }
@@ -300,7 +303,7 @@ function build(opts: BuildOptions): CalendarService {
         listCalendars: async () => opts.calendars,
         getCalendar: async (id: string) => calendarMap.get(id) ?? null,
         getEvent: async (id: string) => eventMap.get(id) ?? null,
-        upsertEvent: async () => upsertResults.shift() ?? { created: true },
+        upsertEvent: async () => upsertResults.shift() ?? { created: true, changed: true },
         endRefresh: async () => ({
             removed: opts.endRefreshRows?.length ?? 0,
             rows: opts.endRefreshRows ?? [],

@@ -103,59 +103,138 @@ export class CalendarStore {
     }
 
     /**
-     * Upsert one event. Returns `{created}` reporting whether the row
-     * is new (PK didn't exist before) — used by the service to decide
-     * whether to emit `calendar:new`.
+     * Upsert one event. Returns `{created, changed}`:
+     *   - `created` is true when the row was a fresh INSERT (PK didn't
+     *     exist before) — drives `calendar:new` emission.
+     *   - `changed` is true when at least one substantive field
+     *     differs from what was previously persisted, OR when the row
+     *     is new — drives `calendar:update` emission.
+     *
+     * `updated_at` is only advanced when a substantive field actually
+     * differs. This matters because Microsoft Graph's
+     * `lastModifiedDateTime` bumps for non-user reasons (free/busy
+     * reindex, online-meeting link refresh, attendee response status
+     * from others, server-side index rebuilds). Without this gate, a
+     * stale delta cursor — e.g. the first poll after a multi-day
+     * daemon downtime — replays every "touched" event as a
+     * `calendar:update:ms365`, flooding handlers with phantom updates.
+     * `scan_generation` is bookkeeping and is intentionally excluded
+     * from the comparison: a refresh re-walk that only bumps the
+     * generation must NOT cause `changed = true`.
      *
      * The `xmax = 0` predicate is the standard postgres trick to
      * detect "this row was inserted by the current ON CONFLICT, not
      * updated": `xmax` is 0 on a fresh insert and non-zero on update.
+     * `changed` is derived by snapshotting the pre-update `updated_at`
+     * in a CTE and comparing it against the post-update value: if the
+     * `CASE` left `updated_at` untouched, both are equal and nothing
+     * substantive changed.
      */
-    async upsertEvent(row: NewCalendarEvent): Promise<{ created: boolean }> {
+    async upsertEvent(row: NewCalendarEvent): Promise<{ created: boolean; changed: boolean }> {
         const conn = await this.conn();
         const pool = conn.getPool();
-        const result = await pool.query<{ created: boolean }>(
+        const result = await pool.query<{ created: boolean; changed: boolean }>(
             `
-            INSERT INTO calendar_events (
-                id, calendar_id, series_master_id, type, subject,
-                start_dt, end_dt, event_tz, is_all_day, is_cancelled,
-                show_as, sensitivity, importance, location,
-                is_online_meeting, online_meeting_url,
-                organizer_name, organizer_email, response_status,
-                attendees_json, body, attachments, scan_generation
-            ) VALUES (
-                $1, $2, $3, $4, $5,
-                $6, $7, $8, $9, $10,
-                $11, $12, $13, $14,
-                $15, $16,
-                $17, $18, $19,
-                $20, $21, $22, $23
+            WITH pre AS (
+                SELECT updated_at AS pre_updated_at
+                FROM calendar_events
+                WHERE id = $1
+            ),
+            ups AS (
+                INSERT INTO calendar_events (
+                    id, calendar_id, series_master_id, type, subject,
+                    start_dt, end_dt, event_tz, is_all_day, is_cancelled,
+                    show_as, sensitivity, importance, location,
+                    is_online_meeting, online_meeting_url,
+                    organizer_name, organizer_email, response_status,
+                    attendees_json, body, attachments, scan_generation
+                ) VALUES (
+                    $1, $2, $3, $4, $5,
+                    $6, $7, $8, $9, $10,
+                    $11, $12, $13, $14,
+                    $15, $16,
+                    $17, $18, $19,
+                    $20, $21, $22, $23
+                )
+                ON CONFLICT (id) DO UPDATE SET
+                    calendar_id        = EXCLUDED.calendar_id,
+                    series_master_id   = EXCLUDED.series_master_id,
+                    type               = EXCLUDED.type,
+                    subject            = EXCLUDED.subject,
+                    start_dt           = EXCLUDED.start_dt,
+                    end_dt             = EXCLUDED.end_dt,
+                    event_tz           = EXCLUDED.event_tz,
+                    is_all_day         = EXCLUDED.is_all_day,
+                    is_cancelled       = EXCLUDED.is_cancelled,
+                    show_as            = EXCLUDED.show_as,
+                    sensitivity        = EXCLUDED.sensitivity,
+                    importance         = EXCLUDED.importance,
+                    location           = EXCLUDED.location,
+                    is_online_meeting  = EXCLUDED.is_online_meeting,
+                    online_meeting_url = EXCLUDED.online_meeting_url,
+                    organizer_name     = EXCLUDED.organizer_name,
+                    organizer_email    = EXCLUDED.organizer_email,
+                    response_status    = EXCLUDED.response_status,
+                    attendees_json     = EXCLUDED.attendees_json,
+                    body               = EXCLUDED.body,
+                    attachments        = EXCLUDED.attachments,
+                    scan_generation    = EXCLUDED.scan_generation,
+                    updated_at         = CASE
+                        WHEN (
+                            calendar_events.calendar_id,
+                            calendar_events.series_master_id,
+                            calendar_events.type,
+                            calendar_events.subject,
+                            calendar_events.start_dt,
+                            calendar_events.end_dt,
+                            calendar_events.event_tz,
+                            calendar_events.is_all_day,
+                            calendar_events.is_cancelled,
+                            calendar_events.show_as,
+                            calendar_events.sensitivity,
+                            calendar_events.importance,
+                            calendar_events.location,
+                            calendar_events.is_online_meeting,
+                            calendar_events.online_meeting_url,
+                            calendar_events.organizer_name,
+                            calendar_events.organizer_email,
+                            calendar_events.response_status,
+                            calendar_events.attendees_json,
+                            calendar_events.body,
+                            calendar_events.attachments
+                        ) IS DISTINCT FROM (
+                            EXCLUDED.calendar_id,
+                            EXCLUDED.series_master_id,
+                            EXCLUDED.type,
+                            EXCLUDED.subject,
+                            EXCLUDED.start_dt,
+                            EXCLUDED.end_dt,
+                            EXCLUDED.event_tz,
+                            EXCLUDED.is_all_day,
+                            EXCLUDED.is_cancelled,
+                            EXCLUDED.show_as,
+                            EXCLUDED.sensitivity,
+                            EXCLUDED.importance,
+                            EXCLUDED.location,
+                            EXCLUDED.is_online_meeting,
+                            EXCLUDED.online_meeting_url,
+                            EXCLUDED.organizer_name,
+                            EXCLUDED.organizer_email,
+                            EXCLUDED.response_status,
+                            EXCLUDED.attendees_json,
+                            EXCLUDED.body,
+                            EXCLUDED.attachments
+                        )
+                        THEN now()
+                        ELSE calendar_events.updated_at
+                    END
+                RETURNING id, updated_at, (xmax = 0) AS created
             )
-            ON CONFLICT (id) DO UPDATE SET
-                calendar_id        = EXCLUDED.calendar_id,
-                series_master_id   = EXCLUDED.series_master_id,
-                type               = EXCLUDED.type,
-                subject            = EXCLUDED.subject,
-                start_dt           = EXCLUDED.start_dt,
-                end_dt             = EXCLUDED.end_dt,
-                event_tz           = EXCLUDED.event_tz,
-                is_all_day         = EXCLUDED.is_all_day,
-                is_cancelled       = EXCLUDED.is_cancelled,
-                show_as            = EXCLUDED.show_as,
-                sensitivity        = EXCLUDED.sensitivity,
-                importance         = EXCLUDED.importance,
-                location           = EXCLUDED.location,
-                is_online_meeting  = EXCLUDED.is_online_meeting,
-                online_meeting_url = EXCLUDED.online_meeting_url,
-                organizer_name     = EXCLUDED.organizer_name,
-                organizer_email    = EXCLUDED.organizer_email,
-                response_status    = EXCLUDED.response_status,
-                attendees_json     = EXCLUDED.attendees_json,
-                body               = EXCLUDED.body,
-                attachments        = EXCLUDED.attachments,
-                scan_generation    = EXCLUDED.scan_generation,
-                updated_at         = now()
-            RETURNING (xmax = 0) AS created
+            SELECT
+                ups.created,
+                (ups.created OR pre.pre_updated_at IS DISTINCT FROM ups.updated_at) AS changed
+            FROM ups
+            LEFT JOIN pre ON true
             `,
             [
                 row.id,
@@ -183,7 +262,10 @@ export class CalendarStore {
                 row.scanGeneration,
             ],
         );
-        return { created: result.rows[0]?.created === true };
+        return {
+            created: result.rows[0]?.created === true,
+            changed: result.rows[0]?.changed === true,
+        };
     }
 
     async removeEvent(id: string): Promise<void> {

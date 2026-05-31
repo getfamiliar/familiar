@@ -112,7 +112,10 @@ export class CalendarService implements CalendarApi {
     // `opts.seed` is retained for forward compatibility; emission control
     // moved to the caller via {@link emitCalendarEvent}, so this method
     // is now pure persistence.
-    async addEvent(row: NewCalendarEvent, _opts: { seed: boolean }): Promise<{ created: boolean }> {
+    async addEvent(
+        row: NewCalendarEvent,
+        _opts: { seed: boolean },
+    ): Promise<{ created: boolean; changed: boolean }> {
         return this.deps.store.upsertEvent(row);
     }
 

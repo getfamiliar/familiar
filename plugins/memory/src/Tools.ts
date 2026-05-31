@@ -71,7 +71,7 @@ export function buildMemoryTools(store: MemoryStore, cfg: MemoryConfig): readonl
         // ride the same ambient `core` promotion.
         groups: ["core"],
         description:
-            "Save facts, observations, notes into long-term memory. Content is handed to a dedicated reasoning agentrun, this toolcall does not wait and returns immediately.",
+            "Save facts, observations, notes into long-term memory. Content is handed to a dedicated reasoning agentrun, this toolcall does not wait and returns immediately. Remember to include identifying facts in the content (email addresses, names etc.)",
         inputSchema: {
             type: "object",
             required: ["content"],

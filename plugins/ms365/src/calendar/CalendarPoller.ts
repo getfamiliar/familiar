@@ -29,6 +29,37 @@ import {
 const MAX_PAGES_PER_POLL = 50;
 
 /**
+ * Per-page outcome counters rolled up across all pages of a poll or
+ * refresh cycle. Used for the per-cycle summary log line; `unchanged`
+ * counts events Graph re-reported on the delta cursor whose stored
+ * fields matched bit-for-bit and therefore did not emit
+ * `calendar:update:ms365`.
+ */
+interface PageSummary {
+    readonly total: number;
+    readonly removed: number;
+    readonly created: number;
+    readonly updated: number;
+    readonly unchanged: number;
+}
+
+interface MutablePageSummary {
+    total: number;
+    removed: number;
+    created: number;
+    updated: number;
+    unchanged: number;
+}
+
+function accumulate(target: MutablePageSummary, page: PageSummary): void {
+    target.total += page.total;
+    target.removed += page.removed;
+    target.created += page.created;
+    target.updated += page.updated;
+    target.unchanged += page.unchanged;
+}
+
+/**
  * Per-page retry policy for Graph 5xx responses. Graph's
  * `calendarView/delta` returns 502/503/504 with some regularity (Azure
  * front-end gateway hiccups) — propagating those to the watcher's
@@ -279,6 +310,13 @@ export class CalendarPoller {
             : undefined;
         let nextDeltaLink: string | null = null;
         let pages = 0;
+        const totals: MutablePageSummary = {
+            total: 0,
+            removed: 0,
+            created: 0,
+            updated: 0,
+            unchanged: 0,
+        };
         while (pages < MAX_PAGES_PER_POLL) {
             pages += 1;
             let page: CalendarDeltaPage;
@@ -304,11 +342,12 @@ export class CalendarPoller {
                 }
                 throw err;
             }
-            await this.persistPage(target, page.value, {
+            const pageSummary = await this.persistPage(target, page.value, {
                 seed: isFreshWalk,
                 scanGeneration: target.row.scanGeneration,
                 emitUpdates: true,
             });
+            accumulate(totals, pageSummary);
             if (page.deltaLink !== null) {
                 nextDeltaLink = page.deltaLink;
                 break;
@@ -324,6 +363,16 @@ export class CalendarPoller {
         // Reaching here means the poll completed without throwing — clear any
         // accumulated stuck-cursor failures for this target.
         this.stuckCursorFailures.delete(this.stuckKey(target));
+        // Only log when Graph returned at least one item; a quiet poll
+        // (the common case at 2-minute intervals) stays silent.
+        if (totals.total > 0) {
+            this.opts.log(
+                `calendar ${target.row.name}: poll summary — total=${totals.total} ` +
+                    `new=${totals.created} updated=${totals.updated} ` +
+                    `unchanged=${totals.unchanged} removed=${totals.removed} ` +
+                    `(pages=${pages}, seed=${isFreshWalk})`,
+            );
+        }
     }
 
     /** Stable map key shared with `CalendarCursorStore` semantics. */
@@ -363,6 +412,13 @@ export class CalendarPoller {
         // are upserted into the new generation in place.
         let pages = 0;
         let cursor: string | null = null;
+        const totals: MutablePageSummary = {
+            total: 0,
+            removed: 0,
+            created: 0,
+            updated: 0,
+            unchanged: 0,
+        };
         while (pages < MAX_PAGES_PER_POLL) {
             pages += 1;
             const page = await this.fetchDeltaPage(client, target, cursor, window);
@@ -370,11 +426,12 @@ export class CalendarPoller {
             // @removed items here and let `persistPage` handle the
             // master-first ordering for the rest.
             const items = page.value.filter((item) => !item["@removed"]);
-            await this.persistPage(target, items, {
+            const pageSummary = await this.persistPage(target, items, {
                 seed: false,
                 scanGeneration: gen,
                 emitUpdates: false,
             });
+            accumulate(totals, pageSummary);
             if (page.deltaLink !== null) {
                 // Persist the new delta link for the incremental loop
                 // so the next pollOnce picks up after the refresh
@@ -388,11 +445,11 @@ export class CalendarPoller {
             cursor = page.nextLink;
         }
         const removed = await this.opts.calendarApi.endRefresh(target.row.id, gen);
-        if (removed.removed > 0) {
-            this.opts.log(
-                `calendar ${target.row.name}: refresh removed ${removed.removed} stale row(s)`,
-            );
-        }
+        this.opts.log(
+            `calendar ${target.row.name}: refresh summary — total=${totals.total} ` +
+                `new=${totals.created} unchanged=${totals.unchanged} ` +
+                `pruned=${removed.removed} (pages=${pages})`,
+        );
     }
 
     /**
@@ -445,10 +502,11 @@ export class CalendarPoller {
      *   1. Tombstones (`@removed`) → emit `calendar:delete:ms365`
      *      (best-effort) → removeEvent.
      *   2. Masters (`type === 'seriesMaster'`) → addEvent → emit
-     *      new/update based on `{created}` and `opts.emitUpdates`.
-     *      Done before pass 3 so the cache lookup in pass 3 succeeds
-     *      for any master present in this very page (Graph usually
-     *      orders master-first but we don't rely on it).
+     *      new/update based on `{created, changed}` and
+     *      `opts.emitUpdates`. Done before pass 3 so the cache lookup
+     *      in pass 3 succeeds for any master present in this very
+     *      page (Graph usually orders master-first but we don't rely
+     *      on it).
      *   3. Everything else (`singleInstance`, `occurrence`,
      *      `exception`) → mergeWithMaster from the local cache when
      *      `seriesMasterId` is set, then addEvent → emit.
@@ -457,14 +515,24 @@ export class CalendarPoller {
      *   - `opts.seed === true` (very first walk, no cursor) → never
      *     emit; the cache is being seeded.
      *   - new row (`created === true`) → emit `calendar:new:ms365`.
-     *   - existing row + `opts.emitUpdates === true` (incremental
-     *     poll) → emit `calendar:update:ms365`.
+     *   - existing row + substantive field changed + `opts.emitUpdates
+     *     === true` (incremental poll) → emit `calendar:update:ms365`.
+     *   - existing row + no substantive change (`changed === false`)
+     *     → no emit; Graph's `lastModifiedDateTime` bumps for non-user
+     *     reasons (free/busy reindex, online-meeting link refresh,
+     *     attendee response status from others) and replays the event
+     *     on the delta cursor without anything in our stored shape
+     *     differing. Most visible failure mode of an earlier always-
+     *     emit policy: the first poll after a multi-day daemon
+     *     downtime flooded handlers with phantom updates.
      *   - existing row + `opts.emitUpdates === false` (refresh
      *     re-walk) → no emit; refresh isn't a change-detection path.
      *
      * A missing master (cross-calendar reference, race with deletion)
      * leaves the occurrence as-is — better to surface partial data
      * than to drop the row entirely.
+     *
+     * Returns a summary so the caller can log a per-poll roll-up.
      */
     private async persistPage(
         target: PollTarget,
@@ -474,9 +542,17 @@ export class CalendarPoller {
             readonly scanGeneration: number;
             readonly emitUpdates: boolean;
         },
-    ): Promise<void> {
+    ): Promise<PageSummary> {
+        const summary: MutablePageSummary = {
+            total: items.length,
+            removed: 0,
+            created: 0,
+            updated: 0,
+            unchanged: 0,
+        };
         for (const item of items) {
             if (item["@removed"]) {
+                summary.removed += 1;
                 const eventId = `${MS365_PROVIDER_ID}:${item.id}`;
                 // Emit before removing so the helper can still fetch
                 // the row. Tombstones for unknown ids (cursor drift,
@@ -513,8 +589,10 @@ export class CalendarPoller {
                 calendarId: target.row.id,
                 scanGeneration: opts.scanGeneration,
             });
-            const { created } = await this.opts.calendarApi.addEvent(row, { seed: opts.seed });
-            await this.emitChange(target, row.id, created, opts);
+            const { created, changed } = await this.opts.calendarApi.addEvent(row, {
+                seed: opts.seed,
+            });
+            await this.emitChange(target, row.id, created, changed, opts, summary);
         }
 
         for (const item of others) {
@@ -528,32 +606,43 @@ export class CalendarPoller {
                     row = mergeWithMaster(row, master);
                 }
             }
-            const { created } = await this.opts.calendarApi.addEvent(row, { seed: opts.seed });
-            await this.emitChange(target, row.id, created, opts);
+            const { created, changed } = await this.opts.calendarApi.addEvent(row, {
+                seed: opts.seed,
+            });
+            await this.emitChange(target, row.id, created, changed, opts, summary);
         }
+
+        return summary;
     }
 
     /**
      * Pick the right `calendar:new|update:ms365` topic per the policy
      * documented on {@link persistPage} and post via the standardized
      * helper. Errors are logged and swallowed so a single emit failure
-     * doesn't park the whole poll.
+     * doesn't park the whole poll. Records the outcome on `summary` so
+     * the caller can log a per-poll roll-up.
      */
     private async emitChange(
         target: PollTarget,
         eventId: string,
         created: boolean,
+        changed: boolean,
         opts: { readonly seed: boolean; readonly emitUpdates: boolean },
+        summary: MutablePageSummary,
     ): Promise<void> {
         if (opts.seed) {
+            summary.unchanged += 1;
             return;
         }
-        const topic = created
-            ? "calendar:new:ms365"
-            : opts.emitUpdates
-              ? "calendar:update:ms365"
-              : null;
-        if (topic === null) {
+        let topic: string | null = null;
+        if (created) {
+            topic = "calendar:new:ms365";
+            summary.created += 1;
+        } else if (changed && opts.emitUpdates) {
+            topic = "calendar:update:ms365";
+            summary.updated += 1;
+        } else {
+            summary.unchanged += 1;
             return;
         }
         try {
