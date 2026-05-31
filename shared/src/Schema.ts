@@ -482,6 +482,31 @@ DROP TRIGGER IF EXISTS scheduled_handlers_notify_changed_trg ON scheduled_handle
 CREATE TRIGGER scheduled_handlers_notify_changed_trg
   AFTER INSERT OR UPDATE OR DELETE ON scheduled_handlers
   FOR EACH ROW EXECUTE FUNCTION scheduled_handlers_notify_changed();
+
+-- ───────── inference_events ─────────
+--
+-- Append-only audit trail of every upstream model HTTP call attempt.
+-- Written by AgentRunner on each generate() outcome (success / retryable /
+-- fatal). Read by the host-side \`inference_status\` reflection tool to
+-- answer "is this model misbehaving right now?". One row per attempt;
+-- retries write multiple rows. NULL agent_run_id is kept for runs whose
+-- row was later deleted (parent event cascade) so the historical signal
+-- survives.
+CREATE TABLE IF NOT EXISTS inference_events (
+  id            bigserial PRIMARY KEY,
+  provider      text NOT NULL,
+  model         text NOT NULL,
+  agent_run_id  bigint REFERENCES agentruns(id) ON DELETE SET NULL,
+  outcome       text NOT NULL CHECK (outcome IN ('success','retryable','fatal')),
+  status_code   int,
+  error_excerpt text,
+  occurred_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS inference_events_model_time_idx
+  ON inference_events (model, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS inference_events_occurred_at_idx
+  ON inference_events (occurred_at DESC);
 `;
 
 /**

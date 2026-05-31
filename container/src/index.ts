@@ -4,6 +4,7 @@ import {
     createLogger,
     DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
     EventBus,
+    InferenceEventBus,
     jsonStdoutStream,
     type LogLevel,
     POSTGRES_DB,
@@ -89,6 +90,7 @@ async function main(): Promise<void> {
     const agentRunBus = new AgentRunBus(connection, log.child({ component: "agentrun-bus" }));
     const eventBus = new EventBus(connection, log.child({ component: "event-bus" }));
     const stepBus = new StepResultBus(connection, log.child({ component: "step-bus" }));
+    const inferenceEventBus = new InferenceEventBus(connection);
     const scheduledHandlerBus = new ScheduledHandlerBus(
         connection,
         log.child({ component: "scheduled-handler-bus" }),
@@ -106,6 +108,7 @@ async function main(): Promise<void> {
         agentRunBus,
         eventBus,
         stepBus,
+        inferenceEventBus,
         scheduledHandlerBus,
         timezone,
         log: log.child({ component: "agentrun-scheduler" }),

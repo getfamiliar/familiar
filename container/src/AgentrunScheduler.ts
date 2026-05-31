@@ -3,6 +3,7 @@ import {
     type AgentRunBus,
     type AgentRunRow,
     type EventBus,
+    type InferenceEventBus,
     type Logger,
     type NewStepResult,
     type NotificationHandler,
@@ -36,6 +37,13 @@ export interface SchedulerDeps {
     readonly agentRunBus: AgentRunBus;
     readonly eventBus: EventBus;
     readonly stepBus: StepResultBus;
+    /**
+     * Audit-table client for `inference_events`. The Scheduler wraps it
+     * in `recordInferenceEvent` on the {@link AgentRunnerContext} and
+     * swallows any write error — an audit-table outage must not turn
+     * a successful agentrun into a failed one.
+     */
+    readonly inferenceEventBus: InferenceEventBus;
     readonly scheduledHandlerBus: ScheduledHandlerBus;
     /**
      * IANA timezone string — typically `core.timezone` forwarded by
@@ -614,6 +622,7 @@ export class AgentrunScheduler {
             agentRunBus,
             eventBus,
             stepBus,
+            inferenceEventBus,
             scheduledHandlerBus,
             timezone,
             mcpPool,
@@ -673,6 +682,18 @@ export class AgentrunScheduler {
                     model,
                     ...(systemPrompt === null ? {} : { systemPrompt }),
                 });
+            },
+            recordInferenceEvent: async (event) => {
+                try {
+                    await inferenceEventBus.add(event);
+                } catch (err) {
+                    runnerLog.warn(
+                        { err: err instanceof Error ? err.message : String(err) },
+                        `failed to write inference_events row for agentrun #${row.id} ` +
+                            `(${event.provider}/${event.model} ${event.outcome}) — ` +
+                            "audit signal will be missing this attempt",
+                    );
+                }
             },
             log: runnerLog,
         };

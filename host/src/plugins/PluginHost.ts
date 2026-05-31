@@ -24,6 +24,7 @@ import { buildMailStyleTools } from "../mail/MailStyleTools.js";
 import { buildMailTools } from "../mail/MailTools.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
 import { PluginMcpService } from "../mcp/PluginMcpService.js";
+import { buildReflectionTools } from "../reflection/ReflectionTools.js";
 import type { WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
 import { EventContextRegistry } from "./EventContextRegistry.js";
 import { HostContextImpl } from "./HostContextImpl.js";
@@ -341,6 +342,17 @@ export class PluginHost {
                     safety: this.mailSafety,
                 }),
                 ...buildMailStyleTools({ store: this.mailStyleStore }),
+                // Reflection tools live alongside the other host-owned
+                // core tools so they share the bare-key registration
+                // path and join the `reflection` toolgroup with the
+                // container-side `get_scheduled_handlers`.
+                ...buildReflectionTools({
+                    ensureConnection: () => this.ensureConnection(),
+                    logsDir: this.boot.logsDir,
+                    scratchDir: this.boot.scratchDir,
+                    mcpRegistry: this.mcpRegistry,
+                    pluginToolsRegistry: this.toolsRegistry,
+                }),
             ];
             this.toolsRegistry.register("core", coreCtx, coreTools);
             const registered = this.toolsRegistry.list();

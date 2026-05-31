@@ -4,6 +4,7 @@ import type {
     AgentRunRow,
     EventBus,
     Logger,
+    NewInferenceEvent,
     NewStepResult,
 } from "@getfamiliar/shared";
 import { type ModelMessage, stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
@@ -66,6 +67,32 @@ function selectLoggedSystemPrompt(built: BuiltSystemPrompt): string | null {
  * lands as a YAML frontmatter field.
  */
 const MAX_STEPS_PER_RUN = 15;
+
+/** Max chars of an upstream error body to persist on `inference_events.error_excerpt`. */
+const INFERENCE_ERROR_EXCERPT_CHARS = 200;
+
+/**
+ * Split a `${provider}/${modelId}` label as produced by
+ * {@link ModelFactory.build} back into its two parts. Provider tokens
+ * never contain `/`; the remainder of the label is the model id and
+ * may contain further slashes (e.g. `featherless/zai-org/GLM-5.1`).
+ */
+function splitModelLabel(label: string): { provider: string; modelId: string } {
+    const slash = label.indexOf("/");
+    if (slash <= 0) {
+        return { provider: label, modelId: "" };
+    }
+    return { provider: label.slice(0, slash), modelId: label.slice(slash + 1) };
+}
+
+/** Truncate an error body for `inference_events.error_excerpt`. */
+function excerpt(text: string): string {
+    const trimmed = text.replace(/\s+/g, " ").trim();
+    if (trimmed.length <= INFERENCE_ERROR_EXCERPT_CHARS) {
+        return trimmed;
+    }
+    return `${trimmed.slice(0, INFERENCE_ERROR_EXCERPT_CHARS)}…`;
+}
 
 /**
  * Narrow read-only view of {@link EventBus}. The runner only needs
@@ -146,6 +173,14 @@ export interface AgentRunnerContext {
      * throws.
      */
     readonly stampModel: (model: string, systemPrompt: string | null) => Promise<void>;
+    /**
+     * Record one inference-call outcome (success / retryable / fatal)
+     * into the `inference_events` audit table. The Scheduler swallows
+     * any error this raises — an audit-write failure must not be allowed
+     * to turn a successful generate into a failed agentrun. Fire-and-
+     * forget from the runner's perspective.
+     */
+    readonly recordInferenceEvent: (event: NewInferenceEvent) => Promise<void>;
     /**
      * Per-run logger child, pre-tagged with agentrun id / topic /
      * handler. The runner adds further bindings for SDK-step diagnostics.
@@ -334,6 +369,7 @@ export class AgentRunner {
             "agent starting",
         );
 
+        const { provider, modelId } = splitModelLabel(modelLabel);
         let result: Awaited<ReturnType<typeof agent.generate>>;
         try {
             result = await agent.generate({
@@ -345,7 +381,9 @@ export class AgentRunner {
         } catch (err) {
             // Timeout / shutdown classification. The Scheduler aborts
             // the signal with a typed reason: `AgentRunTimeoutError`
-            // for budget exhaustion, anything else for shutdown.
+            // for budget exhaustion, anything else for shutdown. Either
+            // way the outcome is *not* a model-API outcome, so no
+            // inference_events row is written for these paths.
             if (ctx.signal.aborted) {
                 const reason = ctx.signal.reason;
                 if (reason instanceof AgentRunTimeoutError) {
@@ -368,10 +406,35 @@ export class AgentRunner {
                     },
                     "agent generate returned a retryable inference error",
                 );
+                await ctx.recordInferenceEvent({
+                    provider,
+                    model: modelId,
+                    agentRunId: ctx.row.id,
+                    outcome: "retryable",
+                    statusCode: typeof err.statusCode === "number" ? err.statusCode : null,
+                    errorExcerpt: excerpt(errorText),
+                });
                 throw new RetryableModelException(delayMs, errorText, handler.header.maxRetries);
             }
+            await ctx.recordInferenceEvent({
+                provider,
+                model: modelId,
+                agentRunId: ctx.row.id,
+                outcome: "fatal",
+                statusCode:
+                    APICallError.isInstance(err) && typeof err.statusCode === "number"
+                        ? err.statusCode
+                        : null,
+                errorExcerpt: excerpt(err instanceof Error ? err.message : String(err)),
+            });
             throw err;
         }
+        await ctx.recordInferenceEvent({
+            provider,
+            model: modelId,
+            agentRunId: ctx.row.id,
+            outcome: "success",
+        });
 
         const finalText = synthesizeResultText(result);
 

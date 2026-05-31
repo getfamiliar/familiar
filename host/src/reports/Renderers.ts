@@ -33,6 +33,38 @@ import type { AgentRunRow, EventRow, StepResultRow } from "@getfamiliar/shared";
 export const MAX_STRING_CHARS = 512;
 
 /**
+ * Renderer verbosity. `"full"` is the existing CLI output — every
+ * token table, every untruncated reasoning block, optional system
+ * prompt. `"slim"` is what the agent reflection tools want when
+ * stuffing a report back into another agentrun's context: token
+ * tables dropped, system prompt always dropped (use
+ * `agentrun_sysprompt` to fetch it on demand), prose and JSON
+ * truncated aggressively. Default everywhere is `"full"` so existing
+ * call sites are unchanged.
+ */
+export type RenderVerbosity = "full" | "slim";
+
+const SLIM_STRING_CHARS = 128;
+const SLIM_PROSE_CHARS = 256;
+
+/** Per-verbosity cap for leaf strings inside JSON payloads. */
+function jsonCap(verbosity: RenderVerbosity): number {
+    return verbosity === "slim" ? SLIM_STRING_CHARS : MAX_STRING_CHARS;
+}
+
+/**
+ * In slim mode, truncate a prose blob (prompt / reasoning / result_text)
+ * to {@link SLIM_PROSE_CHARS} and add an ellipsis. In full mode, pass
+ * the value through.
+ */
+function trimProse(text: string, verbosity: RenderVerbosity): string {
+    if (verbosity === "full" || text.length <= SLIM_PROSE_CHARS) {
+        return text;
+    }
+    return `${text.slice(0, SLIM_PROSE_CHARS)}…`;
+}
+
+/**
  * Pretty-print a value as JSON with every leaf string truncated at
  * `max` characters. Arrays, objects, numbers, booleans, and `null`
  * pass through unchanged so the structure is always parseable.
@@ -70,7 +102,7 @@ function truncateStringsDeep(value: unknown, max: number): unknown {
 }
 
 /** Render the event-created section — H1 + metadata table + prompt + payload. */
-export function renderEventCreated(event: EventRow): string {
+export function renderEventCreated(event: EventRow, verbosity: RenderVerbosity = "full"): string {
     const lines: string[] = [];
     lines.push(`# Event #${event.id} (created ${formatTs(event.createdAt)})`);
     lines.push("");
@@ -87,14 +119,14 @@ export function renderEventCreated(event: EventRow): string {
     if (event.prompt && event.prompt.length > 0) {
         lines.push("**Prompt:**");
         lines.push("");
-        pushBlockquote(lines, event.prompt);
+        pushBlockquote(lines, trimProse(event.prompt, verbosity));
         lines.push("");
     }
     if (hasContent(event.payload)) {
         lines.push("**Payload:**");
         lines.push("");
         lines.push("```json");
-        lines.push(truncateJson(event.payload));
+        lines.push(truncateJson(event.payload, jsonCap(verbosity)));
         lines.push("```");
         lines.push("");
     }
@@ -124,7 +156,11 @@ export interface AgentrunStartOptions {
  * sections and surface a one-line note instead — the data is
  * already in the Event Created section above.
  */
-export function renderAgentrunStart(run: AgentRunRow, options: AgentrunStartOptions = {}): string {
+export function renderAgentrunStart(
+    run: AgentRunRow,
+    options: AgentrunStartOptions = {},
+    verbosity: RenderVerbosity = "full",
+): string {
     const lines: string[] = [];
     const isRoot = run.parentAgentrunId === null;
     lines.push(`## Agentrun Start: #${run.id}`);
@@ -148,19 +184,27 @@ export function renderAgentrunStart(run: AgentRunRow, options: AgentrunStartOpti
         if (run.prompt && run.prompt.length > 0) {
             lines.push("**Prompt:**");
             lines.push("");
-            pushBlockquote(lines, run.prompt);
+            pushBlockquote(lines, trimProse(run.prompt, verbosity));
             lines.push("");
         }
         if (hasContent(run.payload)) {
             lines.push("**Payload:**");
             lines.push("");
             lines.push("```json");
-            lines.push(truncateJson(run.payload));
+            lines.push(truncateJson(run.payload, jsonCap(verbosity)));
             lines.push("```");
             lines.push("");
         }
     }
-    if (options.withDetails === true && run.systemPrompt && run.systemPrompt.length > 0) {
+    // Slim verbosity always drops the system prompt block: agents fetch
+    // it on demand via `agentrun_sysprompt` instead of paying the
+    // several-KB cost in every report.
+    if (
+        verbosity === "full" &&
+        options.withDetails === true &&
+        run.systemPrompt &&
+        run.systemPrompt.length > 0
+    ) {
         // Untruncated; if the operator opted into withDetails they
         // accepted the verbosity. Same blockquote posture as
         // reasoningText since the system prompt is prose-ish.
@@ -178,31 +222,36 @@ export function renderAgentrunStart(run: AgentRunRow, options: AgentrunStartOpti
  * (which carries `Agentrun #<id>`); the renderer pulls everything
  * else from the step row directly.
  */
-export function renderStepResult(run: AgentRunRow, step: StepResultRow): string {
+export function renderStepResult(
+    run: AgentRunRow,
+    step: StepResultRow,
+    verbosity: RenderVerbosity = "full",
+): string {
     const lines: string[] = [];
     lines.push(`### Agentrun #${run.id} — Step ${step.stepNumber} (${step.finishReason})`);
     lines.push("");
-    pushTokenTable(lines, {
-        inputTokens: step.inputTokens,
-        outputTokens: step.outputTokens,
-        totalTokens: step.totalTokens,
-        inputTokensNoCache: step.inputTokensNoCache,
-        inputTokensCacheRead: step.inputTokensCacheRead,
-        outputTokensText: step.outputTokensText,
-        outputTokensReasoning: step.outputTokensReasoning,
-    });
-    lines.push("");
+    if (verbosity === "full") {
+        pushTokenTable(lines, {
+            inputTokens: step.inputTokens,
+            outputTokens: step.outputTokens,
+            totalTokens: step.totalTokens,
+            inputTokensNoCache: step.inputTokensNoCache,
+            inputTokensCacheRead: step.inputTokensCacheRead,
+            outputTokensText: step.outputTokensText,
+            outputTokensReasoning: step.outputTokensReasoning,
+        });
+        lines.push("");
+    }
     if (step.reasoningText && step.reasoningText.length > 0) {
-        // Reasoning text is rendered in full — no truncation.
         lines.push("**Thinking:**");
         lines.push("");
-        pushBlockquote(lines, step.reasoningText);
+        pushBlockquote(lines, trimProse(step.reasoningText, verbosity));
         lines.push("");
     }
     if (step.resultText && step.resultText.length > 0) {
         lines.push("**Result:**");
         lines.push("");
-        pushBlockquote(lines, step.resultText);
+        pushBlockquote(lines, trimProse(step.resultText, verbosity));
         lines.push("");
     }
 
@@ -219,19 +268,19 @@ export function renderStepResult(run: AgentRunRow, step: StepResultRow): string 
             lines.push(`**Tool call:** \`${name}\``);
             lines.push("");
             lines.push("```json");
-            lines.push(truncateJson(input));
+            lines.push(truncateJson(input, jsonCap(verbosity)));
             lines.push("```");
             lines.push("");
             lines.push("→");
             lines.push("");
             if (match && (match as { type?: string }).type === "tool-error") {
                 const errorText = (match as { error?: unknown }).error;
-                pushBlockquote(lines, asErrorText(errorText));
+                pushBlockquote(lines, trimProse(asErrorText(errorText), verbosity));
                 lines.push("");
             } else {
                 const output = match ? (match as { output?: unknown }).output : undefined;
                 lines.push("```json");
-                lines.push(truncateJson(output));
+                lines.push(truncateJson(output, jsonCap(verbosity)));
                 lines.push("```");
                 lines.push("");
             }
@@ -266,7 +315,11 @@ function asErrorText(value: unknown): string {
  * Token totals come from `aggregate` (already summed across the
  * run's steps); the renderer stays DB-free.
  */
-export function renderAgentrunResult(run: AgentRunRow, aggregate: AgentrunAggregate): string {
+export function renderAgentrunResult(
+    run: AgentRunRow,
+    aggregate: AgentrunAggregate,
+    verbosity: RenderVerbosity = "full",
+): string {
     const lines: string[] = [];
     lines.push(`## Agentrun Results: #${run.id}`);
     lines.push("");
@@ -276,25 +329,27 @@ export function renderAgentrunResult(run: AgentRunRow, aggregate: AgentrunAggreg
     lines.push(`| Steps | ${aggregate.stepCount} |`);
     lines.push(`| Runtime | ${formatDurationMs(aggregate.runtimeMs)} |`);
     lines.push("");
-    pushTokenTable(lines, {
-        inputTokens: aggregate.totalInputTokens,
-        outputTokens: aggregate.totalOutputTokens,
-        totalTokens: aggregate.totalInputTokens + aggregate.totalOutputTokens,
-        inputTokensNoCache: nullIfZero(aggregate.totalInputTokensNoCache),
-        inputTokensCacheRead: nullIfZero(aggregate.totalInputTokensCacheRead),
-        outputTokensText: nullIfZero(aggregate.totalOutputTokensText),
-        outputTokensReasoning: nullIfZero(aggregate.totalOutputTokensReasoning),
-    });
-    lines.push("");
+    if (verbosity === "full") {
+        pushTokenTable(lines, {
+            inputTokens: aggregate.totalInputTokens,
+            outputTokens: aggregate.totalOutputTokens,
+            totalTokens: aggregate.totalInputTokens + aggregate.totalOutputTokens,
+            inputTokensNoCache: nullIfZero(aggregate.totalInputTokensNoCache),
+            inputTokensCacheRead: nullIfZero(aggregate.totalInputTokensCacheRead),
+            outputTokensText: nullIfZero(aggregate.totalOutputTokensText),
+            outputTokensReasoning: nullIfZero(aggregate.totalOutputTokensReasoning),
+        });
+        lines.push("");
+    }
     if (run.error) {
         lines.push("**Error:**");
         lines.push("");
-        pushBlockquote(lines, run.error);
+        pushBlockquote(lines, trimProse(run.error, verbosity));
         lines.push("");
     } else if (run.resultText && run.resultText.length > 0) {
         lines.push("**Result:**");
         lines.push("");
-        pushBlockquote(lines, run.resultText);
+        pushBlockquote(lines, trimProse(run.resultText, verbosity));
         lines.push("");
     }
     return joinSection(lines);
@@ -305,7 +360,11 @@ export function renderAgentrunResult(run: AgentRunRow, aggregate: AgentrunAggreg
  * agentrun belonging to the event, then either the root agentrun's
  * `result_text` or the collected error texts.
  */
-export function renderEventResult(event: EventRow, runs: readonly AgentRunRow[]): string {
+export function renderEventResult(
+    event: EventRow,
+    runs: readonly AgentRunRow[],
+    verbosity: RenderVerbosity = "full",
+): string {
     const lines: string[] = [];
     lines.push(`## Event Result: #${event.id}`);
     lines.push("");
@@ -324,7 +383,7 @@ export function renderEventResult(event: EventRow, runs: readonly AgentRunRow[])
         lines.push("**Errors:**");
         lines.push("");
         for (const e of errors) {
-            pushBlockquote(lines, e);
+            pushBlockquote(lines, trimProse(e, verbosity));
             lines.push("");
         }
     } else {
@@ -332,7 +391,7 @@ export function renderEventResult(event: EventRow, runs: readonly AgentRunRow[])
         if (root?.resultText && root.resultText.length > 0) {
             lines.push("**Final Result:**");
             lines.push("");
-            pushBlockquote(lines, root.resultText);
+            pushBlockquote(lines, trimProse(root.resultText, verbosity));
             lines.push("");
         }
     }

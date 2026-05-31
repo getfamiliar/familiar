@@ -108,6 +108,12 @@ function buildHarness(opts: HarnessOptions): Harness {
         agentRunBus: agentRunBus as unknown as SchedulerDeps["agentRunBus"],
         eventBus: eventBus as unknown as SchedulerDeps["eventBus"],
         stepBus: stepBus as unknown as SchedulerDeps["stepBus"],
+        inferenceEventBus: {
+            add: async () => {},
+            listSince: async () => [],
+            installSchema: async () => {},
+            pruneBefore: async () => 0,
+        } as unknown as SchedulerDeps["inferenceEventBus"],
         scheduledHandlerBus: scheduledHandlerBus as unknown as SchedulerDeps["scheduledHandlerBus"],
         timezone: "UTC",
         log,
@@ -762,6 +768,12 @@ describe("AgentrunScheduler — disaster recovery", () => {
             agentRunBus: agentRunBus as unknown as SchedulerDeps["agentRunBus"],
             eventBus: eventBus as unknown as SchedulerDeps["eventBus"],
             stepBus: stepBus as unknown as SchedulerDeps["stepBus"],
+            inferenceEventBus: {
+                add: async () => {},
+                listSince: async () => [],
+                installSchema: async () => {},
+                pruneBefore: async () => 0,
+            } as unknown as SchedulerDeps["inferenceEventBus"],
             log,
             clock,
             runnerFactory: buildRunnerFactory({

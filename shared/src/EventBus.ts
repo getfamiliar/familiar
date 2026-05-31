@@ -259,6 +259,67 @@ export class EventBus {
     }
 
     /**
+     * Latest N event rows matching every supplied filter. Drives the
+     * agent-facing `event_list` reflection tool, which lets the agent
+     * narrow by state, date window, and free-text needle simultaneously
+     * — combinations the older {@link listLatest} / {@link searchLatest}
+     * pair can't express. Both of those stay as the CLI's call sites.
+     *
+     * Substring match (when `search` is set) is the same ILIKE-against-
+     * `(topic, start_handler, prompt, payload::text)` predicate
+     * {@link searchLatest} uses. `dateFrom` is inclusive, `dateTo` is
+     * exclusive (`created_at >= $from AND created_at < $to`), so the
+     * agent can pass two midnights to get a single local day without
+     * worrying about the boundary instant.
+     */
+    async listFiltered(filter: {
+        readonly limit: number;
+        readonly search?: string;
+        readonly state?: EventState;
+        readonly dateFrom?: Date;
+        readonly dateTo?: Date;
+    }): Promise<EventRow[]> {
+        const conditions: string[] = [];
+        const values: unknown[] = [];
+        let n = 1;
+
+        if (filter.search !== undefined && filter.search.length > 0) {
+            const pattern = `%${filter.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+            conditions.push(
+                `(topic ILIKE $${n} OR coalesce(start_handler, '') ILIKE $${n} ` +
+                    `OR coalesce(prompt, '') ILIKE $${n} OR payload::text ILIKE $${n})`,
+            );
+            values.push(pattern);
+            n++;
+        }
+        if (filter.state !== undefined) {
+            conditions.push(`state = $${n++}`);
+            values.push(filter.state);
+        }
+        if (filter.dateFrom !== undefined) {
+            conditions.push(`created_at >= $${n++}`);
+            values.push(filter.dateFrom);
+        }
+        if (filter.dateTo !== undefined) {
+            conditions.push(`created_at < $${n++}`);
+            values.push(filter.dateTo);
+        }
+
+        const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+        values.push(filter.limit);
+        const limitParam = `$${n}`;
+
+        const result = await this.connection.getPool().query<RawEventRow>(
+            `SELECT * FROM events
+             ${where}
+             ORDER BY created_at DESC, id DESC
+             LIMIT ${limitParam}`,
+            values,
+        );
+        return result.rows.map(mapRow);
+    }
+
+    /**
      * Patch one or more fields on an existing event by id. Always bumps
      * `updated_at`. No-op if `patch` contains no recognized fields.
      */

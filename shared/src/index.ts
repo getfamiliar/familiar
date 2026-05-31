@@ -43,6 +43,12 @@ export type {
 export { EVENT_PRIORITY } from "./Event.js";
 export { EventBus } from "./EventBus.js";
 export { HandlerCatalog, type HandlerPath } from "./HandlerCatalog.js";
+export type {
+    InferenceEventRow,
+    InferenceOutcome,
+    NewInferenceEvent,
+} from "./InferenceEvent.js";
+export { InferenceEventBus } from "./InferenceEventBus.js";
 export {
     type CreateLoggerOptions,
     createLogger,
