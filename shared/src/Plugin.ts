@@ -9,6 +9,7 @@ import type { EventFile, EventRow, NewEvent } from "./Event.js";
 import type { Logger } from "./logging/Logger.js";
 import type { MailApi } from "./Mail.js";
 import type { MailStyleTemplate } from "./MailStyleTemplate.js";
+import type { ModelMetaData } from "./ModelMetaData.js";
 import type { StepResultRow } from "./StepResult.js";
 import type { ToolRunContext } from "./ToolRunner.js";
 import type { WorkspaceWatcherApi } from "./WorkspaceFile.js";
@@ -254,6 +255,17 @@ export interface HostContext {
      * `dataDir` is for plugin-private host-only state.
      */
     readonly dataDir: string;
+    /**
+     * Absolute host path of the project's `tmp/` directory — the
+     * gitignored, safe-to-wipe scratch root (it also holds the daemon
+     * pidfile, the postgres port file, and per-event scratch dirs).
+     *
+     * Use this for ephemeral on-disk caches that can be regenerated at
+     * any time (e.g. a refetchable model catalogue). Plugin-private
+     * state that must survive a `tmp/` wipe belongs under
+     * {@link dataDir} instead.
+     */
+    readonly tmpDir: string;
     /**
      * Cheap synchronous probe for whether the host daemon (`./cli.sh
      * start`) is currently running on this machine. Inspects the
@@ -580,6 +592,29 @@ export interface PluginHostManifest {
      * call.
      */
     tools?(ctx: HostContext): readonly PluginTool[];
+    /**
+     * Supply {@link ModelMetaData} for a model the default (models.dev)
+     * database does not cover. The host calls this on every plugin that
+     * declares it — in registration order — only when a `(provider,
+     * model)` lookup misses the built-in database, and takes the first
+     * non-`undefined` result.
+     *
+     * - Return `undefined` to defer (this plugin doesn't know the model,
+     *   or its own data isn't ready yet).
+     * - Throw {@link ModelNotSupported} when the plugin authoritatively
+     *   owns `provider` and knows `model` is not supported there — the
+     *   host treats that as a definitive "no" and stops the lookup
+     *   without consulting further plugins.
+     *
+     * Other thrown errors are logged and the lookup continues with the
+     * next plugin, so a transient read failure doesn't poison results
+     * another plugin could still provide.
+     */
+    getModelMetaData?(
+        ctx: HostContext,
+        provider: string,
+        model: string,
+    ): Promise<ModelMetaData | undefined>;
     /**
      * Default command for the plugin's CLI root. When set, invoking
      * the plugin id with no subcommand (e.g. `cli.sh cli-chat`) runs

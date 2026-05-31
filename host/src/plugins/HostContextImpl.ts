@@ -77,6 +77,12 @@ export interface HostContextImplDeps {
      */
     dataDir: string;
     /**
+     * Absolute host path of the project's `tmp/` directory, surfaced as
+     * `ctx.tmpDir` to plugins. Sourced from the host {@link Bootstrap}
+     * (`boot.tmpDir`) so there is one source of truth.
+     */
+    tmpDir: string;
+    /**
      * Absolute host path of `tmp/scratch/`. Used internally by the
      * `events.emit` wrapper to stage `event.files` under
      * `<scratchDir>/<eventId>/` inside the INSERT transaction. Not
@@ -228,6 +234,10 @@ export class HostContextImpl implements HostContext {
 
     get dataDir(): string {
         return this.deps.dataDir;
+    }
+
+    get tmpDir(): string {
+        return this.deps.tmpDir;
     }
 
     /**

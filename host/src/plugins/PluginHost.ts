@@ -4,9 +4,10 @@ import type {
     ConfigService,
     HostContext,
     Logger,
+    ModelMetaData,
     PostgresConnection,
 } from "@getfamiliar/shared";
-import { EventBus } from "@getfamiliar/shared";
+import { EventBus, ModelNotSupported } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import type { Bootstrap } from "../Bootstrap.js";
 import { CalendarRegistry } from "../calendar/CalendarRegistry.js";
@@ -123,6 +124,58 @@ export class PluginHost {
      */
     get eventContext(): EventContextRegistry {
         return this.eventContextRegistry;
+    }
+
+    /**
+     * Ask every plugin that declares a
+     * {@link import("@getfamiliar/shared").PluginHostManifest.getModelMetaData}
+     * hook for metadata about a `(provider, model)` pair, in
+     * registration order. Returns the first non-`undefined` result.
+     *
+     * A plugin throwing {@link ModelNotSupported} is authoritative: it
+     * owns the provider and knows the model isn't supported there, so
+     * the lookup stops and returns `undefined` without consulting the
+     * remaining plugins. Any other thrown error is logged and the loop
+     * continues, so a transient read failure in one plugin doesn't mask
+     * an answer another could provide.
+     *
+     * Used by the host's
+     * {@link import("../models/ModelMetadataService.js").ModelMetadataService}
+     * as the fallback path when the built-in models.dev database doesn't
+     * cover a model (e.g. featherless ids).
+     *
+     * @param provider Resolved provider id (e.g. `featherless`).
+     * @param model Resolved model id (e.g. `zai-org/GLM-5.1`).
+     * @returns The first plugin-supplied {@link ModelMetaData}, or
+     *   `undefined` when no plugin knows the model.
+     */
+    async lookupModelMetaData(provider: string, model: string): Promise<ModelMetaData | undefined> {
+        for (const plugin of plugins) {
+            const hook = plugin.host?.getModelMetaData;
+            if (!hook) {
+                continue;
+            }
+            try {
+                const meta = await hook(this.context(plugin.id), provider, model);
+                if (meta !== undefined) {
+                    return meta;
+                }
+            } catch (err) {
+                if (err instanceof ModelNotSupported) {
+                    return undefined;
+                }
+                this.log.warn(
+                    {
+                        plugin: plugin.id,
+                        provider,
+                        model,
+                        err: err instanceof Error ? err.message : String(err),
+                    },
+                    `plugin "${plugin.id}" getModelMetaData threw for ${provider}/${model}`,
+                );
+            }
+        }
+        return undefined;
     }
 
     /**
@@ -416,6 +469,7 @@ export class PluginHost {
             config: this.config,
             log: this.log.child({ component: `plugin:${pluginId}` }),
             dataDir: this.boot.dataDir,
+            tmpDir: this.boot.tmpDir,
             scratchDir: this.boot.scratchDir,
             pidFile: this.boot.pidFile,
             mcp: this.mcpService,

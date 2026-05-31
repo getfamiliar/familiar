@@ -198,11 +198,13 @@ function builderFor(provider: string, cat: ProviderCatalogue): LanguageModelBuil
 export class ModelFactory {
     /**
      * Build a chat language-model object for the requested model ref.
-     * Returns the constructed `LanguageModel` plus a `label` of the
-     * form `<provider>/<modelId>` — the resolved pair, with the
-     * provider prefix filled in even when the handler declared it
-     * bare. Callers persist the label on `agentruns.model` for
-     * traceability.
+     * Returns the constructed `LanguageModel`, a `label` of the form
+     * `<provider>/<modelId>`, and the resolved `provider` / `modelId`
+     * pair separately — the provider prefix is filled in even when the
+     * handler declared it bare. Callers persist the label on
+     * `agentruns.model` for traceability, and use the resolved pair to
+     * look the model's metadata up (see {@link
+     * import("./ModelMetadataClient.js").fetchModelMetaData}).
      *
      * @param modelRef Handler-declared model identifier — bare or
      *   `<provider>/<modelId>`. Falls back to defaults from
@@ -210,12 +212,19 @@ export class ModelFactory {
      * @throws If env is misconfigured or the provider in the prefix
      *   isn't enabled in `INFERENCE_PROVIDERS`.
      */
-    static build(modelRef?: string): { model: LanguageModel; label: string } {
+    static build(modelRef?: string): {
+        model: LanguageModel;
+        label: string;
+        provider: string;
+        modelId: string;
+    } {
         const cat = getCatalogue();
         const { provider, modelId } = resolveModelRef(modelRef, cat);
         return {
             model: builderFor(provider, cat)(modelId),
             label: `${provider}/${modelId}`,
+            provider,
+            modelId,
         };
     }
 }

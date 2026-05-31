@@ -1,4 +1,5 @@
 import cliChat from "@getfamiliar/plugin-cli-chat";
+import featherless from "@getfamiliar/plugin-featherless";
 import memory from "@getfamiliar/plugin-memory";
 import ms365 from "@getfamiliar/plugin-ms365";
 import telegram from "@getfamiliar/plugin-telegram";
@@ -18,6 +19,7 @@ import type { PluginManifest } from "@getfamiliar/shared";
  */
 export const plugins: readonly PluginManifest[] = [
     cliChat,
+    featherless,
     memory,
     ms365,
     telegram,

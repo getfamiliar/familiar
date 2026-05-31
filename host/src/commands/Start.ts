@@ -17,6 +17,7 @@ import type { Bootstrap } from "../Bootstrap.js";
 import { bootstrap, isDevMode } from "../Bootstrap.js";
 import { Bastion } from "../bastion/Bastion.js";
 import { EventContextGateway } from "../bastion/EventContextGateway.js";
+import { ModelMetadataGateway } from "../bastion/ModelMetadataGateway.js";
 import { buildProviders, ReverseProxy } from "../bastion/ReverseProxy.js";
 import { ChatCompactor } from "../chat/ChatCompactor.js";
 import { lintOrThrow } from "../config/ConfigLinter.js";
@@ -28,12 +29,14 @@ import {
     type LogSystemPromptMode,
 } from "../container-runner/AgentContainer.js";
 import { CronjobScheduler } from "../cron/CronjobScheduler.js";
+import { ModelMetadataRefresher } from "../cron/ModelMetadataRefresher.js";
 import { ScheduledHandlerScheduler } from "../cron/ScheduledHandlerScheduler.js";
 import { ScratchGc } from "../cron/ScratchGc.js";
 import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { McpGateway } from "../mcp/McpGateway.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
+import { ModelMetadataService } from "../models/ModelMetadataService.js";
 import { HostContextImpl } from "../plugins/HostContextImpl.js";
 import { PluginHost } from "../plugins/PluginHost.js";
 import { PluginToolsGateway } from "../plugins/ToolsGateway.js";
@@ -51,6 +54,9 @@ import { acquirePidFile, removePidFile } from "./pidfile.js";
  * `cli.sh stop`.
  */
 const DRAINING_DEADLINE_MS = 15_000;
+
+/** 24 hours in milliseconds — staleness window for the models.dev cache. */
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * `familiar start` — bring up the daemon: postgres, schema, agent container,
@@ -211,9 +217,24 @@ export const startCommand = defineCommand({
             ensureConnection: () => pluginHost.ensureConnection(),
             log: log.child({ component: "event-context-gateway" }),
         });
+        const modelMetadataService = new ModelMetadataService({
+            tmpDir: boot.tmpDir,
+            lookupPluginMeta: (provider, model) => pluginHost.lookupModelMetaData(provider, model),
+            log: log.child({ component: "model-metadata" }),
+        });
+        const modelMetadataGateway = new ModelMetadataGateway({
+            service: modelMetadataService,
+            log: log.child({ component: "model-metadata-gateway" }),
+        });
         const bastion = new Bastion({
             log: log.child({ component: "bastion" }),
-            modules: [reverseProxy, mcpGateway, pluginToolsGateway, eventContextGateway],
+            modules: [
+                reverseProxy,
+                mcpGateway,
+                pluginToolsGateway,
+                eventContextGateway,
+                modelMetadataGateway,
+            ],
         });
 
         await ensureNetwork(SHARED_NETWORK_NAME);
@@ -304,6 +325,7 @@ export const startCommand = defineCommand({
             config,
             log: log.child({ component: "cron-scheduler" }),
             dataDir: boot.dataDir,
+            tmpDir: boot.tmpDir,
             scratchDir: boot.scratchDir,
             pidFile: boot.pidFile,
             mcp: pluginHost.mcp,
@@ -359,6 +381,17 @@ export const startCommand = defineCommand({
         });
         scratchGc.start();
 
+        // Make sure the models.dev cache exists / is recent before the
+        // first agentrun looks a model up, then keep it fresh daily.
+        // `refreshIfStale` is a no-op (no network) when the file was
+        // refetched within the last 24 h, so restarts stay fast.
+        await modelMetadataService.refreshIfStale(ONE_DAY_MS);
+        const modelMetadataRefresher = new ModelMetadataRefresher({
+            service: modelMetadataService,
+            log: log.child({ component: "model-metadata-refresher" }),
+        });
+        modelMetadataRefresher.start();
+
         let shuttingDown = false;
         const shutdown = async (signal: string) => {
             if (shuttingDown) {
@@ -378,6 +411,7 @@ export const startCommand = defineCommand({
                 // postgres container disappears underneath it.
                 removePidFile(boot.pidFile);
                 scratchGc.stop();
+                modelMetadataRefresher.stop();
                 await safeStop(log, "scheduled-handler scheduler", () =>
                     scheduledHandlerScheduler.stop(),
                 );

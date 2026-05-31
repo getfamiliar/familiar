@@ -12,6 +12,7 @@ import type { ChatManager } from "../chat/ChatManager.js";
 import { optionalEnvBool, optionalEnvString, requireEnv } from "../env.js";
 import { HandlerFile } from "../HandlerFile.js";
 import { ModelFactory } from "../models/ModelFactory.js";
+import { fetchModelMetaData } from "../models/ModelMetadataClient.js";
 import {
     type BuiltSystemPrompt,
     buildPrompt,
@@ -70,20 +71,6 @@ const MAX_STEPS_PER_RUN = 15;
 
 /** Max chars of an upstream error body to persist on `inference_events.error_excerpt`. */
 const INFERENCE_ERROR_EXCERPT_CHARS = 200;
-
-/**
- * Split a `${provider}/${modelId}` label as produced by
- * {@link ModelFactory.build} back into its two parts. Provider tokens
- * never contain `/`; the remainder of the label is the model id and
- * may contain further slashes (e.g. `featherless/zai-org/GLM-5.1`).
- */
-function splitModelLabel(label: string): { provider: string; modelId: string } {
-    const slash = label.indexOf("/");
-    if (slash <= 0) {
-        return { provider: label, modelId: "" };
-    }
-    return { provider: label.slice(0, slash), modelId: label.slice(slash + 1) };
-}
 
 /** Truncate an error body for `inference_events.error_excerpt`. */
 function excerpt(text: string): string {
@@ -222,7 +209,12 @@ export class AgentRunner {
      */
     async run(ctx: AgentRunnerContext): Promise<string> {
         const handler = HandlerFile.load(ctx.row.topic, ctx.row.handler);
-        const { model, label: modelLabel } = ModelFactory.build(handler.header.model);
+        const {
+            model,
+            label: modelLabel,
+            provider,
+            modelId,
+        } = ModelFactory.build(handler.header.model);
 
         const tools = await ctx.buildTools(
             handler.header.tools,
@@ -262,6 +254,31 @@ export class AgentRunner {
         //                  run signal without the framing-file noise.
         const promptToLog = selectLoggedSystemPrompt(systemPrompt);
         await ctx.stampModel(modelLabel, promptToLog);
+
+        // Look the resolved model's capabilities up through the bastion
+        // as the run starts, so they're available for this run. Purely
+        // best-effort — a miss or fetch error resolves to `undefined`
+        // and never blocks the run. No consumer gates behavior on it
+        // yet; it's logged here and kept in scope for future use
+        // (output-limit clamping, tool-call gating, prompt shaping).
+        const modelMetaData = await fetchModelMetaData(
+            requireEnv("BASTION_URL"),
+            provider,
+            modelId,
+            ctx.log,
+        );
+        if (modelMetaData !== undefined) {
+            ctx.log.info(
+                {
+                    model: modelLabel,
+                    contextLimit: modelMetaData.contextLimit,
+                    outputLimit: modelMetaData.outputLimit,
+                    toolCall: modelMetaData.toolCall,
+                    reasoning: modelMetaData.reasoning,
+                },
+                `model metadata for ${modelLabel}: context=${modelMetaData.contextLimit ?? "?"} output=${modelMetaData.outputLimit ?? "?"} toolCall=${modelMetaData.toolCall ?? "?"} reasoning=${modelMetaData.reasoning ?? "?"}`,
+            );
+        }
 
         const agent = new ToolLoopAgent<never, ToolSet>({
             model,
@@ -369,7 +386,6 @@ export class AgentRunner {
             "agent starting",
         );
 
-        const { provider, modelId } = splitModelLabel(modelLabel);
         let result: Awaited<ReturnType<typeof agent.generate>>;
         try {
             result = await agent.generate({

@@ -19,6 +19,7 @@
   "license": "MIT",
   "dependencies": {
     "@getfamiliar/plugin-cli-chat": "*",
+    "@getfamiliar/plugin-featherless": "*",
     "@getfamiliar/plugin-memory": "*",
     "@getfamiliar/plugin-ms365": "*",
     "@getfamiliar/plugin-telegram": "*",
