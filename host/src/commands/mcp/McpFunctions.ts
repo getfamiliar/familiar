@@ -19,7 +19,7 @@ const DAEMON_BASTION_LOOPBACK_URL = "http://127.0.0.1:8788";
  * declared MCP, with an optional case-insensitive substring filter
  * on tool name or description. Output is markdown, rendered with
  * `marked-terminal` when stdout is a TTY (same pipeline as
- * `cli.sh report`).
+ * `cli.sh events report`).
  *
  * Uses the same {@link PluginMcpService} plugins use at runtime, so
  * the listing matches what handlers see. Requires the daemon to be

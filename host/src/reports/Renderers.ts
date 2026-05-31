@@ -1,8 +1,8 @@
 import type { AgentRunRow, EventRow, StepResultRow } from "@getfamiliar/shared";
 
 /**
- * Pure markdown renderers used by `report tail` (live streaming via
- * {@link ReportTerminalPrinter}) and `report event <id>` (one-shot
+ * Pure markdown renderers used by `events tail` (live streaming via
+ * {@link ReportTerminalPrinter}) and `events report <id>` (one-shot
  * render from the bus tables). No I/O, no logger, no DB lookups —
  * every piece of data the renderer needs comes via its arguments.
  * That makes the output deterministic and the renderers trivially

@@ -20,7 +20,7 @@ import type { ReportSink } from "./ReportPoller.js";
 
 /**
  * `ReportSink` that pretty-prints the same markdown sections to
- * stdout via `marked-terminal`. Used by `./cli.sh report tail` —
+ * stdout via `marked-terminal`. Used by `./cli.sh events tail` —
  * the operator runs it next to the daemon and watches sections
  * stream in as agentruns progress.
  *
@@ -29,10 +29,22 @@ import type { ReportSink } from "./ReportPoller.js";
  * (e.g. after a state-change tick). Token aggregation happens here
  * on demand at terminal-state transitions.
  */
+/**
+ * Hook pair fired around every `process.stdout.write` the printer performs.
+ * Used by `events tail` to stop/restart an `ora` spinner so its line stays
+ * pinned to the bottom and doesn't get interleaved with the rendered
+ * markdown sections.
+ */
+export interface WriteBoundary {
+    readonly before: () => void;
+    readonly after: () => void;
+}
+
 export class ReportTerminalPrinter implements ReportSink {
     private readonly agentruns: AgentRunBus;
     private readonly steps: StepResultBus;
     private readonly withDetails: boolean;
+    private readonly onWriteBoundary: WriteBoundary | undefined;
     private readonly written = new Map<string, Set<string>>();
 
     constructor(
@@ -44,14 +56,22 @@ export class ReportTerminalPrinter implements ReportSink {
              * prompt (when one was logged via
              * `core.logSystemPrompt`). Defaults to `false` so the
              * live tail stays concise; surfaced as `--details` on
-             * `report tail`.
+             * `events tail`.
              */
             withDetails?: boolean;
+            /**
+             * Optional pair of callbacks invoked immediately before
+             * and after each stdout write. `events tail` uses this
+             * to stop/restart an ora spinner around printer output.
+             * Defaults to no-ops so other consumers are unaffected.
+             */
+            onWriteBoundary?: WriteBoundary;
         } = {},
     ) {
         this.agentruns = new AgentRunBus(connection);
         this.steps = new StepResultBus(connection);
         this.withDetails = opts.withDetails ?? false;
+        this.onWriteBoundary = opts.onWriteBoundary;
     }
 
     async onEvent(row: EventRow, kind: "new" | "state-changed"): Promise<void> {
@@ -122,7 +142,9 @@ export class ReportTerminalPrinter implements ReportSink {
     }
 
     private write(markdown: string): void {
+        this.onWriteBoundary?.before();
         process.stdout.write(renderMarkdown(markdown));
+        this.onWriteBoundary?.after();
     }
 
     private trackerFor(eventId: string): Set<string> {

@@ -1,5 +1,6 @@
 import { AgentRunBus, EventBus, renderMarkdown, StepResultBus } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
+import ora from "ora";
 import { bootstrap } from "../Bootstrap.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
@@ -16,15 +17,82 @@ import { ReportPoller } from "../reports/ReportPoller.js";
 import { ReportTerminalPrinter } from "../reports/ReportTerminalPrinter.js";
 
 /**
- * `cli.sh report tail` — stays attached and prints rendered markdown for
- * every new or state-changed event / agentrun / step the daemon
- * produces from now onward. Backed by `ReportPoller`, which queries
- * the bus tables once a second; no NOTIFY subscription is required.
- *
- * Output is styled with `marked-terminal` so headings, tables, and
- * code blocks render with ANSI colour. Ctrl-C aborts cleanly.
+ * `cli.sh events emit <topic> [prompt] [--payload JSON] [--priority N]` —
+ * insert one event into the bus-state DB and print the persisted row as
+ * JSON. Replaces the old `event` top-level command; `prompt` is now the
+ * common positional and `payload` the rarely-needed flag.
  */
-const reportTailCommand = defineCommand({
+const eventsEmitCommand = defineCommand({
+    meta: {
+        name: "emit",
+        description: "Inject an event into the bus-state DB.",
+    },
+    args: {
+        topic: {
+            type: "positional",
+            required: true,
+            description: "Event topic (e.g. test.hello).",
+        },
+        prompt: {
+            type: "positional",
+            required: false,
+            description:
+                "Human-readable description of what happened; consumed as the agent's user message. Defaults to a generic line mentioning the topic.",
+        },
+        payload: {
+            type: "string",
+            description:
+                'Payload as JSON; if not parseable, wrapped as { "message": "<raw>" }. Defaults to an empty object.',
+        },
+        priority: {
+            type: "string",
+            description: "Priority (higher = processed first; default 50).",
+        },
+    },
+    async run({ args }) {
+        const boot = bootstrap();
+        const config = new HostConfigService(boot.configFile);
+        const password = config.getString("core.postgresPassword");
+
+        const priority = parsePriority(args.priority);
+        const payload = parsePayload(args.payload);
+        const prompt = args.prompt ?? `Manually injected event of topic \`${args.topic}\`.`;
+
+        const postgres = new PostgresContainer({
+            dataPath: boot.dataDir,
+            portFilePath: boot.postgresPortFile,
+            password,
+        });
+        const connection = postgres.getConnection();
+        const bus = new EventBus(connection);
+
+        try {
+            const row = await bus.add({
+                topic: args.topic,
+                payload,
+                priority,
+                prompt,
+            });
+            process.stdout.write(`${JSON.stringify(row, null, 2)}\n`);
+        } finally {
+            await connection.close();
+        }
+    },
+});
+
+/**
+ * `cli.sh events tail` — stays attached and prints rendered markdown for
+ * every new or state-changed event / agentrun / step the daemon produces
+ * from now onward. Backed by `ReportPoller`, which queries the bus tables
+ * once a second; no NOTIFY subscription is required.
+ *
+ * Output is styled with `marked-terminal` so headings, tables, and code
+ * blocks render with ANSI colour. A header line announces the start, and
+ * an `ora` spinner stays pinned to the bottom of the terminal between
+ * activity bursts so the operator can see the poller is alive. Ctrl-C
+ * aborts cleanly.
+ */
+const eventsTailCommand = defineCommand({
     meta: {
         name: "tail",
         description: "Follow the event bus and pretty-print new activity as it happens.",
@@ -55,8 +123,19 @@ const reportTailCommand = defineCommand({
         process.on("SIGINT", onSignal);
         process.on("SIGTERM", onSignal);
 
+        process.stdout.write("Starting to list event processing results...\n");
+
+        const spinner = ora({
+            text: "Waiting for something to happen...",
+            isEnabled: process.stdout.isTTY,
+        }).start();
+
         const printer = new ReportTerminalPrinter(connection, {
             withDetails: Boolean(args.details),
+            onWriteBoundary: {
+                before: () => spinner.stop(),
+                after: () => spinner.start(),
+            },
         });
         const poller = new ReportPoller({
             connection,
@@ -67,6 +146,7 @@ const reportTailCommand = defineCommand({
         try {
             await poller.start(controller.signal);
         } finally {
+            spinner.stop();
             process.off("SIGINT", onSignal);
             process.off("SIGTERM", onSignal);
             await connection.close();
@@ -75,20 +155,20 @@ const reportTailCommand = defineCommand({
 });
 
 /**
- * `cli.sh report event <id>` — render the full markdown report for one
+ * `cli.sh events report <id>` — render the full markdown report for one
  * event by reading the bus tables directly. Includes every section
- * `report tail` would have streamed (event created, every agentrun
+ * `events tail` would have streamed (event created, every agentrun
  * start + steps + result, final event summary) so an operator can
- * review a finished — or in-flight — event without scrolling
- * through `report tail`'s history.
+ * review a finished — or in-flight — event without scrolling through
+ * `events tail`'s history.
  *
  * `--raw` skips the `marked-terminal` styling and writes the
- * underlying markdown to stdout, useful for piping into a file or
- * a markdown viewer.
+ * underlying markdown to stdout, useful for piping into a file or a
+ * markdown viewer.
  */
-const reportEventCommand = defineCommand({
+const eventsReportCommand = defineCommand({
     meta: {
-        name: "event",
+        name: "report",
         description: "Render the full report for one event id (reads bus tables directly).",
     },
     args: {
@@ -202,17 +282,25 @@ function printTable(headers: readonly string[], rows: readonly (readonly string[
 }
 
 /**
- * `cli.sh report list [-n N]` — print a table of the last N events
+ * `cli.sh events list [search] [-n N]` — print a table of the last N events
  * (default 10), newest first. Columns: ID, TOPIC, HANDLER, STATE,
- * PROMPT (first 128 chars). Intended as the entry point to find an
- * event id to drill into with `report event <id>`.
+ * PROMPT (first ~100 chars). When `search` is given, only rows whose
+ * topic, start_handler, prompt, or payload case-insensitively contain
+ * the substring are listed. Intended as the entry point to find an
+ * event id to drill into with `events report <id>`.
  */
-const reportListCommand = defineCommand({
+const eventsListCommand = defineCommand({
     meta: {
         name: "list",
         description: "List the most recent N events (default 10) as a table.",
     },
     args: {
+        search: {
+            type: "positional",
+            required: false,
+            description:
+                "Optional case-insensitive substring matched against topic, handler, prompt, and payload.",
+        },
         n: {
             type: "string",
             alias: "n",
@@ -240,7 +328,10 @@ const reportListCommand = defineCommand({
 
         try {
             const events = new EventBus(connection);
-            const rows = await events.listLatest(limit);
+            const rows =
+                args.search !== undefined && args.search !== ""
+                    ? await events.searchLatest(limit, args.search)
+                    : await events.listLatest(limit);
 
             if (rows.length === 0) {
                 process.stdout.write("No events found.\n");
@@ -261,15 +352,48 @@ const reportListCommand = defineCommand({
     },
 });
 
-/** Parent command for the `report` subtree. */
-export const reportCommand = defineCommand({
+/** Parent command for the `events` subtree (emit, list, report, tail). */
+export const eventsCommand = defineCommand({
     meta: {
-        name: "report",
-        description: "Markdown reports for the event bus (tail, per-event view).",
+        name: "events",
+        description: "Inject and inspect events on the bus (emit, list, report, tail).",
     },
     subCommands: {
-        tail: reportTailCommand,
-        event: reportEventCommand,
-        list: reportListCommand,
+        emit: eventsEmitCommand,
+        list: eventsListCommand,
+        report: eventsReportCommand,
+        tail: eventsTailCommand,
     },
 });
+
+/**
+ * Parse the optional `--priority` arg. Returns undefined when absent.
+ *
+ * @throws If the value is not an integer.
+ */
+function parsePriority(raw: string | undefined): number | undefined {
+    if (raw === undefined) {
+        return undefined;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) {
+        throw new Error(`Invalid --priority: ${raw}`);
+    }
+    return parsed;
+}
+
+/**
+ * Parse the optional `--payload` arg. JSON if parseable, otherwise wrap the
+ * raw string as `{ message: <raw> }` so casual one-liners work. Returns an
+ * empty object when no payload was provided.
+ */
+function parsePayload(raw: string | undefined): unknown {
+    if (raw === undefined) {
+        return {};
+    }
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return { message: raw };
+    }
+}

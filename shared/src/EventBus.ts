@@ -213,8 +213,8 @@ export class EventBus {
 
     /**
      * Fetch the most recently created N event rows, newest first. Used by
-     * `./cli.sh report list` to surface recent bus activity for operators
-     * looking for an event id to inspect with `report event <id>`.
+     * `./cli.sh events list` to surface recent bus activity for operators
+     * looking for an event id to inspect with `events report <id>`.
      *
      * @param limit Maximum number of rows to return. Must be a positive integer.
      * @returns Up to `limit` event rows ordered by descending `(created_at, id)`.
@@ -225,6 +225,35 @@ export class EventBus {
                  ORDER BY created_at DESC, id DESC
                  LIMIT $1`,
             [limit],
+        );
+        return result.rows.map(mapRow);
+    }
+
+    /**
+     * Fetch the most recently created N event rows whose topic, start_handler,
+     * prompt, or payload (cast to text) case-insensitively contains `needle`.
+     * Used by `./cli.sh events list <search>` so the operator can grep the
+     * recent bus without piping through `grep`.
+     *
+     * Substring match via `ILIKE '%needle%'`; the needle is escaped for the
+     * SQL `LIKE` metacharacters `%`, `_`, and `\`. No index is added — at
+     * interactive scale a sequential scan is fine.
+     *
+     * @param limit Maximum number of rows to return. Must be a positive integer.
+     * @param needle Case-insensitive substring to search for.
+     * @returns Up to `limit` matching event rows ordered by descending `(created_at, id)`.
+     */
+    async searchLatest(limit: number, needle: string): Promise<EventRow[]> {
+        const pattern = `%${needle.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+        const result = await this.connection.getPool().query<RawEventRow>(
+            `SELECT * FROM events
+                 WHERE topic                          ILIKE $2
+                    OR coalesce(start_handler, '')    ILIKE $2
+                    OR coalesce(prompt, '')           ILIKE $2
+                    OR payload::text                  ILIKE $2
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT $1`,
+            [limit, pattern],
         );
         return result.rows.map(mapRow);
     }

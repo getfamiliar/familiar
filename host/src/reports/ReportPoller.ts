@@ -11,7 +11,7 @@ import {
 
 /**
  * Sink that the {@link ReportPoller} drives. Both the daemon-side
- * file writer and the live `report tail` printer implement this
+ * file writer and the live `events tail` printer implement this
  * interface; the poller is unaware of which is consuming it.
  *
  * `kind: "new"` fires the first time the poller observes a row.
