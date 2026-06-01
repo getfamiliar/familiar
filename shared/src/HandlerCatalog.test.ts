@@ -44,7 +44,6 @@ test("list emits handler paths grouped by topic", async () => {
 test("list skips workspace-root reserved files and the skills subtree", async () => {
     await touch("SOUL.md");
     await touch("CONTEXT.md");
-    await touch("ENVIRONMENT.md");
     await touch("stray.md");
     await touch("skills/jira/SKILL.md");
     await touch("skills/jira/example.md");

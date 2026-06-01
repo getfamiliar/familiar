@@ -47,15 +47,17 @@ export type AnyCommandDef = CommandDef<any>;
 /**
  * Async function a plugin registers via
  * `ctx.events.registerContextProvider(fn)` to contribute per-event
- * situational knowledge to the system prompt of the handler that is
- * about to run. Receives the agentrun about to execute and its parent
- * event; returns the markdown body to inject below the
- * `# Available tools` section. Returning `null`, `undefined`, or an
- * empty/whitespace string contributes nothing — useful for "only speak
- * up when relevant" providers.
+ * situational knowledge to the handler that is about to run. Receives
+ * the agentrun about to execute and its parent event; returns the
+ * markdown body injected into the current-run user message, right after
+ * the `# Runtime` block (see `buildRuntimeContextBlock`). The system
+ * prompt itself stays static so it remains a cacheable prefix.
+ * Returning `null`, `undefined`, or an empty/whitespace string
+ * contributes nothing — useful for "only speak up when relevant"
+ * providers.
  *
- * The function is called once per `buildSystemPrompt` (i.e. once per
- * agentrun start). It runs in the host process — providers may close
+ * The function is called once per `buildRuntimeContextBlock` (i.e. once
+ * per agentrun start). It runs in the host process — providers may close
  * over plugin-local services (DB handles, caches) without going through
  * the bastion. The PromptBuilder reaches the registry through the
  * bastion's `/event-context/` gateway, which fans out to every

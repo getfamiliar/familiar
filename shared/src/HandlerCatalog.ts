@@ -29,7 +29,7 @@ export interface HandlerPath {
  * documents read by `buildSystemPrompt` rather than executed as
  * handlers (see `CLAUDE.md` — markdown layers / global context).
  */
-const RESERVED_ROOT_FILES = new Set(["SOUL.md", "CONTEXT.md", "ENVIRONMENT.md"]);
+const RESERVED_ROOT_FILES = new Set(["SOUL.md", "CONTEXT.md"]);
 
 /**
  * Workspace subtrees that contain markdown but never handlers.
@@ -72,7 +72,7 @@ export class HandlerCatalog {
     /**
      * Walk `workspace/` and return one {@link HandlerPath} per
      * candidate handler file. Excludes the global-context files at
-     * the workspace root (`SOUL.md`, `CONTEXT.md`, `ENVIRONMENT.md`)
+     * the workspace root (`SOUL.md`, `CONTEXT.md`)
      * and the `skills/` subtree. Every other `.md` file under a topic
      * directory is included, even if it's a knowledge file (e.g.
      * `people/anna.md`) — `HandlerCatalog` does not police what is or

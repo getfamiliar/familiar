@@ -22,8 +22,8 @@ const MAX_FILE_CHARS = 8000;
 /**
  * Hard cap on the assembled system prompt. Functions as a safety net
  * after per-section truncation; if the assembled total still exceeds
- * this, the trailing portion is cut off. With four ~8000-char sections
- * the cap leaves headroom for section framing.
+ * this, the trailing portion is cut off. With several ~8000-char
+ * sections the cap leaves headroom for section framing.
  */
 const MAX_SYSTEM_CHARS = 32000;
 
@@ -66,55 +66,47 @@ const MAX_PAYLOAD_CHARS = 5000;
  * Compose the system prompt the {@link AgentRunner} hands to its
  * {@link import("ai").ToolLoopAgent}.
  *
- * SOUL.md, ENVIRONMENT.md, and CONTEXT.md are read from the workspace
- * root (using {@link HandlerFile.getWorkspaceRoot}); missing files are
- * skipped without erroring. Per-section truncation is enforced as
- * content is gathered; an overall cap is applied after assembly as a
- * safety net. Truncated values get a `…[truncated, original N chars]`
- * marker so the model knows the value is incomplete.
+ * SOUL.md and CONTEXT.md are read from the workspace root (using
+ * {@link HandlerFile.getWorkspaceRoot}); missing files are skipped
+ * without erroring. Per-section truncation is enforced as content is
+ * gathered; an overall cap is applied after assembly as a safety net.
+ * Truncated values get a `…[truncated, original N chars]` marker so the
+ * model knows the value is incomplete.
  *
- * The handler's `systemPrompt` frontmatter chooses which of those three
+ * The handler's `systemPrompt` frontmatter chooses which of those
  * framing files are included:
  *
- * - `full` (default) — SOUL + ENVIRONMENT + CONTEXT.
+ * - `full` (default) — SOUL + CONTEXT.
  * - `only-soul` — SOUL only.
  * - `none` — none of them.
  *
- * The handler body, the tool list, and the runtime section are always
- * included regardless of mode.
+ * The handler body and the tool list are always included regardless of
+ * mode.
+ *
+ * The prompt is intentionally **static per handler**: the per-run
+ * dynamic sections (`# Runtime`, plugin-contributed event context) live
+ * in the current-run user message instead — see
+ * {@link buildRuntimeContextBlock}. Keeping the system prompt stable is
+ * what makes it a cacheable prefix for providers like Anthropic.
  *
  * Returns both the verbatim prompt (`full`, what inference sees) and a
- * `redacted` variant where the three framing-file sections have their
- * file body swapped for a `<content of file …>` placeholder. The
+ * `redacted` variant where the framing-file sections have their file
+ * body swapped for a `<content of file …>` placeholder. The
  * caller chooses which one to persist onto `agentruns.system_prompt`
  * based on `core.logSystemPrompt`; the variant fed to the model is
  * always `full`. When the handler's mode excludes the framing files,
  * `full === redacted`.
  *
  * @param handler The resolved handler file. Body becomes the `# Handler`
- *   section; path / inheritance / `outputChat` feed the `# Runtime`
- *   section at the end. `header.systemPrompt` selects the framing mode.
+ *   section. `header.systemPrompt` selects the framing mode.
  * @param toolNames Ids of tools the agent is permitted to call for
  *   this run. Listed under "Available tools"; an empty array produces
  *   "(none)".
- * @param topic The event topic this agentrun is processing (e.g.
- *   `chat:telegram`). Surfaced in the `# Runtime` section so the agent
- *   can reason about which channel/source produced the event.
- * @param privileged Whether the agentrun descends from a trusted
- *   user-input source. Surfaced in the `# Runtime` section so the
- *   agent knows which trust-gated tools are available to it.
- * @param eventContext Identifiers needed to fetch plugin-contributed
- *   event-context sections from the bastion's `/event-context/`
- *   gateway. Pass `null` to skip the fetch entirely — used by tests
- *   and one-off harnesses that don't have a live bastion.
  */
-export async function buildSystemPrompt(
+export function buildSystemPrompt(
     handler: HandlerFile,
     toolNames: readonly string[],
-    topic: string,
-    privileged: boolean,
-    eventContext: EventContextFetchInput | null,
-): Promise<BuiltSystemPrompt> {
+): BuiltSystemPrompt {
     const sections: SystemPromptSection[] = [];
     const mode = handler.header.systemPrompt ?? "full";
 
@@ -126,11 +118,6 @@ export async function buildSystemPrompt(
     }
 
     if (mode === "full") {
-        const environment = readWorkspaceFile("ENVIRONMENT.md");
-        if (environment !== null) {
-            sections.push(framingFileSection("Environment", "ENVIRONMENT.md", environment));
-        }
-
         const context = readWorkspaceFile("CONTEXT.md");
         if (context !== null) {
             sections.push(framingFileSection("Context", "CONTEXT.md", context));
@@ -150,21 +137,56 @@ export async function buildSystemPrompt(
         toolNames.length > 0 ? toolNames.map((name) => `- ${name}`).join("\n") : "(none)";
     sections.push(verbatim(`# Available tools\n\n${toolList}`));
 
-    if (eventContext !== null) {
-        const eventContextSections = await fetchEventContextSections(eventContext);
-        for (const section of eventContextSections) {
-            sections.push(
-                verbatim(`${section.text.trim()}`),
-            );
-        }
-    }
-
-    sections.push(verbatim(`# Runtime\n\n${buildRuntimeSection(handler, topic, privileged)}`));
-
     return {
         full: truncate(sections.map((s) => s.full).join("\n\n"), MAX_SYSTEM_CHARS),
         redacted: truncate(sections.map((s) => s.redacted).join("\n\n"), MAX_SYSTEM_CHARS),
     };
+}
+
+/**
+ * Compose the per-run **dynamic** context block that prepends to the
+ * current-run user message: the `# Runtime` section followed by any
+ * plugin-contributed event-context sections (e.g. injected memories).
+ *
+ * This content used to live at the tail of the system prompt. It moved
+ * out so the system prompt can stay byte-stable per handler (a cacheable
+ * prefix); the dynamic, per-run bits ride in the user turn instead,
+ * where they don't invalidate the cached prefix. For a single-shot
+ * non-chat handler this block leads the first and only user message; in
+ * multi-turn chat it leads the trailing user turn, after the cacheable
+ * prior history.
+ *
+ * @param handler The resolved handler file; path / inheritance /
+ *   `outputChat` feed the `# Runtime` section.
+ * @param topic The event topic this agentrun is processing (e.g.
+ *   `chat:telegram`). Surfaced in `# Runtime` so the agent can reason
+ *   about which channel/source produced the event.
+ * @param privileged Whether the agentrun descends from a trusted
+ *   user-input source. Surfaced in `# Runtime` so the agent knows which
+ *   trust-gated tools are available to it.
+ * @param eventContext Identifiers needed to fetch plugin-contributed
+ *   event-context sections from the bastion's `/event-context/`
+ *   gateway. Pass `null` to skip the fetch entirely — used by tests and
+ *   one-off harnesses that don't have a live bastion.
+ * @returns The assembled dynamic block. Always contains at least the
+ *   `# Runtime` section, so it is never empty.
+ */
+export async function buildRuntimeContextBlock(
+    handler: HandlerFile,
+    topic: string,
+    privileged: boolean,
+    eventContext: EventContextFetchInput | null,
+): Promise<string> {
+    const sections: string[] = [`# Runtime\n\n${buildRuntimeSection(handler, topic, privileged)}`];
+
+    if (eventContext !== null) {
+        const eventContextSections = await fetchEventContextSections(eventContext);
+        for (const section of eventContextSections) {
+            sections.push(section.text.trim());
+        }
+    }
+
+    return sections.join("\n\n");
 }
 
 /**
@@ -175,10 +197,9 @@ export async function buildSystemPrompt(
  *   string that used to be the only output of {@link buildSystemPrompt}).
  * - `redacted` is what gets persisted onto `agentruns.system_prompt`
  *   when the operator has selected `core.logSystemPrompt: "non-static"`.
- *   For the three workspace-root framing files (SOUL.md / ENVIRONMENT.md
- *   / CONTEXT.md) the file body is replaced with a single-line
- *   `<content of file …>` placeholder; for every other section the two
- *   variants are identical.
+ *   For the workspace-root framing files (SOUL.md / CONTEXT.md) the file
+ *   body is replaced with a single-line `<content of file …>`
+ *   placeholder; for every other section the two variants are identical.
  */
 interface SystemPromptSection {
     readonly full: string;
@@ -190,10 +211,10 @@ export interface BuiltSystemPrompt {
     /** The verbatim prompt fed to inference. */
     readonly full: string;
     /**
-     * The prompt with the three workspace-root framing files replaced
-     * by `<content of file …>` placeholders. Equal to {@link full} when
-     * the handler's `systemPrompt` mode excludes those files (no
-     * placeholders to substitute).
+     * The prompt with the workspace-root framing files replaced by
+     * `<content of file …>` placeholders. Equal to {@link full} when the
+     * handler's `systemPrompt` mode excludes those files (no placeholders
+     * to substitute).
      */
     readonly redacted: string;
 }
@@ -204,7 +225,7 @@ function verbatim(text: string): SystemPromptSection {
 }
 
 /**
- * A framing-file section (`# Identity` / `# Environment` / `# Context`).
+ * A framing-file section (`# Identity` / `# Context`).
  * The full variant carries the file body verbatim; the redacted variant
  * replaces the body with a `<content of file …>` placeholder so the
  * audit log keeps per-run signal without the bulky framing-file noise.

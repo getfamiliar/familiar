@@ -95,14 +95,14 @@ export interface HandlerFileHeader {
      * Controls how much framing the system prompt carries beyond the
      * handler body itself.
      *
-     * - `full` (default) — include `SOUL.md`, `ENVIRONMENT.md`, and
-     *   `CONTEXT.md` ahead of the handler. Right default for handlers
-     *   that reason like an assistant across the user's world.
-     * - `only-soul` — include `SOUL.md` only. Drops the environment and
-     *   situational context layers for handlers that still want
-     *   identity grounding but no world framing.
-     * - `none` — drop `SOUL.md`, `ENVIRONMENT.md`, and `CONTEXT.md`
-     *   entirely. Use for very fixed tasks where the handler body
+     * - `full` (default) — include `SOUL.md` and `CONTEXT.md` ahead of
+     *   the handler. Right default for handlers that reason like an
+     *   assistant across the user's world.
+     * - `only-soul` — include `SOUL.md` only. Drops the situational
+     *   context layer for handlers that still want identity grounding
+     *   but no world framing.
+     * - `none` — drop `SOUL.md` and `CONTEXT.md` entirely. Use for very
+     *   fixed tasks where the handler body
      *   fully specifies the work and the "you are an agent" framing
      *   would only bias the model.
      *

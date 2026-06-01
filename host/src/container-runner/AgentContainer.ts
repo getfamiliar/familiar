@@ -15,9 +15,9 @@ const CONTAINER_NAME = "familiar-agent";
  *
  * - `"off"` — don't stamp `agentruns.system_prompt`.
  * - `"full"` — stamp the prompt verbatim.
- * - `"non-static"` — stamp the prompt with SOUL.md / ENVIRONMENT.md /
- *   CONTEXT.md replaced by `<content of file …>` placeholders so the
- *   audit log keeps per-run signal without the framing-file noise.
+ * - `"non-static"` — stamp the prompt with SOUL.md / CONTEXT.md
+ *   replaced by `<content of file …>` placeholders so the audit log
+ *   keeps per-run signal without the framing-file noise.
  *
  * Forwarded to the container as the string env var
  * `INFERENCE_LOG_SYSTEM_PROMPT_MODE`.

@@ -16,6 +16,7 @@ import { fetchModelMetaData } from "../models/ModelMetadataClient.js";
 import {
     type BuiltSystemPrompt,
     buildPrompt,
+    buildRuntimeContextBlock,
     buildScratchListing,
     buildSystemPrompt,
 } from "../PromptBuilder.js";
@@ -58,8 +59,8 @@ const OUTPUT_FALLBACK_FRACTION =
  *
  *   "off" / unset / unknown → `null` (no stamping).
  *   "full"                  → the verbatim prompt.
- *   "non-static"            → the variant with SOUL.md / ENVIRONMENT.md /
- *                             CONTEXT.md replaced by `<content of file …>`
+ *   "non-static"            → the variant with SOUL.md / CONTEXT.md
+ *                             replaced by `<content of file …>`
  *                             placeholders.
  *
  * Unknown values fall back to `null` (no stamping) rather than throwing
@@ -243,9 +244,15 @@ export class AgentRunner {
                 : `${toolNames.length} tools — ${toolNames.join(", ")}`;
         ctx.log.info(`agentrun toolset resolved: ${toolList}`);
 
-        const systemPrompt = await buildSystemPrompt(
+        const systemPrompt = buildSystemPrompt(handler, toolNames);
+
+        // The per-run dynamic context (`# Runtime` + plugin-contributed
+        // event context such as memories) no longer lives in the system
+        // prompt — keeping the system prompt byte-stable per handler is
+        // what makes it a cacheable prefix. This block instead leads the
+        // current-run user message (see message assembly below).
+        const dynamicContextBlock = await buildRuntimeContextBlock(
             handler,
-            toolNames,
             ctx.row.topic,
             ctx.row.privileged,
             {
@@ -264,11 +271,18 @@ export class AgentRunner {
         // Three log modes (forwarded as INFERENCE_LOG_SYSTEM_PROMPT_MODE):
         //   "off"        → don't stamp.
         //   "full"       → stamp the verbatim prompt.
-        //   "non-static" → stamp the variant with SOUL.md / ENVIRONMENT.md
-        //                  / CONTEXT.md replaced by `<content of file …>`
+        //   "non-static" → stamp the variant with SOUL.md / CONTEXT.md
+        //                  replaced by `<content of file …>`
         //                  placeholders so the audit log keeps the per-
         //                  run signal without the framing-file noise.
-        const promptToLog = selectLoggedSystemPrompt(systemPrompt);
+        //
+        // The `# Runtime` / event-context block now rides in the user
+        // message rather than the system prompt, so append it to the
+        // stamped value when stamping is on — the audit record then still
+        // reflects everything that was actually sent to the model.
+        const loggedSystemPrompt = selectLoggedSystemPrompt(systemPrompt);
+        const promptToLog =
+            loggedSystemPrompt === null ? null : `${loggedSystemPrompt}\n\n${dynamicContextBlock}`;
         await ctx.stampModel(modelLabel, promptToLog);
 
         // Look the resolved model's capabilities up through the bastion
@@ -385,7 +399,10 @@ export class AgentRunner {
             // that case; payload rendering still goes through either
             // way.
             const seedPrompt = history.length > 0 ? null : ctx.row.prompt;
-            prompt = buildPrompt(seedPrompt, ctx.row.payload, scratchListing);
+            const userBody = buildPrompt(seedPrompt, ctx.row.payload, scratchListing);
+            // The dynamic context block leads the trailing user turn, after
+            // the cacheable prior history.
+            prompt = [dynamicContextBlock, userBody].filter((s) => s.length > 0).join("\n\n");
             messages = [...history];
             if (prompt.length > 0) {
                 messages.push({ role: "user", content: prompt });
@@ -412,8 +429,9 @@ export class AgentRunner {
             // The current run's prompt stays `user`-roled even though
             // it too is host- or parent-assistant-generated: the
             // conversational protocol expects a user turn last to cue
-            // the model to respond.
-            prompt = buildPrompt(ctx.row.prompt, ctx.row.payload, scratchListing);
+            // the model to respond. The dynamic context block leads it.
+            const userBody = buildPrompt(ctx.row.prompt, ctx.row.payload, scratchListing);
+            prompt = [dynamicContextBlock, userBody].filter((s) => s.length > 0).join("\n\n");
             if (prompt.length > 0) {
                 messages.push({ role: "user", content: prompt });
             }

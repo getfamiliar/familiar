@@ -38,10 +38,9 @@ core:
   # debugging a handler, off again after. Accepted values:
   #   false        — don't stamp the prompt (default).
   #   true / "full" — stamp it verbatim.
-  #   "non-static" — stamp it with SOUL.md / ENVIRONMENT.md /
-  #                  CONTEXT.md replaced by `<content of file …>`
-  #                  placeholders, keeping the per-run signal
-  #                  (handler body, tool list, event-context blocks,
+  #   "non-static" — stamp it with SOUL.md / CONTEXT.md replaced by
+  #                  `<content of file …>` placeholders, keeping the 
+  #                  per-run signal (handler body, tool list, event-context blocks,
   #                  runtime block) without the framing-file bulk.
   # logSystemPrompt: false
 

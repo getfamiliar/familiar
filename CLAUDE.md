@@ -131,9 +131,8 @@ Mounted directory, the assistant's process handbook, memory and personality. Str
 
 ```
 workspace/
-  SOUL.md                   # the assistant's core identity and values, read by every handler
-  CONTEXT.md                # situational context — the job, relations, duties etc.
-  ENVIRONMENT.md            # description of the system environment for the agent's situational awareness
+  SOUL.md                   # the assistant's core identity and values, injected into every full-mode handler prompt
+  CONTEXT.md                # system-environment notes so the agent knows where and what it is
   <topic>/                  # one folder per top-level topic (e.g. mail/, chat/, calendar/) - the user can invent new ones as needed, some are shipped by plugins
     index.md                # default entry-point handler for events of this topic
     analyze.md              # additional handler, queued by name from another handler
@@ -276,11 +275,13 @@ When the user asks for it in the chat, the agent can edit the handler markdown f
 Handler behavior is shaped by markdown files in layers, each with distinct ownership and purpose:
 
 - **Code-level capability** — what plugins make possible (in TypeScript/MCPs)
-- **Global context** — `SOUL.md`, `ENVIRONMENT.md` and `CONTEXT.md`, written by the user to define the assistant's identity and situational context
+- **Global context** — `SOUL.md` and `CONTEXT.md`, written by the user to define the assistant's identity and situational context, injected by default into full-mode handler prompts
 - **Handler layer** — per-topic handler files (`<topic>/index.md`, `<topic>/analyze.md`, …) and sub-topic overrides (`<topic>/<subtopic>/…`). Plugin-shipped defaults, user-editable.
 - **Knowledge layer** — facts about people, projects, etc. (`people/`, plugin-specific), built up over time by handlers themselves, correctable by the user
 
 Handler prompts are kept short. They tell the agent how to find more context (e.g. "always read `people/<sender>.md` before drafting a reply"). The agent pulls additional files into context as needed. This avoids loading large amounts of context into every prompt and lets the assistant build its own knowledge structure over time, guided by user conventions.
+
+**System prompt vs. user message split.** The system prompt (SOUL → CONTEXT → handler body → skills → tools) is intentionally *static per handler* so it forms a cacheable prefix for providers like Anthropic. The per-run dynamic context — the `# Runtime` block (current time, topic, handler path, `privileged`, …) and any plugin-contributed event context such as injected memories — rides at the head of the current-run **user message** instead (`buildRuntimeContextBlock` in `container/src/PromptBuilder.ts`), not in the system prompt. In multi-turn chat this keeps the prior history a stable, cacheable prefix while the fresh runtime info attaches to the trailing turn.
 
 ## Lifecycle and operations
 
@@ -421,9 +422,9 @@ All TypeScript code is auto-formatted by [Biome](https://biomejs.dev/) on every 
 
 ### Markdown
 
-- Wrap prose at **100 characters**, matching the TypeScript line width in `biome.json`. Don't reflow at 70/80; the wider width matches modern editors.
-- Code fences and tables are exempt — leave them at their natural width.
-- Existing files predating this convention may have varying wrap widths; reflow opportunistically when editing nearby content, not as a separate cleanup pass.
+- Do **not** hard-wrap prose at a column limit. A paragraph (or any semantically continuous block) stays on a single line; the viewer/IDE soft-wraps for display. Line breaks in markdown are reserved for real structure — paragraph boundaries, list items, headings.
+- Code fences and tables keep their natural line structure.
+- Existing files predating this convention may still have mid-paragraph hard wraps; when editing nearby content, opportunistically join wrapped paragraphs into single lines rather than doing a separate cleanup pass.
 
 ### Formatting & Linting
 
