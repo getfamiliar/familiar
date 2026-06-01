@@ -36,6 +36,22 @@ export function optionalEnvInt(name: string): number | undefined {
 }
 
 /**
+ * Parse a finite floating-point env var (e.g. a fraction like `0.7`).
+ * Returns `undefined` for unset, blank, or non-finite values so the
+ * caller can chain to a downstream default with `??`. Unlike
+ * {@link optionalEnvInt} it does not require the value to be a
+ * non-negative integer.
+ */
+export function optionalEnvNumber(name: string): number | undefined {
+    const raw = process.env[name];
+    if (!raw || raw.trim().length === 0) {
+        return undefined;
+    }
+    const n = Number.parseFloat(raw);
+    return Number.isFinite(n) ? n : undefined;
+}
+
+/**
  * Read a boolean env var. `true` only when the value is exactly the
  * string `"true"`; everything else (unset, `"false"`, `"0"`,
  * garbage) reads as `false`. Matches the shape the host uses to

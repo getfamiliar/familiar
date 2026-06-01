@@ -30,11 +30,13 @@ import { RealClock } from "./testing/MockClock.js";
  * Process-wide handler-header defaults. A handler can override any of
  * these in its YAML frontmatter; values left undeclared fall through
  * to these defaults.
+ *
+ * `maxOutputTokens` is deliberately absent: when a handler declares no
+ * cap it is derived per-run from the resolved model's metadata in
+ * `AgentRunner` (see `deriveMaxOutputTokens`), so it must reach that
+ * code as `undefined` rather than a hard-coded number.
  */
-const HEADER_DEFAULTS = {
-    /** Bound the size of any single model step. See HandlerFileHeader. */
-    maxOutputTokens: 1000,
-};
+const HEADER_DEFAULTS = {};
 
 /**
  * Container entry point. Owns the postgres connection, builds the

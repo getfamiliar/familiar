@@ -1,4 +1,5 @@
 import {
+    CORE_PLUGIN_ID,
     type HostContext,
     IDENT_PATTERN,
     type Logger,
@@ -8,16 +9,6 @@ import {
     validateGroupName,
 } from "@getfamiliar/shared";
 import type { McpRegistry } from "../mcp/McpRegistry.js";
-
-/**
- * Reserved plugin id that opts a `register` call into the host's
- * bare-key path: tool keys land as `sanitizeToolKey(tool.name)`
- * (no plugin-id prefix), the way the agent expects to call
- * `cal_get_events` rather than `core_cal_get_events`. Plugins
- * cannot supply this id — it's the host's own registration handle
- * for tools that ship with the daemon.
- */
-const CORE_ID = "core";
 
 /**
  * One tool the registry has accepted from a plugin, ready for the
@@ -117,7 +108,7 @@ export class PluginToolsRegistry {
         if (tools.length === 0) {
             return;
         }
-        const isCore = pluginId === CORE_ID;
+        const isCore = pluginId === CORE_PLUGIN_ID;
         if (!isCore) {
             if (!IDENT_PATTERN.test(pluginId)) {
                 throw new Error(

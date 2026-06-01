@@ -154,7 +154,7 @@ export async function buildSystemPrompt(
         const eventContextSections = await fetchEventContextSections(eventContext);
         for (const section of eventContextSections) {
             sections.push(
-                verbatim(`# Event context (from ${section.pluginId})\n\n${section.text.trim()}`),
+                verbatim(`${section.text.trim()}`),
             );
         }
     }

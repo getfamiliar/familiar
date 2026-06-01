@@ -19,7 +19,10 @@ export interface MailStyleToolsDeps {
  * them via these tools.
  */
 export function buildMailStyleTools(deps: MailStyleToolsDeps): readonly PluginTool[] {
-    return [getTool(deps), listTool(deps), updateTool(deps)];
+    return [getTool(deps), listTool(deps), updateTool(deps)].map((t) => ({
+        ...t,
+        groups: [...(t.groups ?? []), "mailstyle"],
+    }));
 }
 
 interface GetArgs {

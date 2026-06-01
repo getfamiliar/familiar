@@ -118,6 +118,10 @@ export const startCommand = defineCommand({
         const defaultProvider = config.getString("inference.defaultProvider");
         const defaultModel = config.getString("inference.defaultModel");
         const inferenceMaxRetries = config.getNumber("inference.maxRetries", 3);
+        const inferenceOutputFallbackPercentage = config.getNumber(
+            "inference.outputFallbackPercentage",
+            0.7,
+        );
         const agentStepTimeoutSeconds = config.getNumber("core.agentStepTimeout", 150);
         const toolCallOffloadingLimit = config.getNumber(
             "core.toolCallOffloadingLimit",
@@ -290,6 +294,7 @@ export const startCommand = defineCommand({
             defaultProvider,
             defaultModel,
             inferenceMaxRetries,
+            inferenceOutputFallbackPercentage,
             toolCallOffloadingLimit,
             agentStepTimeoutSeconds,
             logSystemPromptMode,

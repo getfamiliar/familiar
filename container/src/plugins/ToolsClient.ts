@@ -1,4 +1,4 @@
-import { type Logger, ToolError } from "@getfamiliar/shared";
+import { CORE_PLUGIN_ID, type Logger, ToolError } from "@getfamiliar/shared";
 import { jsonSchema, type ToolSet, tool } from "ai";
 
 /**
@@ -27,11 +27,16 @@ export interface PluginToolsClientConfig {
 interface CatalogEntry {
     readonly key: string;
     /**
-     * Plugin id this tool belongs to, or the reserved string `"core"`
-     * for host-owned tools registered without a plugin-id prefix
-     * (e.g. the `cal_*` calendar tools). Used to bucket keys into the
-     * per-plugin auto-group so a handler's `tools: <pluginId>`
-     * resolves to every key the plugin contributes.
+     * Plugin id this tool belongs to, or the reserved sentinel
+     * {@link CORE_PLUGIN_ID} (`"core"`) for host-owned tools
+     * registered without a plugin-id prefix (e.g. the `cal_*`
+     * calendar tools). For a real plugin id this buckets the key into
+     * a per-plugin auto-group so a handler's `tools: <pluginId>`
+     * resolves to every key the plugin contributes. The `core`
+     * sentinel is **not** turned into an auto-group: it would collide
+     * with — and shadow — the curated `core` group. Host-owned tools
+     * reach addressable groups via their {@link groups} field
+     * (`["cal"]`, `["mail"]`, `["reflection"]`, …) instead.
      */
     readonly pluginId: string;
     readonly description: string;
@@ -107,12 +112,18 @@ export class PluginToolsClient {
                 execute: async (args: unknown) =>
                     this.invoke(entry.key, args, eventId, agentrunId, toolCallOffloadingLimit),
             });
-            let perPlugin = keysById.get(entry.pluginId);
-            if (perPlugin === undefined) {
-                perPlugin = new Set();
-                keysById.set(entry.pluginId, perPlugin);
+            // The `core` sentinel is a registration handle, not an
+            // addressable plugin id — skip its auto-group so it can't
+            // shadow the curated `core` group in the evaluator's
+            // `builtins`. Host-owned tools join groups via `groups`.
+            if (entry.pluginId !== CORE_PLUGIN_ID) {
+                let perPlugin = keysById.get(entry.pluginId);
+                if (perPlugin === undefined) {
+                    perPlugin = new Set();
+                    keysById.set(entry.pluginId, perPlugin);
+                }
+                perPlugin.add(entry.key);
             }
-            perPlugin.add(entry.key);
             for (const group of entry.groups) {
                 let perGroup = groupKeys.get(group);
                 if (perGroup === undefined) {

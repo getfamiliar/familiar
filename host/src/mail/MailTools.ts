@@ -58,7 +58,7 @@ export function buildMailTools(deps: MailToolsDeps): readonly PluginTool[] {
         sendForwardTool(deps),
         sendNewTool(deps),
         moveTool(deps),
-    ];
+    ].map((t) => ({ ...t, groups: [...(t.groups ?? []), "mail"] }));
 }
 
 export interface MailToolsDeps {

@@ -9,7 +9,7 @@ import type {
 } from "@getfamiliar/shared";
 import { type ModelMessage, stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
-import { optionalEnvBool, optionalEnvString, requireEnv } from "../env.js";
+import { optionalEnvBool, optionalEnvNumber, optionalEnvString, requireEnv } from "../env.js";
 import { HandlerFile } from "../HandlerFile.js";
 import { ModelFactory } from "../models/ModelFactory.js";
 import { fetchModelMetaData } from "../models/ModelMetadataClient.js";
@@ -22,6 +22,11 @@ import {
 import { fetchAncestorChain } from "./AgentRunLineage.js";
 import { AgentRunTimeoutError } from "./AgentRunTimeoutError.js";
 import { computeRetryDelay } from "./computeRetryDelay.js";
+import {
+    DEFAULT_OUTPUT_FALLBACK_FRACTION,
+    deriveMaxOutputTokens,
+    resolveModelCeiling,
+} from "./deriveMaxOutputTokens.js";
 import { formatInferenceError } from "./formatInferenceError.js";
 import { mergeToolErrorsIntoResults } from "./mergeToolErrorsIntoResults.js";
 import { RetryableModelException } from "./RetryableModelException.js";
@@ -34,6 +39,17 @@ import { synthesizeResultText } from "./synthesizeResultText.js";
  * so a daemon restart is required to flip it. Off by default.
  */
 const CAPTURE_RAW_STEP_RESULT = optionalEnvBool("INFERENCE_CAPTURE_RAW_STEP_RESULT");
+
+/**
+ * Fraction of a model's context window used as the per-step output
+ * ceiling when the model's metadata declares no explicit `outputLimit`.
+ * Read once at module load — the host forwards
+ * `inference.outputFallbackPercentage` as the
+ * `INFERENCE_OUTPUT_FALLBACK_PERCENTAGE` env var, so a daemon restart is
+ * required to change it. Defaults to {@link DEFAULT_OUTPUT_FALLBACK_FRACTION}.
+ */
+const OUTPUT_FALLBACK_FRACTION =
+    optionalEnvNumber("INFERENCE_OUTPUT_FALLBACK_PERCENTAGE") ?? DEFAULT_OUTPUT_FALLBACK_FRACTION;
 
 /**
  * Pick which variant of the just-built system prompt to persist onto
@@ -280,6 +296,30 @@ export class AgentRunner {
             );
         }
 
+        // Derive the per-step output cap. A handler that declares no
+        // `maxOutputTokens` inherits the model's true output ceiling
+        // (`outputLimit`, else a fraction of `contextLimit`); a declared
+        // value is kept but clamped down to that ceiling so a handler
+        // can never ask for more than the model / context allows.
+        const modelCeiling = resolveModelCeiling(modelMetaData, OUTPUT_FALLBACK_FRACTION);
+        const effectiveMaxOutputTokens = deriveMaxOutputTokens(
+            modelMetaData,
+            handler.header.maxOutputTokens,
+            OUTPUT_FALLBACK_FRACTION,
+        );
+        ctx.log.info(
+            {
+                model: modelLabel,
+                declared: handler.header.maxOutputTokens ?? null,
+                outputLimit: modelMetaData?.outputLimit ?? null,
+                contextLimit: modelMetaData?.contextLimit ?? null,
+                fallbackFraction: OUTPUT_FALLBACK_FRACTION,
+                modelCeiling,
+                effectiveMaxOutputTokens,
+            },
+            `output cap for ${modelLabel}: declared=${handler.header.maxOutputTokens ?? "?"} outputLimit=${modelMetaData?.outputLimit ?? "?"} contextLimit=${modelMetaData?.contextLimit ?? "?"} fraction=${OUTPUT_FALLBACK_FRACTION} ceiling=${modelCeiling} → effective=${effectiveMaxOutputTokens}`,
+        );
+
         // Tools only work if the model supports tool calls. Warn on every
         // run whose model isn't *confirmed* to support them — `false`
         // (known not to) and `undefined` (metadata missing or didn't say)
@@ -297,7 +337,7 @@ export class AgentRunner {
             tools,
             instructions: systemPrompt.full,
             temperature: handler.header.temperature,
-            maxOutputTokens: handler.header.maxOutputTokens,
+            maxOutputTokens: effectiveMaxOutputTokens,
             // The Scheduler owns retry policy via the RetryableModelException
             // throw + postpone/settle decision. Disable the SDK's own
             // retry loop so a 5-minute backoff doesn't park us.
@@ -385,7 +425,8 @@ export class AgentRunner {
             {
                 model: handler.header.model,
                 temperature: handler.header.temperature,
-                maxOutputTokens: handler.header.maxOutputTokens,
+                maxOutputTokens: effectiveMaxOutputTokens,
+                declaredMaxOutputTokens: handler.header.maxOutputTokens ?? null,
                 systemPrompt: systemPrompt.full,
                 prompt,
                 runPrompt: ctx.row.prompt,

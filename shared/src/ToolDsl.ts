@@ -25,6 +25,20 @@ export const MCP_GROUP_NAME = "mcp";
 export const NONE_GROUP_NAME = "none";
 
 /**
+ * Reserved plugin id for host-owned tools registered without a
+ * plugin-id prefix (the "bare-key" path — `cal_get_events` rather
+ * than `core_cal_get_events`). It is a **registration sentinel, not
+ * an addressable DSL group**: it deliberately collides in spelling
+ * with the curated `core` group, so it must never be turned into a
+ * plugin-id auto-group (doing so would shadow the curated `core`
+ * group — the union of container built-ins and tools declaring
+ * `groups: ["core"]` — with the full set of host-owned tools). Host
+ * built-in tools join curated groups through their own `groups`
+ * field (`["cal"]`, `["mail"]`, `["reflection"]`, …) instead.
+ */
+export const CORE_PLUGIN_ID = "core";
+
+/**
  * Names the evaluator handles before any user lookup and that
  * therefore cannot appear as a declarable group, an MCP id, or a
  * plugin id. Using one as an MCP id in `mcp.yml` is rejected by the

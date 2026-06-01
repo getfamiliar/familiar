@@ -90,6 +90,19 @@ inference:
   # without changing the global default).
   # maxRetries: 3
 
+  # Fraction (0–1) of a model's context window used as the per-step
+  # output-token ceiling, applied ONLY when the model's metadata
+  # declares no explicit output limit. A declared `outputLimit` always
+  # wins and is used verbatim. There is no token counter, so this is a
+  # coarse proxy for "context minus prompt" — the remainder is left as
+  # headroom for the prompt. No absolute backstop: a large-context
+  # model gets a correspondingly large budget. A handler can still cap
+  # itself below the derived ceiling via `maxOutputTokens` in its YAML
+  # frontmatter. Default 0.70 when omitted. Guarded: a value above 1
+  # (e.g. `70` instead of `0.70`) is clamped to 1, and a non-positive
+  # value falls back to 0.70.
+  # outputFallbackPercentage: 0.70
+
   # API keys, one entry per provider you want to use. The map KEY is
   # the provider key — it must match a provider id in the models.dev
   # catalogue (https://models.dev/api.json), e.g. openai, anthropic,
@@ -98,7 +111,7 @@ inference:
   # featherless plugin). The key is also the URL segment the bastion
   # mounts at /llm/<key>/ and the prefix handlers use on the `model`
   # field. Each provider's npm package + upstream endpoint come from
-  # model metadata; there is no separate customProviders block anymore.
+  # model metadata.
   # (Note: use `xai`, not `grok` — that's the models.dev provider id.)
   # `./cli.sh config lint` rejects keys that don't resolve to a known
   # provider.
@@ -110,7 +123,7 @@ inference:
     # groq: REPLACE_ME
     # deepseek: REPLACE_ME
     # mistral: REPLACE_ME
-    featherless: REPLACE_ME           # provider key supplied by the featherless plugin
+    # featherless: REPLACE_ME
 
   # When true, raw HTTP request/response bodies for every
   # `/llm/<provider>/*` call are written to `data/llm-debug/`

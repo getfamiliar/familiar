@@ -41,9 +41,9 @@ export interface CalendarToolsDeps {
 
 /**
  * Build the core `cal_*` agent tools — plugin-agnostic read/write
- * surface over the calendar cache. Registered host-side under the
- * `core` DSL group; `tools: core` in a handler's frontmatter pulls
- * them in.
+ * surface over the calendar cache. Every tool joins the `cal` DSL
+ * group, so a handler pulls the whole calendar family in with
+ * `tools: core + cal` (the glob `cal_*` still works too).
  *
  * Read tools (`cal_get_events`, `cal_get_event`) hit the cache
  * directly. Write tools (`cal_create_event`, `cal_attach_file`,
@@ -63,7 +63,7 @@ export function buildCalendarTools(
         updateEventTool(service, deps),
         deleteEventTool(service),
         attachFileTool(service, deps),
-    ];
+    ].map((t) => ({ ...t, groups: [...(t.groups ?? []), "cal"] }));
 }
 
 interface GetEventsArgs {

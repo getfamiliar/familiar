@@ -138,6 +138,7 @@ export {
 } from "./Timezone.js";
 export {
     ALL_GROUP_NAME,
+    CORE_PLUGIN_ID,
     IDENT_PATTERN,
     MCP_GROUP_NAME,
     NONE_GROUP_NAME,

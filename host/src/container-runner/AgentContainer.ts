@@ -105,6 +105,15 @@ export interface AgentContainerConfig {
      */
     readonly inferenceMaxRetries: number;
     /**
+     * Fraction (0–1) of a model's context window used as the per-step
+     * output ceiling when the model's metadata declares no explicit
+     * output limit. Reflected to the container as the
+     * `INFERENCE_OUTPUT_FALLBACK_PERCENTAGE` env var. Sourced from
+     * `inference.outputFallbackPercentage` in `config.yml`, defaulting
+     * to 0.7.
+     */
+    readonly inferenceOutputFallbackPercentage: number;
+    /**
      * Byte budget for inline tool-call results before the runner spills
      * the full response to a scratch file. Reflected to the container
      * as `TOOL_CALL_OFFLOADING_LIMIT`; sourced from
@@ -232,6 +241,8 @@ export class AgentContainer {
             `INFERENCE_PROVIDERS=${JSON.stringify(this.config.providerNpmPackages)}`,
             "-e",
             `INFERENCE_MAX_RETRIES=${this.config.inferenceMaxRetries}`,
+            "-e",
+            `INFERENCE_OUTPUT_FALLBACK_PERCENTAGE=${this.config.inferenceOutputFallbackPercentage}`,
             "-e",
             `TOOL_CALL_OFFLOADING_LIMIT=${this.config.toolCallOffloadingLimit}`,
             "-e",

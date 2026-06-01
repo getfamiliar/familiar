@@ -35,9 +35,14 @@ export interface HandlerFileHeader {
      * Maximum number of tokens the model is allowed to generate in any
      * single step of the tool-loop. Bounds worst-case latency and the
      * size of `result_text` rows when a model goes off the rails into
-     * a long monologue (e.g. simulating a transcript). Process-wide
-     * default is set by the container entrypoint and should be
-     * overridable per handler.
+     * a long monologue (e.g. simulating a transcript).
+     *
+     * When omitted, the cap is derived per-run from the resolved model's
+     * metadata: the model's `outputLimit`, else a configurable fraction
+     * (default 70%) of `contextLimit` (see `deriveMaxOutputTokens`). When
+     * declared, the value is kept but clamped down to that model ceiling,
+     * so a handler can never request more output than the model / context
+     * allows.
      */
     readonly maxOutputTokens?: number;
     /**
