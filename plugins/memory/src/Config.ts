@@ -37,21 +37,11 @@ export interface EmbeddingsConfig {
  */
 export interface MemoryConfig {
     /**
-     * Hits with hybrid score strictly greater than this get the full
-     * chunk injected into the system prompt by the contextProvider.
-     * Range 0–1.
-     */
-    readonly minScoreToEmbed: number;
-    /**
-     * Hits with score strictly greater than this (but ≤ `minScoreToEmbed`)
-     * get a path-only "see also" mention. Range 0–1.
+     * Score floor for the injected `# Memories` table: files whose best
+     * hit scores at or below this are dropped from the table, so only
+     * reasonably relevant files are listed. Range 0–1.
      */
     readonly minScoreToMention: number;
-    /**
-     * Hard cap on full-snippet chunks per file in the system-prompt
-     * injection. Extra chunks get summarized as "And N more…".
-     */
-    readonly maxChunksPerFile: number;
     /** How many hits the contextProvider asks the backend for. */
     readonly maxSystemPromptMemoryResults: number;
     /** Default `limit` for the `memory_search` tool when the agent omits it. */
@@ -64,19 +54,17 @@ export interface MemoryConfig {
      */
     readonly excludeGlobs: readonly string[];
     /**
-     * Paths whose hits are eligible for **full-snippet injection** into
-     * the system prompt. Hits scored above {@link minScoreToEmbed} but
-     * whose path doesn't match any of these patterns are demoted to the
-     * "See also" block (path-only, with score percentage), so
-     * authoritative-sounding handler files (`mail/index.md`,
-     * `chat/index.md`, …) can't be mistaken by the agent for
-     * instructions addressed at it.
+     * Paths that count as the assistant's own curated memory. In the
+     * injected `# Memories` table these select the **description
+     * source**: a writable-path file is described by its first
+     * paragraph (the memory convention), while any other file (e.g. a
+     * handler like `mail/index.md`) is described by its `description:`
+     * frontmatter — never its body, which is instruction prose that
+     * could pose as direction addressed at the agent.
      *
      * Sourced from the platform-level `core.writablePaths` (default
      * `["wiki/**"]`) — the same allowlist the container fs tools use to
-     * decide what a non-privileged run may write. The two views unify
-     * "the assistant's own curated memory": those paths are both
-     * writable by handlers and quoted in full here. Substring-with-`*`
+     * decide what a non-privileged run may write. Substring-with-`*`
      * grammar.
      */
     readonly writablePaths: readonly string[];
@@ -117,9 +105,7 @@ export interface MemoryConfig {
  * config should catch and log.
  */
 export function readMemoryConfig(config: ConfigService): MemoryConfig {
-    const minScoreToEmbed = config.getNumber("memory.minScoreToEmbed", 0.75);
     const minScoreToMention = config.getNumber("memory.minScoreToMention", 0.55);
-    const maxChunksPerFile = config.getNumber("memory.maxChunksPerFile", 3);
     const maxSystemPromptMemoryResults = config.getNumber("memory.maxSystemPromptMemoryResults", 8);
     const maxToolMemoryResults = config.getNumber("memory.maxToolMemoryResults", 5);
     const rawExcludes = config.getArray("memory.excludeGlobs", []);
@@ -142,9 +128,7 @@ export function readMemoryConfig(config: ConfigService): MemoryConfig {
     const minVectorSimilarity = config.getNumber("memory.minVectorSimilarity", 0.3);
     const persistToDiskDelay = config.getNumber("memory.persistToDiskDelay", 30);
     return {
-        minScoreToEmbed,
         minScoreToMention,
-        maxChunksPerFile,
         maxSystemPromptMemoryResults,
         maxToolMemoryResults,
         excludeGlobs,

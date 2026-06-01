@@ -39,6 +39,14 @@ export interface MemoryHit {
     /** Chunk body the embedding was computed from, ready to render verbatim. */
     readonly snippet: string;
     /**
+     * Document-wide framing paragraph — the first plain paragraph after
+     * the file's leading h1, copied verbatim onto every chunk of that
+     * file (see {@link MarkdownChunker}). Empty when the file has none.
+     * Used as the description for writable-path files in the injected
+     * `# Memories` table.
+     */
+    readonly context: string;
+    /**
      * Stable per-chunk content hash. Used by the context provider as
      * the suffix on the `<memory:HASH>...</memory:HASH>` open/close
      * tags so the agent can tell where each injected memory starts
@@ -307,9 +315,41 @@ export class MemoryStore {
                 headlines: doc.headlines,
                 score: normalizeScore(hit.score),
                 snippet: doc.content,
+                context: doc.context,
                 hash: doc.contentHash,
             };
         });
+    }
+
+    /**
+     * Read just the `description:` field from a workspace file's YAML
+     * frontmatter. Used by the injected `# Memories` table to describe
+     * non-writable (handler) files, whose first paragraph is unhelpful
+     * instruction prose. A focused single-field parse — no full YAML
+     * parser pulled in; handler `description` is a single-line scalar.
+     *
+     * @param relativePath - Workspace-relative path of the file.
+     * @returns The trimmed, unquoted description, or `undefined` when
+     *   the file is unreadable, has no frontmatter, or no `description:`
+     *   key.
+     */
+    async readFrontmatterDescription(relativePath: string): Promise<string | undefined> {
+        const absolute = path.join(this.opts.workspaceDir, relativePath);
+        let source: string;
+        try {
+            source = await fs.readFile(absolute, "utf8");
+        } catch {
+            return undefined;
+        }
+        const block = source.trimStart().match(/^---\r?\n([\s\S]*?)\r?\n?---\r?\n?/);
+        if (!block) {
+            return undefined;
+        }
+        const desc = block[1].match(/^description\s*:\s*(.+?)\s*$/m);
+        if (!desc) {
+            return undefined;
+        }
+        return stripQuotes(desc[1].trim());
     }
 
     /**
@@ -758,6 +798,18 @@ function chunkHash(chunk: Chunk): string {
         .update(`${chunk.headlines}\n\n${chunk.context}\n\n${chunk.content}`)
         .digest("hex")
         .slice(0, SHA_LEN);
+}
+
+/** Strip a single pair of matching surrounding quotes, if present. */
+function stripQuotes(value: string): string {
+    if (value.length >= 2) {
+        const first = value[0];
+        const last = value[value.length - 1];
+        if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+            return value.slice(1, -1);
+        }
+    }
+    return value;
 }
 
 /** Normalise a (possibly >1) hybrid score to [0,1] for the threshold gates. */

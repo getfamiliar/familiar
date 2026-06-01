@@ -166,16 +166,14 @@ inference:
 #   embeddings:
 #     provider: openai                  # must match an enabled inference provider
 #     model: text-embedding-3-small     # embedding model id under the provider
-#   minScoreToEmbed: 0.75               # hits above this get a full snippet injected into the system prompt
-#   minScoreToMention: 0.55             # hits between minScoreToMention..minScoreToEmbed get a path-only mention
+#   minScoreToMention: 0.55             # score floor for the injected `# Memories` table; files at/below are dropped
 #   minVectorSimilarity: 0.3            # cosine-similarity floor for vector hits
-#   maxChunksPerFile: 3                 # cap on full snippets per file in the prompt; surplus collapses to "And N more..."
-#   maxSystemPromptMemoryResults: 8     # max hits the contextProvider asks Orama for per agentrun
+#   maxSystemPromptMemoryResults: 8     # max files listed in the injected `# Memories` table per agentrun
 #   maxToolMemoryResults: 5             # default `limit` for the memory_search tool when the agent omits it
 #   excludeGlobs: []                    # carve-outs from indexing (`*`-glob, rooted at workspace root)
-#   # Which hits get full-snippet injection (vs. a path-only "See also"
-#   # mention) is driven by core.writablePaths above — the same paths
-#   # non-privileged runs may write. There is no separate memory key.
+#   # In the injected `# Memories` table, core.writablePaths above selects each
+#   # file's description source: writable-path files are described by their first
+#   # paragraph, other files by their `description:` frontmatter. No separate key.
 #   language: english                   # stemmer + stopwords language; unknown values fall back to english
 #   hybridWeights:
 #     vector: 0.5                       # weight of vector similarity in the hybrid score
