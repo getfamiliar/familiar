@@ -25,6 +25,7 @@ import { HostConfigService } from "../config/ConfigService.js";
 import {
     AGENT_IMAGE_TAG,
     AgentContainer,
+    DEFAULT_PYTHON_PACKAGES,
     ensureAgentImage,
     type LogSystemPromptMode,
 } from "../container-runner/AgentContainer.js";
@@ -317,7 +318,10 @@ export const startCommand = defineCommand({
         const agentBastionUrl = `http://${BASTION_BRIDGE_HOST}:${bastion.listenPort}`;
         log.info(`bastion bridge started; agent will dial ${agentBastionUrl}`);
 
-        await ensureAgentImage(log);
+        // Python packages baked into the agent image's venv for the bash
+        // tool (the container is offline; nothing can be added at runtime).
+        const pythonPackages = config.getStringList("python.packages", DEFAULT_PYTHON_PACKAGES);
+        await ensureAgentImage(log, pythonPackages);
 
         const container = new AgentContainer({
             imageName: AGENT_IMAGE_TAG,

@@ -16,18 +16,33 @@ if [ "${UNPRIV_UID}" = "${HOST_UID}" ]; then
     UNPRIV_UID=1002
 fi
 
+# node:slim ships a uid/gid-1000 `node` user. Remove it and anything else
+# occupying our target ids/gid so getpwuid(HOST_UID)/getgrgid(HOST_GID) resolve
+# unambiguously to priv/familiar. This matters for sudo: it identifies the
+# invoking user by uid → name, so a stale uid-1000 `node` entry would shadow
+# `priv` (the common case where the operator is uid 1000) and silently break
+# the NOPASSWD rule, forcing a password the agent can't supply.
+userdel -f node 2>/dev/null || true
+for uid in "${HOST_UID}" "${UNPRIV_UID}"; do
+    name="$(getent passwd "${uid}" | cut -d: -f1 || true)"
+    if [ -n "${name}" ]; then
+        userdel -f "${name}" 2>/dev/null || true
+    fi
+done
+gname="$(getent group "${HOST_GID}" | cut -d: -f1 || true)"
+if [ -n "${gname}" ] && [ "${gname}" != "familiar" ]; then
+    groupdel "${gname}" 2>/dev/null || true
+fi
+
 # Shared group both users belong to. Group membership + the group-write bit is
 # what lets `unpriv` write group-writable (writablePaths/scratch) paths while
-# being denied protected ones. `-o` allows reusing a gid the image already has.
-groupadd -o -g "${HOST_GID}" familiar 2>/dev/null || true
+# being denied protected ones.
+groupadd -g "${HOST_GID}" familiar
 # Privileged user: uid = host operator, primary group familiar. Main process
 # runs as this; everything it writes is host-owned.
-useradd -o -u "${HOST_UID}" -g familiar -m -d /home/priv -s /bin/bash priv 2>/dev/null || true
-# Pin the pre-created unpriv user onto the runtime gid/uid (image built it with
-# a placeholder; align it with the familiar group and chosen uid here), then
-# re-own its home so the re-IDed user can still write its HOME (npm/git caches).
-usermod -o -u "${UNPRIV_UID}" -g familiar unpriv
-chown -R "${UNPRIV_UID}:${HOST_GID}" /home/unpriv
+useradd -u "${HOST_UID}" -g familiar -m -d /home/priv -s /bin/bash priv
+# Least-privilege user the bash tool drops to; same group, different uid.
+useradd -u "${UNPRIV_UID}" -g familiar -m -d /home/unpriv -s /bin/bash unpriv
 
 # Two narrow rules: priv may drop to unpriv (run bash unprivileged), and priv
 # may run the fixed normalizer as root (post-bash ownership/mode reconcile).

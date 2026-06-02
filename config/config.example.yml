@@ -166,6 +166,30 @@ inference:
   #   # Clamped to (0.3, 1.0); out-of-range warns and falls back to 0.70.
   #   slidingWindowPercentage: 0.70
 
+# Python environment for the agent's `bash` tool. These packages are pip-installed
+# into a venv at AGENT IMAGE BUILD TIME (the container is offline — nothing can be
+# added at runtime; editing this list takes effect on the next `./cli.sh start`,
+# which rebuilds the image). Each entry is a plain pip requirement (name, optional
+# [extras], optional version specifier, e.g. `pandas>=2,<3`); shell metacharacters
+# are rejected. Falls back to the list below when unset.
+# python:
+#   packages:
+#     - numpy
+#     - pandas
+#     - scipy
+#     - sympy
+#     - pillow
+#     - matplotlib
+#     - openpyxl
+#     - python-docx
+#     - pypdf
+#     - python-pptx
+#     - lxml
+#     - beautifulsoup4
+#     - markdown
+#     - pyyaml
+#     - ics
+
 # Chat history compaction. The ChatCompactor watches the chatmessages
 # table; once its total size crosses `thresholdBytes`, it composes a
 # transcript of the oldest messages (everything beyond the most-recent

@@ -4,13 +4,16 @@ FROM node:24-slim
 
 # Install system dependencies. gosu drops root → priv at boot; sudo lets the
 # non-root agent re-enter root for the fixed normalizer and drop to unpriv for
-# the bash tool; acl provides setfacl for default ACLs on writable dirs.
+# the bash tool; acl provides setfacl for default ACLs on writable dirs;
+# python3 + python3-pip back the agent's bash tool (packages added below).
 RUN apt-get update && apt-get install -y \
     curl \
     git \
     gosu \
     sudo \
     acl \
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy shared types package and build it
@@ -41,14 +44,23 @@ COPY container/src/ ./src
 # Create workspace directory
 RUN mkdir -p /workspace
 
-# Pre-create the least-privilege bash user. The privileged user `priv` and
-# the `familiar` group are (re)created at runtime by the entrypoint, since
-# their uid/gid track the host operator and are only known then.
-RUN useradd -m -d /home/unpriv -s /bin/bash unpriv
+# The `priv`/`unpriv` users and the `familiar` group are provisioned at runtime
+# by the entrypoint, since their uid/gid track the host operator and are only
+# known then. The container starts as root and drops to `priv` via gosu (no
+# `USER` directive, no static chown — both are runtime concerns now).
 
-# The container starts as root: the entrypoint provisions the two users from
-# HOST_UID/HOST_GID, pins workspace permissions, then drops to `priv` via gosu.
-# (No `USER` directive and no static chown — both are runtime concerns now.)
+# Python packages for the bash tool. The list comes from config.python.packages,
+# forwarded as the PYTHON_PACKAGES build-arg by ensureAgentImage. Installed into
+# the system interpreter with --break-system-packages (this is a single-purpose
+# container, so there's no system Python to protect, and it avoids venv symlink /
+# PATH / sudo-secure_path pitfalls — `python3` resolves the packages no matter how
+# it's invoked, including via `sudo -u unpriv`). `python` is aliased to `python3`.
+# Declared and run last so changing the list only rebuilds this layer.
+ARG PYTHON_PACKAGES=""
+RUN if [ -n "${PYTHON_PACKAGES}" ]; then \
+        pip3 install --no-cache-dir --break-system-packages ${PYTHON_PACKAGES}; \
+    fi \
+    && ln -sf /usr/bin/python3 /usr/local/bin/python
 
 # Set working directory to workspace
 WORKDIR /workspace/

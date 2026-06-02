@@ -7,6 +7,7 @@ import type {
 } from "@getfamiliar/shared";
 import type { ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
+import { buildBashTool } from "./bash.js";
 import { buildCallHandlerTool, type WaitForSubagent } from "./callHandler.js";
 import { buildFsTools } from "./fs.js";
 import { buildGetScheduledHandlersTool } from "./getScheduledHandlers.js";
@@ -43,6 +44,7 @@ const CONTAINER_TOOL_GROUPS: Readonly<Record<string, readonly string[]>> = {
     fs_glob: ["fs"],
     fs_grep: ["fs"],
     fs_remove: ["fs"],
+    bash: ["bash"],
 };
 
 /** Inputs the {@link AgentRunner} threads into the factory per agentrun. */
@@ -225,10 +227,14 @@ export class ToolsFactory {
         if (context.parent) {
             // Filesystem tools are always available; the writing tools
             // (fs_write / fs_str_replace / fs_append) consult
-            // `parent.privileged` internally to gate `.md` paths and
-            // anything under `workspace/toolgroups/`, so every agentrun
-            // can read but only privileged runs can modify those.
+            // `parent.privileged` internally to gate everything outside
+            // core.writablePaths / scratch, so every agentrun can read but
+            // only privileged runs modify protected paths.
             Object.assign(systemTools, buildFsTools(context.parent, toolRunContext));
+            // The bash tool lives in its own opt-in `bash` group (handlers
+            // request it via `tools: bash`). Privileged runs run as `priv`,
+            // non-privileged drop to `unpriv`; the OS enforces the boundary.
+            systemTools.bash = buildBashTool(context.parent, toolRunContext, context.log);
         }
 
         const mcpTools = context.mcpTools ?? {};

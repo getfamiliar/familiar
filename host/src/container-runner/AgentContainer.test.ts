@@ -1,7 +1,12 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import { ISOLATED_NETWORK_NAME, SHARED_NETWORK_NAME } from "../DockerTools.js";
-import { type AgentContainerConfig, buildAgentRunArgs } from "./AgentContainer.js";
+import {
+    type AgentContainerConfig,
+    buildAgentImageArgs,
+    buildAgentRunArgs,
+    buildPythonPackagesArg,
+} from "./AgentContainer.js";
 
 /**
  * Minimal {@link AgentContainerConfig} fixture. Callers override only
@@ -78,5 +83,35 @@ describe("buildAgentRunArgs — egress lockdown invariant", () => {
         assert.ok(argv.includes("HOST_UID=1007"), "HOST_UID env expected");
         assert.ok(argv.includes("HOST_GID=1009"), "HOST_GID env expected");
         assert.ok(!argv.includes("--user"), "agent container must not pin --user");
+    });
+});
+
+describe("buildPythonPackagesArg", () => {
+    it("joins valid pip requirements (name, extras, version specifiers) with spaces", () => {
+        assert.equal(
+            buildPythonPackagesArg(["numpy", "pandas>=2,<3", "uvicorn[standard]"]),
+            "numpy pandas>=2,<3 uvicorn[standard]",
+        );
+    });
+
+    it("returns an empty string for an empty list", () => {
+        assert.equal(buildPythonPackagesArg([]), "");
+    });
+
+    it("rejects entries with shell metacharacters or whitespace", () => {
+        for (const bad of ["numpy; rm -rf /", "$(touch x)", "a b", "pkg`id`", "&&evil"]) {
+            assert.throws(() => buildPythonPackagesArg([bad]), /Invalid python\.packages entry/);
+        }
+    });
+});
+
+describe("buildAgentImageArgs", () => {
+    it("passes the python packages as a single PYTHON_PACKAGES build-arg", () => {
+        const argv = buildAgentImageArgs("/p/container/Dockerfile", "/p", ["numpy", "ics"]);
+        const i = argv.indexOf("--build-arg");
+        assert.notEqual(i, -1, "expected a --build-arg");
+        assert.equal(argv[i + 1], "PYTHON_PACKAGES=numpy ics");
+        assert.equal(argv[0], "build");
+        assert.equal(argv[argv.length - 1], "/p", "build context is the last arg");
     });
 });
