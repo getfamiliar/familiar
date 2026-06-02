@@ -195,12 +195,22 @@ export interface AgentContainerConfig {
     /**
      * Workspace-relative globs from `core.writablePaths` (normalized to
      * a string list). Forwarded as `CORE_WRITABLE_PATHS` (JSON array)
-     * and consumed by the container's fs tools: a non-privileged run
-     * may write paths matching any of these, bypassing the `.md` /
-     * `toolgroups/` privilege gate. Empty list → strict gate (only
-     * privileged runs write `.md`).
+     * and consumed by the container's fs tools and OS-permission
+     * normalizer: a non-privileged run (and the bash tool's unprivileged
+     * user) may write only paths matching any of these (plus `/scratch`).
+     * Empty list → only privileged runs may write anywhere.
      */
     readonly writablePaths: readonly string[];
+    /**
+     * Host operator's uid/gid. Forwarded as `HOST_UID` / `HOST_GID`; the
+     * entrypoint provisions the privileged `priv` user with this uid and
+     * drops to it via gosu, so files the agent writes are host-owned (the
+     * same uid:gid synchronization postgres and the MCP runtimes do via
+     * docker `--user`). Read once at daemon boot from `process.getuid()` /
+     * `process.getgid()` (see `Bootstrap.hostUid`).
+     */
+    readonly hostUid: number;
+    readonly hostGid: number;
 }
 
 /**
@@ -315,6 +325,10 @@ export function buildAgentRunArgs(config: AgentContainerConfig): string[] {
         `CORE_TIMEZONE=${config.coreTimezone}`,
         "-e",
         `CORE_WRITABLE_PATHS=${JSON.stringify(config.writablePaths)}`,
+        "-e",
+        `HOST_UID=${config.hostUid}`,
+        "-e",
+        `HOST_GID=${config.hostGid}`,
         "-e",
         `FAMILIAR_LOG_LEVEL=${config.verbose ? "debug" : "info"}`,
         "-v",

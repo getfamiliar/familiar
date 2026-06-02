@@ -1,0 +1,8 @@
+#!/bin/sh
+# Fixed-path, no-argument wrapper for the PermissionNormalizer. Installed at
+# /usr/local/bin/familiar-normalize and whitelisted in /etc/sudoers.d/familiar
+# so the non-root agent (priv) can run it as root after each bash command.
+# It takes no untrusted input: roots are hardcoded in the normalizer and the
+# runtime params come from /etc/familiar/normalize.json (written at boot).
+set -e
+exec /app/node_modules/.bin/tsx /app/src/PermissionNormalizer.ts

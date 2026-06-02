@@ -14,7 +14,7 @@ chat. Your job is to:
 
 ## Registering the group
 
-We keep a list of all registered groups in `chat/whatsapp/group/grouplist.jsonl`.
+We keep a list of all registered groups in `files/whatsapp-groups/grouplist.jsonl`.
 Read the `listfiles` skill to learn about the format if necessary. Each line in the
 file is a JSON object containing the keys "jid", "name" and "subscribed". **NEVER**
 let a list entry span more than one line, no linebreaks in the JSON objects!
@@ -34,7 +34,7 @@ phone.
 ## Adding the message to the digest file
 
 The digest file for each group is located at
-`chat/whatsapp/group/digests/<group-code>.jsonl`. Always use the "group_code" field
+`files/whatsapp-groups/digests/<group-code>.jsonl`. Always use the "group_code" field
 from the payload to name the digest files. Each line in the file is a JSON object.
 Again: NEVER let a list entry span more than one line, no linebreaks in the JSON
 objects! The JSON object of each message looks like that:

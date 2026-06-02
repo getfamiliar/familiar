@@ -153,9 +153,11 @@ export const startCommand = defineCommand({
         const coreTimezone = config.getString("core.timezone", "") ?? "";
         // Paths writable by non-privileged runs (and quoted in full by
         // the memory plugin). Accepts a bare string or a list; defaults
-        // to the curated wiki. Forwarded to the agent container's fs
-        // gate as CORE_WRITABLE_PATHS.
-        const writablePaths = config.getStringList("core.writablePaths", ["wiki/**"]);
+        // to the curated wiki plus the general-purpose files/ drop. These
+        // are the *only* paths a non-privileged run may write — forwarded
+        // to the agent container's fs gate and OS sandbox as
+        // CORE_WRITABLE_PATHS.
+        const writablePaths = config.getStringList("core.writablePaths", ["wiki/**", "files/**"]);
         // Touch the chat-channel default so a missing value fails the
         // daemon now rather than at first chat event.
         config.getString("core.defaultChatChannel");
@@ -339,6 +341,8 @@ export const startCommand = defineCommand({
             verbose: debugLogging,
             coreTimezone,
             writablePaths,
+            hostUid: boot.hostUid,
+            hostGid: boot.hostGid,
         });
 
         await container.start();

@@ -95,37 +95,36 @@ function resolveWorkspacePath(input: string): string {
     return resolved;
 }
 
-/** Workspace-relative directory whose contents are gated regardless of extension. */
-const TOOLGROUPS_DIR = "toolgroups";
-
 /**
  * Operator-configured allowlist of workspace-relative globs
- * (`core.writablePaths`, forwarded as `CORE_WRITABLE_PATHS`). A path
- * matching any of these is writable by non-privileged runs and is the
- * curated memory the memory plugin quotes in full — read once at module
- * load since the env is fixed for the container's lifetime.
+ * (`core.writablePaths`, forwarded as `CORE_WRITABLE_PATHS`). These — plus
+ * `/scratch` — are the *only* paths a non-privileged run may write; they
+ * are also the curated memory the memory plugin quotes in full. Read once
+ * at module load since the env is fixed for the container's lifetime.
  */
 const WRITABLE_PATH_GLOBS = getWritablePaths();
 
 /**
- * True when writing this absolute path requires a privileged
- * agentrun. Two cases:
+ * True when writing this absolute path requires a privileged agentrun.
  *
- * - `.md` anywhere in the workspace — handlers, SOUL.md, people notes, etc.
- * - Anything (any extension) under `workspace/toolgroups/` — those
- *   files declare which MCP tools handlers may use, so widening
- *   them is privilege escalation in spirit.
- *
- * Two carve-outs return `false` before either gate:
+ * The rule is a single test: **everything is privileged except**
  *
  * - Scratch paths (`/scratch/<event-id>/...`) — per-event ephemeral
- *   storage shared with MCPs, never a handler source, and the privilege
- *   gate would only get in the way of legitimate work (e.g. saving an
- *   intermediate `.md` artifact for a child agentrun to read).
+ *   storage shared with MCPs, never a handler source.
  * - Paths matching `core.writablePaths` ({@link WRITABLE_PATH_GLOBS}) —
  *   the operator's explicit allowlist of the assistant's own curated
- *   memory (default `wiki/**`), which non-privileged runs (e.g. a
- *   `memory_save` triggered by an inbound mail) must be able to write.
+ *   memory (default `wiki/**`, `files/**`), which non-privileged runs
+ *   (e.g. a `memory_save` triggered by an inbound mail) must be able to
+ *   write.
+ *
+ * This deliberately replaces the older per-extension scheme (`.md`
+ * anywhere / `toolgroups/` privileged, other files free): the same
+ * boundary is enforced at the OS layer by directory group-permissions
+ * for the `bash` tool, and OS perms are per-directory — so the rule has
+ * to be path-scoped, not extension-scoped, for the two enforcers to
+ * agree. Files under `core.writablePaths` are never loaded as handlers
+ * (see `HandlerFile`/`HandlerCatalog`), so a non-privileged `.md` write
+ * there cannot become executable handler logic.
  */
 function requiresPrivilegedWrite(absolute: string): boolean {
     if (absolute === SCRATCH_ROOT || absolute.startsWith(`${SCRATCH_ROOT}/`)) {
@@ -133,30 +132,68 @@ function requiresPrivilegedWrite(absolute: string): boolean {
     }
     const root = HandlerFile.getWorkspaceRoot();
     const rel = path.relative(root, absolute);
-    if (matchesAnyGlob(WRITABLE_PATH_GLOBS, rel)) {
-        return false;
-    }
-    if (absolute.toLowerCase().endsWith(".md")) {
-        return true;
-    }
-    if (rel === TOOLGROUPS_DIR || rel.startsWith(`${TOOLGROUPS_DIR}${path.sep}`)) {
-        return true;
-    }
-    return false;
+    return !matchesAnyGlob(WRITABLE_PATH_GLOBS, rel);
 }
 
 /** Standardised refusal text used by writing tools when the run is non-privileged. */
 const PRIVILEGE_REFUSAL_MESSAGE =
-    "Only privileged agentruns may write to .md files or anything under " +
-    "workspace/toolgroups/. This run is non-privileged. Those files " +
-    "(handlers, SOUL.md, people/*, toolgroup definitions) can only be " +
-    "modified by runs descending from trusted user input (cli-chat REPL " +
-    "or the operator on Telegram). Reads are still allowed. Paths matching " +
-    "core.writablePaths (the assistant's curated memory, e.g. wiki/**) are " +
-    "exempt and writable here.";
+    "This run is non-privileged: it may only write under core.writablePaths " +
+    "(the assistant's curated memory, e.g. wiki/** and files/**) and " +
+    "/scratch/<event-id>/. Everything else in the workspace — handlers, " +
+    "SOUL.md, people/*, toolgroup definitions, and any other file — is " +
+    "writable only by privileged runs (those descending from trusted user " +
+    "input, e.g. the cli-chat REPL or the operator on Telegram). Reads are " +
+    "still allowed everywhere.";
 
 function refusePrivilege(): never {
     throw new ToolError("PrivilegeDenied", PRIVILEGE_REFUSAL_MESSAGE);
+}
+
+/**
+ * Canonical Unix mode for a freshly written workspace file or created
+ * directory. Protected (privilege-required) paths get owner-only write
+ * (files `0o640`, dirs setgid `0o2750`); writable paths
+ * ({@link requiresPrivilegedWrite} → `false`) get group write (files
+ * `0o660`, dirs setgid `0o2770`). The setgid bit keeps the shared
+ * `familiar` group on anything created inside a directory, so the
+ * `unpriv` user the `bash` tool drops to (same group, different uid)
+ * can write group-writable paths but not protected ones.
+ *
+ * @param absolute Absolute path that was just written/created.
+ * @param isDir Whether the path is a directory.
+ * @returns The octal mode constant.
+ */
+function canonicalMode(absolute: string, isDir: boolean): number {
+    const isProtected = requiresPrivilegedWrite(absolute);
+    if (isDir) {
+        return isProtected ? 0o2750 : 0o2770;
+    }
+    return isProtected ? 0o640 : 0o660;
+}
+
+/**
+ * Apply {@link canonicalMode} to a path the agent just wrote. The agent
+ * process runs as the `priv` user whose primary group is `familiar`, so
+ * only the mode needs setting — never owner or group (setgid parents
+ * propagate the group). Best-effort by design: the target may already be
+ * owned by the `unpriv` bash user (only its owner or root can chmod it),
+ * in which case the boot / post-bash {@link PermissionNormalizer} (run as
+ * root) re-pins it. Only the expected ownership / missing-file errno
+ * values are tolerated; anything else is surfaced.
+ *
+ * @param absolute Absolute path that was just written/created.
+ * @param isDir Whether the path is a directory.
+ * @throws Re-throws any chmod error other than EPERM/EACCES/ENOENT.
+ */
+async function applyCanonicalMode(absolute: string, isDir: boolean): Promise<void> {
+    try {
+        await fs.chmod(absolute, canonicalMode(absolute, isDir));
+    } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "EPERM" && code !== "EACCES" && code !== "ENOENT") {
+            throw err;
+        }
+    }
 }
 
 interface FileReadInput {
@@ -315,14 +352,15 @@ interface FileWriteInput {
 
 /**
  * Build the `fs_write` tool. Overwrites the file at `path` with
- * `content`. Creates missing parent directories. Refuses `.md` writes
- * for non-privileged runs.
+ * `content`. Creates missing parent directories. Non-privileged runs may
+ * only write under `core.writablePaths` and `/scratch`.
  */
 function buildFsWriteTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FileWriteInput, object> {
     return tool<FileWriteInput, object>({
         description:
             "Write or overwrite a file with the given content. Creates missing " +
-            "parent directories. Markdown (.md) writes require a privileged run.",
+            "parent directories. Non-privileged runs may only write under " +
+            "core.writablePaths (e.g. wiki/**, files/**) and /scratch.",
         inputSchema: jsonSchema<FileWriteInput>({
             type: "object",
             additionalProperties: false,
@@ -346,6 +384,7 @@ function buildFsWriteTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FileWr
                 }
                 await fs.mkdir(path.dirname(absolute), { recursive: true });
                 await fs.writeFile(absolute, content, "utf8");
+                await applyCanonicalMode(absolute, false);
                 return { bytes: Buffer.byteLength(content, "utf8") };
             }, ctx),
     });
@@ -361,8 +400,8 @@ interface FileStrReplaceInput {
  * Build the `fs_str_replace` tool. Replaces exactly one occurrence
  * of `old_string` with `new_string`. Errors if `old_string` is not
  * found, or appears more than once (in which case the model is told
- * to add surrounding context to disambiguate). Refuses `.md` writes
- * for non-privileged runs.
+ * to add surrounding context to disambiguate). Non-privileged runs may
+ * only write under `core.writablePaths` and `/scratch`.
  */
 function buildFsStrReplaceTool(
     parent: AgentRunRow,
@@ -373,7 +412,8 @@ function buildFsStrReplaceTool(
             "Replace exactly one occurrence of `old_string` with `new_string` " +
             "in the file. Errors if `old_string` is missing or appears more " +
             "than once — in the multi-match case, add surrounding context to " +
-            "make the match unique. Markdown (.md) writes require a privileged run.",
+            "make the match unique. Non-privileged runs may only write under " +
+            "core.writablePaths (e.g. wiki/**, files/**) and /scratch.",
         inputSchema: jsonSchema<FileStrReplaceInput>({
             type: "object",
             additionalProperties: false,
@@ -430,6 +470,7 @@ function buildFsStrReplaceTool(
                 const updated =
                     content.slice(0, first) + new_string + content.slice(first + old_string.length);
                 await fs.writeFile(absolute, updated, "utf8");
+                await applyCanonicalMode(absolute, false);
                 return {};
             }, ctx),
     });
@@ -451,7 +492,7 @@ interface FileAppendInput {
  * avoids accidentally gluing two records onto the same line. Files
  * that already end with `\n` are left alone (no double newlines).
  *
- * Refuses `.md` and `toolgroups/*` writes for non-privileged runs.
+ * Non-privileged runs may only write under `core.writablePaths` and `/scratch`.
  */
 function buildFsAppendTool(
     parent: AgentRunRow,
@@ -463,7 +504,8 @@ function buildFsAppendTool(
             "missing parent directories) if it does not exist. If the existing " +
             "file is non-empty and doesn't already end with a newline, one is " +
             "inserted before your content — so each call adds a new line. " +
-            "Markdown (.md) appends require a privileged run.",
+            "Non-privileged runs may only write under core.writablePaths " +
+            "(e.g. wiki/**, files/**) and /scratch.",
         inputSchema: jsonSchema<FileAppendInput>({
             type: "object",
             additionalProperties: false,
@@ -492,6 +534,7 @@ function buildFsAppendTool(
                 const prefix = (await needsLeadingNewline(absolute)) ? "\n" : "";
                 const toWrite = prefix + content;
                 await fs.appendFile(absolute, toWrite, "utf8");
+                await applyCanonicalMode(absolute, false);
                 return { bytes: Buffer.byteLength(toWrite, "utf8") };
             }, ctx),
     });
@@ -864,9 +907,9 @@ function buildFsRemoveTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FsRem
             "a glob whose wildcards are confined to the basename (e.g. " +
             "`chat/digests/*.jsonl`). Directory segments must be literal; `**` " +
             "is rejected. Never deletes directories — a directory match is " +
-            "skipped (wildcard branch) or rejected (literal branch). Markdown " +
-            "(.md) deletions and anything under `workspace/toolgroups/` require " +
-            "a privileged run, same as `fs_write`. Scratch paths " +
+            "skipped (wildcard branch) or rejected (literal branch). Non-privileged " +
+            "runs may only delete under core.writablePaths (e.g. wiki/**, files/**) " +
+            "and /scratch, same as `fs_write`. Scratch paths " +
             "(`/scratch/<event-id>/...`) are accepted for per-event cleanup.",
         inputSchema: jsonSchema<FsRemoveInput>({
             type: "object",
@@ -958,8 +1001,9 @@ function buildFsRemoveTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FsRem
 /**
  * Bundle all filesystem-shaped tools for one agentrun. The writing
  * tools (`fs_write`, `fs_str_replace`, `fs_append`, `fs_remove`)
- * close over `parent.privileged` so the `.md` gate is decided once at
- * registration time and the model's tool calls can't bypass it.
+ * close over `parent.privileged` so the writablePaths privilege gate is
+ * decided once at registration time and the model's tool calls can't
+ * bypass it.
  */
 export function buildFsTools(parent: AgentRunRow, ctx: ToolRunContext): ToolSet {
     return {

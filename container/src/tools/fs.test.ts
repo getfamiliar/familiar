@@ -227,3 +227,56 @@ describe("fs_read — paginated text mode", () => {
         await assert.rejects(() => readFile(ctx, { path: "a-dir" }), /directory, not a file/i);
     });
 });
+
+/** Invoke fs_write with the given parent-row privilege. */
+async function callFsWrite(
+    ctx: ToolRunContext,
+    parent: AgentRunRow,
+    input: { path: string; content: string },
+): Promise<{ bytes: number }> {
+    const exec = buildFsTools(parent, ctx).fs_write?.execute;
+    if (!exec) {
+        throw new Error("fs_write tool not found");
+    }
+    // biome-ignore lint/suspicious/noExplicitAny: SDK options type isn't needed here.
+    return (await (exec as any)(input, {} as any)) as { bytes: number };
+}
+
+describe("fs_write — privilege gate (writablePaths + scratch only)", () => {
+    let workspaceDir: string;
+    const nonPrivileged = { id: "np", privileged: false } as unknown as AgentRunRow;
+    const privileged = { id: "p", privileged: true } as unknown as AgentRunRow;
+
+    before(() => {
+        // No CORE_WRITABLE_PATHS in the test env → empty allowlist, so every
+        // workspace path is protected. (Exercises the changed rule: a plain
+        // non-.md write is now privileged too.)
+        workspaceDir = mkdtempSync(path.join(tmpdir(), "familiar-fs-priv-"));
+        HandlerFile.setWorkspaceRoot(workspaceDir);
+    });
+
+    after(() => {
+        rmSync(workspaceDir, { recursive: true, force: true });
+    });
+
+    it("refuses ANY workspace write for a non-privileged run", async () => {
+        const ctx = buildTestCtx(10_000, { calls: [] });
+        // Both a plain data file and a markdown file are now off-limits.
+        await assert.rejects(
+            () => callFsWrite(ctx, nonPrivileged, { path: "data.json", content: "{}" }),
+            /non-privileged/i,
+        );
+        await assert.rejects(
+            () => callFsWrite(ctx, nonPrivileged, { path: "mail/x.md", content: "hi" }),
+            /non-privileged/i,
+        );
+    });
+
+    it("allows a privileged run and stamps the protected file mode (0o640)", async () => {
+        const ctx = buildTestCtx(10_000, { calls: [] });
+        const res = await callFsWrite(ctx, privileged, { path: "notes/handbook.md", content: "x" });
+        assert.equal(res.bytes, 1);
+        const mode = (await fs.stat(path.join(workspaceDir, "notes/handbook.md"))).mode & 0o777;
+        assert.equal(mode, 0o640, `expected protected mode 0o640, got 0o${mode.toString(8)}`);
+    });
+});

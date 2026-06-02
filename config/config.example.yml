@@ -67,13 +67,15 @@ core:
 
   # Workspace-relative paths the assistant treats as its own curated
   # memory. A glob string or a list of glob strings (`*`-glob grammar
-  # anchored at the workspace root, e.g. `wiki/**`). These paths are BOTH (a) writable by
-  # non-privileged agentruns — the normal `.md` / `toolgroups/` privilege
-  # gate is bypassed for them, so handlers like `memory_save` can write
-  # them regardless of trust level — AND (b) quoted in full by the memory
-  # plugin (matches outside the list demote to a "See also" mention).
-  # Falls back to ["wiki/**"] when unset.
-  # writablePaths: ["wiki/**"]
+  # anchored at the workspace root, e.g. `wiki/**`). These are the ONLY
+  # paths a non-privileged agentrun may write — everything else in the
+  # workspace (handlers, SOUL.md, people/*, toolgroup definitions, …) is
+  # writable only by privileged runs. They are ALSO quoted in full by the
+  # memory plugin (matches outside the list demote to a "See also"
+  # mention). Enforced both by the agent's fs tools and, for the bash
+  # tool, by container OS permissions. Falls back to ["wiki/**", "files/**"]
+  # when unset.
+  # writablePaths: ["wiki/**", "files/**"]
 
 inference:
   # Provider key used when a handler does not put a provider prefix on

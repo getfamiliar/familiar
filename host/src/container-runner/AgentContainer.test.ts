@@ -30,6 +30,8 @@ function configFixture(overrides: Partial<AgentContainerConfig> = {}): AgentCont
         verbose: false,
         coreTimezone: "Europe/Berlin",
         writablePaths: [],
+        hostUid: 1000,
+        hostGid: 1000,
         ...overrides,
     };
 }
@@ -65,5 +67,16 @@ describe("buildAgentRunArgs — egress lockdown invariant", () => {
             configFixture({ bastionUrl: "http://familiar-bastion-bridge:8788" }),
         );
         assert.ok(argv.includes("BASTION_URL=http://familiar-bastion-bridge:8788"));
+    });
+
+    it("forwards host uid/gid as env, not as a docker --user flag", () => {
+        // Ownership sync happens via the entrypoint provisioning `priv` at
+        // HOST_UID and gosu-dropping to it — NOT `--user`, which would make
+        // the whole container one user and block the in-container drop to the
+        // unprivileged bash user.
+        const argv = buildAgentRunArgs(configFixture({ hostUid: 1007, hostGid: 1009 }));
+        assert.ok(argv.includes("HOST_UID=1007"), "HOST_UID env expected");
+        assert.ok(argv.includes("HOST_GID=1009"), "HOST_GID env expected");
+        assert.ok(!argv.includes("--user"), "agent container must not pin --user");
     });
 });
