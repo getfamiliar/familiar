@@ -5,6 +5,7 @@ import {
     type CalendarProvider,
     type CalendarRow,
     type ConfigService,
+    DuplicateIdempotencyKeyError,
     EVENT_PRIORITY,
     type EventBus,
     type FindEventsQuery,
@@ -251,13 +252,26 @@ export class CalendarService implements CalendarApi {
             updatedAt: updatedAtIso,
         };
         const bus = await this.deps.events();
-        await bus.add({
-            topic,
-            prompt,
-            priority: EVENT_PRIORITY.ASYNC,
-            idempotencyKey,
-            payload,
-        });
+        try {
+            await bus.add({
+                topic,
+                prompt,
+                priority: EVENT_PRIORITY.ASYNC,
+                idempotencyKey,
+                payload,
+            });
+        } catch (err) {
+            if (err instanceof DuplicateIdempotencyKeyError) {
+                // Re-walks of an unchanged event reuse the stable
+                // new/delete key; the change was already emitted. No-op.
+                this.deps.log.debug(
+                    `calendar: event ${row.id} change already emitted ` +
+                        `(idempotency key "${idempotencyKey}"); skipping`,
+                );
+                return;
+            }
+            throw err;
+        }
     }
 }
 

@@ -8,7 +8,7 @@ import { dirname } from "node:path";
  * mixed id types across pages of a single delta walk, so a saved
  * cursor from a previous id-type configuration is unusable. On
  * version mismatch the store loads as empty and the next poll
- * restarts from "now" against the new id type.
+ * full-syncs the inbox against the new id type.
  *
  * Version history:
  *   1  — initial release (default Graph id type)
@@ -45,10 +45,13 @@ interface CursorFileShape {
  *
  * On a fresh entry (`get` returns `null`), the poll loop starts a new
  * delta walk against `/users/{mailbox}/mailFolders/inbox/messages/delta`
- * with no `$deltatoken` — Graph's documented "start from now" behavior.
- * Because of that, dropping a cursor is the safe answer to a 410 Gone
- * or any other delta-link rot: the next poll restarts from now and the
- * bus's idempotency-key dedup prevents duplicate events on re-walk.
+ * with no `$deltatoken`. Graph serves that as a *full initial sync of
+ * the inbox's current contents* — it is NOT "start from now"; every
+ * message currently in the inbox is re-listed. Because of that, dropping
+ * a cursor is the safe answer to a 410 Gone or any other delta-link rot:
+ * the next poll re-syncs the whole inbox and the bus's idempotency-key
+ * dedup (emitters catch `DuplicateIdempotencyKeyError`) makes the
+ * re-emit of already-seen messages a silent no-op.
  */
 export class DeltaCursorStore {
     private readonly filePath: string;
@@ -94,8 +97,8 @@ export class DeltaCursorStore {
      * Lookup the saved delta link for this `(upn, mailbox)` pair, or
      * `null` for a fresh mailbox. `null` tells the poll loop to start
      * a new delta walk via {@link GraphClient.listInboxDelta} with no
-     * cursor — Graph then begins at "now" and returns the new
-     * `@odata.deltaLink` in the final page of the walk.
+     * cursor — Graph then full-syncs the inbox's current contents and
+     * returns the new `@odata.deltaLink` in the final page of the walk.
      */
     get(upn: string, mailbox: string): string | null {
         return this.state[upn]?.[mailbox] ?? null;
@@ -115,7 +118,7 @@ export class DeltaCursorStore {
 
     /**
      * Drop the cursor for a mailbox (e.g. after a 410 Gone). The next
-     * `get` returns `null` and the poll loop restarts from now.
+     * `get` returns `null` and the poll loop re-syncs the full inbox.
      */
     async drop(upn: string, mailbox: string): Promise<void> {
         const forUpn = this.state[upn];

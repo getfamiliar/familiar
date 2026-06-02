@@ -1,5 +1,6 @@
 import path from "node:path";
 import {
+    DuplicateIdempotencyKeyError,
     type EmitHandle,
     EVENT_PRIORITY,
     type EventFile,
@@ -28,6 +29,8 @@ const MAX_PAGES_PER_POLL = 50;
 export interface MailPollerOptions {
     readonly ctx: HostContext;
     readonly log: (msg: string) => void;
+    /** Debug-level log sink for benign high-volume lines (tombstones, dedup skips). */
+    readonly logDebug: (msg: string) => void;
     readonly emit: (event: NewEvent) => Promise<EmitHandle>;
     /**
      * Pre-resolved mailbox map shared with `Ms365MailProvider` so the
@@ -89,9 +92,12 @@ export class MailPoller {
 
 /**
  * Walk one mailbox forward from its current delta cursor, emit one
- * event per message, and persist the new delta link. On a 410 Gone
- * the cursor is dropped and the next poll starts fresh from "now" —
- * the bus-level idempotency-key dedup keeps re-walks safe.
+ * event per message, and persist the new delta link. On a 410 Gone the
+ * cursor is dropped and the next poll re-walks from a no-token delta —
+ * which Graph serves as a *full sync of the inbox's current contents*,
+ * not "from now". Already-emitted messages therefore reappear; the
+ * per-message `DuplicateIdempotencyKeyError` catch below absorbs them
+ * so the walk still completes and the cursor advances.
  */
 async function pollMailbox(
     opts: MailPollerOptions,
@@ -112,7 +118,7 @@ async function pollMailbox(
             if (err instanceof GraphError && err.status === 410) {
                 opts.log(
                     `mailbox ${target.mailbox} via ${target.upn}: delta cursor expired (410); ` +
-                        `resetting and re-walking from now`,
+                        `resetting and re-walking the full inbox (already-seen mails are deduped)`,
                 );
                 await cursorStore.drop(target.upn, target.mailbox);
                 cursor = null;
@@ -125,11 +131,30 @@ async function pollMailbox(
             if (message["@removed"]) {
                 // Delta tombstone for a message that left the inbox between
                 // polls. No body/recipients to emit; just acknowledge and move on.
+                // Logged at debug: benign and high-volume during a full sync.
                 const reason = message["@removed"].reason ?? "removed";
-                opts.log(`mailbox ${target.mailbox}: skipped tombstone ${message.id} (${reason})`);
+                opts.logDebug(
+                    `mailbox ${target.mailbox}: skipped tombstone ${message.id} (${reason})`,
+                );
                 continue;
             }
-            await emitMailEvent(opts, target, client, message);
+            try {
+                await emitMailEvent(opts, target, client, message);
+            } catch (err) {
+                if (err instanceof DuplicateIdempotencyKeyError) {
+                    // Already emitted on an earlier poll. A no-token delta
+                    // request is a full inbox sync, so every cursor reset
+                    // re-lists messages we've seen; bus dedup makes the
+                    // re-emit a no-op. Skip and keep walking so the cursor
+                    // still advances at the end of the page loop.
+                    opts.logDebug(
+                        `mailbox ${target.mailbox}: message ${message.id} already emitted ` +
+                            `(duplicate idempotency key); skipping`,
+                    );
+                    continue;
+                }
+                throw err;
+            }
         }
 
         if (page.deltaLink !== null) {

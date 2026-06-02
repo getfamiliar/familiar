@@ -148,6 +148,12 @@ export interface HostContext {
      * Implementation subscribes to `events_state` before inserting to
      * avoid missing the terminal NOTIFY on a fast-processed event, and
      * tears the subscription down when `settled` resolves or rejects.
+     *
+     * Rejects with {@link DuplicateIdempotencyKeyError} when the event's
+     * `idempotencyKey` collides with one already in the bus. Emitters
+     * that re-derive a stable key (delta-poll re-walks, chat compaction)
+     * should catch it and treat the collision as a no-op; the event
+     * already exists.
      */
     readonly events: {
         emit(event: NewEvent, options?: EmitOptions): Promise<EmitHandle>;

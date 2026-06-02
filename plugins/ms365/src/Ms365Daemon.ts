@@ -28,6 +28,7 @@ export async function startMs365Daemon(ctx: HostContext): Promise<void> {
     const mail = readMs365MailConfig(ctx);
     const calendar = readMs365CalendarConfig(ctx);
     const log = (msg: string) => ctx.logger.info(`ms365: ${msg}`);
+    const logDebug = (msg: string) => ctx.logger.debug(`ms365: ${msg}`);
 
     const logins = new LoginStore(loginDirectory(ctx.dataDir), resolveAppRegistration(auth));
     await logins.refresh();
@@ -66,6 +67,7 @@ export async function startMs365Daemon(ctx: HostContext): Promise<void> {
             const mailPoller = await MailPoller.prepare({
                 ctx,
                 log,
+                logDebug,
                 emit: (event) => ctx.events.emit(event),
                 mailboxMap,
             });

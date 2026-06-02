@@ -1,4 +1,8 @@
-import { EVENT_PRIORITY, type HostContext } from "@getfamiliar/shared";
+import {
+    DuplicateIdempotencyKeyError,
+    EVENT_PRIORITY,
+    type HostContext,
+} from "@getfamiliar/shared";
 import { Boom } from "@hapi/boom";
 import makeWASocket, {
     DisconnectReason,
@@ -138,7 +142,9 @@ export async function startWhatsAppDaemon(
 ): Promise<void> {
     const auth = await loadAuth(ctx);
     if (!auth.hasExistingCreds) {
-        ctx.logger.info("whatsapp not linked yet; run `./cli.sh whatsapp link` to pair this device");
+        ctx.logger.info(
+            "whatsapp not linked yet; run `./cli.sh whatsapp link` to pair this device",
+        );
         return;
     }
     // `creds.json` exists but `me` is only populated after a *complete*
@@ -215,7 +221,7 @@ async function runConnection(
     sock.ev.on("creds.update", auth.saveCreds);
     registry.set(sock);
 
-    const groupNameCache = new Map<string, string | null>();
+    const groupInfoCache = new Map<string, GroupInfo>();
     sock.ev.on("messages.upsert", async ({ messages, type }) => {
         if (type !== "notify") {
             // Skip history dumps and replays so re-linking doesn't
@@ -224,7 +230,7 @@ async function runConnection(
         }
         for (const msg of messages) {
             try {
-                await handleIncomingMessage(ctx, sock, groupNameCache, allowlist, msg);
+                await handleIncomingMessage(ctx, sock, groupInfoCache, allowlist, msg);
             } catch (err) {
                 ctx.logger.info(`whatsapp message handler error: ${formatError(err)}`);
             }
@@ -265,7 +271,7 @@ async function runConnection(
 async function handleIncomingMessage(
     ctx: HostContext,
     sock: WASocket,
-    groupNameCache: Map<string, string | null>,
+    groupInfoCache: Map<string, GroupInfo>,
     allowlist: readonly string[] | null,
     msg: WAMessage,
 ): Promise<void> {
@@ -286,7 +292,12 @@ async function handleIncomingMessage(
     if (!messageId) {
         return;
     }
-    const groupName = await resolveGroupName(sock, groupNameCache, remoteJid, ctx);
+    const { name: groupName, memberCount } = await resolveGroupInfo(
+        sock,
+        groupInfoCache,
+        remoteJid,
+        ctx,
+    );
     const groupCode = buildGroupCode(groupName);
     const senderJid = msg.key.fromMe
         ? (sock.user?.id ?? null)
@@ -313,6 +324,7 @@ async function handleIncomingMessage(
                     group_jid: remoteJid,
                     group_name: groupName,
                     group_code: groupCode,
+                    group_member_count: memberCount,
                     from: {
                         jid: senderJid,
                         name: msg.pushName ?? null,
@@ -324,7 +336,7 @@ async function handleIncomingMessage(
             },
         });
     } catch (err) {
-        if (isDuplicateKeyError(err)) {
+        if (err instanceof DuplicateIdempotencyKeyError) {
             return;
         }
         ctx.logger.info(`whatsapp emit failed (msg ${messageId}): ${formatError(err)}`);
@@ -357,18 +369,30 @@ function extractMessageText(msg: WAMessage): string | null {
 }
 
 /**
- * Best-effort group-name lookup with an in-memory cache. The cache
- * lives for the lifetime of the socket, so a group rename takes
- * effect after the next reconnect — acceptable for what is essentially
- * a display-only field. A `null` cache entry means lookup failed once
- * and we don't want to keep retrying on every message.
+ * Group facts derived from a single `groupMetadata` call: the display
+ * name (`subject`) and the current member count (`participants.length`).
+ * Both are `null` when the lookup failed.
  */
-async function resolveGroupName(
+interface GroupInfo {
+    readonly name: string | null;
+    readonly memberCount: number | null;
+}
+
+/**
+ * Best-effort group-info lookup with an in-memory cache. One
+ * `groupMetadata` call feeds both the display name and the member
+ * count. The cache lives for the lifetime of the socket, so a group
+ * rename or membership change takes effect after the next reconnect —
+ * acceptable for what are essentially display / heuristic fields. A
+ * cached entry with both fields `null` means lookup failed once and we
+ * don't want to keep retrying on every message.
+ */
+async function resolveGroupInfo(
     sock: WASocket,
-    cache: Map<string, string | null>,
+    cache: Map<string, GroupInfo>,
     jid: string,
     ctx: HostContext,
-): Promise<string | null> {
+): Promise<GroupInfo> {
     const cached = cache.get(jid);
     if (cached !== undefined) {
         return cached;
@@ -379,9 +403,12 @@ async function resolveGroupName(
     } catch (err) {
         ctx.logger.info(`whatsapp groupMetadata(${jid}) failed: ${formatError(err)}`);
     }
-    const name = metadata?.subject ?? null;
-    cache.set(jid, name);
-    return name;
+    const info: GroupInfo = {
+        name: metadata?.subject ?? null,
+        memberCount: metadata?.participants?.length ?? null,
+    };
+    cache.set(jid, info);
+    return info;
 }
 
 /**
@@ -478,22 +505,6 @@ function extractStatusCode(err: unknown): number | undefined {
         return err.output?.statusCode;
     }
     return undefined;
-}
-
-/**
- * Detect the postgres unique-constraint violation that fires when the
- * same idempotency key is inserted twice. Treated as a silent no-op so
- * baileys' occasional duplicate deliveries don't pollute the log.
- */
-function isDuplicateKeyError(err: unknown): boolean {
-    if (err instanceof Error) {
-        const code = (err as { code?: string }).code;
-        if (code === "23505") {
-            return true;
-        }
-        return err.message.includes("idempotency_key");
-    }
-    return false;
 }
 
 function sleep(ms: number): Promise<void> {

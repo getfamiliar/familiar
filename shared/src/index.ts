@@ -41,7 +41,7 @@ export type {
     NewEvent,
 } from "./Event.js";
 export { EVENT_PRIORITY } from "./Event.js";
-export { EventBus } from "./EventBus.js";
+export { DuplicateIdempotencyKeyError, EventBus } from "./EventBus.js";
 export { HandlerCatalog, type HandlerPath } from "./HandlerCatalog.js";
 export type {
     InferenceEventRow,

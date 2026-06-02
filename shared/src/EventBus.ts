@@ -3,6 +3,56 @@ import type { Logger } from "./logging/Logger.js";
 import type { NotificationHandler, PostgresConnection } from "./PostgresConnection.js";
 import { EVENTS_NEW_CHANNEL, SCHEMA_SQL } from "./Schema.js";
 
+/**
+ * Thrown by {@link EventBus.add} when an event's `idempotencyKey`
+ * collides with one already in the `events` table (Postgres unique
+ * violation `23505` on `events_idempotency_key_key`).
+ *
+ * The error is deliberately typed rather than swallowed: an emitter
+ * that re-derives the same key on a re-walk (the ms365 mail delta poll,
+ * the calendar poll, chat compaction, …) is expected to `catch` this
+ * and treat the collision as a no-op — the event already exists. Other
+ * emitters that should never collide let it propagate as a real fault.
+ */
+export class DuplicateIdempotencyKeyError extends Error {
+    /** The colliding idempotency key, for logging by the catching emitter. */
+    readonly idempotencyKey: string;
+
+    /**
+     * @param idempotencyKey - The key that already existed in `events`.
+     */
+    constructor(idempotencyKey: string) {
+        super(`event with idempotency key "${idempotencyKey}" already exists`);
+        this.name = "DuplicateIdempotencyKeyError";
+        this.idempotencyKey = idempotencyKey;
+    }
+}
+
+/**
+ * True when `err` is the Postgres unique-constraint violation raised by
+ * inserting a duplicate `events.idempotency_key`. Mirrors the detection
+ * idiom previously hand-rolled in `ChatCompactor`/`WhatsAppDaemon`:
+ * pg error code `23505`, narrowed to the idempotency-key constraint so
+ * an unrelated unique violation isn't misclassified.
+ *
+ * @param err - The error thrown by the INSERT.
+ * @returns Whether it is the idempotency-key duplicate violation.
+ */
+function isIdempotencyKeyViolation(err: unknown): boolean {
+    if (!(err instanceof Error)) {
+        return false;
+    }
+    const code = (err as { code?: string }).code;
+    if (code !== "23505") {
+        return false;
+    }
+    const constraint = (err as { constraint?: string }).constraint;
+    if (constraint) {
+        return constraint === "events_idempotency_key_key";
+    }
+    return err.message.includes("idempotency_key");
+}
+
 /** Raw row shape returned by the SELECT. `pg` returns bigints as strings. */
 interface RawEventRow {
     id: string;
@@ -99,9 +149,11 @@ export class EventBus {
      * Throwing from `beforeCommit` rolls the INSERT back; cleaning up
      * any partial filesystem state is the callback's responsibility.
      *
-     * @throws If `idempotencyKey` collides, if `topic` does not match
-     *   `\w+(:\w+)*`, if `prompt` is missing or whitespace-only, or if
-     *   `beforeCommit` throws.
+     * @throws {DuplicateIdempotencyKeyError} If `idempotencyKey` collides
+     *   with an existing event. Emitters that re-derive stable keys on a
+     *   re-walk are expected to catch this and treat it as a no-op.
+     * @throws If `topic` does not match `\w+(:\w+)*`, if `prompt` is
+     *   missing or whitespace-only, or if `beforeCommit` throws.
      */
     async add(event: NewEvent, beforeCommit?: (row: EventRow) => Promise<void>): Promise<EventRow> {
         if (typeof event.prompt !== "string" || event.prompt.trim().length === 0) {
@@ -174,6 +226,13 @@ export class EventBus {
                 await client.query("ROLLBACK");
             } catch {
                 // best-effort rollback; preserve original error
+            }
+            // Translate the raw pg unique violation into a typed error so
+            // emitters that legitimately re-derive the same idempotency
+            // key (delta-poll re-walks, chat compaction races) can catch
+            // it by type instead of string-matching the pg message.
+            if (event.idempotencyKey && isIdempotencyKeyViolation(err)) {
+                throw new DuplicateIdempotencyKeyError(event.idempotencyKey);
             }
             throw err;
         } finally {

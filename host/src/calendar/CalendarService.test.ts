@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
+import { DuplicateIdempotencyKeyError } from "@getfamiliar/shared";
 import type {
     CalendarChangePayload,
     CalendarEventRow,
@@ -108,6 +109,31 @@ describe("CalendarService.emitCalendarEvent", () => {
         assert.equal(payload.pluginId, "ms365");
         assert.equal(payload.calendarEventId, "ms365:abc");
         assert.equal(payload.subject, "Lunch");
+    });
+
+    it("swallows a DuplicateIdempotencyKeyError as a no-op (re-walk of an unchanged event)", async () => {
+        const calendar = sampleCalendar({ id: "1", pluginId: "ms365" });
+        const row = sampleEvent({ id: "ms365:abc", calendarId: "1" });
+        const svc = build({
+            calendars: [calendar],
+            events: [row],
+            emitThrows: new DuplicateIdempotencyKeyError("calendar:new:ms365:ms365:abc"),
+        });
+        await assert.doesNotReject(svc.emitCalendarEvent("calendar:new:ms365", "ms365:abc"));
+    });
+
+    it("propagates a non-duplicate emit error", async () => {
+        const calendar = sampleCalendar({ id: "1", pluginId: "ms365" });
+        const row = sampleEvent({ id: "ms365:abc", calendarId: "1" });
+        const svc = build({
+            calendars: [calendar],
+            events: [row],
+            emitThrows: new Error("connection reset"),
+        });
+        await assert.rejects(
+            svc.emitCalendarEvent("calendar:new:ms365", "ms365:abc"),
+            /connection reset/,
+        );
     });
 
     it("renders payload start/end in core.timezone (UTC default)", async () => {
@@ -287,6 +313,8 @@ interface BuildOptions {
     readonly upsertResults?: Array<{ created: boolean; changed: boolean }>;
     readonly endRefreshRows?: readonly CalendarEventRow[];
     readonly configMap?: Record<string, string>;
+    /** When set, the stub `EventBus.add` rejects with this instead of capturing. */
+    readonly emitThrows?: Error;
 }
 
 function build(opts: BuildOptions): CalendarService {
@@ -312,6 +340,9 @@ function build(opts: BuildOptions): CalendarService {
     const eventsFactory: () => Promise<EventBus> = async () =>
         ({
             add: async (event: NewEvent) => {
+                if (opts.emitThrows) {
+                    throw opts.emitThrows;
+                }
                 opts.captureEmits?.push(event);
                 return {} as EventRow;
             },

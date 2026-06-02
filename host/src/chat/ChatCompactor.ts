@@ -3,6 +3,7 @@ import path from "node:path";
 import {
     CHATMESSAGES_NEW_CHANNEL,
     type ConfigService,
+    DuplicateIdempotencyKeyError,
     EVENT_PRIORITY,
     type HostContext,
     type Logger,
@@ -348,7 +349,7 @@ export class ChatCompactor {
         try {
             handle = await this.deps.host.events.emit(event);
         } catch (err) {
-            if (isDuplicateKeyError(err)) {
+            if (err instanceof DuplicateIdempotencyKeyError) {
                 this.deps.log.debug(
                     { idempotencyKey: event.idempotencyKey },
                     "chat compaction event already in flight — skipping",
@@ -441,21 +442,4 @@ export class ChatCompactor {
             .getPool()
             .query(`DELETE FROM chatmessages WHERE id = ANY($1::bigint[])`, [ids]);
     }
-}
-
-/**
- * Postgres unique-constraint violation, used to detect that another
- * compactor instance (e.g. across a restart race) already emitted an
- * event with the same idempotency key. Mirrors the helper in
- * `WhatsAppDaemon.ts`.
- */
-function isDuplicateKeyError(err: unknown): boolean {
-    if (err instanceof Error) {
-        const code = (err as { code?: string }).code;
-        if (code === "23505") {
-            return true;
-        }
-        return err.message.includes("idempotency_key");
-    }
-    return false;
 }
