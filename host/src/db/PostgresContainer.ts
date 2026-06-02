@@ -7,8 +7,10 @@ import {
     PostgresConnection,
 } from "@getfamiliar/shared";
 import {
+    connectNetwork,
     dockerCapture,
     dockerExec,
+    ISOLATED_NETWORK_NAME,
     removeContainer,
     SHARED_NETWORK_NAME,
     stopContainer,
@@ -34,9 +36,13 @@ export interface PostgresContainerConfig {
 /**
  * Manages the singleton postgres container (`familiar-postgres`).
  *
- * Joins `familiar-net` so the agent container can reach it as `familiar-postgres:5432`.
+ * Joins `familiar-net` and is additionally attached to the agent's
+ * egress-less `familiar-isolated` network (post-lockdown) so the agent
+ * container can reach it as `familiar-postgres:5432`.
  * Publishes the postgres TCP port on `127.0.0.1:<host-port>:5432` so host
  * code (and `psql` from a host shell) can connect, but nothing on the LAN.
+ * The publish stays bound to the `familiar-net` attachment; the internal
+ * second attachment does not change host reachability.
  *
  * Owns the port file at `portFilePath`: writes it on `start()`, removes it
  * on `stop()`, and exposes `getPort()` / `getConnection()` so out-of-process
@@ -161,6 +167,12 @@ export class PostgresContainer {
 
         this.hostPort = hostPort;
         this.running = true;
+
+        // Dual-home onto the agent's egress-less network so the
+        // locked-down agent can still reach `familiar-postgres:5432`.
+        // The `-p` host publish stays bound to the `familiar-net`
+        // attachment above; this second attachment doesn't affect it.
+        await connectNetwork(ISOLATED_NETWORK_NAME, POSTGRES_HOST);
 
         await this.waitForReady(this.config.readyTimeoutS ?? 30);
 

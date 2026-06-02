@@ -8,6 +8,16 @@ import os from "node:os";
  */
 export const SHARED_NETWORK_NAME = "familiar-net";
 
+/**
+ * Internal (egress-less) bridge network the locked-down agent container
+ * joins. Created with `--internal` so the agent has no route to the
+ * internet; it reaches postgres (dual-homed onto this net) and the host
+ * bastion (via the `familiar-bastion-bridge` socat sidecar, also on this
+ * net) by container name. Owned by the daemon, created via
+ * {@link ensureNetwork} with `{ internal: true }`.
+ */
+export const ISOLATED_NETWORK_NAME = "familiar-isolated";
+
 /** Options shared by {@link dockerExec}. */
 export interface DockerExecOptions {
     /** If true, non-zero exit codes resolve instead of throwing. */
@@ -83,13 +93,63 @@ export async function isNetworkPresent(name: string): Promise<boolean> {
     return code === 0;
 }
 
+/** Options for {@link buildNetworkCreateArgs} / {@link ensureNetwork}. */
+export interface NetworkCreateOptions {
+    /**
+     * Create the network with `--internal` so containers on it have no
+     * egress to the host or the internet — only to other containers on
+     * the same network. Used for the agent's `familiar-isolated` net.
+     */
+    readonly internal?: boolean;
+}
+
+/**
+ * Build the `docker network create` argument vector. Pure (no side
+ * effects) so it can be unit-tested without a daemon.
+ *
+ * @param name Network name to create.
+ * @param options Network creation flags (e.g. `internal`).
+ * @returns The full docker CLI argv, e.g. `["network", "create", "--internal", "familiar-isolated"]`.
+ */
+export function buildNetworkCreateArgs(name: string, options: NetworkCreateOptions = {}): string[] {
+    const args = ["network", "create"];
+    if (options.internal) {
+        args.push("--internal");
+    }
+    args.push(name);
+    return args;
+}
+
 /**
  * Create the named bridge network if it doesn't already exist. Idempotent.
+ *
+ * @param name Network name to ensure.
+ * @param options Network creation flags applied only on first creation
+ *   (an existing network is left as-is).
  */
-export async function ensureNetwork(name: string): Promise<void> {
+export async function ensureNetwork(
+    name: string,
+    options: NetworkCreateOptions = {},
+): Promise<void> {
     if (!(await isNetworkPresent(name))) {
-        await dockerExec(["network", "create", name]);
+        await dockerExec(buildNetworkCreateArgs(name, options));
     }
+}
+
+/**
+ * Attach an already-running container to an additional network by name.
+ * Callers recreate their container on every `start()` (via
+ * {@link removeContainer} first), so the attachment is always fresh —
+ * this throws on failure rather than swallowing it, so a genuine
+ * problem (missing network, missing container) surfaces instead of
+ * silently leaving the container unable to reach its peer.
+ *
+ * @param network Network to connect the container to.
+ * @param container Name of the running container to attach.
+ * @throws If the docker command fails (network/container missing, etc.).
+ */
+export function connectNetwork(network: string, container: string): Promise<void> {
+    return dockerExec(["network", "connect", network, container]);
 }
 
 /**

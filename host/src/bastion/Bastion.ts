@@ -79,6 +79,14 @@ export class Bastion {
     }
 
     /**
+     * Port the bastion listens on. Needed by the bastion-bridge sidecar,
+     * which listens on the same port and forwards to the host bastion.
+     */
+    get listenPort(): number {
+        return this.port;
+    }
+
+    /**
      * Stable URL the agent container should be told to dial. Available
      * after {@link start} resolves.
      */

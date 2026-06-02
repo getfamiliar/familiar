@@ -2,9 +2,8 @@ import { resolve } from "node:path";
 import type { Logger } from "@getfamiliar/shared";
 import {
     dockerExec,
-    hostGatewayArgs,
+    ISOLATED_NETWORK_NAME,
     removeContainer,
-    SHARED_NETWORK_NAME,
     stopContainer,
 } from "../DockerTools.js";
 
@@ -80,9 +79,12 @@ export interface AgentContainerConfig {
     readonly postgresPassword: string;
     /**
      * Base URL the agent should dial for everything privileged
-     * (LLM proxying, MCP gateway). Resolved at daemon start as
-     * `http://<familiar-net-gateway-ip>:<port>`. The agent appends
-     * `/llm/<provider>/` for inference and `/mcp/<id>` for tools.
+     * (LLM proxying, MCP gateway). Post-lockdown this points at the
+     * `familiar-bastion-bridge` socat sidecar
+     * (`http://familiar-bastion-bridge:<port>`), which forwards to the
+     * host bastion — the agent has no direct route to the host. The
+     * agent appends `/llm/<provider>/` for inference and `/mcp/<id>`
+     * for tools.
      */
     readonly bastionUrl: string;
     /**
@@ -210,9 +212,14 @@ export interface AgentContainerConfig {
  *   - {sharedBuildPath} → /shared/build (read-only, fresh per cli.sh rebuild)
  *   - {scratchPath} → /scratch (read-write, shared with every MCP)
  *
- * Container joins `familiar-net` so it can reach `familiar-postgres` by hostname.
- * All host↔container communication flows through the postgres `events`
- * table — no file-based IPC, no host-side reverse proxy.
+ * Container joins the egress-less `familiar-isolated` network only: it
+ * can reach `familiar-postgres` (dual-homed onto that net) and the
+ * `familiar-bastion-bridge` socat sidecar by hostname, but has no route
+ * to the host or the internet. This is a deliberate lockdown ahead of
+ * giving the agent shell access — it cannot exfiltrate via raw sockets,
+ * scripts, or DNS. All host↔container communication flows through the
+ * postgres `events` table and the bastion (via the bridge) — no
+ * file-based IPC.
  */
 export class AgentContainer {
     private readonly config: AgentContainerConfig;
@@ -233,63 +240,7 @@ export class AgentContainer {
      */
     async start(): Promise<void> {
         await removeContainer(CONTAINER_NAME);
-
-        const workspaceDir = `${this.config.dataPath}/workspace`;
-
-        const args = [
-            "run",
-            "-d",
-            "--name",
-            CONTAINER_NAME,
-            "--network",
-            SHARED_NETWORK_NAME,
-            // On Linux, `host.docker.internal` isn't built-in; map it to
-            // the host gateway so the agent can reach the bastion.
-            ...hostGatewayArgs(),
-            "-e",
-            `POSTGRES_PASSWORD=${this.config.postgresPassword}`,
-            "-e",
-            `BASTION_URL=${this.config.bastionUrl}`,
-            "-e",
-            `INFERENCE_DEFAULT_PROVIDER=${this.config.defaultProvider}`,
-            "-e",
-            `INFERENCE_DEFAULT_MODEL=${this.config.defaultModel}`,
-            "-e",
-            `INFERENCE_PROVIDERS=${JSON.stringify(this.config.providerNpmPackages)}`,
-            "-e",
-            `INFERENCE_MAX_RETRIES=${this.config.inferenceMaxRetries}`,
-            "-e",
-            `INFERENCE_OUTPUT_FALLBACK_PERCENTAGE=${this.config.inferenceOutputFallbackPercentage}`,
-            "-e",
-            `TOOL_CALL_OFFLOADING_LIMIT=${this.config.toolCallOffloadingLimit}`,
-            "-e",
-            `INFERENCE_CONTEXT_KEPT_TOOL_RESULT_COUNT=${this.config.inferenceKeptToolResultCount}`,
-            "-e",
-            `INFERENCE_CONTEXT_SLIDING_WINDOW_PERCENTAGE=${this.config.inferenceSlidingWindowPercentage}`,
-            "-e",
-            `AGENTSTEP_TIMEOUT_SECONDS=${this.config.agentStepTimeoutSeconds}`,
-            "-e",
-            `INFERENCE_CAPTURE_RAW_STEP_RESULT=${this.config.captureRawStepResultToDatabase}`,
-            "-e",
-            `INFERENCE_LOG_SYSTEM_PROMPT_MODE=${this.config.logSystemPromptMode}`,
-            "-e",
-            `CORE_TIMEZONE=${this.config.coreTimezone}`,
-            "-e",
-            `CORE_WRITABLE_PATHS=${JSON.stringify(this.config.writablePaths)}`,
-            "-e",
-            `FAMILIAR_LOG_LEVEL=${this.config.verbose ? "debug" : "info"}`,
-            "-v",
-            `${workspaceDir}:/workspace`,
-            "-v",
-            `${this.config.containerSrcPath}:/app/src:ro`,
-            "-v",
-            `${this.config.sharedBuildPath}:/shared/build:ro`,
-            "-v",
-            `${this.config.scratchPath}:/scratch`,
-            this.config.imageName,
-        ];
-
-        await dockerExec(args);
+        await dockerExec(buildAgentRunArgs(this.config));
         this.running = true;
     }
 
@@ -308,4 +259,72 @@ export class AgentContainer {
 
         this.running = false;
     }
+}
+
+/**
+ * Build the `docker run` argument vector for the agent container. Pure
+ * (no side effects) so it can be unit-tested without a daemon.
+ *
+ * Security-critical invariant: the agent joins **only** the egress-less
+ * `familiar-isolated` network — no `familiar-net`, no
+ * `--add-host=host.docker.internal:host-gateway`. It reaches postgres and
+ * the bastion bridge by container name via Docker's embedded resolver;
+ * external names don't resolve and external hosts aren't routable. Don't
+ * add `--dns` or `host.docker.internal` here without revisiting the
+ * lockdown (and its unit test in `AgentContainer.test.ts`).
+ *
+ * @param config The agent container configuration.
+ * @returns The full docker CLI argv.
+ */
+export function buildAgentRunArgs(config: AgentContainerConfig): string[] {
+    const workspaceDir = `${config.dataPath}/workspace`;
+    return [
+        "run",
+        "-d",
+        "--name",
+        CONTAINER_NAME,
+        "--network",
+        ISOLATED_NETWORK_NAME,
+        "-e",
+        `POSTGRES_PASSWORD=${config.postgresPassword}`,
+        "-e",
+        `BASTION_URL=${config.bastionUrl}`,
+        "-e",
+        `INFERENCE_DEFAULT_PROVIDER=${config.defaultProvider}`,
+        "-e",
+        `INFERENCE_DEFAULT_MODEL=${config.defaultModel}`,
+        "-e",
+        `INFERENCE_PROVIDERS=${JSON.stringify(config.providerNpmPackages)}`,
+        "-e",
+        `INFERENCE_MAX_RETRIES=${config.inferenceMaxRetries}`,
+        "-e",
+        `INFERENCE_OUTPUT_FALLBACK_PERCENTAGE=${config.inferenceOutputFallbackPercentage}`,
+        "-e",
+        `TOOL_CALL_OFFLOADING_LIMIT=${config.toolCallOffloadingLimit}`,
+        "-e",
+        `INFERENCE_CONTEXT_KEPT_TOOL_RESULT_COUNT=${config.inferenceKeptToolResultCount}`,
+        "-e",
+        `INFERENCE_CONTEXT_SLIDING_WINDOW_PERCENTAGE=${config.inferenceSlidingWindowPercentage}`,
+        "-e",
+        `AGENTSTEP_TIMEOUT_SECONDS=${config.agentStepTimeoutSeconds}`,
+        "-e",
+        `INFERENCE_CAPTURE_RAW_STEP_RESULT=${config.captureRawStepResultToDatabase}`,
+        "-e",
+        `INFERENCE_LOG_SYSTEM_PROMPT_MODE=${config.logSystemPromptMode}`,
+        "-e",
+        `CORE_TIMEZONE=${config.coreTimezone}`,
+        "-e",
+        `CORE_WRITABLE_PATHS=${JSON.stringify(config.writablePaths)}`,
+        "-e",
+        `FAMILIAR_LOG_LEVEL=${config.verbose ? "debug" : "info"}`,
+        "-v",
+        `${workspaceDir}:/workspace`,
+        "-v",
+        `${config.containerSrcPath}:/app/src:ro`,
+        "-v",
+        `${config.sharedBuildPath}:/shared/build:ro`,
+        "-v",
+        `${config.scratchPath}:/scratch`,
+        config.imageName,
+    ];
 }

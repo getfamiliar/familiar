@@ -1,6 +1,5 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { DuplicateIdempotencyKeyError } from "@getfamiliar/shared";
 import type {
     CalendarChangePayload,
     CalendarEventRow,
@@ -12,6 +11,7 @@ import type {
     NewCalendarEvent,
     NewEvent,
 } from "@getfamiliar/shared";
+import { DuplicateIdempotencyKeyError } from "@getfamiliar/shared";
 import { CalendarRegistry } from "./CalendarRegistry.js";
 import { CalendarService } from "./CalendarService.js";
 import type { CalendarStore } from "./CalendarStore.js";

@@ -28,11 +28,17 @@ import {
     ensureAgentImage,
     type LogSystemPromptMode,
 } from "../container-runner/AgentContainer.js";
+import {
+    BASTION_BRIDGE_HOST,
+    BastionBridgeContainer,
+    BRIDGE_IMAGE_TAG,
+    ensureBridgeImage,
+} from "../container-runner/BastionBridgeContainer.js";
 import { CronjobScheduler } from "../cron/CronjobScheduler.js";
 import { ModelMetadataRefresher } from "../cron/ModelMetadataRefresher.js";
 import { ScheduledHandlerScheduler } from "../cron/ScheduledHandlerScheduler.js";
 import { ScratchGc } from "../cron/ScratchGc.js";
-import { ensureNetwork, SHARED_NETWORK_NAME } from "../DockerTools.js";
+import { ensureNetwork, ISOLATED_NETWORK_NAME, SHARED_NETWORK_NAME } from "../DockerTools.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { McpGateway } from "../mcp/McpGateway.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
@@ -65,8 +71,8 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
  * `familiar start` — bring up the daemon: postgres, schema, agent container,
  * then idle waiting for SIGTERM/SIGINT to drain everything cleanly.
  *
- * Start order:   familiar-net → postgres → schema → bastion (LLM proxy + MCP gateway) → agent
- * Stop order:    plugin host → agent → bastion → postgres
+ * Start order:   familiar-net + familiar-isolated → postgres → schema → bastion (LLM proxy + MCP gateway) → bastion bridge → agent
+ * Stop order:    plugin host → agent → bastion bridge → bastion → postgres
  */
 export const startCommand = defineCommand({
     meta: {
@@ -263,6 +269,12 @@ export const startCommand = defineCommand({
         await ensureNetwork(SHARED_NETWORK_NAME);
         log.info(`ensured network '${SHARED_NETWORK_NAME}'`);
 
+        // Egress-less network the locked-down agent joins. Postgres is
+        // dual-homed onto it and the bastion bridge straddles it, so the
+        // agent reaches both by name but has no route to the internet.
+        await ensureNetwork(ISOLATED_NETWORK_NAME, { internal: true });
+        log.info(`ensured internal network '${ISOLATED_NETWORK_NAME}'`);
+
         const postgresPort = await postgres.start();
         log.info(`postgres ready on 127.0.0.1:${postgresPort}`);
 
@@ -281,13 +293,27 @@ export const startCommand = defineCommand({
         }
 
         await bastion.start();
-        log.info(`bastion server started and reachable from container at ${bastion.url}`);
+        log.info(`bastion server started; the bridge sidecar forwards to it at ${bastion.url}`);
 
         // With the bastion live, point plugin MCP calls at the actual
         // loopback URL. Calling before `bastion.start()` would throw
         // (the port isn't bound yet); calling after — but before any
         // plugin daemon runs — guarantees first-call connects succeed.
         pluginHost.setBastionBaseUrl(bastion.loopbackUrl);
+
+        // The locked-down agent has no route to the host, so it can't
+        // dial the bastion at `host.docker.internal` directly. Start the
+        // socat bridge sidecar — on `familiar-net` it reaches the host
+        // bastion, on `familiar-isolated` it serves the agent — and point
+        // the agent's `BASTION_URL` at it.
+        await ensureBridgeImage(log);
+        const bridge = new BastionBridgeContainer({
+            imageName: BRIDGE_IMAGE_TAG,
+            bastionPort: bastion.listenPort,
+        });
+        await bridge.start();
+        const agentBastionUrl = `http://${BASTION_BRIDGE_HOST}:${bastion.listenPort}`;
+        log.info(`bastion bridge started; agent will dial ${agentBastionUrl}`);
 
         await ensureAgentImage(log);
 
@@ -298,7 +324,7 @@ export const startCommand = defineCommand({
             sharedBuildPath: boot.sharedBuildDir,
             scratchPath: boot.scratchDir,
             postgresPassword,
-            bastionUrl: bastion.url,
+            bastionUrl: agentBastionUrl,
             defaultProvider,
             defaultModel,
             inferenceMaxRetries,
@@ -444,6 +470,7 @@ export const startCommand = defineCommand({
                 await safeStop(log, "workspace watcher", () => workspaceWatcher.stop());
                 await safeStop(log, "plugin host", () => pluginHost.close());
                 await safeStop(log, "agent container", () => container.stop());
+                await safeStop(log, "bastion bridge", () => bridge.stop());
                 await safeStop(log, "bastion", () => bastion.stop());
                 await safeStop(log, "postgres", () => postgres.stop());
                 stopContainerLogStream(containerLogStream);
