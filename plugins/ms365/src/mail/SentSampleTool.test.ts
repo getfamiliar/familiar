@@ -185,6 +185,36 @@ test("ms365_get_sent_sample stages nothing and renders no-examples when all buck
     }
 });
 
+test("ms365_get_sent_sample forwards onlyKind into SentSampler.sample and stages only that kind", async () => {
+    setActiveLogins(fakeLogins());
+    const original = SentSampler.prototype.sample;
+    let capturedOptions: { perKind: number; onlyKind?: string } | undefined;
+    SentSampler.prototype.sample = async (options): Promise<SampleResult> => {
+        capturedOptions = options;
+        return {
+            buckets: { reply: [], forward: [], new: [example("new", "<p>fresh</p>")] },
+            summary: {
+                scanned: 100,
+                kept: 1,
+                droppedAsMeeting: 0,
+                droppedAsOversize: 0,
+                droppedAsBucketFull: 99,
+                droppedAsEmptyAfterStrip: 0,
+            },
+        };
+    };
+    try {
+        const captured = { writes: [] as { name: string; contents: Buffer }[] };
+        const t = buildSentSampleTool();
+        await t.execute({ mailbox: "alice@example.com", onlyKind: "new" }, fakeCallCtx(captured));
+        assert.equal(capturedOptions?.onlyKind, "new");
+        assert.equal(captured.writes.length, 1);
+        assert.ok(captured.writes[0].name.startsWith("sample.new."));
+    } finally {
+        SentSampler.prototype.sample = original;
+    }
+});
+
 test("ms365_get_sent_sample rejects an unknown mailbox with a clear error", async () => {
     setActiveLogins({
         byUpn: () => null,

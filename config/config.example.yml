@@ -31,6 +31,15 @@ core:
   # Optional; falls back to 150 when omitted.
   # agentStepTimeout: 150
 
+  # Token cap for an inline tool-call result before the runner spills the
+  # full result to a scratch file (the agent fs_reads it on demand). Also
+  # the upper bound in the model-relative offload threshold
+  # min(0.25 * model_context_window, cap); when the model's context window
+  # is unknown the cap is the whole threshold. A handler can override per
+  # run via its `toolCallOffloadingLimit` frontmatter field. Optional;
+  # falls back to 16000 when omitted.
+  # toolCallOffloadingLimit: 16000
+
   # Controls whether — and how — each agentrun's resolved system
   # prompt is persisted into agentruns.system_prompt. The report
   # layer surfaces it in the Agentrun Start section when the
@@ -115,7 +124,7 @@ inference:
   # `./cli.sh config lint` rejects keys that don't resolve to a known
   # provider.
   apiKeys:
-    # openai: REPLACE_ME              # also read by transcribe-whisper
+    openai: REPLACE_ME              # also read by transcribe-whisper
     # anthropic: REPLACE_ME
     # google: REPLACE_ME
     # xai: REPLACE_ME                 # xAI Grok
@@ -139,6 +148,21 @@ inference:
   # token-detail columns (input_tokens_*, output_tokens_*) cover
   # the common case. Restart the daemon after changing.
   # captureRawStepResultToDatabase: false
+
+  # Active context-window management. A long tool loop can flood the
+  # model's context with stale tool output; these knobs bound it.
+  # Restart the daemon after changing.
+  # contextManagement:
+  #   # Keep verbatim tool results only for the last N steps; older tool
+  #   # results are elided to a short "[<tool> result elided - re-call if
+  #   # needed]" placeholder. Applied every step. Default 3.
+  #   keptToolResultCount: 3
+  #   # When estimated context usage reaches this fraction of the model's
+  #   # context window, drop older messages — keeping the first two and the
+  #   # newest, replacing the dropped span with an "[elided N messages]"
+  #   # marker (assistant tool-call / tool-result pairs are never split).
+  #   # Clamped to (0.3, 1.0); out-of-range warns and falls back to 0.70.
+  #   slidingWindowPercentage: 0.70
 
 # Chat history compaction. The ChatCompactor watches the chatmessages
 # table; once its total size crosses `thresholdBytes`, it composes a

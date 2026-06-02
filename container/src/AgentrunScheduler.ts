@@ -85,13 +85,6 @@ export interface SchedulerDeps {
     /** Default retry cap; overridden per-handler via YAML frontmatter. */
     readonly retryCap: number;
     /**
-     * Default byte budget for inline tool-call results; overridden
-     * per-handler via the `toolCallOffloadingLimit` YAML frontmatter
-     * field. Sourced from `TOOL_CALL_OFFLOADING_LIMIT` env, in turn
-     * from `core.toolCallOffloadingLimit` on the host side.
-     */
-    readonly toolCallOffloadingLimit: number;
-    /**
      * Maximum number of runners executing (not paused) at once. Today
      * always `1` to match Featherless's single Pro slot; per-model
      * fan-out becomes a future change to the picker, not a new
@@ -643,13 +636,15 @@ export class AgentrunScheduler {
             row,
             signal: active.abortController.signal,
             waitForSubagent,
-            buildTools: async (toolsExpression, handlerOffloadingLimit) => {
-                const offloadingLimit = handlerOffloadingLimit ?? this.deps.toolCallOffloadingLimit;
-                const toolRunContext = buildContainerToolRunContext(row.eventId, offloadingLimit);
+            buildTools: async (toolsExpression, offloadTokenThreshold) => {
+                const toolRunContext = buildContainerToolRunContext(
+                    row.eventId,
+                    offloadTokenThreshold,
+                );
                 const pluginToolset = await pluginToolsClient.tools(
                     row.eventId,
                     row.id,
-                    offloadingLimit,
+                    offloadTokenThreshold,
                 );
                 return ToolsFactory.build({
                     chat,

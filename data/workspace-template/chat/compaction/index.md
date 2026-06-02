@@ -1,5 +1,5 @@
 ---
-model: deepseek-ai/DeepSeek-V4-Flash
+model: deepseek/deepseek-v4-flash
 ---
 
 You are summarising a chunk of older chat history so it can be replaced with one compact

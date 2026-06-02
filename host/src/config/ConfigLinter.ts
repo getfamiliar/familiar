@@ -82,6 +82,12 @@ export function lintConfigFile(path: string): ConfigLintResult {
     optionalNonNegativeInt(config, "inference.maxRetries", warnings);
     optionalBool(config, "inference.captureModelHttpRequestBodies", warnings);
     optionalBool(config, "inference.captureRawStepResultToDatabase", warnings);
+    optionalPositiveInt(config, "inference.contextManagement.keptToolResultCount", warnings);
+    optionalSlidingWindowFraction(
+        config,
+        "inference.contextManagement.slidingWindowPercentage",
+        warnings,
+    );
 
     return { ok: errors.length === 0, errors, warnings };
 }
@@ -332,6 +338,27 @@ function optionalNonNegativeInt(
     }
     if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
         warnings.push(`${path} should be a non-negative integer (got ${describe(value)}).`);
+    }
+}
+
+/**
+ * Validate a sliding-window fraction: when present it must be a finite
+ * number strictly inside `(0.3, 1.0)`. Out-of-range values are clamped to
+ * the default at runtime, so this is a warning rather than an error.
+ */
+function optionalSlidingWindowFraction(
+    root: Record<string, unknown>,
+    path: string,
+    warnings: string[],
+): void {
+    const value = readPath(root, path);
+    if (value === undefined) {
+        return;
+    }
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0.3 || value >= 1.0) {
+        warnings.push(
+            `${path} should be a number strictly between 0.3 and 1.0 (got ${describe(value)}); falling back to 0.7.`,
+        );
     }
 }
 

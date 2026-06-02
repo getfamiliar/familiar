@@ -1,15 +1,23 @@
 import { APICallError } from "@ai-sdk/provider";
-import type {
-    AgentRunBus,
-    AgentRunRow,
-    EventBus,
-    Logger,
-    NewInferenceEvent,
-    NewStepResult,
+import {
+    type AgentRunBus,
+    type AgentRunRow,
+    DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
+    type EventBus,
+    estimateTokens,
+    type Logger,
+    type NewInferenceEvent,
+    type NewStepResult,
 } from "@getfamiliar/shared";
 import { type ModelMessage, stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
-import { optionalEnvBool, optionalEnvNumber, optionalEnvString, requireEnv } from "../env.js";
+import {
+    optionalEnvBool,
+    optionalEnvInt,
+    optionalEnvNumber,
+    optionalEnvString,
+    requireEnv,
+} from "../env.js";
 import { HandlerFile } from "../HandlerFile.js";
 import { ModelFactory } from "../models/ModelFactory.js";
 import { fetchModelMetaData } from "../models/ModelMetadataClient.js";
@@ -22,6 +30,7 @@ import {
 } from "../PromptBuilder.js";
 import { fetchAncestorChain } from "./AgentRunLineage.js";
 import { AgentRunTimeoutError } from "./AgentRunTimeoutError.js";
+import { ContextManager } from "./ContextManager.js";
 import { computeRetryDelay } from "./computeRetryDelay.js";
 import {
     DEFAULT_OUTPUT_FALLBACK_FRACTION,
@@ -51,6 +60,82 @@ const CAPTURE_RAW_STEP_RESULT = optionalEnvBool("INFERENCE_CAPTURE_RAW_STEP_RESU
  */
 const OUTPUT_FALLBACK_FRACTION =
     optionalEnvNumber("INFERENCE_OUTPUT_FALLBACK_PERCENTAGE") ?? DEFAULT_OUTPUT_FALLBACK_FRACTION;
+
+/** Default number of recent steps whose tool results are kept verbatim. */
+const DEFAULT_KEPT_TOOL_RESULT_COUNT = 3;
+
+/** Default sliding-window trigger fraction of the model's context window. */
+const DEFAULT_SLIDING_WINDOW_PERCENTAGE = 0.7;
+
+/**
+ * Number of recent steps whose tool results survive {@link ContextManager}
+ * eviction. Read once at module load; the host forwards
+ * `inference.contextManagement.keptToolResultCount` as
+ * `INFERENCE_CONTEXT_KEPT_TOOL_RESULT_COUNT`. A daemon restart is required
+ * to change it. Defaults to {@link DEFAULT_KEPT_TOOL_RESULT_COUNT}.
+ */
+const KEPT_TOOL_RESULT_COUNT =
+    optionalEnvInt("INFERENCE_CONTEXT_KEPT_TOOL_RESULT_COUNT") ?? DEFAULT_KEPT_TOOL_RESULT_COUNT;
+
+/**
+ * Clamp the configured sliding-window fraction into `(0.3, 1.0)`. Out-of-
+ * range or unset values fall back to {@link DEFAULT_SLIDING_WINDOW_PERCENTAGE}
+ * — the host's config linter already warns at boot, so this is the runtime
+ * safety net rather than the primary signal.
+ *
+ * @param raw The parsed env value, or `undefined` when unset.
+ * @returns A fraction strictly inside `(0.3, 1.0)`.
+ */
+function clampSlidingWindow(raw: number | undefined): number {
+    if (raw !== undefined && raw > 0.3 && raw < 1.0) {
+        return raw;
+    }
+    return DEFAULT_SLIDING_WINDOW_PERCENTAGE;
+}
+
+/**
+ * Fraction of the model's context window at which {@link ContextManager}
+ * starts dropping the oldest messages. Read once at module load; the host
+ * forwards `inference.contextManagement.slidingWindowPercentage` as
+ * `INFERENCE_CONTEXT_SLIDING_WINDOW_PERCENTAGE`. Clamped to `(0.3, 1.0)`.
+ */
+const SLIDING_WINDOW_PERCENTAGE = clampSlidingWindow(
+    optionalEnvNumber("INFERENCE_CONTEXT_SLIDING_WINDOW_PERCENTAGE"),
+);
+
+/**
+ * Fraction of the model's context window used as the upper bound for an
+ * inline tool result before it is offloaded to scratch. Hardcoded — the
+ * tunable part is the absolute cap (see {@link TOOL_OFFLOAD_TOKEN_CAP}).
+ */
+const TOOL_OFFLOAD_CONTEXT_FRACTION = 0.25;
+
+/**
+ * Absolute token cap for an inline tool result, used as the ceiling in
+ * `min(0.25 * contextLimit, cap)` and as the whole threshold when the
+ * model's context window is unknown. Read once at module load; the host
+ * forwards `core.toolCallOffloadingLimit` as `TOOL_CALL_OFFLOADING_LIMIT`.
+ * Per-handler `toolCallOffloadingLimit` frontmatter overrides it per run.
+ * Defaults to {@link DEFAULT_TOOL_CALL_OFFLOADING_LIMIT}.
+ */
+const TOOL_OFFLOAD_TOKEN_CAP =
+    optionalEnvInt("TOOL_CALL_OFFLOADING_LIMIT") ?? DEFAULT_TOOL_CALL_OFFLOADING_LIMIT;
+
+/**
+ * Compute the per-result offload token threshold: the smaller of a
+ * fraction of the model's context window and the configured cap. When the
+ * context window is unknown (metadata miss) the threshold is just the cap.
+ *
+ * @param contextLimit The model's context window in tokens, or `undefined`.
+ * @param cap The configured / per-handler token cap.
+ * @returns The token threshold above which a tool result is offloaded.
+ */
+function computeOffloadTokenThreshold(contextLimit: number | undefined, cap: number): number {
+    if (contextLimit === undefined) {
+        return cap;
+    }
+    return Math.min(Math.ceil(TOOL_OFFLOAD_CONTEXT_FRACTION * contextLimit), cap);
+}
 
 /**
  * Pick which variant of the just-built system prompt to persist onto
@@ -135,12 +220,14 @@ export interface AgentRunnerContext {
      * expression. The Scheduler-provided closure threads in `bus`,
      * `parent`, `mcpPool`, `pluginToolsClient`, and the per-row
      * `waitForSubagent` callback so `call_handler` is wired with
-     * the right Scheduler hooks. The runner reads
-     * `handler.header.tools` and calls this once.
+     * the right Scheduler hooks. The runner reads `handler.header.tools`,
+     * computes the offload token threshold from model metadata, and
+     * calls this once. The threshold flows into both the container-side
+     * tool-run context and (over the gateway) the host-side plugin tools.
      */
     readonly buildTools: (
         toolsExpression: string | undefined,
-        handlerOffloadingLimit: number | undefined,
+        offloadTokenThreshold: number,
     ) => Promise<ToolSet>;
     /**
      * Suspend the current run until the named child agentrun (and
@@ -233,10 +320,40 @@ export class AgentRunner {
             modelId,
         } = ModelFactory.build(handler.header.model);
 
-        const tools = await ctx.buildTools(
-            handler.header.tools,
-            handler.header.toolCallOffloadingLimit,
+        // Look the resolved model's capabilities up through the bastion
+        // before building tools — the tool-result offload threshold is
+        // derived from the context window. Best-effort: a miss or fetch
+        // error resolves to `undefined` and never blocks the run; the
+        // threshold then falls back to the configured cap and the sliding
+        // window becomes a no-op. Also consumed below for the output cap.
+        const modelMetaData = await fetchModelMetaData(
+            requireEnv("BASTION_URL"),
+            provider,
+            modelId,
+            ctx.log,
         );
+        if (modelMetaData !== undefined) {
+            ctx.log.info(
+                {
+                    model: modelLabel,
+                    contextLimit: modelMetaData.contextLimit,
+                    outputLimit: modelMetaData.outputLimit,
+                    toolCall: modelMetaData.toolCall,
+                    reasoning: modelMetaData.reasoning,
+                },
+                `model metadata for ${modelLabel}: context=${modelMetaData.contextLimit ?? "?"} output=${modelMetaData.outputLimit ?? "?"} toolCall=${modelMetaData.toolCall ?? "?"} reasoning=${modelMetaData.reasoning ?? "?"}`,
+            );
+        }
+
+        // The offload cap is the per-handler frontmatter override, else the
+        // config/env cap; the effective threshold is that capped by a
+        // fraction of the model's context window.
+        const offloadTokenCap = handler.header.toolCallOffloadingLimit ?? TOOL_OFFLOAD_TOKEN_CAP;
+        const offloadTokenThreshold = computeOffloadTokenThreshold(
+            modelMetaData?.contextLimit,
+            offloadTokenCap,
+        );
+        const tools = await ctx.buildTools(handler.header.tools, offloadTokenThreshold);
         const toolNames = Object.keys(tools);
         const toolList =
             toolNames.length === 0
@@ -285,31 +402,6 @@ export class AgentRunner {
             loggedSystemPrompt === null ? null : `${loggedSystemPrompt}\n\n${dynamicContextBlock}`;
         await ctx.stampModel(modelLabel, promptToLog);
 
-        // Look the resolved model's capabilities up through the bastion
-        // as the run starts, so they're available for this run. Purely
-        // best-effort — a miss or fetch error resolves to `undefined`
-        // and never blocks the run. No consumer gates behavior on it
-        // yet; it's logged here and kept in scope for future use
-        // (output-limit clamping, tool-call gating, prompt shaping).
-        const modelMetaData = await fetchModelMetaData(
-            requireEnv("BASTION_URL"),
-            provider,
-            modelId,
-            ctx.log,
-        );
-        if (modelMetaData !== undefined) {
-            ctx.log.info(
-                {
-                    model: modelLabel,
-                    contextLimit: modelMetaData.contextLimit,
-                    outputLimit: modelMetaData.outputLimit,
-                    toolCall: modelMetaData.toolCall,
-                    reasoning: modelMetaData.reasoning,
-                },
-                `model metadata for ${modelLabel}: context=${modelMetaData.contextLimit ?? "?"} output=${modelMetaData.outputLimit ?? "?"} toolCall=${modelMetaData.toolCall ?? "?"} reasoning=${modelMetaData.reasoning ?? "?"}`,
-            );
-        }
-
         // Derive the per-step output cap. A handler that declares no
         // `maxOutputTokens` inherits the model's true output ceiling
         // (`outputLimit`, else a fraction of `contextLimit`); a declared
@@ -346,6 +438,17 @@ export class AgentRunner {
             );
         }
 
+        // Active context-window management: evict stale tool results and
+        // slide a window over the history before each step so a long tool
+        // loop doesn't overflow the model's context window.
+        const contextManager = new ContextManager({
+            contextLimit: modelMetaData?.contextLimit,
+            keptToolResultCount: KEPT_TOOL_RESULT_COUNT,
+            slidingWindowPercentage: SLIDING_WINDOW_PERCENTAGE,
+            systemPromptTokens: estimateTokens(systemPrompt.full),
+            log: ctx.log,
+        });
+
         const agent = new ToolLoopAgent<never, ToolSet>({
             model,
             tools,
@@ -358,14 +461,16 @@ export class AgentRunner {
             maxRetries: 0,
             stopWhen: stepCountIs(MAX_STEPS_PER_RUN),
             prepareStep: ({ stepNumber, messages }) => {
+                const managed = contextManager.prepare(messages);
                 ctx.log.debug(
                     {
                         stepNumber,
                         messageCount: messages.length,
+                        managedMessageCount: managed.length,
                     },
                     "step starting",
                 );
-                return {};
+                return { messages: managed };
             },
         });
 

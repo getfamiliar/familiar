@@ -6,8 +6,9 @@
  *
  * Two responsibilities only:
  *
- *   - **Truncation / offloading.** When the serialized result exceeds
- *     {@link ToolRunContext.limit} bytes, the runner spills the *full*
+ *   - **Truncation / offloading.** When the serialized result's
+ *     estimated token count (see {@link estimateTokens}) exceeds
+ *     {@link ToolRunContext.limit}, the runner spills the *full*
  *     result to a scratch file via {@link ToolRunContext.spill} and
  *     returns either a sentinel ({@link OffloadedJson} for the JSON
  *     runner) or a partial-with-marker (JSONL / text runners). The
@@ -24,9 +25,15 @@
  */
 
 import { Buffer } from "node:buffer";
+import { estimateTokens } from "./estimateTokens.js";
 
-/** Default byte budget when no config override and no frontmatter override is set. */
-export const DEFAULT_TOOL_CALL_OFFLOADING_LIMIT = 10000;
+/**
+ * Default token cap when no config override and no frontmatter override
+ * is set. Also doubles as the upper bound in the model-relative offload
+ * threshold `min(0.25 * contextLimit, cap)` computed in the agent runner,
+ * and as the host gateway's fallback when a caller sends no limit.
+ */
+export const DEFAULT_TOOL_CALL_OFFLOADING_LIMIT = 16000;
 
 /**
  * Convenience throwable for tool bodies that want to attach a stable
@@ -54,7 +61,8 @@ export class ToolError extends Error {
  * Per-call context handed to every runner. Constructed by whichever
  * side (host gateway / container tool wrapper) owns the agentrun.
  *
- *   - `limit`: byte budget for the inline response. Resolved per-call
+ *   - `limit`: token budget for the inline response (compared against
+ *     {@link estimateTokens} of the serialized result). Resolved per-call
  *     from handler frontmatter → env var / config → default.
  *   - `spill`: writes the full result under `/scratch/<event-id>/` and
  *     returns the absolute path the agent can later `fs_read`.
@@ -79,9 +87,9 @@ export interface OffloadedJson {
 
 /**
  * Run a tool whose result is a single JSON object. If the
- * `JSON.stringify`'d size is at or below the limit, returns the object
- * verbatim. Otherwise spills the full JSON to scratch and returns
- * {@link OffloadedJson}.
+ * `JSON.stringify`'d result's estimated token count is at or below the
+ * limit, returns the object verbatim. Otherwise spills the full JSON to
+ * scratch and returns {@link OffloadedJson}.
  *
  * No partial JSON is exposed — an oversized result is either fully
  * inline or fully offloaded. The body is expected to throw on failure;
@@ -93,14 +101,14 @@ export async function runJsonTool(
 ): Promise<object> {
     const result = await body();
     const serialized = JSON.stringify(result);
-    if (Buffer.byteLength(serialized, "utf8") <= ctx.limit) {
+    if (estimateTokens(serialized) <= ctx.limit) {
         return result;
     }
     const fullResultAt = await ctx.spill("result.json", Buffer.from(serialized, "utf8"));
     return {
         truncated: true,
         fullResultAt,
-        reason: `result exceeded ${ctx.limit} bytes — fs_read the path (it's paginated)`,
+        reason: `result exceeded ${ctx.limit} tokens — fs_read the path (it's paginated)`,
     } satisfies OffloadedJson;
 }
 
@@ -128,7 +136,7 @@ export async function runJsonLinesTool(
     }
 
     const inline = serialized.join("\n");
-    if (Buffer.byteLength(inline, "utf8") <= ctx.limit) {
+    if (estimateTokens(inline) <= ctx.limit) {
         return inline;
     }
 
@@ -143,19 +151,19 @@ export async function runJsonLinesTool(
         fullResultAt,
         omittedLines: serialized.length,
     });
-    const markerBudget = Buffer.byteLength(upperBoundMarker, "utf8");
+    const markerBudget = estimateTokens(upperBoundMarker);
 
     const kept: string[] = [];
-    let usedBytes = 0;
+    let usedTokens = 0;
     for (const line of serialized) {
-        const separator = kept.length > 0 ? 1 : 0; // newline before this line
+        const separator = kept.length > 0 ? 1 : 0; // newline before this line (~1 token)
         const newlineBeforeMarker = 1; // newline between last kept line and marker
-        const addBytes = separator + Buffer.byteLength(line, "utf8");
-        if (usedBytes + addBytes + newlineBeforeMarker + markerBudget > ctx.limit) {
+        const addTokens = separator + estimateTokens(line);
+        if (usedTokens + addTokens + newlineBeforeMarker + markerBudget > ctx.limit) {
             break;
         }
         kept.push(line);
-        usedBytes += addBytes;
+        usedTokens += addTokens;
     }
 
     const omittedLines = serialized.length - kept.length;
@@ -183,15 +191,20 @@ export async function runTextTool(
     ctx: ToolRunContext,
 ): Promise<string> {
     const text = await body();
-    if (Buffer.byteLength(text, "utf8") <= ctx.limit) {
+    if (estimateTokens(text) <= ctx.limit) {
         return text;
     }
 
     const fullResultAt = await ctx.spill("result.txt", Buffer.from(text, "utf8"));
     const footer = `\n\n[truncated; full result at ${fullResultAt}]`;
-    const footerBytes = Buffer.byteLength(footer, "utf8");
-    const prefixBudget = Math.max(0, ctx.limit - footerBytes);
-    const prefix = truncateUtf8(text, prefixBudget);
+    const footerTokens = estimateTokens(footer);
+    // The budget is in tokens; `truncateUtf8` bounds by character count.
+    // estimateTokens(s) = ceil(len/4), so the char budget for the prefix
+    // is the remaining token budget × 4. Bounding `truncateUtf8` by that
+    // char count is slightly conservative for multi-byte text — fine for
+    // a placeholder estimator backing a truncation marker.
+    const prefixCharBudget = Math.max(0, (ctx.limit - footerTokens) * 4);
+    const prefix = truncateUtf8(text, prefixCharBudget);
     return `${prefix}${footer}`;
 }
 

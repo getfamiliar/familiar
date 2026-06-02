@@ -2,7 +2,6 @@ import {
     AgentRunBus,
     ChatMessageBus,
     createLogger,
-    DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
     EventBus,
     InferenceEventBus,
     jsonStdoutStream,
@@ -103,8 +102,6 @@ async function main(): Promise<void> {
 
     const stepTimeoutMs = (optionalEnvInt("AGENTSTEP_TIMEOUT_SECONDS") ?? 150) * 1000;
     const retryCap = optionalEnvInt("INFERENCE_MAX_RETRIES") ?? 3;
-    const toolCallOffloadingLimit =
-        optionalEnvInt("TOOL_CALL_OFFLOADING_LIMIT") ?? DEFAULT_TOOL_CALL_OFFLOADING_LIMIT;
 
     const scheduler = new AgentrunScheduler({
         agentRunBus,
@@ -122,7 +119,6 @@ async function main(): Promise<void> {
         recovery,
         stepTimeoutMs,
         retryCap,
-        toolCallOffloadingLimit,
         maxConcurrentExecuting: 1,
         subscribeChanges: (handler) => subscribeAgentrunsChanges(connection, handler),
     });

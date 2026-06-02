@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { type PluginTool, runTextTool, ToolError } from "@getfamiliar/shared";
 import { getActiveLogins } from "../auth/ActiveLogins.js";
-import { type SampleResult, type SentExample, SentSampler } from "./SentSampler.js";
+import { type MailKind, type SampleResult, type SentExample, SentSampler } from "./SentSampler.js";
 
 /** Args accepted by `ms365_get_sent_sample`. */
 export interface SentSampleArgs {
@@ -9,6 +9,7 @@ export interface SentSampleArgs {
     readonly perKind?: number;
     readonly maxInlineBytes?: number;
     readonly maxRawBytes?: number;
+    readonly onlyKind?: MailKind;
 }
 
 /**
@@ -41,7 +42,9 @@ export function buildSentSampleTool(): PluginTool<SentSampleArgs, string> {
             "same byte caps as SentSampler's options. Read individual files with " +
             "`fs_read` — one read per file covers the whole mail. The summary " +
             "tells you how many messages were scanned and why some were dropped, " +
-            "useful when fewer examples than requested came back.",
+            "useful when fewer examples than requested came back. Set `onlyKind` " +
+            "to `reply` / `forward` / `new` to collect just that one kind; the " +
+            "other buckets then come back empty.",
         inputSchema: {
             type: "object",
             additionalProperties: false,
@@ -64,6 +67,13 @@ export function buildSentSampleTool(): PluginTool<SentSampleArgs, string> {
                     type: "number",
                     description: "Drop-threshold on raw HTML body before stripping. Default 40000.",
                 },
+                onlyKind: {
+                    type: "string",
+                    enum: ["reply", "forward", "new"],
+                    description:
+                        "When set, collect only messages of this kind; the other " +
+                        "buckets come back empty. Omit to sample all three kinds.",
+                },
             },
         },
         execute: async (args, callCtx) =>
@@ -75,6 +85,7 @@ export function buildSentSampleTool(): PluginTool<SentSampleArgs, string> {
                     perKind: args.perKind ?? 3,
                     maxInlineBytes: args.maxInlineBytes,
                     maxRawBytes: args.maxRawBytes,
+                    onlyKind: args.onlyKind,
                 });
                 const suffix = randomBytes(3).toString("hex");
                 const flat = flattenExamples(buckets);

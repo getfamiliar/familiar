@@ -114,15 +114,32 @@ export interface AgentContainerConfig {
      */
     readonly inferenceOutputFallbackPercentage: number;
     /**
-     * Byte budget for inline tool-call results before the runner spills
-     * the full response to a scratch file. Reflected to the container
-     * as `TOOL_CALL_OFFLOADING_LIMIT`; sourced from
-     * `core.toolCallOffloadingLimit` in `config.yml`, defaulting to
-     * `DEFAULT_TOOL_CALL_OFFLOADING_LIMIT` (10000). Individual handlers
+     * Token cap for inline tool-call results before the runner spills
+     * the full response to a scratch file. Used as the upper bound in the
+     * model-relative offload threshold `min(0.25 * contextLimit, cap)`.
+     * Reflected to the container as `TOOL_CALL_OFFLOADING_LIMIT`; sourced
+     * from `core.toolCallOffloadingLimit` in `config.yml`, defaulting to
+     * `DEFAULT_TOOL_CALL_OFFLOADING_LIMIT` (16000). Individual handlers
      * can override per-call via their `toolCallOffloadingLimit`
      * frontmatter field.
      */
     readonly toolCallOffloadingLimit: number;
+    /**
+     * Number of recent steps whose tool results survive context-window
+     * eviction; older tool results are elided to a short placeholder.
+     * Reflected to the container as
+     * `INFERENCE_CONTEXT_KEPT_TOOL_RESULT_COUNT`; sourced from
+     * `inference.contextManagement.keptToolResultCount`, defaulting to 3.
+     */
+    readonly inferenceKeptToolResultCount: number;
+    /**
+     * Fraction of the model's context window at which the agent loop
+     * starts dropping the oldest messages. Reflected to the container as
+     * `INFERENCE_CONTEXT_SLIDING_WINDOW_PERCENTAGE`; sourced from
+     * `inference.contextManagement.slidingWindowPercentage`, clamped to
+     * `(0.3, 1.0)` container-side, defaulting to 0.7.
+     */
+    readonly inferenceSlidingWindowPercentage: number;
     /**
      * Hard cap (in seconds) on a *single SDK step* of `agent.generate()`.
      * The Scheduler resets this timer on every completed step, so it
@@ -245,6 +262,10 @@ export class AgentContainer {
             `INFERENCE_OUTPUT_FALLBACK_PERCENTAGE=${this.config.inferenceOutputFallbackPercentage}`,
             "-e",
             `TOOL_CALL_OFFLOADING_LIMIT=${this.config.toolCallOffloadingLimit}`,
+            "-e",
+            `INFERENCE_CONTEXT_KEPT_TOOL_RESULT_COUNT=${this.config.inferenceKeptToolResultCount}`,
+            "-e",
+            `INFERENCE_CONTEXT_SLIDING_WINDOW_PERCENTAGE=${this.config.inferenceSlidingWindowPercentage}`,
             "-e",
             `AGENTSTEP_TIMEOUT_SECONDS=${this.config.agentStepTimeoutSeconds}`,
             "-e",

@@ -112,15 +112,17 @@ export interface HandlerFileHeader {
      */
     readonly systemPrompt?: "full" | "only-soul" | "none";
     /**
-     * Byte budget for inline tool-call results before the runner spills
-     * the full result to a scratch file. Resolved per-call against the
-     * value the host injected via `TOOL_CALL_OFFLOADING_LIMIT` (sourced
-     * from `core.toolCallOffloadingLimit` in `config.yml`), which in
-     * turn falls back to `DEFAULT_TOOL_CALL_OFFLOADING_LIMIT` from
-     * `@getfamiliar/shared`. Set per handler when a handler is known
-     * to produce especially large results and the agent should see
-     * more of them inline — or, conversely, to force aggressive
-     * offloading on a noisy handler.
+     * Token cap for inline tool-call results before the runner spills the
+     * full result to a scratch file. Used as the upper bound in the
+     * effective offload threshold `min(0.25 * model_context_window, cap)`;
+     * when set it overrides the value the host injected via
+     * `TOOL_CALL_OFFLOADING_LIMIT` (sourced from
+     * `core.toolCallOffloadingLimit` in `config.yml`), which in turn falls
+     * back to `DEFAULT_TOOL_CALL_OFFLOADING_LIMIT` from
+     * `@getfamiliar/shared`. Set per handler when a handler is known to
+     * produce especially large results and the agent should see more of
+     * them inline — or, conversely, to force aggressive offloading on a
+     * noisy handler.
      */
     readonly toolCallOffloadingLimit?: number;
 }

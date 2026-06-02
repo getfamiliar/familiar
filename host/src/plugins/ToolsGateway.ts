@@ -163,6 +163,9 @@ export class PluginToolsGateway implements BastionModule {
             replyFailureBody(res, "BadRequest", "missing agentrunId");
             return;
         }
+        // Token cap for inline plugin-tool results; the container computes
+        // it per run (model-relative) and sends it on every call. The
+        // fallback only fires for a malformed / missing field (a caller bug).
         const limit =
             typeof body.toolCallOffloadingLimit === "number" &&
             Number.isFinite(body.toolCallOffloadingLimit) &&

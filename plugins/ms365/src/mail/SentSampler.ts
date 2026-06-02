@@ -97,6 +97,11 @@ export interface SampleOptions {
      */
     readonly perKind: number;
     /**
+     * When set, collect only messages of this kind; the other two
+     * buckets stay empty. Undefined fills all three kinds as before.
+     */
+    readonly onlyKind?: MailKind;
+    /**
      * Per-example byte cap applied *after* quote-stripping. Defaults to
      * {@link DEFAULT_MAX_INLINE_BYTES}. Larger values keep more of the
      * original body when the soft truncation kicks in — useful for
@@ -220,6 +225,13 @@ export class SentSampler {
         }
         const maxInlineBytes = options.maxInlineBytes ?? DEFAULT_MAX_INLINE_BYTES;
         const maxRawBytes = options.maxRawBytes ?? DEFAULT_MAX_RAW_BYTES;
+        const onlyKind = options.onlyKind;
+        // Effective per-kind cap: when `onlyKind` is set the other two
+        // kinds get cap 0, so they are dropped through the existing
+        // bucket-full gate and `allBucketsFull` stops the scan the moment
+        // the single target bucket fills.
+        const capFor = (kind: MailKind): number =>
+            onlyKind !== undefined && kind !== onlyKind ? 0 : perKind;
         const verbose = this.debug !== undefined;
         const client = new GraphClient(() => this.target.auth.getAccessTokenSilent());
         const buckets: Record<MailKind, SentExample[]> = { reply: [], forward: [], new: [] };
@@ -249,7 +261,7 @@ export class SentSampler {
                     continue;
                 }
                 const cheapKind = classifyKind(listMessage);
-                if (buckets[cheapKind].length >= perKind) {
+                if (buckets[cheapKind].length >= capFor(cheapKind)) {
                     this.decision(
                         `dropped (bucket "${cheapKind}" already full — cheap classification)`,
                     );
@@ -290,7 +302,7 @@ export class SentSampler {
                 continue;
             }
             const kind = classifyKind(message);
-            if (buckets[kind].length >= perKind) {
+            if (buckets[kind].length >= capFor(kind)) {
                 this.decision(`dropped (bucket "${kind}" already full)`);
                 counters.droppedAsBucketFull += 1;
                 continue;
@@ -314,7 +326,7 @@ export class SentSampler {
             counters.kept += 1;
             this.decision(`kept as ${kind}`);
 
-            if (allBucketsFull(buckets, perKind)) {
+            if (allBucketsFull(buckets, capFor)) {
                 this.decision("all buckets full — stopping scan");
                 break;
             }
@@ -432,16 +444,16 @@ function parseRfc822Headers(blob: string): Array<{ name: string; value: string }
     return out;
 }
 
-/** True once every per-kind bucket has reached `perKind` entries. */
+/**
+ * True once every per-kind bucket has reached its effective cap. The cap
+ * is per-kind so an `onlyKind` run (where the off-target kinds carry cap
+ * `0`) stops the scan as soon as the single target bucket fills.
+ */
 function allBucketsFull(
     buckets: Record<MailKind, readonly SentExample[]>,
-    perKind: number,
+    capFor: (kind: MailKind) => number,
 ): boolean {
-    return (
-        buckets.reply.length >= perKind &&
-        buckets.forward.length >= perKind &&
-        buckets.new.length >= perKind
-    );
+    return MAIL_KINDS.every((kind) => buckets[kind].length >= capFor(kind));
 }
 
 /**

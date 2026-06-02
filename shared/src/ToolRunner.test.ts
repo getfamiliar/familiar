@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { test } from "node:test";
+import { estimateTokens } from "./estimateTokens.js";
 import {
     type OffloadedJson,
     runJsonLinesTool,
@@ -41,7 +42,7 @@ test("runJsonTool spills and returns OffloadedJson when oversized", async () => 
     assert.equal(spills[0].name, "result.json");
     assert.equal(result.truncated, true);
     assert.equal(result.fullResultAt, "/scratch/test/result.json");
-    assert.ok(/exceeded 20 bytes/.test(result.reason));
+    assert.ok(/exceeded 20 tokens/.test(result.reason));
     // Spilled buffer contains the full JSON.
     assert.equal(spills[0].bytes.toString("utf8"), JSON.stringify(big));
 });
@@ -82,9 +83,10 @@ test("runJsonLinesTool returns inline JSONL when within budget", async () => {
 });
 
 test("runJsonLinesTool spills and appends marker when oversized", async () => {
-    // 50 items × ~10 bytes each ≈ 500 bytes of JSONL; budget 150 forces
-    // truncation but leaves room for several leading lines + the marker.
-    const { ctx, spills } = makeSpyCtx(150);
+    // 50 items × ~10 chars each ≈ 500 chars (~125 tokens) of JSONL; a
+    // 40-token budget forces truncation but leaves room for several
+    // leading lines plus the marker.
+    const { ctx, spills } = makeSpyCtx(40);
     const items = Array.from({ length: 50 }, (_, i) => ({ idx: i }));
     const out = await runJsonLinesTool(async () => items, ctx);
     assert.equal(spills.length, 1);
@@ -100,11 +102,8 @@ test("runJsonLinesTool spills and appends marker when oversized", async () => {
     assert.equal(marker.fullResultAt, "/scratch/test/result.jsonl");
     assert.ok(marker.omittedLines > 0);
     assert.ok(lines.length > 1); // at least one kept line plus the marker
-    // The kept lines plus the marker fit within the limit.
-    assert.ok(
-        Buffer.byteLength(out, "utf8") <= 150,
-        `output was ${Buffer.byteLength(out, "utf8")} bytes`,
-    );
+    // The kept lines plus the marker fit within the token budget.
+    assert.ok(estimateTokens(out) <= 40, `output was ${estimateTokens(out)} tokens`);
     // Spill file has all 50 lines.
     const spilled = spills[0].bytes.toString("utf8");
     assert.equal(spilled.split("\n").length, 50);
@@ -142,20 +141,20 @@ test("runTextTool returns the body verbatim when within budget", async () => {
 test("runTextTool spills and appends footer when oversized", async () => {
     // Budget chosen so the footer fits with some headroom for prefix content.
     const { ctx, spills } = makeSpyCtx(120);
-    const big = "x".repeat(500);
+    const big = "x".repeat(1000);
     const out = await runTextTool(async () => big, ctx);
     assert.equal(spills.length, 1);
     assert.equal(spills[0].name, "result.txt");
     assert.ok(out.startsWith("x"));
     assert.ok(out.endsWith("[truncated; full result at /scratch/test/result.txt]"));
-    assert.ok(Buffer.byteLength(out, "utf8") <= 120);
+    assert.ok(estimateTokens(out) <= 120, `output was ${estimateTokens(out)} tokens`);
     // Spill file has the full original.
     assert.equal(spills[0].bytes.toString("utf8"), big);
 });
 
 test("runTextTool returns just the footer when budget can't fit any prefix", async () => {
-    // Footer alone is ~50 bytes; with a 30-byte limit, the prefix has no room.
-    const { ctx, spills } = makeSpyCtx(30);
+    // Footer alone is ~14 tokens; with a 10-token limit, the prefix has no room.
+    const { ctx, spills } = makeSpyCtx(10);
     const out = await runTextTool(async () => "x".repeat(200), ctx);
     assert.equal(spills.length, 1);
     // No prefix room: the result is the footer (minus its leading blank line padding).
@@ -167,7 +166,7 @@ test("runTextTool returns just the footer when budget can't fit any prefix", asy
 test("runTextTool respects UTF-8 code-point boundaries on truncation", async () => {
     // Three-byte CJK characters; budget mid-character should round down.
     const { ctx } = makeSpyCtx(50);
-    const text = "漢字".repeat(50);
+    const text = "漢字".repeat(200);
     const out = await runTextTool(async () => text, ctx);
     // The output must be valid UTF-8 — round-tripping through Buffer
     // and back must be lossless (no replacement chars introduced).

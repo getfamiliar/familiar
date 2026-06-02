@@ -359,6 +359,81 @@ test("sample honours maxInlineBytes override (caps inner HTML at 200 bytes, not 
     }
 });
 
+test("sample({ onlyKind: 'new' }) fills only the new bucket and drops the other kinds as bucket-full", async () => {
+    const restore = stubGraph([
+        {
+            id: "1",
+            subject: "Re: invoice",
+            sentDateTime: "2026-05-21T12:00:00Z",
+            hasAttachments: false,
+            body: { contentType: "html", content: "<p>reply body</p>" },
+            internetMessageHeaders: [{ name: "In-Reply-To", value: "<abc@x>" }],
+        },
+        {
+            id: "2",
+            subject: "Fwd: invoice",
+            sentDateTime: "2026-05-21T12:01:00Z",
+            hasAttachments: false,
+            body: { contentType: "html", content: "<p>forward body</p>" },
+            internetMessageHeaders: [],
+        },
+        {
+            id: "3",
+            subject: "Project plan for next week",
+            sentDateTime: "2026-05-21T12:02:00Z",
+            hasAttachments: false,
+            body: { contentType: "html", content: "<p>fresh body</p>" },
+            internetMessageHeaders: [],
+        },
+    ]);
+    try {
+        const out = await new SentSampler(makeTarget()).sample({ perKind: 3, onlyKind: "new" });
+        assert.deepEqual(out.buckets.reply, []);
+        assert.deepEqual(out.buckets.forward, []);
+        assert.equal(out.buckets.new.length, 1);
+        assert.equal(out.buckets.new[0].kind, "new");
+        assert.equal(out.summary.kept, 1);
+        // The reply and forward are dropped through the bucket-full gate
+        // (effective cap 0 for off-target kinds).
+        assert.equal(out.summary.droppedAsBucketFull, 2);
+    } finally {
+        restore();
+    }
+});
+
+test("sample({ onlyKind }) stops scanning once the single target bucket is full", async () => {
+    // Two 'new' mails, then a third the sampler must never reach because
+    // the new bucket fills at perKind=1.
+    const restore = stubGraph([
+        {
+            id: "1",
+            subject: "First fresh mail",
+            sentDateTime: "2026-05-21T12:00:00Z",
+            hasAttachments: false,
+            body: { contentType: "html", content: "<p>one</p>" },
+            internetMessageHeaders: [],
+        },
+        {
+            id: "2",
+            subject: "Second fresh mail",
+            sentDateTime: "2026-05-21T12:01:00Z",
+            hasAttachments: false,
+            body: { contentType: "html", content: "<p>two</p>" },
+            internetMessageHeaders: [],
+        },
+    ]);
+    try {
+        const out = await new SentSampler(makeTarget()).sample({ perKind: 1, onlyKind: "new" });
+        assert.equal(out.buckets.new.length, 1);
+        assert.equal(out.summary.kept, 1);
+        // Scan stopped after the first kept message — the second was
+        // never pulled off the iterator.
+        assert.equal(out.summary.scanned, 1);
+    } finally {
+        restore();
+    }
+});
+
 test("sample honours maxRawBytes override (drops a 1 KB body when raw cap is 100)", async () => {
     const restore = stubGraph([
         {

@@ -127,6 +127,14 @@ export const startCommand = defineCommand({
             "core.toolCallOffloadingLimit",
             DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
         );
+        const inferenceKeptToolResultCount = config.getNumber(
+            "inference.contextManagement.keptToolResultCount",
+            3,
+        );
+        const inferenceSlidingWindowPercentage = config.getNumber(
+            "inference.contextManagement.slidingWindowPercentage",
+            0.7,
+        );
         // In dev mode, default the inference debug captures to on when
         // the operator hasn't pinned a value in config.yml. Explicit
         // `true`/`false`/`"full"`/`"non-static"` in config always wins;
@@ -296,6 +304,8 @@ export const startCommand = defineCommand({
             inferenceMaxRetries,
             inferenceOutputFallbackPercentage,
             toolCallOffloadingLimit,
+            inferenceKeptToolResultCount,
+            inferenceSlidingWindowPercentage,
             agentStepTimeoutSeconds,
             logSystemPromptMode,
             captureRawStepResultToDatabase,

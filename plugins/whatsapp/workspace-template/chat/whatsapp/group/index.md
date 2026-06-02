@@ -1,7 +1,7 @@
 ---
 mergeMode: replace
 outputChat: false
-model: deepseek-ai/DeepSeek-V4-Flash
+model: deepseek/deepseek-v4-flash
 ---
 
 A WhatsApp group message has arrived. We keep digest files for each subscribed group
