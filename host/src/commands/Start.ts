@@ -360,6 +360,7 @@ export const startCommand = defineCommand({
             verbose: debugLogging,
             coreTimezone,
             writablePaths,
+            pythonPackages,
             hostUid: boot.hostUid,
             hostGid: boot.hostGid,
         });

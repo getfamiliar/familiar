@@ -394,6 +394,7 @@ export class AgentRunner {
             handler,
             ctx.row.topic,
             ctx.row.privileged,
+            toolNames,
             {
                 bastionUrl: requireEnv("BASTION_URL"),
                 eventId: ctx.row.eventId,

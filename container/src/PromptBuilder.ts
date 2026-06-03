@@ -3,6 +3,11 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { getCoreTimezone } from "./env.js";
 import { HandlerFile } from "./HandlerFile.js";
+import {
+    CONTAINER_PROMPT_CONTRIBUTORS,
+    type PromptContributor,
+    type PromptContributorContext,
+} from "./prompt-contributors.js";
 
 /**
  * Absolute path of the per-container scratch root. Bind-mounted to the
@@ -145,8 +150,14 @@ export function buildSystemPrompt(
 
 /**
  * Compose the per-run **dynamic** context block that prepends to the
- * current-run user message: the `# Runtime` section followed by any
- * plugin-contributed event-context sections (e.g. injected memories).
+ * current-run user message. Sections, in order:
+ *
+ * 1. `# Runtime` — wall-clock time, topic, handler path, `privileged`.
+ * 2. Container-core contributor sections (e.g. the `## The bash tool`
+ *    help) — these see the resolved `toolNames` and `privileged`, which
+ *    the host can't supply to its own providers.
+ * 3. Host-plugin event-context sections fetched from the bastion (e.g.
+ *    injected memories).
  *
  * This content used to live at the tail of the system prompt. It moved
  * out so the system prompt can stay byte-stable per handler (a cacheable
@@ -164,10 +175,16 @@ export function buildSystemPrompt(
  * @param privileged Whether the agentrun descends from a trusted
  *   user-input source. Surfaced in `# Runtime` so the agent knows which
  *   trust-gated tools are available to it.
+ * @param toolNames Ids of the tools the agent may call for this run
+ *   (post-filter). Passed to the container-core contributors so a tool
+ *   can contribute help only when it is actually available.
  * @param eventContext Identifiers needed to fetch plugin-contributed
  *   event-context sections from the bastion's `/event-context/`
  *   gateway. Pass `null` to skip the fetch entirely — used by tests and
  *   one-off harnesses that don't have a live bastion.
+ * @param contributors The container-core contributors to run. Defaults
+ *   to {@link CONTAINER_PROMPT_CONTRIBUTORS}; injectable so tests can
+ *   pass stubs or an empty list.
  * @returns The assembled dynamic block. Always contains at least the
  *   `# Runtime` section, so it is never empty.
  */
@@ -175,10 +192,23 @@ export async function buildRuntimeContextBlock(
     handler: HandlerFile,
     topic: string,
     privileged: boolean,
+    toolNames: readonly string[],
     eventContext: EventContextFetchInput | null,
+    contributors: readonly PromptContributor[] = CONTAINER_PROMPT_CONTRIBUTORS,
 ): Promise<string> {
     const sections: string[] = [`# Runtime\n\n${buildRuntimeSection(handler, topic, privileged)}`];
 
+    // Container-core contributors run after `# Runtime`: they see the
+    // resolved toolNames + privileged, which host plugins can't.
+    const contributorCtx: PromptContributorContext = { handler, topic, toolNames, privileged };
+    for (const contribute of contributors) {
+        const text = contribute(contributorCtx);
+        if (text !== null && text.trim().length > 0) {
+            sections.push(text.trim());
+        }
+    }
+
+    // Host-plugin event-context sections last.
     if (eventContext !== null) {
         const eventContextSections = await fetchEventContextSections(eventContext);
         for (const section of eventContextSections) {

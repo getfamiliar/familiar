@@ -35,6 +35,7 @@ function configFixture(overrides: Partial<AgentContainerConfig> = {}): AgentCont
         verbose: false,
         coreTimezone: "Europe/Berlin",
         writablePaths: [],
+        pythonPackages: [],
         hostUid: 1000,
         hostGid: 1000,
         ...overrides,
@@ -83,6 +84,14 @@ describe("buildAgentRunArgs — egress lockdown invariant", () => {
         assert.ok(argv.includes("HOST_UID=1007"), "HOST_UID env expected");
         assert.ok(argv.includes("HOST_GID=1009"), "HOST_GID env expected");
         assert.ok(!argv.includes("--user"), "agent container must not pin --user");
+    });
+
+    it("forwards the python package list as a JSON array env var", () => {
+        const argv = buildAgentRunArgs(configFixture({ pythonPackages: ["numpy", "pandas"] }));
+        assert.ok(
+            argv.includes(`AGENT_PYTHON_PACKAGES=${JSON.stringify(["numpy", "pandas"])}`),
+            "AGENT_PYTHON_PACKAGES env expected",
+        );
     });
 });
 

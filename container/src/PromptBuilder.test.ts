@@ -471,7 +471,7 @@ describe("buildRuntimeContextBlock", () => {
 
     it("renders the `# Runtime` section with topic and privileged flag", async () => {
         const handler = loadHandler("rt-full.md", "Do the thing.\n");
-        const block = await buildRuntimeContextBlock(handler, "chat:telegram", true, null);
+        const block = await buildRuntimeContextBlock(handler, "chat:telegram", true, [], null);
         assert.match(block, /^# Runtime$/m);
         assert.match(block, /^- Current time: /m);
         assert.match(block, /^- Event topic: `chat:telegram`$/m);
@@ -480,19 +480,19 @@ describe("buildRuntimeContextBlock", () => {
 
     it("renders the non-privileged flag", async () => {
         const handler = loadHandler("rt-unpriv.md", "Do the thing.\n");
-        const block = await buildRuntimeContextBlock(handler, "mail:new", false, null);
+        const block = await buildRuntimeContextBlock(handler, "mail:new", false, [], null);
         assert.match(block, /^- privileged: no$/m);
     });
 
     it("always includes Runtime regardless of the handler's systemPrompt mode", async () => {
         const handler = loadHandler("rt-none.md", "---\nsystemPrompt: none\n---\nDo the thing.\n");
-        const block = await buildRuntimeContextBlock(handler, "test", false, null);
+        const block = await buildRuntimeContextBlock(handler, "test", false, [], null);
         assert.match(block, /^# Runtime$/m);
     });
 
     it("contains only the dynamic block — no system-prompt sections", async () => {
         const handler = loadHandler("rt-isolation.md", "Do the thing.\n");
-        const block = await buildRuntimeContextBlock(handler, "test", false, null);
+        const block = await buildRuntimeContextBlock(handler, "test", false, [], null);
         // These belong to the (static) system prompt, never the runtime block.
         assert.doesNotMatch(block, /^# Identity$/m);
         assert.doesNotMatch(block, /^# Context$/m);
@@ -504,7 +504,45 @@ describe("buildRuntimeContextBlock", () => {
         // A null eventContext must not attempt any network fetch — the
         // block is exactly the Runtime section, nothing appended.
         const handler = loadHandler("rt-nofetch.md", "Do the thing.\n");
-        const block = await buildRuntimeContextBlock(handler, "test", false, null);
+        const block = await buildRuntimeContextBlock(handler, "test", false, [], null);
         assert.ok(block.startsWith("# Runtime\n\n"));
+    });
+
+    it("inserts container-core contributor sections after Runtime, before plugin sections", async () => {
+        const handler = loadHandler("rt-contrib.md", "Do the thing.\n");
+        const contributors = [() => "## Core section\n\ncore body", () => null];
+        const block = await buildRuntimeContextBlock(
+            handler,
+            "test",
+            false,
+            [],
+            null,
+            contributors,
+        );
+        const runtimeIndex = block.indexOf("# Runtime");
+        const coreIndex = block.indexOf("## Core section");
+        assert.ok(runtimeIndex >= 0 && coreIndex > runtimeIndex);
+        // A contributor returning null contributes nothing (no blank section).
+        assert.doesNotMatch(block, /\n\n\n/);
+    });
+
+    it("passes toolNames and privileged through to contributors", async () => {
+        const handler = loadHandler("rt-contrib-ctx.md", "Do the thing.\n");
+        const seen: { toolNames: readonly string[]; privileged: boolean }[] = [];
+        const contributors = [
+            (ctx: { toolNames: readonly string[]; privileged: boolean }) => {
+                seen.push({ toolNames: ctx.toolNames, privileged: ctx.privileged });
+                return null;
+            },
+        ];
+        await buildRuntimeContextBlock(
+            handler,
+            "test",
+            true,
+            ["bash", "fs_read"],
+            null,
+            contributors,
+        );
+        assert.deepEqual(seen, [{ toolNames: ["bash", "fs_read"], privileged: true }]);
     });
 });

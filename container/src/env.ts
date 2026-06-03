@@ -104,6 +104,34 @@ export function getWritablePaths(): string[] {
 }
 
 /**
+ * Pip requirements baked into the agent image's python venv
+ * (`config.python.packages`). The host forwards the SAME list it
+ * passes to the image build-arg as `AGENT_PYTHON_PACKAGES` (a JSON
+ * array of strings), so the bash tool's help section can name the
+ * installed packages at runtime (the container is offline and can't
+ * introspect pip). Returns `[]` on unset, blank, or unparseable input
+ * so the help section simply omits the package list rather than
+ * throwing at prompt-build time.
+ */
+export function getPythonPackages(): string[] {
+    const raw = process.env.AGENT_PYTHON_PACKAGES;
+    if (!raw || raw.trim().length === 0) {
+        return [];
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+            return [];
+        }
+        return parsed.filter(
+            (entry): entry is string => typeof entry === "string" && entry.length > 0,
+        );
+    } catch {
+        return [];
+    }
+}
+
+/**
  * Resolve the user's preferred IANA timezone. The host forwards
  * `core.timezone` (validated at lint time) as `CORE_TIMEZONE`; when
  * unset or blank we fall back to whatever

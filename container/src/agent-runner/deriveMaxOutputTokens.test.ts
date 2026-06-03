@@ -2,8 +2,8 @@ import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import {
     ABSOLUTE_DEFAULT_OUTPUT_TOKENS,
-    deriveMaxOutputTokens,
     DEFAULT_OUTPUT_FALLBACK_FRACTION,
+    deriveMaxOutputTokens,
     resolveModelCeiling,
 } from "./deriveMaxOutputTokens.js";
 

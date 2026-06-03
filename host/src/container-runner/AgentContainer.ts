@@ -290,6 +290,15 @@ export interface AgentContainerConfig {
      */
     readonly writablePaths: readonly string[];
     /**
+     * Pip requirements baked into the agent image's python venv
+     * (`config.python.packages`, defaulting to {@link DEFAULT_PYTHON_PACKAGES}).
+     * The SAME list passed to the image build-arg, forwarded as
+     * `AGENT_PYTHON_PACKAGES` (JSON array) so the bash tool's runtime
+     * help section can name the installed packages. Empty list → the
+     * help section omits the package list.
+     */
+    readonly pythonPackages: readonly string[];
+    /**
      * Host operator's uid/gid. Forwarded as `HOST_UID` / `HOST_GID`; the
      * entrypoint provisions the privileged `priv` user with this uid and
      * drops to it via gosu, so files the agent writes are host-owned (the
@@ -415,6 +424,8 @@ export function buildAgentRunArgs(config: AgentContainerConfig): string[] {
         `CORE_TIMEZONE=${config.coreTimezone}`,
         "-e",
         `CORE_WRITABLE_PATHS=${JSON.stringify(config.writablePaths)}`,
+        "-e",
+        `AGENT_PYTHON_PACKAGES=${JSON.stringify(config.pythonPackages)}`,
         "-e",
         `HOST_UID=${config.hostUid}`,
         "-e",
