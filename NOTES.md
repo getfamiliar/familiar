@@ -1,5 +1,7 @@
 Features:
 
+* Bash: better context. Give some list of installed python packages.
+
 * File Storages like Onedrive, Dropbox, Google Drive, ... - read & write access, search. Done like calendar + mail, a default set of tools for all providers and provider-specific implementations in plugins.
 * Host-side LLM chat with access to console tools for selections, prompts etc. as a service - used for setup and plugin CLI tools.
 * Diff Tool for the workspace vs default workspace

@@ -22,18 +22,18 @@ import {
 import { ensureRuntimeImage, mcpMountDirFor } from "../../mcp/RuntimeImages.js";
 
 /**
- * `cli.sh mcp call <id> -- <args...>` — one-shot interactive
+ * `cli.sh tools call-mcp <id> -- <args...>` — one-shot interactive
  * invocation of an MCP's runtime container that uses the *same*
  * docker invocation the bastion would build for the same `mcp.yml`
  * entry. Mount, env, `--user`, network, and the entry's `args:`
  * block all flow through unchanged; the user's `-- <tail>` is
  * **appended** to the entry's args (it never replaces them), so a
- * call like `./cli.sh mcp call ms365 -- --login` runs with the
+ * call like `./cli.sh tools call-mcp ms365 -- --login` runs with the
  * mcp.yml-declared flags first (e.g. `--org-mode`) and then
  * `--login`. The OAuth scopes the user authenticates with thus
  * match what the bastion will request silently later.
  *
- * Use case: `./cli.sh mcp call ms-365 -- --login` walks the user
+ * Use case: `./cli.sh tools call-mcp ms-365 -- --login` walks the user
  * through Microsoft's device-code OAuth flow, drops a token into
  * the bind mount, and exits — no daemon restart required.
  *
@@ -45,9 +45,9 @@ import { ensureRuntimeImage, mcpMountDirFor } from "../../mcp/RuntimeImages.js";
  * with the bastion's live `familiar-mcp-<id>` container (the daemon may
  * be running). `--rm` still cleans up the one-shot container.
  */
-export const mcpCallCommand = defineCommand({
+export const callMcpCommand = defineCommand({
     meta: {
-        name: "call",
+        name: "call-mcp",
         description:
             "Run a one-shot interactive command against an MCP's runtime container. Use `--` to separate the user's args from citty's flags.",
     },
@@ -69,7 +69,7 @@ export const mcpCallCommand = defineCommand({
         const extraArgs = dashIdx >= 0 ? rawArgs.slice(dashIdx + 1) : [];
         if (extraArgs.length === 0) {
             process.stderr.write(
-                `usage: ./cli.sh mcp call <id> -- <args...>\n` +
+                `usage: ./cli.sh tools call-mcp <id> -- <args...>\n` +
                     `(at least one arg after \`--\` is required; the args are appended after the package or image)\n`,
             );
             process.exit(1);
@@ -78,7 +78,7 @@ export const mcpCallCommand = defineCommand({
         const boot = bootstrap();
         if (!existsSync(boot.mcpConfigFile)) {
             process.stderr.write(
-                `config/mcp.yml not present; declare the MCP entry first (see ./cli.sh mcp add)\n`,
+                `config/mcp.yml not present; declare the MCP entry first (see ./cli.sh tools add-mcp)\n`,
             );
             process.exit(1);
         }
@@ -119,7 +119,7 @@ export const mcpCallCommand = defineCommand({
 
         // Pre-create the per-id mount and ensure the runtime image
         // exists. The bastion does both at start; we replicate so
-        // `mcp call` works even when the daemon has never run.
+        // `tools call-mcp` works even when the daemon has never run.
         if (entry.source === "npm" || entry.source === "pypi") {
             mkdirSync(mcpMountDirFor(boot.tmpDir, id), { recursive: true });
             void ensureRuntimeImage(entry.source, log).then(

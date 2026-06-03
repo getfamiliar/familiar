@@ -24,6 +24,8 @@ import { McpClientPool } from "./mcp/McpClientPool.js";
 import { PluginToolsClient } from "./plugins/ToolsClient.js";
 import { AgentrunRecovery } from "./recovery/AgentrunRecovery.js";
 import { RealClock } from "./testing/MockClock.js";
+import { reportContainerToolCatalog } from "./tools/ToolCatalogClient.js";
+import { ToolsFactory } from "./tools/ToolsFactory.js";
 
 /**
  * Process-wide handler-header defaults. A handler can override any of
@@ -80,6 +82,15 @@ async function main(): Promise<void> {
         log: log.child({ component: "mcp-client-pool" }),
     });
     await mcpPool.start();
+
+    // Report our built-in tool catalog to the host so `tools list` and
+    // the `tool_list` reflection tool can show built-ins. Best-effort —
+    // a failed report only leaves the host's built-in listing stale.
+    await reportContainerToolCatalog(
+        bastionUrl,
+        await ToolsFactory.catalog(),
+        log.child({ component: "tool-catalog-report" }),
+    );
 
     const pluginToolsClient = new PluginToolsClient({
         bastionUrl,

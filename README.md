@@ -14,11 +14,11 @@ Architecture
 
 MCP Integration
 
-call mcp add
+call tools add-mcp
 
 * Prefered source: Docker MCP Registry, see
 * Secondary: Official MCP Registry, see
-* Custom: just go, remember the mcp call command if necessary
+* Custom: just go, remember the tools call-mcp command if necessary
 
 ## Upgrading from `effective-assistant`
 

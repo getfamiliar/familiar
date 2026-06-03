@@ -35,6 +35,8 @@ import {
     BRIDGE_IMAGE_TAG,
     ensureBridgeImage,
 } from "../container-runner/BastionBridgeContainer.js";
+import { ContainerToolsGateway } from "../container-tools/ContainerToolsGateway.js";
+import { ContainerToolsRegistry } from "../container-tools/ContainerToolsRegistry.js";
 import { CronjobScheduler } from "../cron/CronjobScheduler.js";
 import { ModelMetadataRefresher } from "../cron/ModelMetadataRefresher.js";
 import { ScheduledHandlerScheduler } from "../cron/ScheduledHandlerScheduler.js";
@@ -248,6 +250,14 @@ export const startCommand = defineCommand({
             ensureConnection: () => pluginHost.ensureConnection(),
             log: log.child({ component: "plugin-tools-gateway" }),
         });
+        // The agent container reports its built-in tool catalog here on
+        // startup; the registry backs both `tools list` and `tool_list`.
+        const containerToolsRegistry = new ContainerToolsRegistry();
+        pluginHost.setContainerToolsRegistry(containerToolsRegistry);
+        const containerToolsGateway = new ContainerToolsGateway({
+            registry: containerToolsRegistry,
+            log: log.child({ component: "container-tools-gateway" }),
+        });
         const eventContextGateway = new EventContextGateway({
             registry: pluginHost.eventContext,
             ensureConnection: () => pluginHost.ensureConnection(),
@@ -263,6 +273,7 @@ export const startCommand = defineCommand({
                 reverseProxy,
                 mcpGateway,
                 pluginToolsGateway,
+                containerToolsGateway,
                 eventContextGateway,
                 modelMetadataGateway,
             ],

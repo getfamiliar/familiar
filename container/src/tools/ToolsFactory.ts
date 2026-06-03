@@ -1,11 +1,12 @@
 import type {
     AgentRunBus,
     AgentRunRow,
+    ContainerToolInfo,
     Logger,
     ScheduledHandlerBus,
     ToolRunContext,
 } from "@getfamiliar/shared";
-import type { ToolSet } from "ai";
+import { asSchema, type Tool, type ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
 import { buildBashTool } from "./bash.js";
 import { buildCallHandlerTool, type WaitForSubagent } from "./callHandler.js";
@@ -303,6 +304,65 @@ export class ToolsFactory {
         }
         return out;
     }
+
+    /**
+     * Enumerate every container built-in as a flat catalog of name +
+     * description + raw JSON input schema + curated groups. The
+     * container POSTs this to the host's `/container-tools/` bastion
+     * endpoint on startup so the `tools list` CLI and the `tool_list`
+     * reflection tool can show built-ins without a hand-maintained
+     * host-side copy.
+     *
+     * Each tool is constructed through its real builder with inert stub
+     * deps: construction never touches the runtime deps (they are only
+     * used inside `execute`), so the descriptions and schemas read here
+     * are exactly what the agent is offered — there is nothing to drift.
+     * Group memberships come from {@link CONTAINER_TOOL_GROUPS}, the same
+     * map `build()` filters against. Unlike `build()`, every built-in is
+     * enumerated unconditionally (no chat / parent / bus gating).
+     */
+    static async catalog(): Promise<ContainerToolInfo[]> {
+        const ctx = FALLBACK_TOOL_RUN_CONTEXT;
+        const chat = {} as Parameters<typeof buildSendChatTool>[0];
+        const bus = {} as AgentRunBus;
+        const scheduled = {} as ScheduledHandlerBus;
+        const parent = {} as AgentRunRow;
+        const waitForSubagent: WaitForSubagent = async () => {
+            throw new Error("ToolsFactory.catalog stub: waitForSubagent must not be invoked");
+        };
+        const tools: ToolSet = {
+            send_chat: buildSendChatTool(chat, "", ctx),
+            call_handler: buildCallHandlerTool(bus, parent, waitForSubagent, ctx),
+            schedule_handler: buildScheduleHandlerTool(bus, scheduled, parent, "UTC", ctx),
+            unschedule_handler: buildUnscheduleHandlerTool(scheduled, ctx),
+            get_scheduled_handlers: buildGetScheduledHandlersTool(scheduled, "UTC", ctx),
+            ...buildFsTools(parent, ctx),
+            bash: buildBashTool(parent, ctx),
+        };
+
+        const out: ContainerToolInfo[] = [];
+        for (const [name, t] of Object.entries(tools)) {
+            out.push({
+                name,
+                description: t.description ?? "",
+                inputSchema: await readRawInputSchema(t),
+                groups: CONTAINER_TOOL_GROUPS[name] ?? [],
+            });
+        }
+        return out;
+    }
+}
+
+/**
+ * Resolve a built-in tool's raw JSON Schema. Container built-ins all
+ * declare `inputSchema` via `jsonSchema(<plain object>)`, so `asSchema`
+ * yields a `Schema` whose `.jsonSchema` is that plain object —
+ * synchronous in practice, awaited here to satisfy the SDK's
+ * `JSONSchema7 | PromiseLike<JSONSchema7>` type.
+ */
+async function readRawInputSchema(tool: Tool): Promise<object> {
+    const resolved = await Promise.resolve(asSchema(tool.inputSchema).jsonSchema);
+    return resolved as object;
 }
 
 /**

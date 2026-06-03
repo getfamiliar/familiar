@@ -7,7 +7,7 @@ import { lintMcpConfigFile } from "../../mcp/McpConfigLoader.js";
 import { mcpMountDirFor } from "../../mcp/RuntimeImages.js";
 
 /**
- * `cli.sh mcp list` — print every MCP declared in `config/mcp.yml`,
+ * `cli.sh tools list-mcps` — print every MCP declared in `config/mcp.yml`,
  * its source, runtime state, and the relevant identifier (image,
  * package@version, or url). Read-only; safe to run any time.
  *
@@ -18,7 +18,7 @@ import { mcpMountDirFor } from "../../mcp/RuntimeImages.js";
  *
  * The `(cached)` annotation appears next to npm/pypi entries when
  * `tmp/mcp-mount-<id>/` exists and contains anything; lets the user
- * see at a glance whether `mcp purge` would actually free space.
+ * see at a glance whether `tools purge-mcps` would actually free space.
  *
  * Failure modes:
  * - `mcp.yml` missing/empty → "no MCPs declared", exit 0.
@@ -26,9 +26,9 @@ import { mcpMountDirFor } from "../../mcp/RuntimeImages.js";
  *   wouldn't load at daemon start either).
  * - docker unreachable → trailing note, all entries shown idle.
  */
-export const mcpListCommand = defineCommand({
+export const listMcpsCommand = defineCommand({
     meta: {
-        name: "list",
+        name: "list-mcps",
         description:
             "List declared MCPs, their source, live/idle state, and (for npm/pypi) cache presence.",
     },

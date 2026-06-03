@@ -17,7 +17,7 @@ import {
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
 /**
- * `cli.sh mcp add <package>` — interactive dialogue that finds an MCP
+ * `cli.sh tools add-mcp <package>` — interactive dialogue that finds an MCP
  * by name in the Docker MCP registry first, falls back to the
  * official MCP registry, lets the user fill in env vars and any
  * extra args, and appends a validated entry to `config/mcp.yml`.
@@ -29,9 +29,9 @@ const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
  * proposed to the user as an editable default — search term and
  * local id are intentionally distinct concepts.
  */
-export const mcpAddCommand = defineCommand({
+export const addMcpCommand = defineCommand({
     meta: {
-        name: "add",
+        name: "add-mcp",
         description:
             "Interactively add an MCP from the Docker MCP registry (preferred) or the official MCP registry. Appends to config/mcp.yml.",
     },

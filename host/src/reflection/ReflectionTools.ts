@@ -1,4 +1,5 @@
 import type { PluginTool, PostgresConnection } from "@getfamiliar/shared";
+import type { ContainerToolsRegistry } from "../container-tools/ContainerToolsRegistry.js";
 import type { McpRegistry } from "../mcp/McpRegistry.js";
 import type { PluginToolsRegistry } from "../plugins/ToolsRegistry.js";
 import { buildAgentrunReportTool } from "./tools/AgentrunReport.js";
@@ -33,6 +34,12 @@ export interface ReflectionToolsDeps {
     readonly mcpRegistry: McpRegistry;
     /** Plugin-tools catalog — `tool_list` enumerates plugin tools from here. */
     readonly pluginToolsRegistry: PluginToolsRegistry;
+    /**
+     * Container built-ins catalog the agent reported on startup —
+     * `tool_list` enumerates built-ins from here (read by reference, so
+     * it reflects the latest report).
+     */
+    readonly containerToolsRegistry: ContainerToolsRegistry;
 }
 
 /**

@@ -5,58 +5,6 @@ interface ToolListArgs {
     readonly search?: string;
 }
 
-/**
- * Static manifest of every container-built-in tool. Kept in sync
- * with `CONTAINER_TOOL_GROUPS` in
- * `container/src/tools/ToolsFactory.ts` — if a new built-in is
- * added there, add it here too. Built-ins don't move through any
- * host-side registry, so duplicating the names is the cheapest path
- * to a complete catalog without adding a bastion route the agent
- * doesn't otherwise need.
- */
-const CONTAINER_BUILTINS: ReadonlyArray<{ readonly name: string; readonly description: string }> = [
-    {
-        name: "send_chat",
-        description: "Append an assistant message to the event's chat channel (chat events only).",
-    },
-    {
-        name: "call_handler",
-        description:
-            "Synchronously call another handler as a subagent. Parks the current run " +
-            "until the child settles; returns the child's result text.",
-    },
-    {
-        name: "schedule_handler",
-        description:
-            "Fire-and-forget child handler under the current event, or — with `when` " +
-            "— a future deferred wake-up under a fresh event.",
-    },
-    {
-        name: "unschedule_handler",
-        description: "Cancel a previously-scheduled handler by its `key`.",
-    },
-    {
-        name: "get_scheduled_handlers",
-        description:
-            "List scheduled one-off handlers in a time range. (Already in the " +
-            "`reflection` group alongside this tool.)",
-    },
-    { name: "fs_read", description: "Read a file from the agent's workspace or scratch." },
-    {
-        name: "fs_write",
-        description: "Write a file. Workspace `.md` writes require a privileged agentrun.",
-    },
-    {
-        name: "fs_str_replace",
-        description: "Replace one occurrence of a literal string in a file.",
-    },
-    { name: "fs_append", description: "Append text to a file (create if absent)." },
-    { name: "fs_ls", description: "List directory entries." },
-    { name: "fs_glob", description: "Match paths against a glob pattern." },
-    { name: "fs_grep", description: "Substring / regex search across files." },
-    { name: "fs_remove", description: "Delete a file or empty directory." },
-];
-
 const DESCRIPTION_CHARS = 200;
 
 /**
@@ -94,7 +42,7 @@ export function buildToolListTool(deps: ReflectionToolsDeps): PluginTool<ToolLis
                 const needle = args.search?.toLowerCase();
                 const rows: Array<{ name: string; source: string; description: string }> = [];
 
-                for (const builtin of CONTAINER_BUILTINS) {
+                for (const builtin of deps.containerToolsRegistry.list()) {
                     rows.push({
                         name: builtin.name,
                         source: "builtin",

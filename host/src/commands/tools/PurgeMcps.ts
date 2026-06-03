@@ -8,7 +8,7 @@ import { inspectPidFile } from "../pidfile.js";
 const MOUNT_DIR_PREFIX = "mcp-mount-";
 
 /**
- * `cli.sh mcp purge` — remove every `tmp/mcp-mount-*` directory. Refuses
+ * `cli.sh tools purge-mcps` — remove every `tmp/mcp-mount-*` directory. Refuses
  * while the daemon is up so we never yank a cache out from under a
  * live `familiar-mcp-<id>` container reading from it.
  *
@@ -17,9 +17,9 @@ const MOUNT_DIR_PREFIX = "mcp-mount-";
  * because `Bootstrap.tmpDir` is expected to exist when the daemon
  * boots; the npm/pypi factories recreate per-id subdirs lazily.
  */
-export const mcpPurgeCommand = defineCommand({
+export const purgeMcpsCommand = defineCommand({
     meta: {
-        name: "purge",
+        name: "purge-mcps",
         description:
             "Remove all tmp/mcp-mount-* cache directories. Refuses to run while the daemon is up.",
     },
