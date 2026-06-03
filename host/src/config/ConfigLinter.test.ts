@@ -217,4 +217,53 @@ inference:
             `expected a writablePaths warning in: ${JSON.stringify(result.warnings)}`,
         );
     });
+
+    it("errors on a python.packages entry with whitespace or shell metacharacters", () => {
+        const file = write(`
+core:
+  postgresPassword: secret
+  defaultChatChannel: cli
+inference:
+  defaultProvider: openai
+  defaultModel: gpt-5
+  apiKeys:
+    openai: REAL_KEY
+python:
+  packages:
+    - numpy
+    - "evil; rm -rf /"
+`);
+        const result = lintConfigFile(file);
+        assert.equal(result.ok, false);
+        assert.ok(
+            result.errors.some(
+                (e) => e.includes("python.packages") && e.includes("valid pip requirement"),
+            ),
+            `expected a python.packages error in: ${JSON.stringify(result.errors)}`,
+        );
+    });
+
+    it("accepts a clean python.packages list", () => {
+        const file = write(`
+core:
+  postgresPassword: secret
+  defaultChatChannel: cli
+inference:
+  defaultProvider: openai
+  defaultModel: gpt-5
+  apiKeys:
+    openai: REAL_KEY
+python:
+  packages:
+    - numpy
+    - "pandas>=2,<3"
+    - python-docx
+`);
+        const result = lintConfigFile(file);
+        assert.equal(result.ok, true, `unexpected errors: ${JSON.stringify(result.errors)}`);
+        assert.equal(
+            result.errors.some((e) => e.includes("python.packages")),
+            false,
+        );
+    });
 });

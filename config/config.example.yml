@@ -178,7 +178,9 @@ inference:
 # added at runtime; editing this list takes effect on the next `./cli.sh start`,
 # which rebuilds the image). Each entry is a plain pip requirement (name, optional
 # [extras], optional version specifier, e.g. `pandas>=2,<3`); shell metacharacters
-# are rejected. Falls back to the list below when unset.
+# are rejected. Falls back to the list below when unset. `./cli.sh config lint`
+# validates each entry's syntax and checks it exists on PyPI, so you can catch a
+# typo before the (slow) image rebuild.
 # python:
 #   packages:
 #     - numpy

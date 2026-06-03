@@ -56,9 +56,13 @@ RUN mkdir -p /workspace
 # PATH / sudo-secure_path pitfalls — `python3` resolves the packages no matter how
 # it's invoked, including via `sudo -u unpriv`). `python` is aliased to `python3`.
 # Declared and run last so changing the list only rebuilds this layer.
+# `--timeout 120 --retries 10` keep this layer resilient on slow / flaky links
+# (e.g. WSL2): the default 15s per-read timeout and 5 retries otherwise abort the
+# build with a ReadTimeoutError mid-download.
 ARG PYTHON_PACKAGES=""
 RUN if [ -n "${PYTHON_PACKAGES}" ]; then \
-        pip3 install --no-cache-dir --break-system-packages ${PYTHON_PACKAGES}; \
+        pip3 install --no-cache-dir --break-system-packages \
+            --timeout 120 --retries 10 ${PYTHON_PACKAGES}; \
     fi \
     && ln -sf /usr/bin/python3 /usr/local/bin/python
 

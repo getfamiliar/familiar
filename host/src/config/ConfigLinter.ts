@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Logger } from "@getfamiliar/shared";
 import { parse, YAMLParseError } from "yaml";
+import { isSafePipRequirement } from "../container-runner/PythonPackages.js";
 
 /**
  * Result of a config lint pass. `errors` are platform-level
@@ -79,6 +80,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
     optionalIanaTimezone(config, "core.timezone", warnings);
     optionalString(config, "core.defaultCalendar", warnings);
     optionalStringOrStringList(config, "core.writablePaths", warnings);
+    optionalPipRequirements(config, "python.packages", errors);
     optionalNonNegativeInt(config, "inference.maxRetries", warnings);
     optionalBool(config, "inference.captureModelHttpRequestBodies", warnings);
     optionalBool(config, "inference.captureRawStepResultToDatabase", warnings);
@@ -292,6 +294,47 @@ function optionalStringOrStringList(
     warnings.push(
         `${path} should be a non-empty string or a list of strings (got ${describe(value)}).`,
     );
+}
+
+/**
+ * Validate `python.packages`, when present: it must be a string or an
+ * array of strings, and every entry must be a plain pip requirement
+ * (name, optional `[extras]`, optional version specifier) with no shell
+ * metacharacters or whitespace. A bad entry is an **error** — it would
+ * hard-fail the agent image build (`buildPythonPackagesArg` interpolates
+ * the value unquoted into `pip install`), so catching it at lint / boot
+ * time is strictly better than a buried docker build failure. This is a
+ * purely structural, offline check; the networked "does it exist on
+ * PyPI" pass lives in the `config lint` command.
+ */
+function optionalPipRequirements(
+    root: Record<string, unknown>,
+    path: string,
+    errors: string[],
+): void {
+    const value = readPath(root, path);
+    if (value === undefined) {
+        return;
+    }
+    const entries = typeof value === "string" ? [value] : Array.isArray(value) ? value : undefined;
+    if (entries === undefined) {
+        errors.push(`${path} must be a string or a list of strings (got ${describe(value)}).`);
+        return;
+    }
+    for (const entry of entries) {
+        if (typeof entry !== "string" || entry.length === 0) {
+            errors.push(
+                `${path}: every entry must be a non-empty string (got ${describe(entry)}).`,
+            );
+            continue;
+        }
+        if (!isSafePipRequirement(entry)) {
+            errors.push(
+                `${path}: ${JSON.stringify(entry)} is not a valid pip requirement (name, optional ` +
+                    "[extras], optional version specifier) — no whitespace or shell metacharacters.",
+            );
+        }
+    }
 }
 
 /**

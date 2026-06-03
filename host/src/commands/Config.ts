@@ -3,6 +3,8 @@ import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
 import { lintConfigFile } from "../config/ConfigLinter.js";
 import { HostConfigService } from "../config/ConfigService.js";
+import { DEFAULT_PYTHON_PACKAGES } from "../container-runner/AgentContainer.js";
+import { checkPackagesOnPyPI } from "../container-runner/PythonPackages.js";
 import { validateConfiguredProviders } from "../models/ProviderResolution.js";
 import { PluginHost } from "../plugins/PluginHost.js";
 
@@ -47,6 +49,23 @@ export const configCommand = defineCommand({
                             `could not validate inference providers: ${err instanceof Error ? err.message : String(err)}`,
                         );
                     }
+
+                    // Python-package existence check: each python.packages
+                    // entry must resolve to a real distribution on PyPI, so
+                    // a typo surfaces here instead of as a buried failure in
+                    // the next `./cli.sh start` image build. Network-only;
+                    // an unreachable PyPI degrades to a warning.
+                    try {
+                        const py = await validatePythonPackages(boot);
+                        for (const w of py.warnings) {
+                            process.stdout.write(`warning: ${w}\n`);
+                        }
+                        errors.push(...py.errors);
+                    } catch (err) {
+                        process.stdout.write(
+                            `warning: could not validate python.packages: ${err instanceof Error ? err.message : String(err)}\n`,
+                        );
+                    }
                 }
 
                 if (errors.length > 0) {
@@ -82,4 +101,40 @@ async function validateProviders(boot: ReturnType<typeof bootstrap>): Promise<st
     const pluginHost = new PluginHost(boot, log, config);
     await pluginHost.modelMetadata.refreshIfStale(ONE_DAY_MS);
     return validateConfiguredProviders(keys, (key) => pluginHost.modelMetadata.lookupProvider(key));
+}
+
+/**
+ * Check every `python.packages` entry against PyPI. A `not-found` is an
+ * error (a typo that would otherwise fail the image build); an
+ * `unreachable` PyPI is a warning so `config lint` still passes offline.
+ * Prints a `python.packages: <N> ok` summary when nothing is wrong.
+ *
+ * @param boot Bootstrap paths (for the config file).
+ * @returns Error and warning strings for the caller to aggregate.
+ */
+async function validatePythonPackages(
+    boot: ReturnType<typeof bootstrap>,
+): Promise<{ errors: string[]; warnings: string[] }> {
+    const config = new HostConfigService(boot.configFile);
+    const packages = config.getStringList("python.packages", DEFAULT_PYTHON_PACKAGES);
+    if (packages.length === 0) {
+        return { errors: [], warnings: [] };
+    }
+    const checks = await checkPackagesOnPyPI(packages);
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    let okCount = 0;
+    for (const check of checks) {
+        if (check.status === "ok") {
+            okCount += 1;
+        } else if (check.status === "not-found") {
+            errors.push(`python.packages: '${check.name}' not found on PyPI`);
+        } else {
+            warnings.push(`python.packages: could not reach PyPI to validate '${check.name}'`);
+        }
+    }
+    if (errors.length === 0) {
+        process.stdout.write(`python.packages: ${okCount} ok\n`);
+    }
+    return { errors, warnings };
 }

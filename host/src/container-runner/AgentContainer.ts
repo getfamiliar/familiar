@@ -6,6 +6,7 @@ import {
     removeContainer,
     stopContainer,
 } from "../DockerTools.js";
+import { isSafePipRequirement } from "./PythonPackages.js";
 
 const CONTAINER_NAME = "familiar-agent";
 
@@ -54,15 +55,6 @@ export const DEFAULT_PYTHON_PACKAGES: readonly string[] = [
 ];
 
 /**
- * Safe shape for a single pip requirement: starts alphanumeric, then only
- * characters that appear in a name, `[extras]`, or version specifiers. The
- * point is to forbid shell metacharacters — the value is interpolated
- * unquoted into `pip install $PYTHON_PACKAGES` in the Dockerfile, so a
- * crafted entry must not be able to smuggle in extra shell.
- */
-const SAFE_PIP_REQUIREMENT = /^[A-Za-z0-9][A-Za-z0-9._+\-[\]<>=!~,]*$/;
-
-/**
  * Validate pip requirements and join them into the space-separated value
  * for the `PYTHON_PACKAGES` build-arg.
  *
@@ -72,7 +64,7 @@ const SAFE_PIP_REQUIREMENT = /^[A-Za-z0-9][A-Za-z0-9._+\-[\]<>=!~,]*$/;
  */
 export function buildPythonPackagesArg(packages: readonly string[]): string {
     for (const pkg of packages) {
-        if (!SAFE_PIP_REQUIREMENT.test(pkg)) {
+        if (!isSafePipRequirement(pkg)) {
             throw new Error(
                 `Invalid python.packages entry ${JSON.stringify(pkg)}: must be a plain pip ` +
                     "requirement (name, optional [extras], optional version specifier) with no " +
