@@ -151,6 +151,13 @@ inference:
   # the common case. Restart the daemon after changing.
   # captureRawStepResultToDatabase: false
 
+  # When true, the assembled initial model-message array (prior
+  # history + the run's leading user turn) is JSON-encoded into
+  # agentruns.initial_messages. Surfaced by `events report -vv`. Off
+  # by default — it can be several KB per run. Restart the daemon
+  # after changing.
+  # captureInitialMessageHistory: false
+
   # Active context-window management. A long tool loop can flood the
   # model's context with stale tool output; these knobs bound it.
   # Restart the daemon after changing.

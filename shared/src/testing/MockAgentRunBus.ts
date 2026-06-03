@@ -57,6 +57,7 @@ export class MockAgentRunBus {
             notBefore: null,
             model: null,
             systemPrompt: null,
+            initialMessages: null,
             createdAt: now,
             updatedAt: now,
         };
@@ -80,6 +81,8 @@ export class MockAgentRunBus {
             priority: patch.priority ?? row.priority,
             model: patch.model === undefined ? row.model : patch.model,
             systemPrompt: patch.systemPrompt === undefined ? row.systemPrompt : patch.systemPrompt,
+            initialMessages:
+                patch.initialMessages === undefined ? row.initialMessages : patch.initialMessages,
             calltype: patch.calltype === undefined ? row.calltype : patch.calltype,
             updatedAt: new Date(),
         };

@@ -77,6 +77,7 @@ function buildParent(eventId: string, partial: Partial<AgentRunRow> = {}): Agent
         notBefore: null,
         model: null,
         systemPrompt: null,
+        initialMessages: null,
         createdAt: new Date(),
         updatedAt: new Date(),
         ...partial,

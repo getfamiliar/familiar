@@ -180,6 +180,12 @@ ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS model text;
 -- by the report layer's Agentrun Start section when the consumer
 -- opts into withDetails.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS system_prompt text;
+-- Verbatim model-message array assembled for the first agent.generate()
+-- call (prior history + the run's leading user turn). Populated by
+-- AgentRunner only when inference.captureInitialMessageHistory is true;
+-- otherwise NULL. Surfaced by the report layer's -vv view so an operator
+-- can see exactly what was sent into the model loop.
+ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS initial_messages jsonb;
 
 -- Distinguishes how a child agentrun was spawned.
 --   NULL     — root agentrun (created by the input-event watcher, no parent).

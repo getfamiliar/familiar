@@ -36,6 +36,7 @@ interface RawAgentRunRow {
     not_before: Date | null;
     model: string | null;
     system_prompt: string | null;
+    initial_messages: unknown;
     created_at: Date;
     updated_at: Date;
 }
@@ -150,6 +151,10 @@ export class AgentRunBus {
         if (patch.systemPrompt !== undefined) {
             sets.push(`system_prompt = $${n++}`);
             values.push(patch.systemPrompt);
+        }
+        if (patch.initialMessages !== undefined) {
+            sets.push(`initial_messages = $${n++}::jsonb`);
+            values.push(JSON.stringify(patch.initialMessages));
         }
         if (patch.calltype !== undefined) {
             sets.push(`calltype = $${n++}`);
@@ -446,6 +451,7 @@ function mapRow(raw: RawAgentRunRow): AgentRunRow {
         notBefore: raw.not_before,
         model: raw.model,
         systemPrompt: raw.system_prompt,
+        initialMessages: raw.initial_messages,
         createdAt: raw.created_at,
         updatedAt: raw.updated_at,
     };

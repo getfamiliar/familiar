@@ -4,29 +4,25 @@ import {
     type PluginTool,
     runTextTool,
     StepResultBus,
+    type StepResultRow,
     ToolError,
 } from "@getfamiliar/shared";
-import {
-    type AgentrunAggregate,
-    aggregateSteps,
-    renderAgentrunResult,
-    renderAgentrunStart,
-    renderEventCreated,
-    renderEventResult,
-    renderStepResult,
-} from "../../reports/Renderers.js";
+import { renderEventReport, type VerbosityLevel } from "../../reports/Renderers.js";
 import type { ReflectionToolsDeps } from "../ReflectionTools.js";
 
 interface EventReportArgs {
     readonly id?: string;
+    readonly verbosity?: number;
+    readonly truncate?: boolean;
 }
 
 /**
- * Build the `event_report` reflection tool — the agent-facing slim
- * equivalent of `./cli.sh events report <id>`. Renders the event +
- * every agentrun's start / per-step / result section in `"slim"`
- * verbosity (no token tables, no system prompt, aggressive
- * truncation) so the report stays bounded for the model context.
+ * Build the `event_report` reflection tool — the agent-facing
+ * equivalent of `./cli.sh events report <id>`. Renders the event and
+ * its full agentrun tree as one hierarchical markdown document, with
+ * subagents nested inline. `verbosity` (0/1/2) climbs the same ladder as
+ * the CLI's `-v`/`-vv`; `truncate` (default `true`) caps long prose /
+ * JSON so the report stays bounded in the calling run's context.
  */
 export function buildEventReportTool(
     deps: ReflectionToolsDeps,
@@ -34,10 +30,12 @@ export function buildEventReportTool(
     return {
         name: "event_report",
         description:
-            "Render a slim markdown report for one event: the event's metadata, every " +
-            "agentrun's start + per-step trace + result, and the final outcome. Excludes " +
-            "the resolved system prompt (use `agentrun_sysprompt` to fetch it) and token " +
-            "tables, and truncates long prose / JSON. Pass the event `id` from `event_list`.",
+            "Render a markdown report for one event: its metadata, the agentrun tree (each " +
+            "subagent nested inline at the step that spawned it), and the final outcome. " +
+            "`verbosity` 0 (default) shows the step protocol; 1 adds per-step token tables and " +
+            "resolved system prompts; 2 also adds full tool-call I/O and the initial message " +
+            "history. `truncate` (default true) caps long prose / JSON. Pass the event `id` from " +
+            "`event_list`.",
         groups: ["reflection"],
         inputSchema: {
             type: "object",
@@ -47,6 +45,19 @@ export function buildEventReportTool(
                 id: {
                     type: "string",
                     description: "Event id (the bigserial PK from the events table).",
+                },
+                verbosity: {
+                    type: "integer",
+                    enum: [0, 1, 2],
+                    description:
+                        "Detail level: 0 step protocol; 1 + token tables + system prompts; 2 + " +
+                        "tool I/O + initial message history. Defaults to 0.",
+                },
+                truncate: {
+                    type: "boolean",
+                    description:
+                        "Cap long prose / JSON to keep the report small. Defaults to true; set " +
+                        "false to see full text when diagnosing.",
                 },
             },
         },
@@ -65,32 +76,31 @@ export function buildEventReportTool(
                 }
 
                 const runs = await agentruns.listByEventId(event.id);
-
-                const sections: string[] = [];
-                sections.push(renderEventCreated(event, "slim"));
+                const stepsByRun = new Map<string, readonly StepResultRow[]>();
                 for (const run of runs) {
-                    sections.push(renderAgentrunStart(run, {}, "slim"));
-                    const runSteps = await steps.listByAgentRunId(run.id);
-                    for (const step of runSteps) {
-                        sections.push(renderStepResult(run, step, "slim"));
-                    }
-                    if (run.state === "done" || run.state === "failed") {
-                        const aggregate: AgentrunAggregate = {
-                            ...aggregateSteps(runSteps),
-                            runtimeMs: Math.max(
-                                0,
-                                run.updatedAt.getTime() - run.createdAt.getTime(),
-                            ),
-                        };
-                        sections.push(renderAgentrunResult(run, aggregate, "slim"));
-                    }
+                    stepsByRun.set(run.id, await steps.listByAgentRunId(run.id));
                 }
-                if (event.state === "done" || event.state === "failed") {
-                    sections.push(renderEventResult(event, runs, "slim"));
-                }
-                return sections.join("");
+
+                return renderEventReport(event, runs, stepsByRun, {
+                    verbosity: normalizeVerbosity(args.verbosity),
+                    truncate: args.truncate ?? true,
+                });
             }, callCtx.toolRunContext),
     };
+}
+
+/** Clamp an arbitrary numeric verbosity into the supported 0/1/2 range. */
+function normalizeVerbosity(value: number | undefined): VerbosityLevel {
+    if (value === undefined) {
+        return 0;
+    }
+    if (value >= 2) {
+        return 2;
+    }
+    if (value <= 0) {
+        return 0;
+    }
+    return 1;
 }
 
 function requireId(value: unknown, kind: string): string {

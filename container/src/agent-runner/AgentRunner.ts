@@ -51,6 +51,18 @@ import { synthesizeResultText } from "./synthesizeResultText.js";
 const CAPTURE_RAW_STEP_RESULT = optionalEnvBool("INFERENCE_CAPTURE_RAW_STEP_RESULT");
 
 /**
+ * When `true`, the assembled initial model-message array (prior history
+ * + the run's leading user turn) is JSON-encoded onto
+ * `agentruns.initial_messages` right before the first `agent.generate()`
+ * call. Read once at module load — the host sets the env var from
+ * `inference.captureInitialMessageHistory`, so a daemon restart is
+ * required to flip it. Off by default.
+ */
+const CAPTURE_INITIAL_MESSAGE_HISTORY = optionalEnvBool(
+    "INFERENCE_CAPTURE_INITIAL_MESSAGE_HISTORY",
+);
+
+/**
  * Fraction of a model's context window used as the per-step output
  * ceiling when the model's metadata declares no explicit `outputLimit`.
  * Read once at module load — the host forwards
@@ -264,6 +276,16 @@ export interface AgentRunnerContext {
      * throws.
      */
     readonly stampModel: (model: string, systemPrompt: string | null) => Promise<void>;
+    /**
+     * Stamp the assembled initial model-message array onto the agentrun
+     * row, just before the first `agent.generate()`. The Scheduler
+     * forwards to `AgentRunBus.update`. Only invoked when the operator
+     * opted in via `inference.captureInitialMessageHistory`; otherwise
+     * the column stays `null`. Kept separate from {@link stampModel}
+     * because the message array is only assembled after the chat /
+     * non-chat branch, well after the model is stamped.
+     */
+    readonly stampInitialMessages: (messages: unknown) => Promise<void>;
     /**
      * Record one inference-call outcome (success / retryable / fatal)
      * into the `inference_events` audit table. The Scheduler swallows
@@ -541,6 +563,14 @@ export class AgentRunner {
                 messages.push({ role: "user", content: prompt });
             }
             ancestorCount = ancestors.length;
+        }
+
+        // Capture the fully-assembled message array for the audit log
+        // before handing it to the model. Opt-in (off by default) since
+        // it can be several KB per run; surfaced by the report layer's
+        // -vv view.
+        if (CAPTURE_INITIAL_MESSAGE_HISTORY) {
+            await ctx.stampInitialMessages(messages);
         }
 
         const runStartedAt = Date.now();

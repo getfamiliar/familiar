@@ -1,22 +1,18 @@
-import { AgentRunBus, EventBus, renderMarkdown, StepResultBus } from "@getfamiliar/shared";
+import {
+    AgentRunBus,
+    EventBus,
+    renderMarkdown,
+    StepResultBus,
+    type StepResultRow,
+} from "@getfamiliar/shared";
 import { defineCommand } from "citty";
-import ora from "ora";
 import { bootstrap } from "../Bootstrap.js";
 import { HostConfigService } from "../config/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { replayOne } from "../events/ReplayEvent.js";
-import {
-    type AgentrunAggregate,
-    aggregateSteps,
-    renderAgentrunResult,
-    renderAgentrunStart,
-    renderEventCreated,
-    renderEventResult,
-    renderStepResult,
-} from "../reports/Renderers.js";
-import { ReportPoller } from "../reports/ReportPoller.js";
-import { ReportTerminalPrinter } from "../reports/ReportTerminalPrinter.js";
+import { renderEventReport } from "../reports/Renderers.js";
 import { parseEventIdSpec } from "./EventIdSpec.js";
+import { verbosityFrom } from "./tools/verbosity.js";
 
 /**
  * `cli.sh events emit <topic> [prompt] [--payload JSON] [--priority N]` —
@@ -83,88 +79,15 @@ const eventsEmitCommand = defineCommand({
 });
 
 /**
- * `cli.sh events tail` — stays attached and prints rendered markdown for
- * every new or state-changed event / agentrun / step the daemon produces
- * from now onward. Backed by `ReportPoller`, which queries the bus tables
- * once a second; no NOTIFY subscription is required.
- *
- * Output is styled with `marked-terminal` so headings, tables, and code
- * blocks render with ANSI colour. A header line announces the start, and
- * an `ora` spinner stays pinned to the bottom of the terminal between
- * activity bursts so the operator can see the poller is alive. Ctrl-C
- * aborts cleanly.
- */
-const eventsTailCommand = defineCommand({
-    meta: {
-        name: "tail",
-        description: "Follow the event bus and pretty-print new activity as it happens.",
-    },
-    args: {
-        details: {
-            type: "boolean",
-            alias: "d",
-            description:
-                "Include verbose details (e.g. resolved system prompt) in the agentrun-start section. Requires core.logSystemPrompt for the system prompt to actually be available.",
-            default: false,
-        },
-    },
-    async run({ args }) {
-        const boot = bootstrap();
-        const config = new HostConfigService(boot.configFile);
-        const password = config.getString("core.postgresPassword");
-
-        const postgres = new PostgresContainer({
-            dataPath: boot.dataDir,
-            portFilePath: boot.postgresPortFile,
-            password,
-        });
-        const connection = postgres.getConnection();
-
-        const controller = new AbortController();
-        const onSignal = () => controller.abort();
-        process.on("SIGINT", onSignal);
-        process.on("SIGTERM", onSignal);
-
-        process.stdout.write("Starting to list event processing results...\n");
-
-        const spinner = ora({
-            text: "Waiting for something to happen...",
-            isEnabled: process.stdout.isTTY,
-        }).start();
-
-        const printer = new ReportTerminalPrinter(connection, {
-            withDetails: Boolean(args.details),
-            onWriteBoundary: {
-                before: () => spinner.stop(),
-                after: () => spinner.start(),
-            },
-        });
-        const poller = new ReportPoller({
-            connection,
-            sink: printer,
-            startAnchor: new Date(),
-        });
-
-        try {
-            await poller.start(controller.signal);
-        } finally {
-            spinner.stop();
-            process.off("SIGINT", onSignal);
-            process.off("SIGTERM", onSignal);
-            await connection.close();
-        }
-    },
-});
-
-/**
  * `cli.sh events report <id>` — render the full markdown report for one
- * event by reading the bus tables directly. Includes every section
- * `events tail` would have streamed (event created, every agentrun
- * start + steps + result, final event summary) so an operator can
- * review a finished — or in-flight — event without scrolling through
- * `events tail`'s history.
+ * event by reading the bus tables directly: the event header, the root
+ * agentrun's step protocol with every subagent nested inline, and the
+ * final result. Works on a finished or in-flight event.
  *
- * `--raw` skips the `marked-terminal` styling and writes the
+ * Verbosity climbs with each `-v` in the argv (same convention as
+ * `tools list`): `-v` adds per-step token tables and resolved system
+ * prompts; `-vv` also adds full tool-call I/O and the initial message
+ * history. `--raw` skips the `marked-terminal` styling and writes the
  * underlying markdown to stdout, useful for piping into a file or a
  * markdown viewer.
  */
@@ -179,6 +102,13 @@ const eventsReportCommand = defineCommand({
             required: true,
             description: "Event id (the bigserial PK in events).",
         },
+        verbose: {
+            type: "boolean",
+            alias: "v",
+            description:
+                "Add detail. -v: per-step token tables + resolved system prompts (needs core.logSystemPrompt). -vv: also full tool-call I/O and the initial message history (needs inference.captureInitialMessageHistory).",
+            default: false,
+        },
         raw: {
             type: "boolean",
             description:
@@ -186,7 +116,7 @@ const eventsReportCommand = defineCommand({
             default: false,
         },
     },
-    async run({ args }) {
+    async run({ args, rawArgs }) {
         const boot = bootstrap();
         const config = new HostConfigService(boot.configFile);
         const password = config.getString("core.postgresPassword");
@@ -209,33 +139,21 @@ const eventsReportCommand = defineCommand({
                 process.exit(1);
             }
 
+            // All runs in the event's tree, plus each run's steps keyed
+            // by agentrun id — the renderer is DB-free and rebuilds the
+            // tree from these. The CLI shows full prose (truncate: false);
+            // verbosity climbs with each `-v` in the verbatim argv, the
+            // same convention as `tools list`.
             const runs = await agentruns.listByEventId(event.id);
-
-            const sections: string[] = [];
-            sections.push(renderEventCreated(event));
-            // `withDetails: true` so the system prompt is included
-            // when it was logged. The renderer's own guard means
-            // the section is silently omitted when system_prompt is
-            // null (i.e. core.logSystemPrompt was off at the time).
+            const stepsByRun = new Map<string, readonly StepResultRow[]>();
             for (const run of runs) {
-                sections.push(renderAgentrunStart(run, { withDetails: true }));
-                const runSteps = await steps.listByAgentRunId(run.id);
-                for (const step of runSteps) {
-                    sections.push(renderStepResult(run, step));
-                }
-                if (run.state === "done" || run.state === "failed") {
-                    const aggregate: AgentrunAggregate = {
-                        ...aggregateSteps(runSteps),
-                        runtimeMs: Math.max(0, run.updatedAt.getTime() - run.createdAt.getTime()),
-                    };
-                    sections.push(renderAgentrunResult(run, aggregate));
-                }
-            }
-            if (event.state === "done" || event.state === "failed") {
-                sections.push(renderEventResult(event, runs));
+                stepsByRun.set(run.id, await steps.listByAgentRunId(run.id));
             }
 
-            const markdown = sections.join("");
+            const markdown = renderEventReport(event, runs, stepsByRun, {
+                verbosity: verbosityFrom(rawArgs),
+                truncate: false,
+            });
             process.stdout.write(args.raw === true ? markdown : renderMarkdown(markdown));
         } finally {
             await connection.close();
@@ -427,7 +345,7 @@ const eventsListCommand = defineCommand({
     },
 });
 
-/** Parent command for the `events` subtree (emit, list, replay, report, tail). */
+/** Parent command for the `events` subtree (emit, list, replay, report). */
 export const eventsCommand = defineCommand({
     meta: {
         name: "events",
@@ -438,7 +356,6 @@ export const eventsCommand = defineCommand({
         list: eventsListCommand,
         replay: eventsReplayCommand,
         report: eventsReportCommand,
-        tail: eventsTailCommand,
     },
 });
 

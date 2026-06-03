@@ -333,11 +333,7 @@ export function buildBashTool(
     return tool<BashInput, string>({
         description:
             "Execute a bash command. Each call is a fresh `bash -c` shell — no state (cwd, env, " +
-            "variables) persists between calls. Runs inside an offline container (no network, no " +
-            "credentials). Privileged runs execute as the operator with full workspace write; " +
-            "otherwise commands run as a least-privilege user that may only write under " +
-            "core.writablePaths and the event scratch dir (reads are unrestricted). `python3` with " +
-            "the configured packages is on PATH. Use absolute paths or set working_directory. " +
+            "variables) persists between calls. Use absolute paths or set working_directory. " +
             "Output is the command's combined stdout/stderr plus an exit-code footer.",
         inputSchema: jsonSchema<BashInput>({
             type: "object",

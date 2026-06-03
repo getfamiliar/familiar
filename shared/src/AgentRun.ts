@@ -82,6 +82,16 @@ export interface AgentRunRow {
      * `renderAgentrunStart` when `withDetails` is on.
      */
     readonly systemPrompt: string | null;
+    /**
+     * Verbatim model-message array assembled for the first
+     * `agent.generate()` call (prior history plus the run's leading
+     * user turn). Populated by AgentRunner only when
+     * `inference.captureInitialMessageHistory` is enabled; otherwise
+     * `null`. Surfaced by the report layer's `-vv` view. Kept `unknown`
+     * (like {@link payload}) rather than coupled to the SDK
+     * `ModelMessage` type.
+     */
+    readonly initialMessages: unknown;
     /** Spawn-time inputs from the calling agent (or the root event). */
     readonly payload: unknown;
     /** Structured terminal output (arbitrary JSON) when the run reaches `done` / `failed`. */
@@ -176,5 +186,6 @@ export interface AgentRunPatch {
     readonly priority?: number;
     readonly model?: string | null;
     readonly systemPrompt?: string | null;
+    readonly initialMessages?: unknown;
     readonly calltype?: AgentRunCallType | null;
 }

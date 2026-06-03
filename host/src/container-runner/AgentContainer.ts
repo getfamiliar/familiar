@@ -248,6 +248,15 @@ export interface AgentContainerConfig {
      */
     readonly captureRawStepResultToDatabase: boolean;
     /**
+     * When `true`, AgentRunner JSON-serializes the assembled initial
+     * model-message array into `agentruns.initial_messages`. Reflected
+     * to the container as
+     * `INFERENCE_CAPTURE_INITIAL_MESSAGE_HISTORY=true|false`; sourced
+     * from `inference.captureInitialMessageHistory` in `config.yml`,
+     * defaulting to `false`.
+     */
+    readonly captureInitialMessageHistory: boolean;
+    /**
      * Controls whether — and how — AgentRunner persists each agentrun's
      * resolved system prompt onto `agentruns.system_prompt`. Reflected
      * to the container as `INFERENCE_LOG_SYSTEM_PROMPT_MODE=off|full|non-static`;
@@ -406,6 +415,8 @@ export function buildAgentRunArgs(config: AgentContainerConfig): string[] {
         `AGENTSTEP_TIMEOUT_SECONDS=${config.agentStepTimeoutSeconds}`,
         "-e",
         `INFERENCE_CAPTURE_RAW_STEP_RESULT=${config.captureRawStepResultToDatabase}`,
+        "-e",
+        `INFERENCE_CAPTURE_INITIAL_MESSAGE_HISTORY=${config.captureInitialMessageHistory}`,
         "-e",
         `INFERENCE_LOG_SYSTEM_PROMPT_MODE=${config.logSystemPromptMode}`,
         "-e",

@@ -82,6 +82,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
     optionalNonNegativeInt(config, "inference.maxRetries", warnings);
     optionalBool(config, "inference.captureModelHttpRequestBodies", warnings);
     optionalBool(config, "inference.captureRawStepResultToDatabase", warnings);
+    optionalBool(config, "inference.captureInitialMessageHistory", warnings);
     optionalPositiveInt(config, "inference.contextManagement.keptToolResultCount", warnings);
     optionalSlidingWindowFraction(
         config,

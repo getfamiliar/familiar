@@ -678,6 +678,9 @@ export class AgentrunScheduler {
                     ...(systemPrompt === null ? {} : { systemPrompt }),
                 });
             },
+            stampInitialMessages: async (messages) => {
+                await agentRunBus.update(row.id, { initialMessages: messages });
+            },
             recordInferenceEvent: async (event) => {
                 try {
                     await inferenceEventBus.add(event);

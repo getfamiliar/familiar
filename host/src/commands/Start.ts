@@ -224,6 +224,10 @@ export const startCommand = defineCommand({
         );
         const captureRawStepResultToDatabase =
             config.getBool("inference.captureRawStepResultToDatabase", undefined) ?? dev;
+        const captureInitialMessageHistory = config.getBool(
+            "inference.captureInitialMessageHistory",
+            false,
+        );
         const reverseProxy = new ReverseProxy({
             providers,
             log: log.child({ component: "reverse-proxy" }),
@@ -351,6 +355,7 @@ export const startCommand = defineCommand({
             agentStepTimeoutSeconds,
             logSystemPromptMode,
             captureRawStepResultToDatabase,
+            captureInitialMessageHistory,
             providerNpmPackages,
             verbose: debugLogging,
             coreTimezone,
