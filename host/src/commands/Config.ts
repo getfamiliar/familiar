@@ -17,7 +17,7 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 export const configCommand = defineCommand({
     meta: {
         name: "config",
-        description: "Inspect and validate config/config.yml.",
+        description: "Inspect and validate the system configuration.",
     },
     subCommands: {
         lint: defineCommand({

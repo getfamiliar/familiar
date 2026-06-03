@@ -78,14 +78,13 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 export const startCommand = defineCommand({
     meta: {
         name: "start",
-        description: "Start the host daemon (foreground; manages all containers).",
+        description: "Start the host daemon in the foreground.",
     },
     args: {
         verbose: {
             type: "boolean",
             alias: "v",
-            description:
-                "Enable debug-level logging (every NOTIFY, listener fire, step result, tool call).",
+            description: "Enable debug-level logging.",
             default: false,
         },
     },

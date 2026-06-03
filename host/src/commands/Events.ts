@@ -431,7 +431,7 @@ const eventsListCommand = defineCommand({
 export const eventsCommand = defineCommand({
     meta: {
         name: "events",
-        description: "Inject and inspect events on the bus (emit, list, replay, report, tail).",
+        description: "List, inspect and work with events.",
     },
     subCommands: {
         emit: eventsEmitCommand,

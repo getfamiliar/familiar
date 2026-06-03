@@ -1,21 +1,26 @@
-Memory Plugin!
-
 Features:
-* Token Limits checken und warnen in verschiedenen Stufen - Token-Schätzung mit Faktor 3 reicht.
-* True bash
-* Besseres Reporting Format
-* Self-Reflection Tools: List of events (auch CLI) mit search, event report, plugin status, system status 
 
-Reflect and learn from things when memory plugin is ready:
-* Mail Digest
-* ...
+* File Storages like Onedrive, Dropbox, Google Drive, ... - read & write access, search. Done like calendar + mail, a default set of tools for all providers and provider-specific implementations in plugins.
+* Host-side LLM chat with access to console tools for selections, prompts etc. as a service - used for setup and plugin CLI tools.
+* Diff Tool for the workspace vs default workspace
+* Git repo for the workspace files?
+* Sane setup process
+
+* Besseres Reporting Format
 
 Neues CLI Tool: `logs`
 * `logs tail` tails the current data/logs/ log file but pretty prints the JSON objects in it.
 
-MCP functions: keep or remove the renaming of "-"?
 
 ## Refactoring
+
+### Now
+
+* **No more environment variables for container config**: Currently, every config option passed to the container is written as a docker environment variable. Instead, hand over a JSON or string.
+* **MCP functions: keep or remove the renaming of "-"?**
+* 
+
+### For production deployments:
 
 * cli.sh replacen mit `npx familiar`, die prechecks über den npm hook prepublishOnly laufen lassen. Gleichheit zwischen dev und prod sicherstellen.
 
@@ -29,6 +34,16 @@ MCP functions: keep or remove the renaming of "-"?
 - Plugin-specific config linters as extension point. Special Cases:
   - ms365.calendar.refreshCron: check if it's a valid cron expression. If not, thats a problem because the delta will never be updated and the calendar will never be refreshed / keep the same from/to dates forever.
 
+### Browser Automatisation
+
+- Browser Automatisierungen sind ein komplexes Feld. Läuft wie folgt: 
+  * Wir integrieren einen roll-your-own Chromium Docker Container (am wahrscheinlichsten linuxserver/chromium) und legen die debugging ports raus (--remote-debugging-port=9222 --remote-debugging-address=0.0.0.0 --no-sandbox).
+  * Wir integrieren `Stagehand` als Library in einem Plugin. Es integriert sich optimal mit unserem Vercel AI SDK Universum. Das Plugin bietet dann:
+    * Aufzeichnen von Workflows auf dem Host per CLI über eine komfortablen Chat - "Gehe dort hin", "Gehe hier hin", vielleicht sogar mit gepipeten Screenshots.
+    * Speichern von Credentials unterwegs: Username, Passwort, 2FA Seeds (wie speichern wir die sicher?)
+    * Am Ende hat man einen Workflow, im idealfall self-healing, den wir unter einem namen abspeichern, bspw. "get-amazon-shopping-list". Der kann vom Agent im Container per Tool `browser_run_workflow` mit dem Namen aufgerufen werden, die Credentials werden automatisch eingespeist, und der Workflow läuft im externen Chromium Docker Container.
+    * Der Agent liefert dann in Markdown die Ergebnisse zurück.
+
 ## Workspace Linter
 
 - No unexpected .md files in the root
@@ -37,13 +52,15 @@ MCP functions: keep or remove the renaming of "-"?
 - Parse the tools frontmatter statements and check if they are valid (existing tools and groups and parseable)
 - Parse all cron expressions to check if valid
 - Count tools per handler and warn if there are too many
+- Check token count of the aggregated system prompt and warn if too high
+
 Extreme:
-- Check handler files for tool name mentions that do not exist
+- Check handler files freeform content for tool name mentions that do not exist
 - Check models if they exist
 
 plugins:
 - Check if chat/compaction/index.md exists and is parseable
-- check if skills/memory/save.md exists and is parseable
+- Check if skills/memory/save.md exists and is parseable
 
 
 ## Before release

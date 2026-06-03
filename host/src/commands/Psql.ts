@@ -21,7 +21,7 @@ import { defineCommand } from "citty";
 export const psqlCommand = defineCommand({
     meta: {
         name: "psql",
-        description: "Open an interactive psql shell inside the familiar-postgres container.",
+        description: "Open a psql shell to interact with the postgres database.",
     },
     run() {
         const result = spawnSync(

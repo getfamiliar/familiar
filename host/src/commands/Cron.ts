@@ -12,7 +12,7 @@ import { scanWorkspace } from "../workspace/WorkspaceWatcher.js";
 export const cronCommand = defineCommand({
     meta: {
         name: "cron",
-        description: "Inspect and manage handler cronjobs.",
+        description: "Inspect handler cronjobs and scheduled tasks.",
     },
     subCommands: {
         list: defineCommand({

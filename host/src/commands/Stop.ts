@@ -14,7 +14,7 @@ const POLL_TICKS = 100; // 100 × 100 ms = 10 s grace period before SIGKILL.
 export const stopCommand = defineCommand({
     meta: {
         name: "stop",
-        description: "Stop the host daemon (SIGTERM, then SIGKILL after 10 s).",
+        description: "Stop the running host daemon.",
     },
     async run() {
         const boot = bootstrap();
