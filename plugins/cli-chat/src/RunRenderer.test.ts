@@ -46,6 +46,7 @@ function makeRun(overrides: Partial<AgentRunRow> = {}): AgentRunRow {
         priority: 50,
         state: "pending",
         prompt: null,
+        initialMessages: null,
         payload: {},
         result: null,
         resultText: null,

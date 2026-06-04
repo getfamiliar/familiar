@@ -117,14 +117,13 @@ const WRITABLE_PATH_GLOBS = getWritablePaths();
  *   (e.g. a `memory_save` triggered by an inbound mail) must be able to
  *   write.
  *
- * This deliberately replaces the older per-extension scheme (`.md`
- * anywhere / `toolgroups/` privileged, other files free): the same
+ * The rule is path-scoped (not extension-scoped) because the same
  * boundary is enforced at the OS layer by directory group-permissions
- * for the `bash` tool, and OS perms are per-directory — so the rule has
- * to be path-scoped, not extension-scoped, for the two enforcers to
- * agree. Files under `core.writablePaths` are never loaded as handlers
- * (see `HandlerFile`/`HandlerCatalog`), so a non-privileged `.md` write
- * there cannot become executable handler logic.
+ * for the `bash` tool, and OS perms are per-directory — so both
+ * enforcers have to agree on paths. Files under `core.writablePaths`
+ * are never loaded as handlers (see `HandlerFile`/`HandlerCatalog`),
+ * so a non-privileged `.md` write there cannot become executable
+ * handler logic.
  */
 function requiresPrivilegedWrite(absolute: string): boolean {
     if (absolute === SCRATCH_ROOT || absolute.startsWith(`${SCRATCH_ROOT}/`)) {
@@ -140,7 +139,7 @@ const PRIVILEGE_REFUSAL_MESSAGE =
     "This run is non-privileged: it may only write under core.writablePaths " +
     "(the assistant's curated memory, e.g. wiki/** and files/**) and " +
     "/scratch/<event-id>/. Everything else in the workspace — handlers, " +
-    "SOUL.md, people/*, toolgroup definitions, and any other file — is " +
+    "SOUL.md, people/*, and any other file — is " +
     "writable only by privileged runs (those descending from trusted user " +
     "input, e.g. the cli-chat REPL or the operator on Telegram). Reads are " +
     "still allowed everywhere.";
@@ -892,8 +891,8 @@ function classifyRemovePattern(
  * - No recursion. `**` is rejected outright and dirname segments may
  *   not contain glob meta, so an expansion can only touch files in one
  *   literal directory.
- * - Privilege gate. `.md` files and anything under `workspace/toolgroups/`
- *   require a privileged run, exactly matching `fs_write` / `fs_append`.
+ * - Privilege gate. Anything outside `core.writablePaths` and `/scratch`
+ *   requires a privileged run, exactly matching `fs_write` / `fs_append`.
  *   In the wildcard branch, gated matches are skipped (so a cleanup over
  *   a mixed directory still removes what it's allowed to); in the literal
  *   branch, a gated target fails the call so the model gets an explicit
