@@ -143,12 +143,17 @@ export class RunRenderer {
      * from the `↳` block. Without an active spinner (turn already
      * settled) the body prints to stdout directly.
      *
-     * The text is trimmed before rendering: models routinely end
-     * their messages with `\n` (sometimes several), and we want full
-     * control over the blank-line layout around the answer.
+     * Surrounding blank lines are stripped before rendering — models
+     * routinely pad their messages with `\n` (sometimes several) and we
+     * want full control over the blank-line layout around the answer.
+     * Only whole leading/trailing blank lines and trailing spaces are
+     * removed; the first content line's leading indentation is preserved
+     * so an indented code block stays a code block (a plain `.trim()`
+     * would strip the first line's indent and collapse it into a lazy
+     * paragraph).
      */
     chatAnswer(textContent: string): void {
-        const trimmed = textContent.trim();
+        const trimmed = textContent.replace(/^(?:[^\S\n]*\n)+/u, "").replace(/\s+$/u, "");
         if (trimmed.length === 0) {
             return;
         }

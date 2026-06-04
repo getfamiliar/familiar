@@ -450,6 +450,22 @@ function pushStepHead(lines: string[], head: readonly string[]): void {
 }
 
 /**
+ * Escape the backtick / backslash characters in free-form reasoning text so
+ * the markdown renderer treats them literally. Without this a stray triple
+ * backtick the model emits in its reasoning opens an inline code span that
+ * swallows the following lines and collapses their newlines into spaces (code
+ * spans are single-line by the CommonMark rules). Backslash is escaped first
+ * so the inserted escapes are not themselves re-interpreted. Other emphasis
+ * (`**bold**`, `__italic__`) is intentionally left intact.
+ *
+ * @param text - raw reasoning text from the model
+ * @returns the text with backticks and backslashes backslash-escaped
+ */
+function escapeReasoningMarkdown(text: string): string {
+    return text.replace(/\\/g, "\\\\").replace(/`/g, "\\`");
+}
+
+/**
  * Push the `Thinking:` line(s) for a step. Single-line reasoning becomes
  * `    Thinking: __<text>__`; multi-line reasoning keeps its breaks with
  * each continuation indented 4 spaces, the whole span wrapped in `__`.
@@ -457,7 +473,7 @@ function pushStepHead(lines: string[], head: readonly string[]): void {
  * span / list item.
  */
 function pushThinking(lines: string[], text: string): void {
-    const collapsed = text.replace(/\n\s*\n+/g, "\n").trim();
+    const collapsed = escapeReasoningMarkdown(text.replace(/\n\s*\n+/g, "\n").trim());
     const parts = collapsed.split("\n");
     if (parts.length === 1) {
         lines.push(`    Thinking: __${parts[0]}__`);

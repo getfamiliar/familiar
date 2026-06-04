@@ -124,6 +124,24 @@ test("long list items reflow without exceeding the width and keep their indent",
     }
 });
 
+test("leading indentation on hard-break paragraph lines is preserved", () => {
+    setColumns(100);
+    // The report's step format: a bold header, then hard-break (`  \n`)
+    // continuation lines indented four spaces to group them under the step.
+    const md = ["**01. Step**  ", "    Thinking: read the file  ", "    tool_call: fs_read"].join(
+        "\n",
+    );
+    const lines = stripAnsi(renderMarkdown(md)).split("\n");
+    assert.ok(
+        lines.some((line) => /^ {4}Thinking: /.test(line)),
+        `indent collapsed: ${JSON.stringify(lines)}`,
+    );
+    assert.ok(
+        lines.some((line) => /^ {4}tool_call: /.test(line)),
+        `indent collapsed: ${JSON.stringify(lines)}`,
+    );
+});
+
 test("paragraphs nested in blockquotes stay within the terminal width", () => {
     setColumns(60);
     const sentence =

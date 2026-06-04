@@ -279,7 +279,16 @@ function buildRenderer(width: number) {
             return unescapeEntities(token.text);
         },
         paragraph(this: RendererThis, token: Tokens.Paragraph): string {
-            return `${wrap(this.parser.parseInline(token.tokens), avail)}\n\n`;
+            // trim:false so author-supplied leading indentation on hard-break
+            // continuation lines survives (e.g. the report's indented `Thinking:`
+            // / `tool_call:` lines under a bold step header); strip only the
+            // trailing whitespace the no-trim wrap leaves behind, mirroring
+            // renderItem.
+            const wrapped = wrap(this.parser.parseInline(token.tokens), avail, false).replace(
+                /[^\S\n]+$/gmu,
+                "",
+            );
+            return `${wrapped}\n\n`;
         },
         heading(this: RendererThis, token: Tokens.Heading): string {
             const prefix = `${"#".repeat(token.depth)} `;

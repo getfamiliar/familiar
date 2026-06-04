@@ -1,14 +1,10 @@
 Features:
 
-* Bash: better context. Give some list of installed python packages.
-
 * File Storages like Onedrive, Dropbox, Google Drive, ... - read & write access, search. Done like calendar + mail, a default set of tools for all providers and provider-specific implementations in plugins.
 * Host-side LLM chat with access to console tools for selections, prompts etc. as a service - used for setup and plugin CLI tools.
 * Diff Tool for the workspace vs default workspace
 * Git repo for the workspace files?
 * Sane setup process
-
-* Besseres Reporting Format
 
 Neues CLI Tool: `logs`
 * `logs tail` tails the current data/logs/ log file but pretty prints the JSON objects in it.
@@ -49,7 +45,9 @@ Neues CLI Tool: `logs`
 ## Workspace Linter
 
 - No unexpected .md files in the root
-- Validate each `tools:` entry resolves to a known tool, glob, or group
+- Check reserved group names in toolgroups/: "all", "none", "system", mcp group ids
+- Check the tools in the tool groups for existence
+- Parse the tools frontmatter statements and check if they are valid (existing tools and groups and parseable)
 - Parse all cron expressions to check if valid
 - Count tools per handler and warn if there are too many
 - Check token count of the aggregated system prompt and warn if too high

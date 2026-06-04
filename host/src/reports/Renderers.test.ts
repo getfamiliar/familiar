@@ -270,6 +270,32 @@ describe("renderEventReport — structure & correlation", () => {
         assert.ok(md.indexOf("Tokens used across the event") > md.indexOf("## Final Result"));
     });
 
+    it("escapes backticks in reasoning so a stray fence cannot collapse the lines", () => {
+        const event = fakeEvent();
+        const runs = [fakeRun({ id: "1", resultText: "ok" })];
+        const stepsByRun = new Map<string, readonly StepResultRow[]>([
+            [
+                "1",
+                [
+                    fakeStep({
+                        id: "s0",
+                        agentRunId: "1",
+                        reasoningText: "Looking at the prompt:\n```\n# Runtime\n```\ndone.",
+                    }),
+                ],
+            ],
+        ]);
+        const md = renderEventReport(event, runs, stepsByRun, { verbosity: 0, truncate: false });
+        // The model's triple backtick is emitted backslash-escaped, so the
+        // markdown renderer treats it as literal text instead of opening a
+        // code span that swallows the following lines.
+        assert.ok(md.includes("\\`\\`\\`"), "backticks were not escaped");
+        assert.ok(
+            !/(?<!\\)```/.test(md.split("### Step Protocol")[1]),
+            "an unescaped fence leaked",
+        );
+    });
+
     it("level 0 omits token suffix, system prompt, and message history", () => {
         const { event, runs, stepsByRun } = buildTree();
         const md = renderEventReport(event, runs, stepsByRun, { verbosity: 0, truncate: false });
