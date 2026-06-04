@@ -49,9 +49,7 @@ Neues CLI Tool: `logs`
 ## Workspace Linter
 
 - No unexpected .md files in the root
-- Check reserved group names in toolgroups/: "all", "none", "system", mcp group ids
-- Check the tools in the tool groups for existence
-- Parse the tools frontmatter statements and check if they are valid (existing tools and groups and parseable)
+- Validate each `tools:` entry resolves to a known tool, glob, or group
 - Parse all cron expressions to check if valid
 - Count tools per handler and warn if there are too many
 - Check token count of the aggregated system prompt and warn if too high
