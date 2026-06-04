@@ -42,7 +42,7 @@ interface PluginCatalogEntry {
 
 /**
  * `cli.sh tools list [search]` — list every tool the agent can use,
- * grouped by toolgroup: container built-ins (`send_chat`, `fs_*`, …),
+ * grouped by tool group: container built-ins (`send_chat`, `fs_*`, …),
  * host plugin tools (`mail_*`, `whatsapp_*`, the reflection tools), and
  * MCP functions. Optional `search` filters by case-insensitive substring
  * on tool name or description.
@@ -57,7 +57,7 @@ export const listCommand = defineCommand({
     meta: {
         name: "list",
         description:
-            "List every tool the agent can use (container built-ins, plugin tools, MCP functions), grouped by toolgroup. Requires the daemon to be running.",
+            "List every tool the agent can use (container built-ins, plugin tools, MCP functions), grouped by tool group. Requires the daemon to be running.",
     },
     args: {
         search: {
@@ -313,9 +313,9 @@ interface ToolSection {
 }
 
 /**
- * Bucket the flat catalog into one section per toolgroup. A tool in
+ * Bucket the flat catalog into one section per tool group. A tool in
  * several groups (e.g. `fs_read` ∈ `core` + `fs`) appears under each —
- * mirroring how a handler's `tools:` expression actually resolves.
+ * mirroring how a handler's `tools:` list actually resolves.
  * Tools with no group at all collect under a trailing `ungrouped`
  * section. Sections are ordered: curated groups first (fixed order),
  * then plugin groups (alphabetical), then MCP ids (alphabetical),

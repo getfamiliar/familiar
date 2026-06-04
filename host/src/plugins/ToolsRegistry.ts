@@ -39,7 +39,7 @@ export interface RegisteredPluginTool {
     /** The plugin-provided execute function. */
     readonly execute: PluginTool["execute"];
     /**
-     * Curated DSL groups this tool joins, in addition to the
+     * Curated groups this tool joins, in addition to the
      * identity-derived auto-group for its `pluginId`. Mirrors
      * `PluginTool.groups`; the bastion's `/plugin-tools/` listing
      * forwards this set to the container so its `ToolsFactory` can
@@ -61,7 +61,7 @@ export interface RegisteredPluginTool {
  * `pluginId !== "core"`):
  *
  * 1. Plugin id matches {@link IDENT_PATTERN} (lowercase alnum, leading
- *    letter) so the id is usable as a DSL group name. Plugins with
+ *    letter) so the id is usable as a tool group name. Plugins with
  *    hyphenated ids (e.g. `cli-chat`) can ship workspace templates and
  *    commands fine; they just can't contribute tools without first
  *    renaming. The check fails loud at startup so the constraint is
@@ -112,14 +112,14 @@ export class PluginToolsRegistry {
         if (!isCore) {
             if (!IDENT_PATTERN.test(pluginId)) {
                 throw new Error(
-                    `plugin "${pluginId}" contributes tools but its id is not a valid DSL group ` +
+                    `plugin "${pluginId}" contributes tools but its id is not a valid tool group ` +
                         `name (must match ${IDENT_PATTERN}). Rename the plugin or drop its tools().`,
                 );
             }
             if (RESERVED_GROUP_NAMES.has(pluginId)) {
                 throw new Error(
                     `plugin "${pluginId}" cannot contribute tools — id collides with a reserved ` +
-                        `DSL group name (${[...RESERVED_GROUP_NAMES].join(", ")}).`,
+                        `tool group name (${[...RESERVED_GROUP_NAMES].join(", ")}).`,
                 );
             }
             if (this.mcp.get(pluginId) !== undefined) {

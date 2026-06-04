@@ -71,13 +71,13 @@ describe("PluginToolsClient — core sentinel is not an addressable auto-group",
         ]);
 
         // The `core` sentinel must NOT form a plugin-id auto-group — it
-        // would shadow the curated `core` group in the evaluator. Real
+        // would shadow the curated `core` group during resolution. Real
         // plugin ids (`whatsapp`) still get their auto-group.
         assert.equal(keysById.has("core"), false);
         assert.deepEqual([...(keysById.get("whatsapp") ?? [])], ["whatsapp_mark_read"]);
 
         // Declared `groups` still flow through for host-owned tools, so
-        // they stay addressable by name (`tools: core + cal`).
+        // they stay addressable by name (`tools: core, cal`).
         assert.deepEqual([...(groupKeys.get("cal") ?? [])], ["cal_get_events"]);
         assert.deepEqual([...(groupKeys.get("mail") ?? [])], ["mail_search"]);
         assert.deepEqual([...(groupKeys.get("reflection") ?? [])], ["agentrun_report"]);

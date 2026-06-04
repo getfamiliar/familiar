@@ -495,7 +495,7 @@ export class PluginHost {
                 ...buildMailStyleTools({ store: this.mailStyleStore }),
                 // Reflection tools live alongside the other host-owned
                 // core tools so they share the bare-key registration
-                // path and join the `reflection` toolgroup with the
+                // path and join the `reflection` tool group with the
                 // container-side `get_scheduled_handlers`.
                 ...buildReflectionTools({
                     ensureConnection: () => this.ensureConnection(),

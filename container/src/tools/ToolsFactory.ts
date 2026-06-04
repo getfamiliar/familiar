@@ -14,11 +14,11 @@ import { buildFsTools } from "./fs.js";
 import { buildGetScheduledHandlersTool } from "./getScheduledHandlers.js";
 import { buildScheduleHandlerTool } from "./scheduleHandler.js";
 import { buildSendChatTool } from "./sendChat.js";
-import { evaluate, type GroupLookup, MCP_GROUP_NAME, parseExpression } from "./ToolFilter.js";
+import { MCP_GROUP_NAME, resolveTools } from "./ToolsExpressionParser.js";
 import { buildUnscheduleHandlerTool } from "./unscheduleHandler.js";
 
 /**
- * Curated DSL groups every container-built-in tool joins. The
+ * Curated groups every container-built-in tool joins. The
  * `core` group is the implicit default tool set handed to handlers
  * that omit `tools:`; `fs` bundles the filesystem family for
  * `tools: fs`; `reflection` collects introspection tools like
@@ -55,21 +55,15 @@ export interface ToolsFactoryContext {
     /** Parent event id for the running agentrun; closed over by chat-aware tools. */
     readonly eventId?: string;
     /**
-     * Tool-filter expression from the handler's `tools:` header.
-     * When `undefined` or empty, the implicit default `core` group is
-     * used (the union of every tool — built-in, host-core, or plugin —
-     * whose `groups` lists `core`). See `tools/ToolFilter.ts` for the
-     * full grammar and reserved group names.
+     * Normalized `tools:` entries from the handler header — explicit
+     * tool names, `*`-globs, and group names, resolved independently
+     * and unioned. When `undefined` or empty, the implicit default
+     * `core` group is used (the union of every tool — built-in,
+     * host-core, or plugin — whose `groups` lists `core`). See
+     * `tools/ToolsExpressionParser.ts` for resolution and reserved
+     * group names.
      */
-    readonly toolsExpression?: string;
-    /**
-     * Lazy lookup for user-defined groups in
-     * `workspace/toolgroups/`. Built by `createGroupLookup()`. May
-     * be omitted in tests; the resolver only invokes it for
-     * non-built-in names, so simple expressions like `tools: all`
-     * work without it.
-     */
-    readonly groups?: GroupLookup;
+    readonly tools?: readonly string[];
     /**
      * Agentrun bus; required to register `schedule_handler` (immediate
      * mode inserts a child agentrun) and `call_handler`.
@@ -102,33 +96,31 @@ export interface ToolsFactoryContext {
     readonly waitForSubagent?: WaitForSubagent;
     /**
      * MCP-derived tools, namespaced as `${id}_${toolName}` by the
-     * {@link McpClientPool}. Filtered through the same expression
+     * {@link McpClientPool}. Resolved against the same `tools:` entries
      * as system tools — they share one available pool.
      */
     readonly mcpTools?: ToolSet;
     /**
      * Sanitized MCP id → the set of that MCP's sanitized tool keys.
-     * Threaded into the evaluator's `builtins` so a handler's
-     * `tools:` expression can reference an MCP id directly
-     * (`tools: fetch + atlassian`) without a user-written toolgroup
-     * file. Reserved names (`all`, `mcp`, `none`) cannot appear as
-     * keys because the host's `mcp.yml` linter rejects them as ids.
+     * Threaded into the resolver's `builtins` so a handler's `tools:`
+     * can reference an MCP id directly (`tools: fetch, atlassian`).
+     * Reserved names (`all`, `mcp`, `none`) cannot appear as keys
+     * because the host's `mcp.yml` linter rejects them as ids.
      */
     readonly mcpKeysById?: ReadonlyMap<string, ReadonlySet<string>>;
     /**
      * Plugin-contributed tools, namespaced as `${pluginId}_${name}`
      * by the host's plugin-tools registry. Merged into the same
-     * available pool as system + MCP tools so one `tools:`
-     * expression decides what survives.
+     * available pool as system + MCP tools so one `tools:` list
+     * decides what survives.
      */
     readonly pluginTools?: ToolSet;
     /**
      * Plugin id → the set of that plugin's sanitized tool keys.
-     * Threaded into the evaluator's `builtins` so a handler can
-     * write `tools: system + mail` to pull in every mail-plugin
-     * tool. The host registry rejects plugin ids that collide
-     * with reserved names or MCP ids, so the namespace is safe to
-     * merge with `mcpKeysById`.
+     * Threaded into the resolver's `builtins` so a handler can write
+     * `tools: core, mail` to pull in every mail-plugin tool. The host
+     * registry rejects plugin ids that collide with reserved names or
+     * MCP ids, so the namespace is safe to merge with `mcpKeysById`.
      */
     readonly pluginKeysById?: ReadonlyMap<string, ReadonlySet<string>>;
     /**
@@ -149,7 +141,7 @@ export interface ToolsFactoryContext {
      */
     readonly toolRunContext?: ToolRunContext;
     /**
-     * Logger child for filter diagnostics. Resolution errors throw
+     * Logger child for resolution diagnostics. Resolution errors throw
      * so the agentrun fails loud; warnings are not currently
      * emitted (kept for future use).
      */
@@ -160,14 +152,14 @@ export interface ToolsFactoryContext {
  * Builds the tool set the {@link import("../agent-runner/AgentRunner").AgentRunner}
  * hands to the Vercel AI SDK's tool-loop agent.
  *
- * **One pool, one filter.** Built-in container tools (`send_chat`,
+ * **One pool, one resolution.** Built-in container tools (`send_chat`,
  * `schedule_handler`, `call_handler`, `unschedule_handler`,
  * `get_scheduled_handlers`, `fs_*`), MCP tools (`${id}_${name}`), and
  * plugin tools are merged into a single available set. The handler's
- * `tools:` expression — or, when omitted, the implicit `core` default
- * — decides what survives.
+ * `tools:` entries — or, when omitted, the implicit `core` default —
+ * decide what survives.
  *
- * Built-in groups visible from any expression:
+ * Built-in groups available to any handler:
  *
  * - `all`  — every key in the available pool.
  * - `mcp`  — just the MCP-tool keys.
@@ -182,10 +174,10 @@ export interface ToolsFactoryContext {
 // biome-ignore lint/complexity/noStaticOnlyClass: Reserved as a growth point for tool registration.
 export class ToolsFactory {
     /**
-     * Build the tool set for one agentrun. Fully evaluates the
-     * `tools:` expression (or the implicit `core` default) against
-     * the unified system + MCP + plugin pool and returns the
-     * projected `ToolSet`.
+     * Build the tool set for one agentrun. Resolves the handler's
+     * `tools:` entries (or the implicit `core` default) against the
+     * unified system + MCP + plugin pool and returns the projected
+     * `ToolSet`.
      */
     static build(context: ToolsFactoryContext = {}): ToolSet {
         const systemTools: ToolSet = {};
@@ -291,8 +283,7 @@ export class ToolsFactory {
             mcpKeysById: context.mcpKeysById,
             pluginKeysById: context.pluginKeysById,
             groupKeys,
-            toolsExpression: context.toolsExpression,
-            lookup: context.groups,
+            tools: context.tools,
         });
 
         const out: ToolSet = {};
@@ -366,15 +357,15 @@ async function readRawInputSchema(tool: Tool): Promise<object> {
 }
 
 /**
- * Compute the set of tool keys that pass the handler's filter.
+ * Compute the set of tool keys the handler's `tools:` entries select.
  *
  * - `tools:` undefined or empty ⇒ implicit `core` (the union of every
  *   tool whose declared `groups` lists `core`; empty when no tool
  *   opted in for this agentrun).
- * - `tools:` set ⇒ parse the expression and evaluate against the
- *   unified pool. Curated and identity-derived groups are supplied
- *   via the `builtins` map; `all` and `none` are handled by the
- *   evaluator from `available`; `mcp` resolves to the MCP-key set.
+ * - `tools:` set ⇒ resolve each entry against the unified pool and
+ *   union. Curated and identity-derived groups are supplied via the
+ *   `builtins` map; `all` and `none` resolve from `available`; `mcp`
+ *   resolves to the MCP-key set.
  */
 function resolveMatched(args: {
     available: ReadonlySet<string>;
@@ -382,21 +373,10 @@ function resolveMatched(args: {
     mcpKeysById: ReadonlyMap<string, ReadonlySet<string>> | undefined;
     pluginKeysById: ReadonlyMap<string, ReadonlySet<string>> | undefined;
     groupKeys: ReadonlyMap<string, ReadonlySet<string>>;
-    toolsExpression: string | undefined;
-    lookup: GroupLookup | undefined;
+    tools: readonly string[] | undefined;
 }): Set<string> {
-    if (args.toolsExpression === undefined || args.toolsExpression.trim().length === 0) {
+    if (args.tools === undefined || args.tools.length === 0) {
         return new Set(args.groupKeys.get("core") ?? new Set());
-    }
-    const expressionForError = JSON.stringify(args.toolsExpression);
-    let ast: ReturnType<typeof parseExpression>;
-    try {
-        ast = parseExpression(args.toolsExpression);
-    } catch (err) {
-        throw new Error(
-            `Cannot parse tools frontmatter attribute ${expressionForError}, aborting: ${errorMessage(err)}`,
-            { cause: err },
-        );
     }
     // Order matters only on collisions, which the host-side linters
     // already preclude — but we still write curated groups first,
@@ -417,12 +397,11 @@ function resolveMatched(args: {
         }
     }
     builtins.set(MCP_GROUP_NAME, args.mcpKeys);
-    const lookup = args.lookup ?? rejectAnyLookup;
     try {
-        return evaluate(ast, args.available, lookup, builtins);
+        return resolveTools(args.tools, args.available, builtins);
     } catch (err) {
         throw new Error(
-            `Cannot resolve tools frontmatter attribute ${expressionForError}, aborting: ${errorMessage(err)}`,
+            `Cannot resolve tools frontmatter attribute ${JSON.stringify(args.tools)}, aborting: ${errorMessage(err)}`,
             { cause: err },
         );
     }
@@ -438,13 +417,6 @@ function errorMessage(err: unknown): string {
     }
     return String(err);
 }
-
-/**
- * Default lookup used when no group-loader was wired in (tests,
- * future call sites). Always resolves to "no such group" — the
- * resolver translates that to `unknown group: <name>`.
- */
-const rejectAnyLookup: GroupLookup = () => undefined;
 
 /**
  * Inert {@link ToolRunContext} for callers (typically tests) that

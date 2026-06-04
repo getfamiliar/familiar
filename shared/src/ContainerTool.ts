@@ -19,7 +19,7 @@ export interface ContainerToolInfo {
     /** Raw JSON Schema for the tool's arguments. */
     readonly inputSchema: object;
     /**
-     * Curated DSL groups this built-in joins (mirrors
+     * Curated groups this built-in joins (mirrors
      * `CONTAINER_TOOL_GROUPS` in the container), e.g. `["core", "fs"]`
      * for `fs_read` or `["bash"]` for `bash`.
      */

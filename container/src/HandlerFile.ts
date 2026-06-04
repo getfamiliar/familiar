@@ -21,16 +21,24 @@ export interface HandlerFileHeader {
     /** Sampling temperature passed to the model. */
     readonly temperature?: number;
     /**
-     * Tool-filter expression. Controls which MCP tools are exposed to
-     * this handler's agent loop. See `tools/ToolFilter.ts` for the full
-     * grammar (groups, paths with `*` globs, `&&` / `||` / `!`). When
-     * omitted, **no MCP tools** are exposed — system tools (`send_chat`,
-     * `schedule_handler`, `call_handler`, filesystem) are always present regardless.
+     * Tools exposed to this handler's agent loop, as a list of entries
+     * (a comma-separated string or a YAML list). Each entry is an
+     * explicit tool name (`send_chat`), a `*`-glob (`atlassian_*`), or
+     * a group name (`all`, `mcp`, `none`, curated groups like `core` /
+     * `fs` / `reflection`, plus one auto-group per MCP id and per
+     * plugin id). Entries resolve independently and are unioned. See
+     * `tools/ToolsExpressionParser.ts` for resolution details.
      *
-     * The built-in group `all` is the escape hatch for handlers that
-     * genuinely want every declared MCP's tools (`tools: all`).
+     * Omitted, an empty list, or an empty string ⇒ the implicit `core`
+     * default. To expose nothing, use `none` (e.g. a child handler
+     * overriding its parent's `tools:`). The built-in group `all` is
+     * the escape hatch for handlers that want every available tool.
+     *
+     * Globs in a YAML list must be quoted (`"cal_*"`) since a leading
+     * `*` is a YAML alias indicator; in a comma string they need no
+     * quoting (`core, cal_*`).
      */
-    readonly tools?: string;
+    readonly tools?: readonly string[];
     /**
      * Maximum number of tokens the model is allowed to generate in any
      * single step of the tool-loop. Bounds worst-case latency and the
@@ -454,7 +462,7 @@ function parseHandler(filePath: string, source: string): DeclaredFile {
     const header: HandlerFileHeader = {
         model: optionalString(filePath, raw, "model"),
         temperature: optionalNumber(filePath, raw, "temperature"),
-        tools: optionalString(filePath, raw, "tools"),
+        tools: optionalStringList(filePath, raw, "tools"),
         maxOutputTokens: optionalPositiveInteger(filePath, raw, "maxOutputTokens"),
         maxRetries: optionalNonNegativeInteger(filePath, raw, "maxRetries"),
         outputChat: optionalBoolean(filePath, raw, "outputChat"),
@@ -504,6 +512,46 @@ function optionalString(
         throw new Error(`${filePath}: header field "${field}" must be a string`);
     }
     return value;
+}
+
+/**
+ * Parse a header field that holds a list of strings, accepting either
+ * a comma-separated string (`a, b, c`) or a YAML list (`[a, b, c]`).
+ * Each entry is trimmed and empties are dropped, so a trailing or
+ * doubled comma is harmless and an all-whitespace string yields `[]`.
+ *
+ * @returns The normalized entries, or `undefined` when the field is
+ *   absent (so `??`-based merge / defaults keep working).
+ * @throws If the value is neither a string nor an array of strings.
+ */
+function optionalStringList(
+    filePath: string,
+    raw: Record<string, unknown>,
+    field: string,
+): readonly string[] | undefined {
+    if (!(field in raw) || raw[field] === undefined) {
+        return undefined;
+    }
+    const value = raw[field];
+    if (typeof value === "string") {
+        return value
+            .split(",")
+            .map((entry) => entry.trim())
+            .filter((entry) => entry.length > 0);
+    }
+    if (Array.isArray(value)) {
+        return value
+            .map((entry) => {
+                if (typeof entry !== "string") {
+                    throw new Error(
+                        `${filePath}: header field "${field}" must be a string or a list of strings`,
+                    );
+                }
+                return entry.trim();
+            })
+            .filter((entry) => entry.length > 0);
+    }
+    throw new Error(`${filePath}: header field "${field}" must be a string or a list of strings`);
 }
 
 function optionalNumber(

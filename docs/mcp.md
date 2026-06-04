@@ -79,7 +79,7 @@ CLI entrypoint to override. Use a custom image if you need to.
 Top-level shape: a YAML mapping of id → entry. The id (the YAML key) must match
 `^[a-z][a-z0-9]*$` (lowercase alphanumeric, leading letter, no hyphens or underscores) and is
 used as the container suffix (`familiar-mcp-<id>`). The strict shape is required because every id
-doubles as a tools-DSL group name — see "Built-in groups" below.
+doubles as a tool group name — see "Built-in groups" below.
 
 ### Per-entry fields
 
@@ -159,10 +159,9 @@ atlassian_jira_create_issue            # one of mcp/atlassian's many
 ms365_verify_login                     # `verify-login` tool → underscore
 ```
 
-**Inside `tools:` expressions and toolgroup files, work with these sanitized — underscored — names
-only.** The DSL never sees the hyphenated original; tool-name hyphens are folded to `_` at
-registration time, MCP ids are constrained to alnum-only by the linter, so a hyphen inside an
-expression is always the difference operator, never part of a name.
+**Inside `tools:`, work with these sanitized — underscored — names only.** The hyphenated original
+is never visible; tool-name hyphens are folded to `_` at registration time, and MCP ids are
+constrained to alnum-only by the linter.
 
 The agent boots the pool eagerly: every declared MCP gets its `tools/list` fetched once at
 startup. Cold-spawn cost shows up here (one docker child per MCP, briefly). That's fine for small
@@ -171,66 +170,45 @@ this stays cheap.
 
 ## Filtering tools per handler
 
-Handlers declare which tools they want via a `tools:` expression in their YAML header. The
-expression filters across **all** registered tools — container built-ins (`send_chat`,
-`schedule_handler`, `call_handler`, `unschedule_handler`, `get_scheduled_handlers`, `fs_*`),
-plugin tools (`memory_*`, `ms365_*`, …) and namespaced MCP tools share one available pool.
+Handlers declare which tools they want via a `tools:` list in their YAML header — a
+comma-separated string or a YAML list. It selects across **all** registered tools — container
+built-ins (`send_chat`, `schedule_handler`, `call_handler`, `unschedule_handler`,
+`get_scheduled_handlers`, `fs_*`), plugin tools (`memory_*`, `ms365_*`, …) and namespaced MCP tools
+share one available pool.
 
-**Omitted ⇒ implicit `core`.** A handler with no `tools:` line gets every tool whose declared
-`groups` lists `core` (`send_chat`, `call_handler`, `schedule_handler`, `unschedule_handler`,
-`fs_read`, plus opted-in plugin tools like `memory_search` / `memory_save`). Override with
-`tools: all`, `tools: none`, or anything more specific.
+**Omitted ⇒ implicit `core`.** A handler with no `tools:` line — or an empty list / empty string —
+gets every tool whose declared `groups` lists `core` (`send_chat`, `call_handler`,
+`schedule_handler`, `unschedule_handler`, `fs_read`, plus opted-in plugin tools like
+`memory_search` / `memory_save`). To expose nothing, use `tools: none`. Override with `tools: all`
+or anything more specific.
 
-### Expression grammar
+### Entries
 
-```
-expr      := plusMinus
-plusMinus := and (('+' | '-') and)*
-and       := atom ('&' atom)*
-atom      := bareword | '(' expr ')'
+Each entry is one of three things, classified by shape — not by any surrounding syntax. Entries are
+resolved independently and **unioned**; there are no operators, no precedence, and no parentheses.
 
-bareword  := [a-zA-Z0-9_*]+
-```
-
-Operators:
-
-- `a + b` — both `a` and `b` together (set union).
-- `a - b` — `a` without the tools in `b` (set difference).
-- `a & b` — tools in `a` and `b` both (set intersection).
-
-Precedence: `&` binds tighter than `+`/`-`. `+` and `-` share one level and read left-to-right
-(`a + b - c` = `(a + b) - c`, `all - x - y` = `(all - x) - y`). Parens override. Whitespace is
-insignificant.
-
-**Names use underscores only.** Tool keys are sanitized so a tool named `verify-login` from MCP
-`ms365` registers as `ms365_verify_login`; MCP ids themselves are constrained to alnum-only by the
-linter (no hyphens, no underscores), and toolgroup filenames must follow the same alnum-only
-shape. `-` inside an expression is therefore always the difference operator, never part of a name.
-
-Each bareword is **either a group name or a tool pattern** — classified by shape, not by syntax:
-
-- Matches `^[a-z][a-z0-9]*$` (lowercase alnum, leading letter, no `_`, no `*`) → **group** lookup.
-  Throws "unknown group" if undefined.
-- Anything else (contains `_` or `*`, or has uppercase) → **tool pattern**, matched against the
-  pool's namespaced keys.
-- Tool keys have the form `${id}_${name}` (e.g. `fetch_fetch`, `atlassian_jira_create_issue`). Use
-  them verbatim — the same form the LLM sees in tool calls.
-- `*` is a glob wildcard matching any character sequence (including `_`). Bare `*` matches every
-  tool key.
+- **Group name** — matches `^[a-z][a-z0-9]*$` (lowercase alnum, leading letter, no `_`, no `*`).
+  Resolves to that group's tool keys; throws "unknown group" if undefined.
+- **Explicit tool name** — a full namespaced key of the form `${id}_${name}` (e.g. `fetch_fetch`,
+  `atlassian_jira_create_issue`). Use it verbatim — the same form the LLM sees in tool calls.
+- **Tool glob** — a pattern containing `*`, matched against the pool's namespaced keys. `*` matches
+  any character sequence (including `_`). Bare `*` matches every tool key.
 
 The shape-based split is structurally unambiguous: tool keys always contain at least one `_` (the
 id-name join), while group names cannot contain `_` at all. The `mcp.yml` linter rejects ids that
 aren't alnum-only for the same reason — every id doubles as a group name.
 
+Globs in a YAML list must be quoted (`"cal_*"`) because a leading `*` is a YAML alias indicator; in
+a comma string they need no quoting (`core, cal_*`).
+
 ### Built-in groups
 
-Three reserved names plus one auto-group per declared MCP / plugin id are resolved by the
-evaluator before any user lookup:
+Three reserved names plus one auto-group per declared MCP / plugin id:
 
 | Name | Resolves to |
 | --- | --- |
 | `all` | Every key in the available pool — container built-ins + plugin tools + MCP tools. |
-| `mcp` | Just the namespaced MCP-tool keys. Useful for `mcp - some_mcp_*` style scopes. |
+| `mcp` | Just the namespaced MCP-tool keys. |
 | `none` | Empty set. Lets a child handler override its parent's `tools:` to nothing under the replace-merge inheritance rule. |
 | `<mcp-id>` | One auto-group per entry declared in `mcp.yml`. Resolves to every tool key that MCP exposes. So `tools: fetch` is shorthand for `tools: fetch_*`. |
 | `<plugin-id>` | One auto-group per plugin that contributes tools. Resolves to every tool key the plugin registered. |
@@ -240,50 +218,20 @@ union of every tool whose declaration lists them. The container's built-ins join
 table in `ToolsFactory`; plugin tools join via `PluginTool.groups`. Coining a new group is a
 matter of listing the name on one or more tools.
 
-The three reserved names (`all`, `mcp`, `none`) are shadowed if a workspace
-`toolgroups/<name>.txt` exists — the resolver never reads those files. They are **also** rejected
-as MCP ids by `./cli.sh tools lint-mcps` and as plugin-tool group names by the host plugin tool registry,
-so a name collision fails up front instead of being silently shadowed.
+The three reserved names (`all`, `mcp`, `none`) are rejected as MCP ids by
+`./cli.sh tools lint-mcps` and as plugin-tool group names by the host plugin tool registry, so a
+name collision fails up front instead of being silently shadowed.
 
 MCP ids are constrained to lowercase alphanumeric (no hyphens, no underscores) precisely because
 they double as group names. An id like `myservice` becomes group `myservice`; ids like
 `my-service` or `my_service` are rejected by the linter — pick `myservice` instead.
-
-### User groups
-
-Plain-text files at `workspace/toolgroups/<name>.txt`, one entry per line. Each line is either
-another group name or a tool pattern — same classification rule as expressions. Lines are unioned;
-the group's tool set is the collected matches.
-
-```
-# workspace/toolgroups/reads.txt
-# Tools that fetch context without changing anything user-visible.
-
-fetch_fetch
-atlassian_jira_get_*
-atlassian_jira_search
-atlassian_confluence_get_*
-```
-
-`#` to end of line is a comment. Blank lines are ignored. The group's name comes from the filename
-stem and must match `^[a-z][a-z0-9]*$` (the same alnum-only shape as MCP ids). Operators (`+`,
-`-`, `&`) inside group files are **not** allowed — composition lives at the handler-expression
-level, where it's needed.
-
-The whole `workspace/toolgroups/` directory is gated as **privileged-write** regardless of file
-extension: handlers that aren't descended from trusted user input (the cli-chat REPL or operator
-chat) cannot create or modify group definitions.
-
-**Group files are loaded lazily.** A given `<name>.txt` is only opened when an agentrun's
-expression actually references that group; a malformed line in `workspace/toolgroups/foo.txt` only
-fails the handlers that say `tools: foo`. Unrelated handlers run clean.
 
 ### Worked examples
 
 ```yaml
 ---
 # (no `tools:` line)                        # implicit `core` — every tool whose
----                                         # `groups` lists `core`, no MCP tools
+---                                         # `groups` lists `core`
 
 ---
 tools: all                                  # every container + plugin + MCP tool
@@ -294,11 +242,8 @@ tools: none                                 # nothing at all (used by a child
 ---                                         # to override its parent's surface)
 
 ---
-tools: core - fs_write                      # core defaults, but no fs_write
----                                         # (drop fs_str_replace and
-                                            #  fs_append too for true read-only;
-                                            #  or use the `fs` group / a user
-                                            #  group for ergonomics)
+tools: core, fs                             # core defaults plus the fs bundle
+---
 
 ---
 tools: mcp                                  # all MCP tools, no other tools
@@ -322,36 +267,22 @@ tools: atlassian                            # every tool on the `atlassian` MCP
                                             #  `atlassian_*`)
 
 ---
-tools: reads                                # a user-defined group
+tools: fetch, atlassian                     # union of two MCP-id auto-groups
 ---
 
 ---
-tools: core + reads                         # core defaults + user-defined reads
----
-
----
-tools: fetch + atlassian                    # union of two MCP-id auto-groups
----
-
----
-tools: all - atlassian - fetch              # everything except those two MCPs
----
-
----
-tools: all - atlassian_jira_delete_*        # everything except Jira delete tools
----
-
----
-tools: mcp & *_search                       # only MCP-tool keys ending in _search
+tools:                                      # YAML-list form (globs quoted)
+  - core
+  - "cal_*"
+  - at_jira_search
 ---
 ```
 
-Resolution failures fail the agentrun loud, before the model is invoked: an unknown group, a cycle
-in group references, or a syntax error in the expression all surface as `agentrun failed` with the
-underlying message in the row's `error` column.
+Resolution failures fail the agentrun loud, before the model is invoked: an unknown group surfaces
+as `agentrun failed` with the underlying message in the row's `error` column.
 
-A tool pattern that matches **no** keys (e.g. a typo like `atlassian_jira_seerch`) is treated as
-an empty contribution and the agentrun continues with whatever else is in the expression. This
+A tool name or glob that matches **no** keys (e.g. a typo like `atlassian_jira_seerch`) is treated
+as an empty contribution and the agentrun continues with whatever else the list selects. This
 asymmetry is deliberate — wildcards routinely match nothing when a catalog evolves, and we don't
 want every catalog change to break unrelated handlers.
 
@@ -359,7 +290,7 @@ want every catalog change to break unrelated handlers.
 
 - **List every tool.** `./cli.sh tools list [search]` lists every tool the agent can use — container
   built-ins (`send_chat`, `fs_*`, `bash`, …), host plugin tools (`mail_*`, `whatsapp_*`, the
-  reflection tools), and MCP functions — grouped by toolgroup. `-v` shows full descriptions, `-vv`
+  reflection tools), and MCP functions — grouped by tool group. `-v` shows full descriptions, `-vv`
   adds each tool's parameters, `--mcp` / `--native` restrict to MCP-only or non-MCP-only, and `--raw`
   emits unstyled markdown. Requires the daemon: built-ins come from the catalog the agent container
   reports to the bastion on startup, plugin tools from the plugin-tools gateway, and MCP tools from
@@ -429,8 +360,6 @@ want every catalog change to break unrelated handlers.
 
 - A CLI helper that fetches a `server.yaml` URL from the Docker MCP registry and writes a
   translated entry into `mcp.yml`.
-- AI-assisted toolgroup authoring: a meta-handler that introspects the catalog and proposes
-  groups (`reads`, `safejiraedits`, …) for the user to approve and write.
 - Bastion-side filtering: today the gateway serves every tool to the agent and the container
   filters per handler. Pushing the filter to the gateway only matters once we don't fully trust
   the agent.

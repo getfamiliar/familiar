@@ -457,8 +457,8 @@ export class DaemonStoppedError extends Error {
  * own Node process** with access to the plugin's deps.
  *
  * Naming: `name` is the bare tool name (e.g. `draft_response`); the
- * gateway registers it under `${pluginId}_${name}` so the agent's
- * filter DSL can address each plugin's tools as a group. Keep `name`
+ * gateway registers it under `${pluginId}_${name}` so a handler's
+ * `tools:` can address each plugin's tools as a group. Keep `name`
  * lowercase alnum + `_` to avoid the sanitization fold the gateway
  * applies on the key.
  *
@@ -494,10 +494,9 @@ export interface PluginTool<TInput = unknown, TOutput = unknown> {
     /**
      * Curated tool groups this tool joins, in addition to its
      * identity-derived auto-group (the plugin id). Every name in the
-     * array becomes a DSL group that resolves to a union of every
-     * tool declaring it — built-in container tools, host-side core
-     * tools, and plugin tools all contribute through the same
-     * mechanism.
+     * array becomes a group that resolves to a union of every tool
+     * declaring it — built-in container tools, host-side core tools,
+     * and plugin tools all contribute through the same mechanism.
      *
      * Conventional names today:
      *
@@ -506,11 +505,11 @@ export interface PluginTool<TInput = unknown, TOutput = unknown> {
      *   capabilities (long-term memory, basic chat reply, file read)
      *   whose `description` reads cleanly out of any context.
      * - `fs`, `reflection`, … — curated bundles a handler opts into
-     *   via `tools: fs` or `tools: core + reflection`. New names can
+     *   via `tools: fs` or `tools: core, reflection`. New names can
      *   be coined freely.
      *
      * Each name must match {@link IDENT_PATTERN} and must not be one
-     * of the three reserved DSL names (`all`, `none`, `mcp`). A
+     * of the three reserved names (`all`, `none`, `mcp`). A
      * plugin tool cannot list its own plugin id (the auto-group
      * already covers that). Registration fails loudly on either
      * violation.
@@ -692,7 +691,7 @@ export interface PluginManifest {
      * plugin's CLI commands (`cli.sh <id> <subcommand>`). A plugin
      * that contributes {@link PluginHostManifest.tools | tools} must
      * additionally satisfy {@link IDENT_PATTERN} so the id is usable
-     * as a DSL group name; the tools registry enforces that at
+     * as a tool group name; the tools registry enforces that at
      * register time.
      */
     readonly id: string;

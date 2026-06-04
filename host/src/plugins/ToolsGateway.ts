@@ -47,7 +47,7 @@ export interface PluginToolsGatewayConfig {
  *
  * - The catalog returns `{ key, description, inputSchema }` per tool.
  *   The container builds AI SDK `tool()` objects from this and
- *   resolves per-plugin DSL groups via the `key` prefix.
+ *   resolves per-plugin groups via the `key` prefix.
  * - Invokes are POST `application/json` with body
  *   `{ args, eventId, agentrunId, toolCallOffloadingLimit }`. The
  *   gateway loads both rows, constructs a {@link ToolRunContext} that
@@ -114,7 +114,7 @@ export class PluginToolsGateway implements BastionModule {
     /**
      * Reply with `[{ key, pluginId, description, inputSchema, groups },
      * ...]`. Only `GET` is supported; other methods get 405. `groups`
-     * is the sorted list of curated DSL groups the tool joins
+     * is the sorted list of curated groups the tool joins
      * (mirrors `PluginTool.groups`); the container folds each name
      * into the per-group key map its `ToolsFactory` consults.
      */

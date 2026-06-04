@@ -42,7 +42,7 @@ interface CatalogEntry {
     readonly description: string;
     readonly inputSchema: object;
     /**
-     * Curated DSL groups this tool joins, in addition to the
+     * Curated groups this tool joins, in addition to the
      * identity-derived auto-group for its `pluginId`. Mirrors
      * `PluginTool.groups`. The container folds each name into the
      * per-group key map its `ToolsFactory` consults, so e.g.
@@ -69,9 +69,8 @@ interface CatalogEntry {
  *
  * Tool key namespacing matches MCP: the host already publishes
  * `${pluginId}_${name}` after sanitization, so the client passes
- * keys through verbatim and the agent's `tools:` DSL evaluator
- * treats each plugin id as a group via the supplied
- * {@link pluginKeysById} map.
+ * keys through verbatim and a handler's `tools:` treats each plugin
+ * id as a group via the supplied {@link pluginKeysById} map.
  */
 export class PluginToolsClient {
     private readonly config: PluginToolsClientConfig;
@@ -89,8 +88,8 @@ export class PluginToolsClient {
      * The second return value maps plugin id → set of that plugin's
      * sanitized tool keys, threaded into {@link
      * import("../tools/ToolsFactory").ToolsFactory}'s `builtins` so a
-     * handler's `tools:` expression can reference a plugin id as a
-     * group (`tools: system + mail`).
+     * handler's `tools:` can reference a plugin id as a group
+     * (`tools: core, mail`).
      */
     async tools(
         eventId: string,

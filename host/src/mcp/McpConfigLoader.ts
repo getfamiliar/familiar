@@ -27,12 +27,12 @@ const VALID_SOURCES: readonly McpSource[] = ["docker-mcp-registry", "npm", "pypi
 
 /**
  * Identifier rule for `mcp.yml` keys. Lowercase alphanumeric, leading
- * letter — same shape as the tools-DSL `IDENT_PATTERN`, because every
+ * letter — same shape as the shared `IDENT_PATTERN`, because every
  * MCP id is auto-exposed as a same-named group in handler `tools:`
- * expressions. Hyphens and underscores are excluded so that ids
+ * lists. Hyphens and underscores are excluded so that ids
  * (a) compose unambiguously with `_` into `${id}_${toolName}` tool
  * keys, and (b) sit inside the alnum-only group-name shape the
- * evaluator uses to tell groups from tool patterns. Container names
+ * resolver uses to tell groups from tool patterns. Container names
  * still expand cleanly to `familiar-mcp-<id>`.
  */
 const ID_PATTERN = /^[a-z][a-z0-9]*$/;
@@ -133,19 +133,18 @@ export function loadMcpEntries(path: string, log: Logger): McpEntries {
 function validateEntry(id: string, value: unknown, errors: string[], warnings: string[]): void {
     if (!ID_PATTERN.test(id)) {
         errors.push(
-            `mcp.yml: id "${id}" must match ${ID_PATTERN} (lowercase alphanumeric, leading letter, no hyphens or underscores — every id doubles as a tools-DSL group name).`,
+            `mcp.yml: id "${id}" must match ${ID_PATTERN} (lowercase alphanumeric, leading letter, no hyphens or underscores — every id doubles as a tool group name).`,
         );
         return;
     }
-    // Each MCP id is exposed as an auto-group of the same name in
-    // the tools-DSL (so handlers can write `tools: fetch + atlassian`
-    // without a user toolgroup file). The three reserved names
-    // (`all`, `none`, `mcp`) are resolved by the evaluator before
-    // any group lookup, so an MCP id that collides with one would be
-    // silently shadowed — reject it loudly here instead.
+    // Each MCP id is exposed as an auto-group of the same name (so
+    // handlers can write `tools: fetch, atlassian`). The three
+    // reserved names (`all`, `none`, `mcp`) are resolved directly
+    // before any group lookup, so an MCP id that collides with one
+    // would be silently shadowed — reject it loudly here instead.
     if (RESERVED_GROUP_NAMES.has(id)) {
         errors.push(
-            `mcp.yml: id "${id}" is a reserved tools-DSL group name (${[...RESERVED_GROUP_NAMES].join(", ")}). Pick another id.`,
+            `mcp.yml: id "${id}" is a reserved tool group name (${[...RESERVED_GROUP_NAMES].join(", ")}). Pick another id.`,
         );
         return;
     }

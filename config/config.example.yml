@@ -69,7 +69,7 @@ core:
   # memory. A glob string or a list of glob strings (`*`-glob grammar
   # anchored at the workspace root, e.g. `wiki/**`). These are the ONLY
   # paths a non-privileged agentrun may write — everything else in the
-  # workspace (handlers, SOUL.md, people/*, toolgroup definitions, …) is
+  # workspace (handlers, SOUL.md, people/*, …) is
   # writable only by privileged runs. They are ALSO quoted in full by the
   # memory plugin (matches outside the list demote to a "See also"
   # mention). Enforced both by the agent's fs tools and, for the bash

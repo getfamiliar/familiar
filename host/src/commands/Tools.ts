@@ -10,7 +10,7 @@ import { purgeMcpsCommand } from "./tools/PurgeMcps.js";
  * `cli.sh tools` — inspect the agent's tools and manage MCP entries.
  *
  * `list` shows every tool the agent can use (container built-ins,
- * plugin tools, MCP functions) grouped by toolgroup. The `*-mcp(s)`
+ * plugin tools, MCP functions) grouped by tool group. The `*-mcp(s)`
  * subcommands are the MCP-management slice: lint + list config entries,
  * add, purge caches, and run one-shot calls against `config/mcp.yml`.
  */

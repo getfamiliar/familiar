@@ -314,7 +314,7 @@ Calendar events the plugin discovers flow into the core `calendar_events`
 table; agents reach them through the plugin-agnostic `cal_*` tools
 (`cal_get_events`, `cal_get_event`, `cal_get_event_attachments`,
 `cal_create_event`, `cal_update_event`, `cal_delete_event`,
-`cal_attach_file`). Those tools are registered host-side under the DSL group
+`cal_attach_file`). Those tools are registered host-side under the tool group
 `core`; a handler enables them via `tools: core` in its frontmatter.
 
 `cal_update_event({id, patch})` accepts a sparse patch — only fields present

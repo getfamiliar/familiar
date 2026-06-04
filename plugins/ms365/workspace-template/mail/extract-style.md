@@ -1,5 +1,5 @@
 ---
-tools: ms365_get_sent_sample + mailstyle_get + mailstyle_update + fs_read
+tools: ms365_get_sent_sample, mailstyle_get, mailstyle_update, fs_read
 maxOutputTokens: 32768
 temperature: 0
 systemPrompt: none

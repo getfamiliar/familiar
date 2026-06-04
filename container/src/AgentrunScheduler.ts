@@ -21,7 +21,6 @@ import type { PluginToolsClient } from "./plugins/ToolsClient.js";
 import type { AgentrunRecovery } from "./recovery/AgentrunRecovery.js";
 import type { Clock, TimerHandle } from "./testing/MockClock.js";
 import { buildContainerToolRunContext } from "./tools/ContainerToolRunContext.js";
-import { createGroupLookup } from "./tools/ToolGroupLoader.js";
 import { ToolsFactory } from "./tools/ToolsFactory.js";
 
 /**
@@ -636,7 +635,7 @@ export class AgentrunScheduler {
             row,
             signal: active.abortController.signal,
             waitForSubagent,
-            buildTools: async (toolsExpression, offloadTokenThreshold) => {
+            buildTools: async (tools, offloadTokenThreshold) => {
                 const toolRunContext = buildContainerToolRunContext(
                     row.eventId,
                     offloadTokenThreshold,
@@ -649,8 +648,7 @@ export class AgentrunScheduler {
                 return ToolsFactory.build({
                     chat,
                     eventId: row.eventId,
-                    toolsExpression,
-                    groups: createGroupLookup(),
+                    tools,
                     bus: agentRunBus,
                     scheduledHandlerBus,
                     timezone,

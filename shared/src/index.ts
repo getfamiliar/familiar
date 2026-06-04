@@ -139,16 +139,6 @@ export {
     renderInZone,
 } from "./Timezone.js";
 export {
-    ALL_GROUP_NAME,
-    CORE_PLUGIN_ID,
-    IDENT_PATTERN,
-    MCP_GROUP_NAME,
-    NONE_GROUP_NAME,
-    RESERVED_GROUP_NAMES,
-    sanitizeToolKey,
-    validateGroupName,
-} from "./ToolDsl.js";
-export {
     DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
     type OffloadedJson,
     runJsonLinesTool,
@@ -158,6 +148,16 @@ export {
     type ToolRunContext,
     truncateUtf8,
 } from "./ToolRunner.js";
+export {
+    ALL_GROUP_NAME,
+    CORE_PLUGIN_ID,
+    IDENT_PATTERN,
+    MCP_GROUP_NAME,
+    NONE_GROUP_NAME,
+    RESERVED_GROUP_NAMES,
+    sanitizeToolKey,
+    validateGroupName,
+} from "./ToolsExpressionUtils.js";
 export type {
     WorkspaceFile,
     WorkspaceFileFilter,

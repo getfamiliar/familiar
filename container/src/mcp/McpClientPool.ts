@@ -119,17 +119,16 @@ export class McpClientPool {
     /**
      * Map of MCP id → that MCP's sanitized tool keys. The host's
      * `mcp.yml` linter constrains ids to alnum-only, so the id
-     * itself is already a valid tools-DSL group name and no fold
+     * itself is already a valid tool group name and no fold
      * is needed; only the tool keys (which prepend a tool name
      * possibly carrying hyphens) pass through `sanitizeToolKey`.
      *
      * The container threads this into {@link
      * import("../tools/ToolsFactory").ToolsFactory}'s `builtins`
-     * map so a handler's `tools:` expression can reference an MCP
-     * id directly (`tools: fetch + atlassian`) without a
-     * user-written toolgroup file. Reserved names (`all`, `system`,
-     * `mcp`, `none`) cannot collide because the linter rejects
-     * them as ids up front.
+     * map so a handler's `tools:` can reference an MCP id directly
+     * (`tools: fetch, atlassian`). Reserved names (`all`, `mcp`,
+     * `none`) cannot collide because the linter rejects them as ids
+     * up front.
      */
     mcpKeysById(): ReadonlyMap<string, ReadonlySet<string>> {
         return this.keysById;

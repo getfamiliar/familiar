@@ -25,7 +25,7 @@ export interface CatalogTool {
     readonly name: string;
     /** Human-readable description (may be empty). */
     readonly description: string;
-    /** Toolgroups this tool belongs to (built-in/curated groups, plugin id, or MCP id). */
+    /** Tool groups this tool belongs to (built-in/curated groups, plugin id, or MCP id). */
     readonly groups: readonly string[];
     /** Source classifier. */
     readonly origin: ToolOrigin;

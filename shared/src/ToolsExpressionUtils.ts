@@ -1,12 +1,11 @@
 /**
- * Cross-cutting constants for the tools-DSL — the small expression
- * language used in handler markdown frontmatter (`tools:`) and in
- * `workspace/toolgroups/*.txt` files. The full parser/evaluator
- * lives in the container (`container/src/tools/ToolFilter.ts`); the
- * pieces re-exported here are the ones the host-side `mcp.yml`
- * linter and the plugin tool registry also need to enforce — namely
- * the set of group names the evaluator reserves and the shape every
- * declarable name must match.
+ * Cross-cutting constants for tool-group naming. A handler's `tools:`
+ * frontmatter lists explicit tool names, `*`-globs, or group names;
+ * the resolver lives in the container
+ * (`container/src/tools/ToolsExpressionParser.ts`). The pieces
+ * re-exported here are the ones the host-side `mcp.yml` linter and the
+ * plugin tool registry also need to enforce — namely the reserved
+ * group names and the shape every declarable name must match.
  *
  * Group names are otherwise *open*: any identifier matching
  * {@link IDENT_PATTERN} is a valid group, and a tool joins it by
@@ -28,7 +27,7 @@ export const NONE_GROUP_NAME = "none";
  * Reserved plugin id for host-owned tools registered without a
  * plugin-id prefix (the "bare-key" path — `cal_get_events` rather
  * than `core_cal_get_events`). It is a **registration sentinel, not
- * an addressable DSL group**: it deliberately collides in spelling
+ * an addressable tool group**: it deliberately collides in spelling
  * with the curated `core` group, so it must never be turned into a
  * plugin-id auto-group (doing so would shadow the curated `core`
  * group — the union of container built-ins and tools declaring
@@ -39,11 +38,10 @@ export const NONE_GROUP_NAME = "none";
 export const CORE_PLUGIN_ID = "core";
 
 /**
- * Names the evaluator handles before any user lookup and that
- * therefore cannot appear as a declarable group, an MCP id, or a
- * plugin id. Using one as an MCP id in `mcp.yml` is rejected by the
- * loader; declaring it in `PluginTool.groups` is rejected by the
- * plugin tool registry.
+ * Names the resolver handles directly and that therefore cannot
+ * appear as a declarable group, an MCP id, or a plugin id. Using one
+ * as an MCP id in `mcp.yml` is rejected by the loader; declaring it in
+ * `PluginTool.groups` is rejected by the plugin tool registry.
  */
 export const RESERVED_GROUP_NAMES: ReadonlySet<string> = new Set([
     ALL_GROUP_NAME,
@@ -60,8 +58,8 @@ export const RESERVED_GROUP_NAMES: ReadonlySet<string> = new Set([
  * always shaped `${id}_${name}` (plugin tools) or a bare alnum-only
  * stem (built-ins) and contain at least one underscore in the
  * namespaced form, so an underscore-free bareword can never collide
- * with a tool key — the DSL's bareword classifier uses that to tell
- * groups and tool patterns apart structurally.
+ * with a tool key — the tool-group vs tool-pattern classifier in
+ * `resolveTools` uses that to tell them apart structurally.
  */
 export const IDENT_PATTERN = /^[a-z][a-z0-9]*$/;
 
@@ -74,12 +72,12 @@ export const IDENT_PATTERN = /^[a-z][a-z0-9]*$/;
 export function validateGroupName(name: string): void {
     if (!IDENT_PATTERN.test(name)) {
         throw new Error(
-            `tool group name "${name}" is not a valid DSL identifier (must match ${IDENT_PATTERN})`,
+            `tool group name "${name}" is not a valid tool group name (must match ${IDENT_PATTERN})`,
         );
     }
     if (RESERVED_GROUP_NAMES.has(name)) {
         throw new Error(
-            `tool group name "${name}" is reserved by the DSL (${[...RESERVED_GROUP_NAMES].join(", ")})`,
+            `tool group name "${name}" is a reserved tool group name (${[...RESERVED_GROUP_NAMES].join(", ")})`,
         );
     }
 }

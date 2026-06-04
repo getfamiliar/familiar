@@ -79,8 +79,8 @@ export function optionalEnvString(name: string): string | undefined {
 /**
  * Workspace-relative glob patterns the operator marked as
  * `core.writablePaths`: paths a non-privileged agentrun may write
- * (bypassing the `.md` / `toolgroups/` privilege gate) and that the
- * memory plugin quotes in full. The host forwards the normalized list
+ * (bypassing the privilege gate) and that the memory plugin quotes in
+ * full. The host forwards the normalized list
  * as `CORE_WRITABLE_PATHS` (a JSON array of strings). Returns `[]` on
  * unset, blank, or unparseable input so the privilege gate falls back
  * to its strict default rather than throwing at boot.

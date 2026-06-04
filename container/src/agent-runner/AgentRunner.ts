@@ -229,7 +229,7 @@ export interface AgentRunnerContext {
     readonly signal: AbortSignal;
     /**
      * Build the tool set for this run from the handler's `tools:`
-     * expression. The Scheduler-provided closure threads in `bus`,
+     * entries. The Scheduler-provided closure threads in `bus`,
      * `parent`, `mcpPool`, `pluginToolsClient`, and the per-row
      * `waitForSubagent` callback so `call_handler` is wired with
      * the right Scheduler hooks. The runner reads `handler.header.tools`,
@@ -238,7 +238,7 @@ export interface AgentRunnerContext {
      * tool-run context and (over the gateway) the host-side plugin tools.
      */
     readonly buildTools: (
-        toolsExpression: string | undefined,
+        tools: readonly string[] | undefined,
         offloadTokenThreshold: number,
     ) => Promise<ToolSet>;
     /**
