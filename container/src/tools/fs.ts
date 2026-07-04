@@ -11,8 +11,8 @@ import {
 } from "@getfamiliar/shared";
 import type { Tool, ToolSet } from "ai";
 import { jsonSchema, tool } from "ai";
-import { getWritablePaths } from "../env.js";
 import { HandlerFile } from "../HandlerFile.js";
+import { PassedConfig } from "../utils/PassedConfig.js";
 
 /**
  * Hard caps for the search-shaped tools. Picked to keep tool results
@@ -97,12 +97,12 @@ function resolveWorkspacePath(input: string): string {
 
 /**
  * Operator-configured allowlist of workspace-relative globs
- * (`core.writablePaths`, forwarded as `CORE_WRITABLE_PATHS`). These — plus
- * `/scratch` — are the *only* paths a non-privileged run may write; they
- * are also the curated memory the memory plugin quotes in full. Read once
- * at module load since the env is fixed for the container's lifetime.
+ * (the passed config key `core.writablePaths`). These — plus `/scratch` —
+ * are the *only* paths a non-privileged run may write; they are also the
+ * curated memory the memory plugin quotes in full. Read once at module
+ * load since the passed config is fixed for the container's lifetime.
  */
-const WRITABLE_PATH_GLOBS = getWritablePaths();
+const WRITABLE_PATH_GLOBS = PassedConfig.get<string[]>("core.writablePaths") ?? [];
 
 /**
  * True when writing this absolute path requires a privileged agentrun.

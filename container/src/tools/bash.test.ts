@@ -39,17 +39,18 @@ describe("buildBashArgv", () => {
 });
 
 describe("clampTimeoutMs", () => {
-    const saved = process.env.AGENTSTEP_TIMEOUT_SECONDS;
+    const CONFIG_VAR = "FAMILIAR_CONTAINER_CONFIG";
+    const saved = process.env[CONFIG_VAR];
     afterEach(() => {
         if (saved === undefined) {
-            delete process.env.AGENTSTEP_TIMEOUT_SECONDS;
+            delete process.env[CONFIG_VAR];
         } else {
-            process.env.AGENTSTEP_TIMEOUT_SECONDS = saved;
+            process.env[CONFIG_VAR] = saved;
         }
     });
 
     it("defaults to 30s and stays under the 150s fallback step budget", () => {
-        delete process.env.AGENTSTEP_TIMEOUT_SECONDS;
+        delete process.env[CONFIG_VAR];
         assert.equal(clampTimeoutMs(undefined), 30_000);
         // 150s budget − 5s margin = 145s ceiling.
         assert.equal(clampTimeoutMs(999_999), 145_000);
@@ -57,7 +58,7 @@ describe("clampTimeoutMs", () => {
     });
 
     it("bounds the timeout by the configured per-step budget", () => {
-        process.env.AGENTSTEP_TIMEOUT_SECONDS = "20";
+        process.env[CONFIG_VAR] = JSON.stringify({ "core.agentStepTimeout": 20 });
         // 20s budget − 5s margin = 15s ceiling; a 30s request is clamped down.
         assert.equal(clampTimeoutMs(30_000), 15_000);
     });

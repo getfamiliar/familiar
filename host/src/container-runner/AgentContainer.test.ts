@@ -19,23 +19,8 @@ function configFixture(overrides: Partial<AgentContainerConfig> = {}): AgentCont
         containerSrcPath: "/src",
         sharedBuildPath: "/shared/build",
         scratchPath: "/scratch",
-        postgresPassword: "pw",
-        bastionUrl: "http://familiar-bastion-bridge:8788",
-        defaultProvider: "featherless",
-        defaultModel: "zai-org/GLM-5.1",
-        inferenceMaxRetries: 3,
-        inferenceOutputFallbackPercentage: 0.7,
-        toolCallOffloadingLimit: 16000,
-        inferenceKeptToolResultCount: 4,
-        inferenceSlidingWindowPercentage: 0.8,
-        agentStepTimeoutSeconds: 120,
-        captureRawStepResultToDatabase: false,
-        logSystemPromptMode: "off",
-        providerNpmPackages: { featherless: "@ai-sdk/openai-compatible" },
-        verbose: false,
-        coreTimezone: "Europe/Berlin",
+        containerConfigJson: JSON.stringify({ bastionUrl: "http://familiar-bastion-bridge:8788" }),
         writablePaths: [],
-        pythonPackages: [],
         hostUid: 1000,
         hostGid: 1000,
         ...overrides,
@@ -68,11 +53,10 @@ describe("buildAgentRunArgs — egress lockdown invariant", () => {
         assert.ok(!argv.includes("--dns"), "no --dns override");
     });
 
-    it("points BASTION_URL at the bridge sidecar", () => {
-        const argv = buildAgentRunArgs(
-            configFixture({ bastionUrl: "http://familiar-bastion-bridge:8788" }),
-        );
-        assert.ok(argv.includes("BASTION_URL=http://familiar-bastion-bridge:8788"));
+    it("forwards the container config blob as the single FAMILIAR_CONTAINER_CONFIG env var", () => {
+        const json = JSON.stringify({ bastionUrl: "http://familiar-bastion-bridge:8788" });
+        const argv = buildAgentRunArgs(configFixture({ containerConfigJson: json }));
+        assert.ok(argv.includes(`FAMILIAR_CONTAINER_CONFIG=${json}`));
     });
 
     it("forwards host uid/gid as env, not as a docker --user flag", () => {
@@ -86,11 +70,13 @@ describe("buildAgentRunArgs — egress lockdown invariant", () => {
         assert.ok(!argv.includes("--user"), "agent container must not pin --user");
     });
 
-    it("forwards the python package list as a JSON array env var", () => {
-        const argv = buildAgentRunArgs(configFixture({ pythonPackages: ["numpy", "pandas"] }));
+    it("forwards writablePaths as the discrete CORE_WRITABLE_PATHS env var (for the shell entrypoint)", () => {
+        // The shell entrypoint reads CORE_WRITABLE_PATHS before Node, so it
+        // stays a discrete env var rather than riding in the JSON blob.
+        const argv = buildAgentRunArgs(configFixture({ writablePaths: ["wiki/**", "files/**"] }));
         assert.ok(
-            argv.includes(`AGENT_PYTHON_PACKAGES=${JSON.stringify(["numpy", "pandas"])}`),
-            "AGENT_PYTHON_PACKAGES env expected",
+            argv.includes(`CORE_WRITABLE_PATHS=${JSON.stringify(["wiki/**", "files/**"])}`),
+            "CORE_WRITABLE_PATHS env expected",
         );
     });
 });

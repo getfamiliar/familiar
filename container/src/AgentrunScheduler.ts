@@ -45,9 +45,9 @@ export interface SchedulerDeps {
     readonly inferenceEventBus: InferenceEventBus;
     readonly scheduledHandlerBus: ScheduledHandlerBus;
     /**
-     * IANA timezone string — typically `core.timezone` forwarded by
-     * the host through `CORE_TIMEZONE` and resolved by
-     * `getCoreTimezone()`. Threaded into agent-facing tools that need
+     * IANA timezone string — typically `core.timezone` from the passed
+     * container config, resolved by `resolveTimezone()`. Threaded into
+     * agent-facing tools that need
      * to convert between wall-clock and UTC (currently
      * `schedule_handler` / `get_scheduled_handlers`).
      */

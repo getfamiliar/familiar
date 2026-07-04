@@ -7,7 +7,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createXai } from "@ai-sdk/xai";
 import type { LanguageModel } from "ai";
-import { requireEnv } from "../env.js";
+import { requireConfig } from "../utils/PassedConfig.js";
 
 /**
  * Placeholder API key sent by every provider client. The real upstream
@@ -81,45 +81,35 @@ interface ProviderCatalogue {
     readonly bastionUrl: string;
     readonly defaultProvider: string;
     readonly defaultModel: string;
-    /** Provider key → its npm package (from `INFERENCE_PROVIDERS`). */
+    /** Provider key → its npm package (passed config `inference.providers`). */
     readonly npmPackages: Readonly<Record<string, string>>;
 }
 
 let catalogue: ProviderCatalogue | undefined;
 const builders = new Map<string, LanguageModelBuilder>();
 
-/** Lazy load + parse `INFERENCE_*` env into a typed catalogue. */
+/** Lazy read of the `inference.*` passed config into a typed catalogue. */
 function getCatalogue(): ProviderCatalogue {
     if (catalogue !== undefined) {
         return catalogue;
     }
-    const bastionUrl = requireEnv("BASTION_URL").replace(/\/$/, "");
-    const defaultProvider = requireEnv("INFERENCE_DEFAULT_PROVIDER");
-    const defaultModel = requireEnv("INFERENCE_DEFAULT_MODEL");
-    const rawProviders = requireEnv("INFERENCE_PROVIDERS");
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(rawProviders);
-    } catch (err) {
-        const cause = err instanceof Error ? err.message : String(err);
-        throw new Error(`INFERENCE_PROVIDERS is not valid JSON: ${cause}`);
-    }
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error("INFERENCE_PROVIDERS must be a JSON object of {provider: npmPackage}.");
-    }
+    const bastionUrl = requireConfig<string>("bastionUrl").replace(/\/$/, "");
+    const defaultProvider = requireConfig<string>("inference.defaultProvider");
+    const defaultModel = requireConfig<string>("inference.defaultModel");
+    const providers = requireConfig<Record<string, unknown>>("inference.providers");
     const npmPackages: Record<string, string> = {};
-    for (const [id, value] of Object.entries(parsed)) {
+    for (const [id, value] of Object.entries(providers)) {
         if (typeof value !== "string" || NPM_MODEL_BUILDERS[value] === undefined) {
             const supported = Object.keys(NPM_MODEL_BUILDERS).join(", ");
             throw new Error(
-                `INFERENCE_PROVIDERS.${id}: unsupported npm package "${String(value)}" (supported: ${supported}).`,
+                `inference.providers.${id}: unsupported npm package "${String(value)}" (supported: ${supported}).`,
             );
         }
         npmPackages[id] = value;
     }
     if (npmPackages[defaultProvider] === undefined) {
         throw new Error(
-            `INFERENCE_DEFAULT_PROVIDER="${defaultProvider}" is not present in INFERENCE_PROVIDERS.`,
+            `inference.defaultProvider="${defaultProvider}" is not present in inference.providers.`,
         );
     }
     catalogue = { bastionUrl, defaultProvider, defaultModel, npmPackages };
@@ -175,11 +165,11 @@ function builderFor(provider: string, cat: ProviderCatalogue): LanguageModelBuil
  * to the Vercel AI SDK's tool-loop agent.
  *
  * Resolves the handler-declared `model` ref against the host-supplied
- * provider catalogue (`INFERENCE_*` env). Bare ids like
+ * provider catalogue (the `inference.*` passed config). Bare ids like
  * `zai-org/GLM-5.1` map to the default provider; prefixed ids like
  * `openai/gpt-4o-mini` switch providers when the prefix matches an
  * enabled id. The provider's npm package (carried in
- * `INFERENCE_PROVIDERS`) selects which `create*` SDK function is used.
+ * `inference.providers`) selects which `create*` SDK function is used.
  */
 // biome-ignore lint/complexity/noStaticOnlyClass: matches the existing call site shape; the per-id cache lives in a module-private map.
 export class ModelFactory {
@@ -194,10 +184,10 @@ export class ModelFactory {
      * import("./ModelMetadataClient.js").fetchModelMetaData}).
      *
      * @param modelRef Handler-declared model identifier — bare or
-     *   `<provider>/<modelId>`. Falls back to defaults from
-     *   `INFERENCE_DEFAULT_*` when undefined.
-     * @throws If env is misconfigured, the provider in the prefix isn't
-     *   enabled in `INFERENCE_PROVIDERS`, or its npm package is
+     *   `<provider>/<modelId>`. Falls back to the passed config
+     *   `inference.defaultProvider` / `inference.defaultModel` when undefined.
+     * @throws If the passed config is misconfigured, the provider in the
+     *   prefix isn't enabled in `inference.providers`, or its npm package is
      *   unsupported.
      */
     static build(modelRef?: string): {

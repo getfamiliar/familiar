@@ -5,22 +5,29 @@ import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { HandlerFile } from "./HandlerFile.js";
 
+const CONFIG_VAR = "FAMILIAR_CONTAINER_CONFIG";
+
 let root: string;
-let previousWritablePaths: string | undefined;
+let previousConfig: string | undefined;
 
 beforeEach(() => {
     root = mkdtempSync(path.join(tmpdir(), "handler-file-test-"));
     HandlerFile.setWorkspaceRoot(root);
-    previousWritablePaths = process.env.CORE_WRITABLE_PATHS;
+    previousConfig = process.env[CONFIG_VAR];
 });
 
 afterEach(() => {
-    if (previousWritablePaths === undefined) {
-        delete process.env.CORE_WRITABLE_PATHS;
+    if (previousConfig === undefined) {
+        delete process.env[CONFIG_VAR];
     } else {
-        process.env.CORE_WRITABLE_PATHS = previousWritablePaths;
+        process.env[CONFIG_VAR] = previousConfig;
     }
 });
+
+/** Set the passed-config blob the writable-path gate reads via `PassedConfig`. */
+function setWritablePaths(globs: string[]): void {
+    process.env[CONFIG_VAR] = JSON.stringify({ "core.writablePaths": globs });
+}
 
 /** Write a handler file at a workspace-relative path, creating parents. */
 function touch(rel: string, contents = "# stub handler\n"): void {
@@ -30,14 +37,14 @@ function touch(rel: string, contents = "# stub handler\n"): void {
 }
 
 test("load refuses a handler whose leaf lives under a writable path", () => {
-    process.env.CORE_WRITABLE_PATHS = JSON.stringify(["wiki/**"]);
+    setWritablePaths(["wiki/**"]);
     touch("wiki/index.md");
 
     assert.throws(() => HandlerFile.load("wiki", "index"), /core\.writablePaths/);
 });
 
 test("load still resolves a normal handler outside writable paths", () => {
-    process.env.CORE_WRITABLE_PATHS = JSON.stringify(["wiki/**"]);
+    setWritablePaths(["wiki/**"]);
     touch("mail/index.md");
 
     const handler = HandlerFile.load("mail", "index");
@@ -45,7 +52,7 @@ test("load still resolves a normal handler outside writable paths", () => {
 });
 
 test("load resolves wiki handlers when no writable paths are configured", () => {
-    delete process.env.CORE_WRITABLE_PATHS;
+    delete process.env[CONFIG_VAR];
     touch("wiki/index.md");
 
     const handler = HandlerFile.load("wiki", "index");

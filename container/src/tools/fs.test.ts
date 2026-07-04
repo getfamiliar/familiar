@@ -248,9 +248,9 @@ describe("fs_write — privilege gate (writablePaths + scratch only)", () => {
     const privileged = { id: "p", privileged: true } as unknown as AgentRunRow;
 
     before(() => {
-        // No CORE_WRITABLE_PATHS in the test env → empty allowlist, so every
-        // workspace path is protected. (Exercises the changed rule: a plain
-        // non-.md write is now privileged too.)
+        // No core.writablePaths in the passed config (FAMILIAR_CONTAINER_CONFIG
+        // unset) → empty allowlist, so every workspace path is protected.
+        // (Exercises the changed rule: a plain non-.md write is now privileged too.)
         workspaceDir = mkdtempSync(path.join(tmpdir(), "familiar-fs-priv-"));
         HandlerFile.setWorkspaceRoot(workspaceDir);
     });

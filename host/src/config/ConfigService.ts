@@ -134,6 +134,23 @@ export class HostConfigService implements ConfigService {
     }
 
     /**
+     * Read the raw value at a dotted path without shape validation.
+     * Returns `undefined` when the path is missing or hits a non-object
+     * intermediate. The caller is responsible for whatever type it expects.
+     *
+     * Host-only on purpose (not on the shared `ConfigService` interface):
+     * used by {@link ../container-runner/ContainerConfig.ContainerConfig} to
+     * pass config values through to the agent container verbatim, where the
+     * container-side reader applies its own typing and defaults.
+     *
+     * @param key The dotted config path.
+     * @returns The raw value, or `undefined` when absent.
+     */
+    getValue(key: string): unknown {
+        return readPath(this.ensureLoaded(), key);
+    }
+
+    /**
      * Set a single dotted-path key and persist atomically. Re-reads
      * from disk first so that concurrent hand-edits aren't silently
      * overwritten on the unmodified portion of the file.

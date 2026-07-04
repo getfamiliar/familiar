@@ -3,8 +3,8 @@ import { type Logger, sanitizeToolKey } from "@getfamiliar/shared";
 import type { ToolSet } from "ai";
 
 /**
- * Configuration for {@link McpClientPool}. Built from the agent's env
- * (`BASTION_URL`) plus the daemon-supplied logger.
+ * Configuration for {@link McpClientPool}. Built from the passed config
+ * (`bastionUrl`) plus the daemon-supplied logger.
  */
 export interface McpClientPoolConfig {
     /**

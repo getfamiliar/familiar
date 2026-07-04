@@ -16,25 +16,24 @@ function ctx(overrides: Partial<PromptContributorContext>): PromptContributorCon
 }
 
 describe("bashPromptContributor", () => {
-    const savedWritable = process.env.CORE_WRITABLE_PATHS;
-    const savedPackages = process.env.AGENT_PYTHON_PACKAGES;
+    const CONFIG_VAR = "FAMILIAR_CONTAINER_CONFIG";
+    const savedConfig = process.env[CONFIG_VAR];
 
     beforeEach(() => {
-        delete process.env.CORE_WRITABLE_PATHS;
-        delete process.env.AGENT_PYTHON_PACKAGES;
+        delete process.env[CONFIG_VAR];
     });
 
     afterEach(() => {
-        restore("CORE_WRITABLE_PATHS", savedWritable);
-        restore("AGENT_PYTHON_PACKAGES", savedPackages);
+        if (savedConfig === undefined) {
+            delete process.env[CONFIG_VAR];
+        } else {
+            process.env[CONFIG_VAR] = savedConfig;
+        }
     });
 
-    function restore(name: string, value: string | undefined): void {
-        if (value === undefined) {
-            delete process.env[name];
-        } else {
-            process.env[name] = value;
-        }
+    /** Set the passed-config blob the contributor reads via `PassedConfig`. */
+    function setConfig(values: Record<string, unknown>): void {
+        process.env[CONFIG_VAR] = JSON.stringify(values);
     }
 
     it("returns null when bash is not in the active tool set", () => {
@@ -51,7 +50,7 @@ describe("bashPromptContributor", () => {
     });
 
     it("renders the unpriv wording with the writable-paths list", () => {
-        process.env.CORE_WRITABLE_PATHS = JSON.stringify(["wiki/**", "files/**"]);
+        setConfig({ "core.writablePaths": ["wiki/**", "files/**"] });
         const out = bashPromptContributor(ctx({ privileged: false }));
         assert.ok(out !== null);
         assert.match(out, /runs as the `unpriv` user/);
@@ -66,7 +65,7 @@ describe("bashPromptContributor", () => {
     });
 
     it("lists the installed python packages when present", () => {
-        process.env.AGENT_PYTHON_PACKAGES = JSON.stringify(["numpy", "pandas"]);
+        setConfig({ "python.packages": ["numpy", "pandas"] });
         const out = bashPromptContributor(ctx({}));
         assert.ok(out !== null);
         assert.match(out, /The following packages are installed: numpy, pandas\./);

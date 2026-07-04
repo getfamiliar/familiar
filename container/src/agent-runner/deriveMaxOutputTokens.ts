@@ -5,8 +5,8 @@ import type { ModelMetaData } from "@getfamiliar/shared";
  * output ceiling when the model's metadata declares no explicit
  * `outputLimit`. The remainder of the window is left as headroom for the
  * prompt. Overridable via `inference.outputFallbackPercentage` in
- * `config.yml` (reflected to the container as the
- * `INFERENCE_OUTPUT_FALLBACK_PERCENTAGE` env var).
+ * `config.yml` (forwarded to the container in the passed config under the
+ * same key).
  *
  * Deliberately applied with no absolute backstop: a large-context model
  * gets a correspondingly large output budget. There is no token counter

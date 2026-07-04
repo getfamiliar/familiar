@@ -12,7 +12,7 @@ import type { ContainerToolInfo, Logger } from "@getfamiliar/shared";
  * mirrors {@link import("../plugins/ToolsClient.js").PluginToolsClient}
  * (strip a trailing slash, append the prefix with its own trailing slash).
  *
- * @param bastionUrl Base URL of the host bastion (from `BASTION_URL`).
+ * @param bastionUrl Base URL of the host bastion (passed config `bastionUrl`).
  * @param catalog The built-in tool catalog from `ToolsFactory.catalog()`.
  * @param log Logger child for the report line.
  */

@@ -1,5 +1,5 @@
-import { getPythonPackages, getWritablePaths } from "../env.js";
 import type { PromptContributor } from "../prompt-contributors.js";
+import { PassedConfig } from "../utils/PassedConfig.js";
 
 /**
  * Contributes the `## The bash tool` help section to the per-run
@@ -10,7 +10,7 @@ import type { PromptContributor } from "../prompt-contributors.js";
  * the `priv` user with full workspace write; a non-privileged run drops
  * to the `unpriv` user, confined by the OS to `/scratch` plus
  * `core.writablePaths`. The python-package list is the image's baked
- * venv (forwarded via `AGENT_PYTHON_PACKAGES`); the section always notes
+ * venv (the passed config key `python.packages`); the section always notes
  * that bash is offline so the agent doesn't attempt network access or
  * runtime `pip install`.
  */
@@ -21,9 +21,9 @@ export const bashPromptContributor: PromptContributor = (ctx) => {
 
     const accessLine = ctx.privileged
         ? "The command runs as the `priv` user; you have write access to `/workspace` and `/scratch`."
-        : buildUnprivAccessLine(getWritablePaths());
+        : buildUnprivAccessLine(PassedConfig.get<string[]>("core.writablePaths") ?? []);
 
-    const packages = getPythonPackages();
+    const packages = PassedConfig.get<string[]>("python.packages") ?? [];
     const packagesSentence =
         packages.length > 0
             ? `The following packages are installed: ${packages.join(", ")}. ` +

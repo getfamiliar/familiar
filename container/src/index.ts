@@ -18,7 +18,6 @@ import { AgentrunScheduler, subscribeAgentrunsChanges } from "./AgentrunSchedule
 import { AgentRunner } from "./agent-runner/AgentRunner.js";
 import { ChatManager } from "./chat/ChatManager.js";
 import { EventWatcher } from "./EventWatcher.js";
-import { getCoreTimezone, optionalEnvInt } from "./env.js";
 import { HandlerFile } from "./HandlerFile.js";
 import { McpClientPool } from "./mcp/McpClientPool.js";
 import { PluginToolsClient } from "./plugins/ToolsClient.js";
@@ -26,6 +25,7 @@ import { AgentrunRecovery } from "./recovery/AgentrunRecovery.js";
 import { RealClock } from "./testing/MockClock.js";
 import { reportContainerToolCatalog } from "./tools/ToolCatalogClient.js";
 import { ToolsFactory } from "./tools/ToolsFactory.js";
+import { PassedConfig, resolveTimezone } from "./utils/PassedConfig.js";
 
 /**
  * Process-wide handler-header defaults. A handler can override any of
@@ -48,22 +48,22 @@ const HEADER_DEFAULTS = {};
 async function main(): Promise<void> {
     const log = createLogger({
         component: "container",
-        level: parseLevel(process.env.FAMILIAR_LOG_LEVEL),
+        level: parseLevel(PassedConfig.get<string>("core.logLevel")),
         streams: [jsonStdoutStream()],
     });
 
-    const postgresPassword = process.env.POSTGRES_PASSWORD;
+    const postgresPassword = PassedConfig.get<string>("core.postgresPassword");
     if (!postgresPassword) {
         throw new Error(
-            "POSTGRES_PASSWORD is not set in the agent container env. " +
-                "The host daemon should have passed it in via -e POSTGRES_PASSWORD=...",
+            "core.postgresPassword is not set in the passed container config. " +
+                "The host daemon should have included it in FAMILIAR_CONTAINER_CONFIG.",
         );
     }
-    const bastionUrl = process.env.BASTION_URL;
+    const bastionUrl = PassedConfig.get<string>("bastionUrl");
     if (!bastionUrl) {
         throw new Error(
-            "BASTION_URL is not set in the agent container env. " +
-                "The host daemon should have passed it in via -e BASTION_URL=...",
+            "bastionUrl is not set in the passed container config. " +
+                "The host daemon should have included it in FAMILIAR_CONTAINER_CONFIG.",
         );
     }
 
@@ -109,10 +109,10 @@ async function main(): Promise<void> {
     );
     const chat = new ChatManager(new ChatMessageBus(connection));
     const recovery = new AgentrunRecovery(connection, log.child({ component: "recovery" }));
-    const timezone = getCoreTimezone();
+    const timezone = resolveTimezone();
 
-    const stepTimeoutMs = (optionalEnvInt("AGENTSTEP_TIMEOUT_SECONDS") ?? 150) * 1000;
-    const retryCap = optionalEnvInt("INFERENCE_MAX_RETRIES") ?? 3;
+    const stepTimeoutMs = (PassedConfig.get<number>("core.agentStepTimeout") ?? 150) * 1000;
+    const retryCap = PassedConfig.get<number>("inference.maxRetries") ?? 3;
 
     const scheduler = new AgentrunScheduler({
         agentRunBus,
@@ -154,7 +154,7 @@ async function main(): Promise<void> {
     }
 }
 
-/** Coerce `FAMILIAR_LOG_LEVEL` to a {@link LogLevel}, defaulting to `info`. */
+/** Coerce the passed `core.logLevel` to a {@link LogLevel}, defaulting to `info`. */
 function parseLevel(raw: string | undefined): LogLevel {
     if (raw === "debug" || raw === "info" || raw === "warn" || raw === "error") {
         return raw;

@@ -1,10 +1,15 @@
 Features:
 
+* Knowledge über das Step Limit einbauen: Der System Prompt muss die Anzahl noch verfügbarer Steps enthalten. Aktuell bricht er häufiger bei 15 Steps ab, weil er es nicht weiß. Aktuelles Limit in den System Prompt, und eine injizierte User Message 3 Steps vor dem Limit.
+* Fail events that broke the step limit, currently they are "Done"
+
 * File Storages like Onedrive, Dropbox, Google Drive, ... - read & write access, search. Done like calendar + mail, a default set of tools for all providers and provider-specific implementations in plugins.
 * Host-side LLM chat with access to console tools for selections, prompts etc. as a service - used for setup and plugin CLI tools.
 * Diff Tool for the workspace vs default workspace
 * Git repo for the workspace files?
 * Sane setup process
+
+* NEW MEMORY? The wiki approach seems to mangle stuff up - maybe give Hindsight a shot?
 
 Neues CLI Tool: `logs`
 * `logs tail` tails the current data/logs/ log file but pretty prints the JSON objects in it.

@@ -1,13 +1,13 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { getCoreTimezone } from "./env.js";
 import { HandlerFile } from "./HandlerFile.js";
 import {
     CONTAINER_PROMPT_CONTRIBUTORS,
     type PromptContributor,
     type PromptContributorContext,
 } from "./prompt-contributors.js";
+import { resolveTimezone } from "./utils/PassedConfig.js";
 
 /**
  * Absolute path of the per-container scratch root. Bind-mounted to the
@@ -274,7 +274,7 @@ function framingFileSection(heading: string, fileName: string, body: string): Sy
  * env shim.
  */
 export interface EventContextFetchInput {
-    /** Bastion base URL (the container's `BASTION_URL` env value). */
+    /** Bastion base URL (passed config `bastionUrl`). */
     readonly bastionUrl: string;
     /** Event id this agentrun is processing. */
     readonly eventId: string;
@@ -363,7 +363,7 @@ async function fetchEventContextSections(
  */
 function buildRuntimeSection(handler: HandlerFile, topic: string, privileged: boolean): string {
     const lines = [
-        `- Current time: ${formatRuntimeTime(new Date(), getCoreTimezone())}`,
+        `- Current time: ${formatRuntimeTime(new Date(), resolveTimezone())}`,
         `- Event topic: \`${topic}\``,
         `- Handler file: \`${handler.relativePath}\``,
     ];

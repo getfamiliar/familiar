@@ -11,13 +11,6 @@ import {
 } from "@getfamiliar/shared";
 import { type ModelMessage, stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
-import {
-    optionalEnvBool,
-    optionalEnvInt,
-    optionalEnvNumber,
-    optionalEnvString,
-    requireEnv,
-} from "../env.js";
 import { HandlerFile } from "../HandlerFile.js";
 import { ModelFactory } from "../models/ModelFactory.js";
 import { fetchModelMetaData } from "../models/ModelMetadataClient.js";
@@ -28,6 +21,7 @@ import {
     buildScratchListing,
     buildSystemPrompt,
 } from "../PromptBuilder.js";
+import { PassedConfig, requireConfig } from "../utils/PassedConfig.js";
 import { fetchAncestorChain } from "./AgentRunLineage.js";
 import { AgentRunTimeoutError } from "./AgentRunTimeoutError.js";
 import { ContextManager } from "./ContextManager.js";
@@ -44,34 +38,34 @@ import { synthesizeResultText } from "./synthesizeResultText.js";
 
 /**
  * When `true`, every step's full SDK result object is JSON-encoded
- * into `stepresults.raw_result`. Read once at module load — the host
- * sets the env var from `inference.captureRawStepResultToDatabase`,
- * so a daemon restart is required to flip it. Off by default.
+ * into `stepresults.raw_result`. Read once at module load from the
+ * passed config key `inference.captureRawStepResultToDatabase`, so a
+ * daemon restart is required to flip it. Off by default.
  */
-const CAPTURE_RAW_STEP_RESULT = optionalEnvBool("INFERENCE_CAPTURE_RAW_STEP_RESULT");
+const CAPTURE_RAW_STEP_RESULT =
+    PassedConfig.get<boolean>("inference.captureRawStepResultToDatabase") ?? false;
 
 /**
  * When `true`, the assembled initial model-message array (prior history
  * + the run's leading user turn) is JSON-encoded onto
  * `agentruns.initial_messages` right before the first `agent.generate()`
- * call. Read once at module load — the host sets the env var from
+ * call. Read once at module load from the passed config key
  * `inference.captureInitialMessageHistory`, so a daemon restart is
  * required to flip it. Off by default.
  */
-const CAPTURE_INITIAL_MESSAGE_HISTORY = optionalEnvBool(
-    "INFERENCE_CAPTURE_INITIAL_MESSAGE_HISTORY",
-);
+const CAPTURE_INITIAL_MESSAGE_HISTORY =
+    PassedConfig.get<boolean>("inference.captureInitialMessageHistory") ?? false;
 
 /**
  * Fraction of a model's context window used as the per-step output
  * ceiling when the model's metadata declares no explicit `outputLimit`.
- * Read once at module load — the host forwards
- * `inference.outputFallbackPercentage` as the
- * `INFERENCE_OUTPUT_FALLBACK_PERCENTAGE` env var, so a daemon restart is
- * required to change it. Defaults to {@link DEFAULT_OUTPUT_FALLBACK_FRACTION}.
+ * Read once at module load from the passed config key
+ * `inference.outputFallbackPercentage`, so a daemon restart is required
+ * to change it. Defaults to {@link DEFAULT_OUTPUT_FALLBACK_FRACTION}.
  */
 const OUTPUT_FALLBACK_FRACTION =
-    optionalEnvNumber("INFERENCE_OUTPUT_FALLBACK_PERCENTAGE") ?? DEFAULT_OUTPUT_FALLBACK_FRACTION;
+    PassedConfig.get<number>("inference.outputFallbackPercentage") ??
+    DEFAULT_OUTPUT_FALLBACK_FRACTION;
 
 /** Default number of recent steps whose tool results are kept verbatim. */
 const DEFAULT_KEPT_TOOL_RESULT_COUNT = 3;
@@ -81,13 +75,13 @@ const DEFAULT_SLIDING_WINDOW_PERCENTAGE = 0.7;
 
 /**
  * Number of recent steps whose tool results survive {@link ContextManager}
- * eviction. Read once at module load; the host forwards
- * `inference.contextManagement.keptToolResultCount` as
- * `INFERENCE_CONTEXT_KEPT_TOOL_RESULT_COUNT`. A daemon restart is required
- * to change it. Defaults to {@link DEFAULT_KEPT_TOOL_RESULT_COUNT}.
+ * eviction. Read once at module load from the passed config key
+ * `inference.contextManagement.keptToolResultCount`. A daemon restart is
+ * required to change it. Defaults to {@link DEFAULT_KEPT_TOOL_RESULT_COUNT}.
  */
 const KEPT_TOOL_RESULT_COUNT =
-    optionalEnvInt("INFERENCE_CONTEXT_KEPT_TOOL_RESULT_COUNT") ?? DEFAULT_KEPT_TOOL_RESULT_COUNT;
+    PassedConfig.get<number>("inference.contextManagement.keptToolResultCount") ??
+    DEFAULT_KEPT_TOOL_RESULT_COUNT;
 
 /**
  * Clamp the configured sliding-window fraction into `(0.3, 1.0)`. Out-of-
@@ -95,7 +89,7 @@ const KEPT_TOOL_RESULT_COUNT =
  * — the host's config linter already warns at boot, so this is the runtime
  * safety net rather than the primary signal.
  *
- * @param raw The parsed env value, or `undefined` when unset.
+ * @param raw The passed config value, or `undefined` when unset.
  * @returns A fraction strictly inside `(0.3, 1.0)`.
  */
 function clampSlidingWindow(raw: number | undefined): number {
@@ -107,12 +101,12 @@ function clampSlidingWindow(raw: number | undefined): number {
 
 /**
  * Fraction of the model's context window at which {@link ContextManager}
- * starts dropping the oldest messages. Read once at module load; the host
- * forwards `inference.contextManagement.slidingWindowPercentage` as
- * `INFERENCE_CONTEXT_SLIDING_WINDOW_PERCENTAGE`. Clamped to `(0.3, 1.0)`.
+ * starts dropping the oldest messages. Read once at module load from the
+ * passed config key `inference.contextManagement.slidingWindowPercentage`.
+ * Clamped to `(0.3, 1.0)`.
  */
 const SLIDING_WINDOW_PERCENTAGE = clampSlidingWindow(
-    optionalEnvNumber("INFERENCE_CONTEXT_SLIDING_WINDOW_PERCENTAGE"),
+    PassedConfig.get<number>("inference.contextManagement.slidingWindowPercentage"),
 );
 
 /**
@@ -125,13 +119,13 @@ const TOOL_OFFLOAD_CONTEXT_FRACTION = 0.25;
 /**
  * Absolute token cap for an inline tool result, used as the ceiling in
  * `min(0.25 * contextLimit, cap)` and as the whole threshold when the
- * model's context window is unknown. Read once at module load; the host
- * forwards `core.toolCallOffloadingLimit` as `TOOL_CALL_OFFLOADING_LIMIT`.
- * Per-handler `toolCallOffloadingLimit` frontmatter overrides it per run.
- * Defaults to {@link DEFAULT_TOOL_CALL_OFFLOADING_LIMIT}.
+ * model's context window is unknown. Read once at module load from the
+ * passed config key `core.toolCallOffloadingLimit`. Per-handler
+ * `toolCallOffloadingLimit` frontmatter overrides it per run. Defaults to
+ * {@link DEFAULT_TOOL_CALL_OFFLOADING_LIMIT}.
  */
 const TOOL_OFFLOAD_TOKEN_CAP =
-    optionalEnvInt("TOOL_CALL_OFFLOADING_LIMIT") ?? DEFAULT_TOOL_CALL_OFFLOADING_LIMIT;
+    PassedConfig.get<number>("core.toolCallOffloadingLimit") ?? DEFAULT_TOOL_CALL_OFFLOADING_LIMIT;
 
 /**
  * Compute the per-result offload token threshold: the smaller of a
@@ -151,8 +145,8 @@ function computeOffloadTokenThreshold(contextLimit: number | undefined, cap: num
 
 /**
  * Pick which variant of the just-built system prompt to persist onto
- * `agentruns.system_prompt`, based on `INFERENCE_LOG_SYSTEM_PROMPT_MODE`
- * (forwarded by the host from `core.logSystemPrompt`):
+ * `agentruns.system_prompt`, based on the passed config key
+ * `core.logSystemPrompt`:
  *
  *   "off" / unset / unknown → `null` (no stamping).
  *   "full"                  → the verbatim prompt.
@@ -165,7 +159,7 @@ function computeOffloadTokenThreshold(contextLimit: number | undefined, cap: num
  * audit-log knob shouldn't be able to fail an agentrun.
  */
 function selectLoggedSystemPrompt(built: BuiltSystemPrompt): string | null {
-    const mode = optionalEnvString("INFERENCE_LOG_SYSTEM_PROMPT_MODE");
+    const mode = PassedConfig.get<string>("core.logSystemPrompt");
     if (mode === "full") {
         return built.full;
     }
@@ -349,7 +343,7 @@ export class AgentRunner {
         // threshold then falls back to the configured cap and the sliding
         // window becomes a no-op. Also consumed below for the output cap.
         const modelMetaData = await fetchModelMetaData(
-            requireEnv("BASTION_URL"),
+            requireConfig<string>("bastionUrl"),
             provider,
             modelId,
             ctx.log,
@@ -396,7 +390,7 @@ export class AgentRunner {
             ctx.row.privileged,
             toolNames,
             {
-                bastionUrl: requireEnv("BASTION_URL"),
+                bastionUrl: requireConfig<string>("bastionUrl"),
                 eventId: ctx.row.eventId,
                 agentrunId: ctx.row.id,
                 log: ctx.log,
@@ -408,7 +402,7 @@ export class AgentRunner {
         // the row before invoking the agent. Done through the Scheduler-
         // owned callback so the runner stays bus-free.
         //
-        // Three log modes (forwarded as INFERENCE_LOG_SYSTEM_PROMPT_MODE):
+        // Three log modes (passed config `core.logSystemPrompt`):
         //   "off"        → don't stamp.
         //   "full"       → stamp the verbatim prompt.
         //   "non-static" → stamp the variant with SOUL.md / CONTEXT.md

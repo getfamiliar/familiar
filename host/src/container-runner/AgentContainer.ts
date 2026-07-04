@@ -154,157 +154,33 @@ export interface AgentContainerConfig {
      * absolute paths to MCPs that have the same mount.
      */
     readonly scratchPath: string;
-    /** Postgres password forwarded to the agent as `POSTGRES_PASSWORD`. */
-    readonly postgresPassword: string;
     /**
-     * Base URL the agent should dial for everything privileged
-     * (LLM proxying, MCP gateway). Post-lockdown this points at the
-     * `familiar-bastion-bridge` socat sidecar
-     * (`http://familiar-bastion-bridge:<port>`), which forwards to the
-     * host bastion — the agent has no direct route to the host. The
-     * agent appends `/llm/<provider>/` for inference and `/mcp/<id>`
-     * for tools.
+     * The flat config map the container reads via its `PassedConfig`
+     * accessor, serialized to JSON and forwarded as the single
+     * `FAMILIAR_CONTAINER_CONFIG` env var. Built host-side by
+     * {@link ../container-runner/ContainerConfig.ContainerConfig} — it
+     * carries every value the container's Node code needs (postgres
+     * password, bastion URL, inference knobs, log level, timezone, …),
+     * replacing the former long list of discrete `-e KEY=VALUE` flags.
      */
-    readonly bastionUrl: string;
-    /**
-     * Provider id the agent uses when a handler doesn't put a provider
-     * prefix on its `model` field (e.g. `featherless` so a bare
-     * `zai-org/GLM-5.1` resolves to that client).
-     */
-    readonly defaultProvider: string;
-    /**
-     * Default model id used when a handler omits `model` from its
-     * frontmatter. Resolved on the container side under `defaultProvider`.
-     */
-    readonly defaultModel: string;
-    /**
-     * Maximum retry attempts on retryable inference errors when the
-     * handler doesn't override `maxRetries` in its YAML frontmatter.
-     * Reflected to the container as the `INFERENCE_MAX_RETRIES` env
-     * var. Sourced from `inference.maxRetries` in `config.yml`,
-     * defaulting to 3.
-     */
-    readonly inferenceMaxRetries: number;
-    /**
-     * Fraction (0–1) of a model's context window used as the per-step
-     * output ceiling when the model's metadata declares no explicit
-     * output limit. Reflected to the container as the
-     * `INFERENCE_OUTPUT_FALLBACK_PERCENTAGE` env var. Sourced from
-     * `inference.outputFallbackPercentage` in `config.yml`, defaulting
-     * to 0.7.
-     */
-    readonly inferenceOutputFallbackPercentage: number;
-    /**
-     * Token cap for inline tool-call results before the runner spills
-     * the full response to a scratch file. Used as the upper bound in the
-     * model-relative offload threshold `min(0.25 * contextLimit, cap)`.
-     * Reflected to the container as `TOOL_CALL_OFFLOADING_LIMIT`; sourced
-     * from `core.toolCallOffloadingLimit` in `config.yml`, defaulting to
-     * `DEFAULT_TOOL_CALL_OFFLOADING_LIMIT` (16000). Individual handlers
-     * can override per-call via their `toolCallOffloadingLimit`
-     * frontmatter field.
-     */
-    readonly toolCallOffloadingLimit: number;
-    /**
-     * Number of recent steps whose tool results survive context-window
-     * eviction; older tool results are elided to a short placeholder.
-     * Reflected to the container as
-     * `INFERENCE_CONTEXT_KEPT_TOOL_RESULT_COUNT`; sourced from
-     * `inference.contextManagement.keptToolResultCount`, defaulting to 3.
-     */
-    readonly inferenceKeptToolResultCount: number;
-    /**
-     * Fraction of the model's context window at which the agent loop
-     * starts dropping the oldest messages. Reflected to the container as
-     * `INFERENCE_CONTEXT_SLIDING_WINDOW_PERCENTAGE`; sourced from
-     * `inference.contextManagement.slidingWindowPercentage`, clamped to
-     * `(0.3, 1.0)` container-side, defaulting to 0.7.
-     */
-    readonly inferenceSlidingWindowPercentage: number;
-    /**
-     * Hard cap (in seconds) on a *single SDK step* of `agent.generate()`.
-     * The Scheduler resets this timer on every completed step, so it
-     * bounds the slowest step rather than the whole agentrun — catching
-     * a wedged tool call or stuck model without penalising
-     * long-but-healthy runs. Reflected to the container as
-     * `AGENTSTEP_TIMEOUT_SECONDS`. Sourced from `core.agentStepTimeout`
-     * in `config.yml`, defaulting to 150.
-     */
-    readonly agentStepTimeoutSeconds: number;
-    /**
-     * When `true`, AgentRunner JSON-serializes the full SDK step
-     * result into `stepresults.raw_result`. Reflected to the
-     * container as `INFERENCE_CAPTURE_RAW_STEP_RESULT=true|false`;
-     * sourced from `inference.captureRawStepResultToDatabase` in
-     * `config.yml`, defaulting to `false`.
-     */
-    readonly captureRawStepResultToDatabase: boolean;
-    /**
-     * When `true`, AgentRunner JSON-serializes the assembled initial
-     * model-message array into `agentruns.initial_messages`. Reflected
-     * to the container as
-     * `INFERENCE_CAPTURE_INITIAL_MESSAGE_HISTORY=true|false`; sourced
-     * from `inference.captureInitialMessageHistory` in `config.yml`,
-     * defaulting to `false`.
-     */
-    readonly captureInitialMessageHistory: boolean;
-    /**
-     * Controls whether — and how — AgentRunner persists each agentrun's
-     * resolved system prompt onto `agentruns.system_prompt`. Reflected
-     * to the container as `INFERENCE_LOG_SYSTEM_PROMPT_MODE=off|full|non-static`;
-     * sourced from `core.logSystemPrompt` in `config.yml` (accepting
-     * booleans and the two mode strings — normalized by `Start.ts`).
-     * Default: `"full"` in dev, `"off"` in prod.
-     */
-    readonly logSystemPromptMode: LogSystemPromptMode;
-    /**
-     * Map of enabled provider key → its SDK npm package (e.g.
-     * `openai` → `@ai-sdk/openai`, `featherless` → `@ai-sdk/openai-compatible`).
-     * Resolved by `Start.ts` from each provider's model metadata
-     * (models.dev `npm` or a plugin descriptor). Forwarded as the
-     * `INFERENCE_PROVIDERS` env var; the container's `ModelFactory`
-     * selects the right `create*` function from the npm package and
-     * validates handler-declared provider prefixes against the keys.
-     */
-    readonly providerNpmPackages: Readonly<Record<string, string>>;
-    /**
-     * When true, the agent container runs at debug log level
-     * (`FAMILIAR_LOG_LEVEL=debug`). Mirrors the daemon's `--verbose` flag so
-     * a single switch turns up detail across both processes.
-     */
-    readonly verbose: boolean;
-    /**
-     * Operator's preferred IANA timezone (`core.timezone` from
-     * `config.yml`). Forwarded as `CORE_TIMEZONE` and consumed by
-     * the system-prompt builder's "Current time" line. Empty string
-     * → the container falls back to its system timezone.
-     */
-    readonly coreTimezone: string;
+    readonly containerConfigJson: string;
     /**
      * Workspace-relative globs from `core.writablePaths` (normalized to
-     * a string list). Forwarded as `CORE_WRITABLE_PATHS` (JSON array)
-     * and consumed by the container's fs tools and OS-permission
-     * normalizer: a non-privileged run (and the bash tool's unprivileged
-     * user) may write only paths matching any of these (plus `/scratch`).
-     * Empty list → only privileged runs may write anywhere.
+     * a string list). Forwarded as the discrete `CORE_WRITABLE_PATHS`
+     * (JSON array) env var — separate from the JSON blob because the
+     * shell `entrypoint.sh` reads it directly (before Node) to write the
+     * permission normalizer's config. The container's Node code reads the
+     * same value out of the passed config blob instead. Empty list → only
+     * privileged runs may write anywhere.
      */
     readonly writablePaths: readonly string[];
     /**
-     * Pip requirements baked into the agent image's python venv
-     * (`config.python.packages`, defaulting to {@link DEFAULT_PYTHON_PACKAGES}).
-     * The SAME list passed to the image build-arg, forwarded as
-     * `AGENT_PYTHON_PACKAGES` (JSON array) so the bash tool's runtime
-     * help section can name the installed packages. Empty list → the
-     * help section omits the package list.
-     */
-    readonly pythonPackages: readonly string[];
-    /**
-     * Host operator's uid/gid. Forwarded as `HOST_UID` / `HOST_GID`; the
-     * entrypoint provisions the privileged `priv` user with this uid and
-     * drops to it via gosu, so files the agent writes are host-owned (the
-     * same uid:gid synchronization postgres and the MCP runtimes do via
-     * docker `--user`). Read once at daemon boot from `process.getuid()` /
-     * `process.getgid()` (see `Bootstrap.hostUid`).
+     * Host operator's uid/gid. Forwarded as the discrete `HOST_UID` /
+     * `HOST_GID` env vars (read by the shell `entrypoint.sh`, before Node,
+     * so they can't ride in the JSON blob); the entrypoint provisions the
+     * privileged `priv` user with this uid and drops to it via gosu, so
+     * files the agent writes are host-owned. Read once at daemon boot from
+     * `process.getuid()` / `process.getgid()` (see `Bootstrap.hostUid`).
      */
     readonly hostUid: number;
     readonly hostGid: number;
@@ -392,46 +268,18 @@ export function buildAgentRunArgs(config: AgentContainerConfig): string[] {
         CONTAINER_NAME,
         "--network",
         ISOLATED_NETWORK_NAME,
+        // Everything the container's Node code reads rides in this one JSON
+        // blob (see ContainerConfig / the container's PassedConfig). The
+        // remaining discrete env vars below are consumed by the shell
+        // entrypoint.sh *before* Node, so they can't live in the blob.
         "-e",
-        `POSTGRES_PASSWORD=${config.postgresPassword}`,
-        "-e",
-        `BASTION_URL=${config.bastionUrl}`,
-        "-e",
-        `INFERENCE_DEFAULT_PROVIDER=${config.defaultProvider}`,
-        "-e",
-        `INFERENCE_DEFAULT_MODEL=${config.defaultModel}`,
-        "-e",
-        `INFERENCE_PROVIDERS=${JSON.stringify(config.providerNpmPackages)}`,
-        "-e",
-        `INFERENCE_MAX_RETRIES=${config.inferenceMaxRetries}`,
-        "-e",
-        `INFERENCE_OUTPUT_FALLBACK_PERCENTAGE=${config.inferenceOutputFallbackPercentage}`,
-        "-e",
-        `TOOL_CALL_OFFLOADING_LIMIT=${config.toolCallOffloadingLimit}`,
-        "-e",
-        `INFERENCE_CONTEXT_KEPT_TOOL_RESULT_COUNT=${config.inferenceKeptToolResultCount}`,
-        "-e",
-        `INFERENCE_CONTEXT_SLIDING_WINDOW_PERCENTAGE=${config.inferenceSlidingWindowPercentage}`,
-        "-e",
-        `AGENTSTEP_TIMEOUT_SECONDS=${config.agentStepTimeoutSeconds}`,
-        "-e",
-        `INFERENCE_CAPTURE_RAW_STEP_RESULT=${config.captureRawStepResultToDatabase}`,
-        "-e",
-        `INFERENCE_CAPTURE_INITIAL_MESSAGE_HISTORY=${config.captureInitialMessageHistory}`,
-        "-e",
-        `INFERENCE_LOG_SYSTEM_PROMPT_MODE=${config.logSystemPromptMode}`,
-        "-e",
-        `CORE_TIMEZONE=${config.coreTimezone}`,
+        `FAMILIAR_CONTAINER_CONFIG=${config.containerConfigJson}`,
         "-e",
         `CORE_WRITABLE_PATHS=${JSON.stringify(config.writablePaths)}`,
-        "-e",
-        `AGENT_PYTHON_PACKAGES=${JSON.stringify(config.pythonPackages)}`,
         "-e",
         `HOST_UID=${config.hostUid}`,
         "-e",
         `HOST_GID=${config.hostGid}`,
-        "-e",
-        `FAMILIAR_LOG_LEVEL=${config.verbose ? "debug" : "info"}`,
         "-v",
         `${workspaceDir}:/workspace`,
         "-v",

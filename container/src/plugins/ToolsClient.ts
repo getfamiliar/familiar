@@ -4,7 +4,7 @@ import { jsonSchema, type ToolSet, tool } from "ai";
 /**
  * Configuration for {@link PluginToolsClient}. Mirrors the
  * {@link import("../mcp/McpClientPool").McpClientPool} surface — the
- * agent dials the bastion through `BASTION_URL` and the client logs
+ * agent dials the bastion at the passed config `bastionUrl` and the client logs
  * lifecycle and per-call errors to a daemon-supplied logger.
  */
 export interface PluginToolsClientConfig {

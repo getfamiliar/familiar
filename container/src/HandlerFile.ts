@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { matchesAnyGlob } from "@getfamiliar/shared";
 import { parse as parseYaml } from "yaml";
-import { getWritablePaths } from "./env.js";
+import { PassedConfig } from "./utils/PassedConfig.js";
 
 /**
  * Parsed shape of a handler file's YAML frontmatter.
@@ -58,9 +58,8 @@ export interface HandlerFileHeader {
      * (`APICallError.isRetryable === true` — typically 408/429/5xx).
      * Each retry postpones the agentrun by setting a future
      * `not_before` so the watcher can serve other rows in the
-     * meantime. When omitted, falls back to `INFERENCE_MAX_RETRIES`
-     * env (set by the host from `inference.maxRetries`) and finally
-     * to the hardcoded default of 3.
+     * meantime. When omitted, falls back to the passed config
+     * `inference.maxRetries` and finally to the hardcoded default of 3.
      */
     readonly maxRetries?: number;
     /**
@@ -123,11 +122,10 @@ export interface HandlerFileHeader {
      * Token cap for inline tool-call results before the runner spills the
      * full result to a scratch file. Used as the upper bound in the
      * effective offload threshold `min(0.25 * model_context_window, cap)`;
-     * when set it overrides the value the host injected via
-     * `TOOL_CALL_OFFLOADING_LIMIT` (sourced from
-     * `core.toolCallOffloadingLimit` in `config.yml`), which in turn falls
-     * back to `DEFAULT_TOOL_CALL_OFFLOADING_LIMIT` from
-     * `@getfamiliar/shared`. Set per handler when a handler is known to
+     * when set it overrides the passed config `core.toolCallOffloadingLimit`
+     * (from `config.yml`), which in turn falls back to
+     * `DEFAULT_TOOL_CALL_OFFLOADING_LIMIT` from `@getfamiliar/shared`. Set
+     * per handler when a handler is known to
      * produce especially large results and the agent should see more of
      * them inline — or, conversely, to force aggressive offloading on a
      * noisy handler.
@@ -278,7 +276,7 @@ export class HandlerFile {
         // actually run, so it is the one we gate. Re-read the env per call so
         // the check needs no module-load ordering and stays test-friendly.
         const leafRel = existingDeepestFirst[0].rel;
-        if (matchesAnyGlob(getWritablePaths(), leafRel)) {
+        if (matchesAnyGlob(PassedConfig.get<string[]>("core.writablePaths") ?? [], leafRel)) {
             throw new Error(
                 `Refusing to load handler "${leafRel}": it lives under a core.writablePaths ` +
                     `location, which non-privileged runs can write. Files in writable paths ` +

@@ -28,7 +28,7 @@ interface ModelMetadataResponse {
  * after logging a warning — it never blocks agentrun start. Mirrors the
  * resilience of `PromptBuilder.fetchEventContextSections`.
  *
- * @param bastionUrl The container's `BASTION_URL` env value.
+ * @param bastionUrl The bastion base URL from the passed config (`bastionUrl`).
  * @param provider Resolved provider id (e.g. `featherless`).
  * @param model Resolved model id.
  * @param log Logger child for the non-fatal warning path.

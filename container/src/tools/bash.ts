@@ -10,7 +10,7 @@ import {
 } from "@getfamiliar/shared";
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
-import { optionalEnvInt } from "../env.js";
+import { PassedConfig } from "../utils/PassedConfig.js";
 
 /**
  * The `bash` tool: run an arbitrary shell command inside the offline agent
@@ -35,7 +35,7 @@ interface BashInput {
 const DEFAULT_TIMEOUT_MS = 30_000;
 /** Absolute hard cap on `timeout_ms`, per the tool spec. */
 const HARD_CAP_MS = 300_000;
-/** Fallback per-step budget (seconds) when `AGENTSTEP_TIMEOUT_SECONDS` is unset. */
+/** Fallback per-step budget (seconds) when `core.agentStepTimeout` is unset. */
 const STEP_TIMEOUT_FALLBACK_S = 150;
 /**
  * Headroom kept below the per-step timeout. The step timeout aborts the
@@ -59,7 +59,7 @@ const NORMALIZE_WRAPPER = "/usr/local/bin/familiar-normalize";
  */
 export function clampTimeoutMs(requested: number | undefined): number {
     const stepBudgetMs =
-        (optionalEnvInt("AGENTSTEP_TIMEOUT_SECONDS") ?? STEP_TIMEOUT_FALLBACK_S) * 1000;
+        (PassedConfig.get<number>("core.agentStepTimeout") ?? STEP_TIMEOUT_FALLBACK_S) * 1000;
     const ceiling = Math.max(1_000, Math.min(HARD_CAP_MS, stepBudgetMs - STEP_TIMEOUT_MARGIN_MS));
     const want = typeof requested === "number" && requested > 0 ? requested : DEFAULT_TIMEOUT_MS;
     return Math.min(want, ceiling);

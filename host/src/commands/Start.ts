@@ -4,7 +4,6 @@ import { createInterface } from "node:readline";
 import {
     type ConfigService,
     createLogger,
-    DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
     EventBus,
     jsonStdoutStream,
     type Logger,
@@ -35,6 +34,7 @@ import {
     BRIDGE_IMAGE_TAG,
     ensureBridgeImage,
 } from "../container-runner/BastionBridgeContainer.js";
+import { ContainerConfig } from "../container-runner/ContainerConfig.js";
 import { ContainerToolsGateway } from "../container-tools/ContainerToolsGateway.js";
 import { ContainerToolsRegistry } from "../container-tools/ContainerToolsRegistry.js";
 import { CronjobScheduler } from "../cron/CronjobScheduler.js";
@@ -122,43 +122,22 @@ export const startCommand = defineCommand({
 
         const config = new HostConfigService(boot.configFile);
 
+        // Postgres password is needed host-side for the postgres container;
+        // it also rides into the agent via the container config blob below.
         const postgresPassword = config.getString("core.postgresPassword");
-        const defaultProvider = config.getString("inference.defaultProvider");
-        const defaultModel = config.getString("inference.defaultModel");
-        const inferenceMaxRetries = config.getNumber("inference.maxRetries", 3);
-        const inferenceOutputFallbackPercentage = config.getNumber(
-            "inference.outputFallbackPercentage",
-            0.7,
-        );
-        const agentStepTimeoutSeconds = config.getNumber("core.agentStepTimeout", 150);
-        const toolCallOffloadingLimit = config.getNumber(
-            "core.toolCallOffloadingLimit",
-            DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
-        );
-        const inferenceKeptToolResultCount = config.getNumber(
-            "inference.contextManagement.keptToolResultCount",
-            3,
-        );
-        const inferenceSlidingWindowPercentage = config.getNumber(
-            "inference.contextManagement.slidingWindowPercentage",
-            0.7,
-        );
         // In dev mode, default the inference debug captures to on when
         // the operator hasn't pinned a value in config.yml. Explicit
         // `true`/`false`/`"full"`/`"non-static"` in config always wins;
         // in production the default is `"off"` so handler iteration
         // doesn't add load to a deployed daemon.
         const logSystemPromptMode: LogSystemPromptMode = resolveLogSystemPromptMode(config, dev);
-        // Operator's preferred timezone. Empty when unset; the agent
-        // container falls back to its own system tz, matching how the
-        // host plugins fall back via getCoreTimezone().
-        const coreTimezone = config.getString("core.timezone", "") ?? "";
         // Paths writable by non-privileged runs (and quoted in full by
         // the memory plugin). Accepts a bare string or a list; defaults
         // to the curated wiki plus the general-purpose files/ drop. These
-        // are the *only* paths a non-privileged run may write — forwarded
-        // to the agent container's fs gate and OS sandbox as
-        // CORE_WRITABLE_PATHS.
+        // are the *only* paths a non-privileged run may write. Resolved
+        // host-side (with default) because the shell entrypoint reads it as
+        // the discrete `CORE_WRITABLE_PATHS` env var; the same value also
+        // rides in the container config blob for the container's fs gate.
         const writablePaths = config.getStringList("core.writablePaths", ["wiki/**", "files/**"]);
         // Touch the chat-channel default so a missing value fails the
         // daemon now rather than at first chat event.
@@ -224,10 +203,6 @@ export const startCommand = defineCommand({
         );
         const captureRawStepResultToDatabase =
             config.getBool("inference.captureRawStepResultToDatabase", undefined) ?? dev;
-        const captureInitialMessageHistory = config.getBool(
-            "inference.captureInitialMessageHistory",
-            false,
-        );
         const reverseProxy = new ReverseProxy({
             providers,
             log: log.child({ component: "reverse-proxy" }),
@@ -334,8 +309,42 @@ export const startCommand = defineCommand({
 
         // Python packages baked into the agent image's venv for the bash
         // tool (the container is offline; nothing can be added at runtime).
+        // Resolved host-side (with default) because the SAME list is the
+        // image build-arg; it also rides in the container config blob so the
+        // bash tool's help section can name the installed packages.
         const pythonPackages = config.getStringList("python.packages", DEFAULT_PYTHON_PACKAGES);
         await ensureAgentImage(log, pythonPackages);
+
+        // Everything the container's Node code reads is collected into one
+        // JSON blob (the container reads it back through `PassedConfig`).
+        // Config-backed knobs are forwarded verbatim by key — their
+        // defaults live container-side, so absent keys are simply omitted.
+        // Computed / non-config values are added explicitly.
+        const containerConfig = new ContainerConfig(config);
+        containerConfig.addConfigKey("core.postgresPassword");
+        containerConfig.addConfigKey("core.agentStepTimeout");
+        containerConfig.addConfigKey("core.toolCallOffloadingLimit");
+        containerConfig.addConfigKey("core.timezone");
+        containerConfig.addConfigKey("inference.defaultProvider");
+        containerConfig.addConfigKey("inference.defaultModel");
+        containerConfig.addConfigKey("inference.maxRetries");
+        containerConfig.addConfigKey("inference.outputFallbackPercentage");
+        containerConfig.addConfigKey("inference.captureInitialMessageHistory");
+        containerConfig.addConfigKey("inference.contextManagement.keptToolResultCount");
+        containerConfig.addConfigKey("inference.contextManagement.slidingWindowPercentage");
+        // Computed / resolved values (host-side defaults or non-config).
+        containerConfig.addValue("bastionUrl", agentBastionUrl);
+        containerConfig.addValue("inference.providers", providerNpmPackages);
+        containerConfig.addValue("core.logLevel", debugLogging ? "debug" : "info");
+        containerConfig.addValue("core.logSystemPrompt", logSystemPromptMode);
+        containerConfig.addValue(
+            "inference.captureRawStepResultToDatabase",
+            captureRawStepResultToDatabase,
+        );
+        // writablePaths / python.packages carry their host-resolved value
+        // (default already applied above) rather than the raw config read.
+        containerConfig.addValue("core.writablePaths", writablePaths);
+        containerConfig.addValue("python.packages", pythonPackages);
 
         const container = new AgentContainer({
             imageName: AGENT_IMAGE_TAG,
@@ -343,24 +352,8 @@ export const startCommand = defineCommand({
             containerSrcPath: boot.containerSrcDir,
             sharedBuildPath: boot.sharedBuildDir,
             scratchPath: boot.scratchDir,
-            postgresPassword,
-            bastionUrl: agentBastionUrl,
-            defaultProvider,
-            defaultModel,
-            inferenceMaxRetries,
-            inferenceOutputFallbackPercentage,
-            toolCallOffloadingLimit,
-            inferenceKeptToolResultCount,
-            inferenceSlidingWindowPercentage,
-            agentStepTimeoutSeconds,
-            logSystemPromptMode,
-            captureRawStepResultToDatabase,
-            captureInitialMessageHistory,
-            providerNpmPackages,
-            verbose: debugLogging,
-            coreTimezone,
+            containerConfigJson: containerConfig.toJSON(),
             writablePaths,
-            pythonPackages,
             hostUid: boot.hostUid,
             hostGid: boot.hostGid,
         });
