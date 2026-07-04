@@ -15,6 +15,7 @@ import type { AgentRunner, AgentRunnerContext } from "./agent-runner/AgentRunner
 import { AgentRunTimeoutError } from "./agent-runner/AgentRunTimeoutError.js";
 import { formatInferenceError } from "./agent-runner/formatInferenceError.js";
 import { RetryableModelException } from "./agent-runner/RetryableModelException.js";
+import { StepLimitReachedError } from "./agent-runner/StepLimitReachedError.js";
 import type { ChatManager } from "./chat/ChatManager.js";
 import type { McpClientPool } from "./mcp/McpClientPool.js";
 import type { PluginToolsClient } from "./plugins/ToolsClient.js";
@@ -136,6 +137,7 @@ type RunOutcome =
     | { readonly kind: "ok"; readonly text: string }
     | { readonly kind: "retryable"; readonly error: RetryableModelException }
     | { readonly kind: "timeout"; readonly error: AgentRunTimeoutError }
+    | { readonly kind: "stepLimit"; readonly error: StepLimitReachedError }
     | { readonly kind: "shutdown" }
     | { readonly kind: "failed"; readonly error: Error };
 
@@ -501,6 +503,19 @@ export class AgentrunScheduler {
                         "agentrun timed out",
                     );
                     break;
+                case "stepLimit":
+                    await agentRunBus.settle(id, "failed", {
+                        error: outcome.error.message,
+                    });
+                    log.warn(
+                        {
+                            agentrunId: id,
+                            stepCount: outcome.error.stepCount,
+                            maxSteps: outcome.error.maxSteps,
+                        },
+                        `agentrun ${id} reached its step limit of ${outcome.error.maxSteps} steps`,
+                    );
+                    break;
                 case "shutdown":
                     // Mirror the isShuttingDown short-circuit above for
                     // races where the abort fires just before the flag
@@ -560,6 +575,9 @@ export class AgentrunScheduler {
         }
         if (err instanceof AgentRunTimeoutError) {
             return { kind: "timeout", error: err };
+        }
+        if (err instanceof StepLimitReachedError) {
+            return { kind: "stepLimit", error: err };
         }
         // AbortError caused by shutdown.
         if (

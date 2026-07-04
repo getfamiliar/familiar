@@ -10,6 +10,7 @@ import {
 import { AgentrunScheduler, type SchedulerDeps } from "./AgentrunScheduler.js";
 import type { AgentRunnerContext } from "./agent-runner/AgentRunner.js";
 import { RetryableModelException } from "./agent-runner/RetryableModelException.js";
+import { StepLimitReachedError } from "./agent-runner/StepLimitReachedError.js";
 import { buildRunnerFactory, type MockBehavior } from "./testing/MockAgentRunner.js";
 import { MockClock } from "./testing/MockClock.js";
 import { MockStepResultBus } from "./testing/MockStepResultBus.js";
@@ -602,6 +603,30 @@ describe("AgentrunScheduler — timeouts", () => {
             const settled = harness.store.agentruns.get(root.id);
             assert.equal(settled?.state, "done");
             assert.equal(settled?.resultText, "parent fast finish");
+        } finally {
+            await harness.stop();
+        }
+    });
+});
+
+describe("AgentrunScheduler — step limit", () => {
+    it("settles failed with an explanatory error when the runner hits the step budget", async () => {
+        const harness = buildHarness({
+            behaviors: {
+                // The real AgentRunner throws this when the tool loop is
+                // halted at MAX_STEPS_PER_RUN (aggregate finishReason
+                // "tool-calls"). The mock throws it directly.
+                index: async () => {
+                    throw new StepLimitReachedError(15, 15);
+                },
+            },
+        });
+        try {
+            const { root } = await seedRootAgentrun(harness.eventBus, harness.agentRunBus, "index");
+
+            const settled = await waitForTerminal(harness.agentRunBus, harness.store, root.id);
+            assert.equal(settled.state, "failed");
+            assert.match(settled.error ?? "", /step limit/i);
         } finally {
             await harness.stop();
         }

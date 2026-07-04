@@ -34,6 +34,8 @@ import {
 import { formatInferenceError } from "./formatInferenceError.js";
 import { mergeToolErrorsIntoResults } from "./mergeToolErrorsIntoResults.js";
 import { RetryableModelException } from "./RetryableModelException.js";
+import { StepLimitReachedError } from "./StepLimitReachedError.js";
+import { buildStepBudgetNotice } from "./stepBudgetNotice.js";
 import { synthesizeResultText } from "./synthesizeResultText.js";
 
 /**
@@ -312,6 +314,9 @@ export interface AgentRunnerContext {
  * - {@link AgentRunTimeoutError} — `ctx.signal` was aborted with a
  *   per-step timeout reason; the SDK's abort path translates to this
  *   typed exception so the Scheduler can settle with a clear message.
+ * - {@link StepLimitReachedError} — the tool loop hit its hard step
+ *   budget (`MAX_STEPS_PER_RUN`) before the model produced a final
+ *   reply; the Scheduler settles `failed` with the message.
  * - Other `Error` — anything non-retryable: handler load failures,
  *   model construction errors, 4xx from the provider, SDK bugs.
  *   The Scheduler settles `failed` with the formatted message.
@@ -479,15 +484,26 @@ export class AgentRunner {
             stopWhen: stepCountIs(MAX_STEPS_PER_RUN),
             prepareStep: ({ stepNumber, messages }) => {
                 const managed = contextManager.prepare(messages);
+                // Tell the agent how many steps it has left as it nears
+                // the cap (and force a final answer on the last step).
+                // Appended after context management so the sliding window
+                // can never evict it; ephemeral per step, so the count
+                // stays live and nothing lands in the persisted history.
+                const budgetNotice = buildStepBudgetNotice(stepNumber, MAX_STEPS_PER_RUN);
+                const stepMessages: ModelMessage[] =
+                    budgetNotice === null
+                        ? managed
+                        : [...managed, { role: "user", content: budgetNotice }];
                 ctx.log.debug(
                     {
                         stepNumber,
                         messageCount: messages.length,
                         managedMessageCount: managed.length,
+                        budgetNotice,
                     },
                     "step starting",
                 );
-                return { messages: managed };
+                return { messages: stepMessages };
             },
         });
 
@@ -652,6 +668,17 @@ export class AgentRunner {
             agentRunId: ctx.row.id,
             outcome: "success",
         });
+
+        // Step-budget cut-off. `stopWhen: stepCountIs(MAX_STEPS_PER_RUN)`
+        // is a stop *condition*, not an error — the SDK resolves
+        // normally when it fires. Since that is the loop's only stop
+        // condition, an aggregate `tool-calls` finish reason means the
+        // model still wanted to call tools when the loop was halted at
+        // the cap. Surface it as a typed failure so the Scheduler
+        // settles `failed` instead of marking a truncated run `done`.
+        if (result.finishReason === "tool-calls") {
+            throw new StepLimitReachedError(result.steps.length, MAX_STEPS_PER_RUN);
+        }
 
         const finalText = synthesizeResultText(result);
 
