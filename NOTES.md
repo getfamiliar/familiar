@@ -1,7 +1,11 @@
+NEXT:
+
+* Rename the call_handler etc calls to start_subagent etc. to reflect what this is about now
+* Rework all existing handlers to not encourage call_handler just to get additional tools anymore, rather just read files and follow their instructions.
+
 Features:
 
-* Knowledge über das Step Limit einbauen: Der System Prompt muss die Anzahl noch verfügbarer Steps enthalten. Aktuell bricht er häufiger bei 15 Steps ab, weil er es nicht weiß. Aktuelles Limit in den System Prompt, und eine injizierte User Message 3 Steps vor dem Limit.
-* Fail events that broke the step limit, currently they are "Done"
+
 
 * File Storages like Onedrive, Dropbox, Google Drive, ... - read & write access, search. Done like calendar + mail, a default set of tools for all providers and provider-specific implementations in plugins.
 * Host-side LLM chat with access to console tools for selections, prompts etc. as a service - used for setup and plugin CLI tools.
@@ -16,12 +20,6 @@ Neues CLI Tool: `logs`
 
 
 ## Refactoring
-
-### Now
-
-* **No more environment variables for container config**: Currently, every config option passed to the container is written as a docker environment variable. Instead, hand over a JSON or string.
-* **MCP functions: keep or remove the renaming of "-"?**
-* 
 
 ### For production deployments:
 

@@ -97,6 +97,10 @@ doubles as a tool group name — see "Built-in groups" below.
 | `args` | array of strings | no | `[]` | CLI args appended after the image's `CMD`. |
 | `command` | string \| null | no | `null` | For `npm`/`pypi`: executable to run when it differs from the package name (switches to `--package` / `--from` form). Ignored for `docker-mcp-registry` and `external`. |
 | `network` | mapping | no | see below | Network constraints. |
+| `allowlist` | array of strings | no | `[]` | Bare tool-name globs; if non-empty, only matching tools are exposed. See "Gating MCP tools". |
+| `denylist` | array of strings | no | `[]` | Bare tool-name globs; matching tools are hidden (removed from the allowlist survivors). |
+| `approval` | array of strings | no | `[]` | Bare tool-name globs; matching tools get security level `approval`. |
+| `privileged` | array of strings | no | `[]` | Bare tool-name globs; matching tools get security level `privileged` (wins over `approval` on overlap). |
 | `idleTimeoutSeconds` | positive integer | no | `1800` | Seconds of stdio inactivity after which the child is closed and reaped. Next request cold-spawns. Has no effect on HTTP / external transports. |
 
 ### `env` entries
@@ -145,42 +149,61 @@ only.
 ## How handlers use MCP tools
 
 Each MCP tool is registered with the AI SDK as `${id}_${toolName}` — the id (the YAML key in
-`mcp.yml`) and the tool's own name joined by a single underscore. **Every non-`[a-zA-Z0-9_]`
-character in the final key is folded to `_`** so the result is safe for every model's
-function-call grammar (some open-source LLMs — GLM 5.1, several Qwen variants — silently drop
-tool calls whose names contain hyphens, and `finish_reason: "other"` falls out the other side
-with no error).
+`mcp.yml`) and the tool's own name joined by a single underscore, both **verbatim**. Tool names
+pass through unchanged, including any hyphens; hyphens are valid in the OpenAI / Anthropic
+function-name grammar, and the AI SDK routes each call by its registered key, so no rewriting is
+needed.
 
-Examples after sanitization:
+Examples:
 
 ```
 fetch_fetch                            # mcp/fetch's only tool
 atlassian_jira_create_issue            # one of mcp/atlassian's many
-ms365_verify_login                     # `verify-login` tool → underscore
+ms365_verify-login                     # hyphen preserved
 ```
 
-**Inside `tools:`, work with these sanitized — underscored — names only.** The hyphenated original
-is never visible; tool-name hyphens are folded to `_` at registration time, and MCP ids are
-constrained to alnum-only by the linter.
+Only the `${id}_` prefix is synthetic — it keeps tools from different MCPs distinct. The part after
+it is exactly what the server calls the tool, which matters for the `mcp.yml` gating globs (see
+"Gating MCP tools" — they match the **bare** server name, not the prefixed key). MCP ids are
+constrained to alnum-only by the linter, so the first `_` after the id is an unambiguous delimiter.
 
 The agent boots the pool eagerly: every declared MCP gets its `tools/list` fetched once at
 startup. Cold-spawn cost shows up here (one docker child per MCP, briefly). That's fine for small
 catalogs; when it isn't, the bastion will gain a tool-list cache that survives child idle-reaps so
 this stays cheap.
 
-## Filtering tools per handler
+## How handlers get tools: discovery and preloading
 
-Handlers declare which tools they want via a `tools:` list in their YAML header — a
-comma-separated string or a YAML list. It selects across **all** registered tools — container
-built-ins (`send_chat`, `schedule_handler`, `call_handler`, `unschedule_handler`,
-`get_scheduled_handlers`, `fs_*`), plugin tools (`memory_*`, `ms365_*`, …) and namespaced MCP tools
-share one available pool.
+**Every handler run can reach every tool.** The `tools:` header no longer restricts a handler to a
+fixed set — it's a *preload hint*. Two always-present meta-tools let the agent find and call
+anything in the shared pool (container built-ins + plugin tools + every MCP's tools):
+
+- **`tool_list`** — searches the full pool by substring; returns each match's `name`, security
+  `level`, and whether it's already loaded into the toolset.
+- **`tool_call`** — invokes any tool by name, including ones not preloaded.
+
+On top of that, a **usage heuristic** auto-preloads the tools a handler has successfully used across
+its recent non-error runs (bounded by a token budget, tuned by `core.toolDefinitionsContextFraction`
+and `core.toolHeuristicRunWindow` in `config.yml`), so a warm handler rarely needs a
+`tool_list`/`tool_call` round-trip. Every tool call is recorded to the `tool_calls` table to feed
+this; an hourly GC keeps the last 200 rows per handler.
+
+Discovery does not bypass security: a discovered `approval`/`privileged` tool still refuses to run
+in a non-privileged run (see "Tool security levels"), and MCP `denylist` tools are never surfaced at
+all.
+
+### The `tools:` preload list
+
+`tools:` declares the tools **guaranteed to be loaded up front** — a comma-separated string or a
+YAML list. Use it to prime a handler toward the right tools and to make the first runs (before the
+heuristic has any history) fast. It selects across the same shared pool.
 
 **Omitted ⇒ implicit `core`.** A handler with no `tools:` line — or an empty list / empty string —
-gets every tool whose declared `groups` lists `core` (`send_chat`, `call_handler`,
+preloads every tool whose declared `groups` lists `core` (`send_chat`, `call_handler`,
 `schedule_handler`, `unschedule_handler`, `fs_read`, plus opted-in plugin tools like
-`memory_search` / `memory_save`). To expose nothing, use `tools: none`. Override with `tools: all`
-or anything more specific.
+`memory_search` / `memory_save`). `tools: none` preloads nothing — but the agent can still reach
+tools through `tool_list`/`tool_call`. `tools: all` preloads the entire pool. The entry syntax below
+is unchanged.
 
 ### Entries
 
@@ -234,12 +257,12 @@ they double as group names. An id like `myservice` becomes group `myservice`; id
 ---                                         # `groups` lists `core`
 
 ---
-tools: all                                  # every container + plugin + MCP tool
+tools: all                                  # preload every container + plugin + MCP tool
 ---
 
 ---
-tools: none                                 # nothing at all (used by a child
----                                         # to override its parent's surface)
+tools: none                                 # preload nothing (the agent can still reach
+---                                         # tools via tool_list / tool_call)
 
 ---
 tools: core, fs                             # core defaults plus the fs bundle
@@ -286,15 +309,69 @@ as an empty contribution and the agentrun continues with whatever else the list 
 asymmetry is deliberate — wildcards routinely match nothing when a catalog evolves, and we don't
 want every catalog change to break unrelated handlers.
 
+## Tool security levels
+
+Every tool carries a security **level** that gates who may *run* it — independent of discovery. A
+tool can be listed and visible yet still refuse to execute:
+
+| Level | Who can run it |
+| --- | --- |
+| `default` | Anyone. Read-only or low-risk tools. |
+| `approval` | Meant to require explicit user approval. The approval gate is not built yet; **until it is, `approval` behaves like `privileged`** — refused in non-privileged runs. |
+| `privileged` | Only **privileged** runs — those descending from trusted user input (the cli-chat REPL, an allowlisted Telegram sender). |
+
+A non-privileged run that calls an `approval`/`privileged` tool gets a `PrivilegeDenied` tool error
+explaining why; the tool stays visible in `tool_list`. Container built-in and plugin tool levels are
+set in code (e.g. `mail_send_*` = `approval`); **MCP tool levels come from `mcp.yml`** (next
+section). `tool_list` reports each tool's level, and `./cli.sh tools list` badges the non-`default`
+ones.
+
+## Gating MCP tools: `allowlist` / `denylist` / `approval` / `privileged`
+
+Because every handler can reach every tool, `mcp.yml` gives per-MCP control over **which** of an
+MCP's tools are exposed and **what level** each carries. Four optional keys under an MCP entry, each
+a list of **bare tool-name globs** — the name the server uses (`jira_create_issue`), not the
+namespaced `atlassian_jira_create_issue` key. They apply **in this order**:
+
+1. **`allowlist`** — if present, only tools matching one of its globs survive. Omitted/empty ⇒ every
+   tool allowed.
+2. **`denylist`** — drop any survivor that matches. Dropped tools are **invisible**: not in
+   `tool_list`, not callable via `tool_call`, not resolvable by any `tools:` entry or group.
+3. **`approval`** — surviving tools that match are assigned level `approval`.
+4. **`privileged`** — surviving tools that match are assigned level `privileged`. Evaluated last, so
+   a tool matching both `approval` and `privileged` ends up `privileged`.
+
+Glob semantics match the `tools:` matcher: a bare name is an exact match; `*` matches any sequence
+(including `_`), fully anchored (`comment_*` matches `comment_reply` but not `commentary`).
+
+The config lives host-side in `mcp.yml`; the `/mcp/` catalog ships the four lists verbatim and the
+container resolves them (read once at boot — a change needs a daemon restart). `./cli.sh tools list`
+applies the same gating so the operator sees exactly the agent's surface.
+
+```yaml
+atlassian:
+  title: "Atlassian"
+  description: "Jira + Confluence."
+  source: external
+  url: https://mcp.atlassian.example/
+  allowlist: ["jira_*", "confluence_search"]   # expose only Jira tools + one Confluence tool
+  denylist: ["jira_delete_*"]                  # …but never the delete tools
+  approval: ["jira_create_issue"]              # creating an issue needs approval
+  privileged: ["jira_admin_*"]                 # admin tools: privileged runs only
+```
+
 ## Operations
 
 - **List every tool.** `./cli.sh tools list [search]` lists every tool the agent can use — container
   built-ins (`send_chat`, `fs_*`, `bash`, …), host plugin tools (`mail_*`, `whatsapp_*`, the
-  reflection tools), and MCP functions — grouped by tool group. `-v` shows full descriptions, `-vv`
-  adds each tool's parameters, `--mcp` / `--native` restrict to MCP-only or non-MCP-only, and `--raw`
-  emits unstyled markdown. Requires the daemon: built-ins come from the catalog the agent container
-  reports to the bastion on startup, plugin tools from the plugin-tools gateway, and MCP tools from
-  the live bastion.
+  reflection tools), and MCP functions — grouped by tool group. Non-`default` tools are badged
+  (`[approval]` / `[privileged]`), and MCP `allowlist`/`denylist` gating is reflected (denied tools
+  don't appear), so the listing matches the agent's actual surface. Note this is an operator
+  inventory, not an agentrun: it has no `privileged` context, so it *shows* every level rather than
+  hiding what a given run couldn't execute. `-v` shows full descriptions, `-vv` adds each tool's
+  parameters, `--mcp` / `--native` restrict to MCP-only or non-MCP-only, and `--raw` emits unstyled
+  markdown. Requires the daemon: built-ins come from the catalog the agent container reports to the
+  bastion on startup, plugin tools from the plugin-tools gateway, and MCP tools from the live bastion.
 - **Lint.** `./cli.sh tools lint-mcps` validates `config/mcp.yml` and lists the configured MCPs (id,
   source, package). A missing file is treated as "no MCPs" and is not an error.
 - **List declared MCPs.** `./cli.sh tools list-mcps` prints every entry in `mcp.yml`, its source, and
@@ -360,9 +437,14 @@ want every catalog change to break unrelated handlers.
 
 - A CLI helper that fetches a `server.yaml` URL from the Docker MCP registry and writes a
   translated entry into `mcp.yml`.
-- Bastion-side filtering: today the gateway serves every tool to the agent and the container
-  filters per handler. Pushing the filter to the gateway only matters once we don't fully trust
-  the agent.
+- The **approval gate**: `approval`-level tools currently fall back to `privileged` (refused in
+  non-privileged runs). A real flow — pause the run, prompt the user, resume on approval — is
+  planned; when it lands, `approval` graduates from "privileged-only" to "ask the user".
+- Host-side (gateway) enforcement of MCP `allowlist`/`denylist`: today the gateway serves every tool
+  and the container applies the `mcp.yml` gating. Moving allow/deny into the gateway (so a denied
+  tool never crosses to the container) only matters once we don't fully trust the agent — the real
+  security boundary (credential injection, `privileged`-run refusal, OS sandbox) already lives
+  host/OS-side, and the container filter only controls visibility.
 - Resources / prompts / elicitation surfaces from `@ai-sdk/mcp` (currently the pool only exposes
   `tools()`).
 - SSE-streamed responses from the bastion for long-running tool calls (today plain JSON
