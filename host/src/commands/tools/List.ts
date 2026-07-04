@@ -2,8 +2,11 @@ import { existsSync } from "node:fs";
 import {
     type ContainerToolInfo,
     createLogger,
+    DEFAULT_TOOL_LEVEL,
+    matchesAnyToolPattern,
     prettyStdoutStream,
     renderMarkdown,
+    type ToolLevel,
 } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../../Bootstrap.js";
@@ -38,6 +41,7 @@ interface PluginCatalogEntry {
     readonly description: string;
     readonly inputSchema?: unknown;
     readonly groups?: readonly string[];
+    readonly level?: ToolLevel;
 }
 
 /**
@@ -200,6 +204,7 @@ async function fetchContainerBuiltins(): Promise<CatalogTool[]> {
         groups: [...t.groups],
         origin: "builtin" as const,
         inputSchema: coerceSchema(t.inputSchema),
+        level: t.level ?? DEFAULT_TOOL_LEVEL,
     }));
 }
 
@@ -238,6 +243,7 @@ async function fetchPluginTools(): Promise<CatalogTool[]> {
             groups,
             origin: isCore ? ("core" as const) : ("plugin" as const),
             inputSchema: coerceSchema(t.inputSchema),
+            level: t.level ?? DEFAULT_TOOL_LEVEL,
         };
     });
 }
@@ -286,6 +292,22 @@ async function fetchMcpTools(
                 continue;
             }
             for (const t of result.tools) {
+                // Mirror the container's gating so the operator sees the
+                // same surface the agent does: allowlist → denylist →
+                // approval → privileged (matched on the bare tool name).
+                if (entry.allowlist.length > 0 && !matchesAnyToolPattern(entry.allowlist, t.name)) {
+                    continue;
+                }
+                if (matchesAnyToolPattern(entry.denylist, t.name)) {
+                    continue;
+                }
+                let level: ToolLevel = DEFAULT_TOOL_LEVEL;
+                if (matchesAnyToolPattern(entry.approval, t.name)) {
+                    level = "approval";
+                }
+                if (matchesAnyToolPattern(entry.privileged, t.name)) {
+                    level = "privileged";
+                }
                 out.push({
                     name: t.name,
                     description: t.description,
@@ -293,6 +315,7 @@ async function fetchMcpTools(
                     origin: "mcp",
                     inputSchema: t.inputSchema,
                     outputSchema: t.outputSchema,
+                    level,
                 });
             }
         }

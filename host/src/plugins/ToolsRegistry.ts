@@ -1,10 +1,12 @@
 import {
     CORE_PLUGIN_ID,
+    DEFAULT_TOOL_LEVEL,
     type HostContext,
     IDENT_PATTERN,
     type Logger,
     type PluginTool,
     RESERVED_GROUP_NAMES,
+    type ToolLevel,
     validateGroupName,
 } from "@getfamiliar/shared";
 import type { McpRegistry } from "../mcp/McpRegistry.js";
@@ -45,6 +47,12 @@ export interface RegisteredPluginTool {
      * into the implicit-default `core` group when the tool opts in).
      */
     readonly groups: ReadonlySet<string>;
+    /**
+     * Security classification, resolved to a concrete {@link ToolLevel}
+     * (`PluginTool.level ?? "default"`). Forwarded over `/plugin-tools/`
+     * so the container's `ToolsFactory` can enforce it.
+     */
+    readonly level: ToolLevel;
 }
 
 /**
@@ -163,6 +171,7 @@ export class PluginToolsRegistry {
                 log: pluginLog,
                 execute: tool.execute.bind(tool),
                 groups,
+                level: tool.level ?? DEFAULT_TOOL_LEVEL,
             });
         }
         this.pluginIds.add(pluginId);

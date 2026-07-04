@@ -176,6 +176,10 @@ function validateEntry(id: string, value: unknown, errors: string[], warnings: s
     validateEnv(id, e.env, errors);
     validateStringArray(id, "volumes", e.volumes, errors);
     validateStringArray(id, "args", e.args, errors);
+    validateStringArray(id, "allowlist", e.allowlist, errors);
+    validateStringArray(id, "denylist", e.denylist, errors);
+    validateStringArray(id, "approval", e.approval, errors);
+    validateStringArray(id, "privileged", e.privileged, errors);
     validateNetwork(id, e.network, errors, warnings);
 
     if (e.command !== undefined && e.command !== null && typeof e.command !== "string") {
@@ -313,6 +317,10 @@ function materializeEntry(id: string, raw: Record<string, unknown>): McpEntry {
         args: (raw.args as string[] | undefined) ?? [],
         command: typeof raw.command === "string" ? raw.command : null,
         network,
+        allowlist: (raw.allowlist as string[] | undefined) ?? [],
+        denylist: (raw.denylist as string[] | undefined) ?? [],
+        approval: (raw.approval as string[] | undefined) ?? [],
+        privileged: (raw.privileged as string[] | undefined) ?? [],
         image: typeof raw.image === "string" ? raw.image : undefined,
         package: typeof raw.package === "string" ? raw.package : undefined,
         version: typeof raw.version === "string" ? raw.version : undefined,

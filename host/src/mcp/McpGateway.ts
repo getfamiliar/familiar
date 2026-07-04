@@ -177,21 +177,36 @@ export class McpGateway implements BastionModule {
 
     /**
      * Reply with the catalog of declared MCPs as a JSON array of
-     * `{ id, title, description }`. Used by the agent's
-     * `McpClientPool` at boot to discover what to instantiate.
-     * Only `GET` is supported; other methods get 405.
+     * `{ id, title, description, allowlist, denylist, approval, privileged }`.
+     * Used by the agent's `McpClientPool` at boot to discover what to
+     * instantiate and how to gate each MCP's tools (the four glob lists
+     * are resolved container-side). Only `GET` is supported; other
+     * methods get 405.
      */
     private replyCatalog(req: IncomingMessage, res: ServerResponse): void {
         if (req.method !== "GET") {
             replyError(res, 405, "GET /mcp/ only");
             return;
         }
-        const catalog: Array<{ id: string; title: string; description: string }> = [];
+        const catalog: Array<{
+            id: string;
+            title: string;
+            description: string;
+            allowlist: readonly string[];
+            denylist: readonly string[];
+            approval: readonly string[];
+            privileged: readonly string[];
+        }> = [];
         for (const transport of this.transports.values()) {
+            const entry = this.config.registry.get(transport.id);
             catalog.push({
                 id: transport.id,
                 title: transport.title,
                 description: transport.description,
+                allowlist: entry?.allowlist ?? [],
+                denylist: entry?.denylist ?? [],
+                approval: entry?.approval ?? [],
+                privileged: entry?.privileged ?? [],
             });
         }
         res.writeHead(200, { "content-type": "application/json" });

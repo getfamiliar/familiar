@@ -96,6 +96,7 @@ interface UpdateArgs {
 function updateTool(deps: MailStyleToolsDeps): PluginTool<UpdateArgs, object> {
     return {
         name: "mailstyle_update",
+        level: "privileged",
         description:
             "Create or update the per-mailbox style template. Partial-update " +
             "semantics: omitted fields keep their current value (or default " +

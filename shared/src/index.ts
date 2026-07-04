@@ -140,6 +140,7 @@ export {
 } from "./Timezone.js";
 export type { NewToolCall, ToolCallRow, ToolUsageCount } from "./ToolCall.js";
 export { ToolCallBus } from "./ToolCallBus.js";
+export { DEFAULT_TOOL_LEVEL, type ToolLevel } from "./ToolLevel.js";
 export {
     DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
     type OffloadedJson,
@@ -155,8 +156,10 @@ export {
     CORE_PLUGIN_ID,
     IDENT_PATTERN,
     MCP_GROUP_NAME,
+    matchesAnyToolPattern,
     NONE_GROUP_NAME,
     RESERVED_GROUP_NAMES,
+    toolPatternMatches,
     validateGroupName,
 } from "./ToolsExpressionUtils.js";
 export type {

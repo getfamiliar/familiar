@@ -71,7 +71,7 @@ export interface SchedulerDeps {
      */
     readonly runnerFactory: (row: AgentRunRow) => AgentRunner;
     /** Pool used to assemble MCP tools per runner. */
-    readonly mcpPool: Pick<McpClientPool, "tools" | "mcpKeysById">;
+    readonly mcpPool: Pick<McpClientPool, "tools" | "mcpKeysById" | "mcpLevelsByKey">;
     /** Bastion client used to fetch plugin tools per runner. */
     readonly pluginToolsClient: Pick<PluginToolsClient, "tools">;
     /** Shared chat manager — methods take `eventId` per call. */
@@ -694,9 +694,11 @@ export class AgentrunScheduler {
                     waitForSubagent,
                     mcpTools: mcpPool.tools(),
                     mcpKeysById: mcpPool.mcpKeysById(),
+                    mcpLevelsByKey: mcpPool.mcpLevelsByKey(),
                     pluginTools: pluginToolset.tools,
                     pluginKeysById: pluginToolset.keysById,
                     pluginGroupKeys: pluginToolset.groupKeys,
+                    pluginLevelsByKey: pluginToolset.levelsByKey,
                     toolRunContext,
                     log,
                     toolCallBus,

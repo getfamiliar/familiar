@@ -81,3 +81,37 @@ export function validateGroupName(name: string): void {
         );
     }
 }
+
+/**
+ * Match one tool-name glob pattern against a single tool name. A
+ * pattern without `*` is an exact match; `*` is a wildcard for any
+ * character sequence (including `_`, since tool names contain `_`).
+ * Fully anchored (`^…$`) — `comment_*` matches `comment_reply` but not
+ * `commentary`. This is the shared semantics used by the container's
+ * `tools:` frontmatter resolver and by the `mcp.yml` allow/deny/level
+ * globs.
+ *
+ * @param pattern The glob pattern (bareword or `*`-containing).
+ * @param name The tool name to test.
+ * @returns `true` when the name matches the pattern.
+ */
+export function toolPatternMatches(pattern: string, name: string): boolean {
+    if (!pattern.includes("*")) {
+        return pattern === name;
+    }
+    const regex = new RegExp(
+        `^${pattern
+            .split("*")
+            .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+            .join(".*")}$`,
+    );
+    return regex.test(name);
+}
+
+/**
+ * `true` when `name` matches any of the glob `patterns`. Empty list ⇒
+ * `false`. See {@link toolPatternMatches} for the per-pattern semantics.
+ */
+export function matchesAnyToolPattern(patterns: readonly string[], name: string): boolean {
+    return patterns.some((pattern) => toolPatternMatches(pattern, name));
+}

@@ -33,6 +33,21 @@ fetch:
   # network:
   #   disable: true   # run with --network none
   # idleTimeoutSeconds: 1800
+  #
+  # Tool gating (all optional; lists of bare tool-name globs, `*`
+  # wildcard). Applied in this order:
+  #   1. allowlist — if set, ONLY tools matching one of these survive
+  #      (omit/empty ⇒ all tools allowed).
+  #   2. denylist  — drop any survivor that matches (dropped tools are
+  #      invisible to the agent — not listed, not callable).
+  #   3. approval  — surviving matches are marked `approval` (until the
+  #      approval gate exists, refused in non-privileged runs).
+  #   4. privileged — surviving matches are marked `privileged` (only
+  #      run in privileged runs). Wins over `approval` on overlap.
+  # allowlist: ["fetch"]
+  # denylist: ["*_admin", "delete_*"]
+  # approval: ["post_*", "create_*"]
+  # privileged: ["*_dangerous"]
 
 # Example of an env-driven MCP. Uncomment and fill in to use.
 #

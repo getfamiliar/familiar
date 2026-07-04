@@ -1,5 +1,5 @@
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
-import type { Logger } from "@getfamiliar/shared";
+import { type Logger, matchesAnyToolPattern, type ToolLevel } from "@getfamiliar/shared";
 import type { ToolSet } from "ai";
 
 /**
@@ -18,18 +18,56 @@ export interface McpClientPoolConfig {
 }
 
 /**
+ * Per-MCP tool-gating globs, resolved container-side. Mirrors the
+ * `allowlist` / `denylist` / `approval` / `privileged` fields on the
+ * host's `McpEntry`, delivered verbatim on the `/mcp` catalog.
+ */
+export interface McpToolGating {
+    readonly allowlist: readonly string[];
+    readonly denylist: readonly string[];
+    readonly approval: readonly string[];
+    readonly privileged: readonly string[];
+}
+
+/**
+ * Apply one MCP's gating to a single bare tool name, in order:
+ * allowlist → denylist → approval → privileged.
+ *
+ * @returns the tool's {@link ToolLevel} if it survives allow/deny, or
+ *   `null` if it should be dropped (allowlist miss or denylist hit).
+ *   `privileged` is evaluated after `approval`, so a tool matching both
+ *   ends up `privileged`.
+ */
+export function gateMcpTool(toolName: string, gating: McpToolGating): ToolLevel | null {
+    if (gating.allowlist.length > 0 && !matchesAnyToolPattern(gating.allowlist, toolName)) {
+        return null;
+    }
+    if (matchesAnyToolPattern(gating.denylist, toolName)) {
+        return null;
+    }
+    let level: ToolLevel = "default";
+    if (matchesAnyToolPattern(gating.approval, toolName)) {
+        level = "approval";
+    }
+    if (matchesAnyToolPattern(gating.privileged, toolName)) {
+        level = "privileged";
+    }
+    return level;
+}
+
+/**
  * One catalog entry as the bastion exposes it on `GET /mcp`. The pool
  * trusts the bastion's validation (which already ran against
- * `mcp.yml`) and only needs the id.
+ * `mcp.yml`) and needs the id plus the four tool-gating glob lists.
  */
-interface CatalogEntry {
+interface CatalogEntry extends McpToolGating {
     readonly id: string;
     readonly title: string;
     readonly description: string;
 }
 
 /** Internal record per declared MCP after the pool has connected. */
-interface PooledClient {
+interface PooledClient extends McpToolGating {
     readonly id: string;
     readonly title: string;
     readonly client: MCPClient;
@@ -61,6 +99,7 @@ export class McpClientPool {
     private clients: PooledClient[] = [];
     private merged: ToolSet = {};
     private keysById: Map<string, ReadonlySet<string>> = new Map();
+    private levelsByKey: Map<string, ToolLevel> = new Map();
 
     constructor(config: McpClientPoolConfig) {
         this.config = config;
@@ -95,6 +134,7 @@ export class McpClientPool {
         const merge = this.buildMergedAndIndex();
         this.merged = merge.merged;
         this.keysById = merge.keysById;
+        this.levelsByKey = merge.levelsByKey;
         const totalTools = countTools(this.merged);
         const breakdown = this.clients
             .map(
@@ -132,6 +172,19 @@ export class McpClientPool {
         return this.keysById;
     }
 
+    /**
+     * Map of namespaced MCP tool key (`${id}_${name}`) → its resolved
+     * security {@link ToolLevel}, for tools whose per-MCP `approval` /
+     * `privileged` globs matched. `default`-level tools are omitted
+     * (the {@link import("../tools/ToolsFactory").ToolsFactory} level
+     * lookup falls back to `default`). Threaded into `ToolsFactory` so
+     * the tool wrapper refuses a non-`default` MCP tool in a
+     * non-privileged run, exactly like plugin tools.
+     */
+    mcpLevelsByKey(): ReadonlyMap<string, ToolLevel> {
+        return this.levelsByKey;
+    }
+
     /** Close every client. Per-client failures are logged and swallowed. */
     async close(): Promise<void> {
         await Promise.allSettled(
@@ -147,6 +200,7 @@ export class McpClientPool {
         this.clients = [];
         this.merged = {};
         this.keysById = new Map();
+        this.levelsByKey = new Map();
     }
 
     /**
@@ -173,8 +227,16 @@ export class McpClientPool {
                 typeof (item as { title?: unknown }).title === "string" &&
                 typeof (item as { description?: unknown }).description === "string"
             ) {
-                const e = item as CatalogEntry;
-                out.push({ id: e.id, title: e.title, description: e.description });
+                const e = item as Record<string, unknown>;
+                out.push({
+                    id: e.id as string,
+                    title: e.title as string,
+                    description: e.description as string,
+                    allowlist: stringArray(e.allowlist),
+                    denylist: stringArray(e.denylist),
+                    approval: stringArray(e.approval),
+                    privileged: stringArray(e.privileged),
+                });
             }
         }
         return out;
@@ -193,38 +255,81 @@ export class McpClientPool {
             clientName: "familiar",
         });
         const tools = await client.tools();
-        return { id: entry.id, title: entry.title, client, tools };
+        return {
+            id: entry.id,
+            title: entry.title,
+            client,
+            tools,
+            allowlist: entry.allowlist,
+            denylist: entry.denylist,
+            approval: entry.approval,
+            privileged: entry.privileged,
+        };
     }
 
     /**
-     * Build the merged tool set with verbatim `${id}_${toolName}` keys.
+     * Build the merged tool set with verbatim `${id}_${toolName}` keys,
+     * applying each MCP's `mcp.yml` tool gating in order: allowlist →
+     * denylist → approval → privileged (bare tool name matched against
+     * the globs). Dropped tools (allowlist miss / denylist hit) are
+     * excluded entirely — invisible to the agent. Surviving tools that
+     * match `approval` / `privileged` are recorded in `levelsByKey`
+     * (privileged evaluated last, so it wins on overlap); the rest are
+     * `default` (omitted).
+     *
      * Tool names pass through unchanged — including any hyphens
      * (`ms365_verify-login`), which are valid in the OpenAI / Anthropic
      * function-name grammar. The AI SDK looks each tool up by its
      * registered key and the underlying `Tool` object executes against
      * the real MCP tool regardless of the key, so no back-map is
-     * needed.
-     *
-     * Collisions across MCPs are impossible by construction since the
-     * id is part of every key.
+     * needed. Collisions across MCPs are impossible by construction
+     * since the id is part of every key.
      */
     private buildMergedAndIndex(): {
         merged: ToolSet;
         keysById: Map<string, ReadonlySet<string>>;
+        levelsByKey: Map<string, ToolLevel>;
     } {
         const merged: ToolSet = {};
         const keysById = new Map<string, ReadonlySet<string>>();
+        const levelsByKey = new Map<string, ToolLevel>();
         for (const c of this.clients) {
             const idKeys = new Set<string>();
+            let dropped = 0;
             for (const [toolName, tool] of Object.entries(c.tools)) {
+                const level = gateMcpTool(toolName, c);
+                if (level === null) {
+                    dropped++;
+                    continue;
+                }
                 const key = `${c.id}_${toolName}`;
                 merged[key] = tool;
                 idKeys.add(key);
+                if (level !== "default") {
+                    levelsByKey.set(key, level);
+                }
             }
             keysById.set(c.id, idKeys);
+            if (dropped > 0) {
+                this.config.log.info(
+                    `mcp '${c.id}': ${idKeys.size} tool${idKeys.size === 1 ? "" : "s"} exposed, ${dropped} dropped by allow/deny gating`,
+                );
+            }
         }
-        return { merged, keysById };
+        return { merged, keysById, levelsByKey };
     }
+}
+
+/**
+ * Coerce an unknown catalog value to a string array, dropping non-string
+ * elements. Absent/malformed ⇒ `[]` (no gating). Defensive: the host
+ * lints `mcp.yml`, but the pool never trusts the wire blindly.
+ */
+function stringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.filter((v): v is string => typeof v === "string");
 }
 
 /** Count keys on a ToolSet without leaking `Object.keys` allocations elsewhere. */

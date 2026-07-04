@@ -532,6 +532,7 @@ function draftNewTool(deps: MailToolsDeps): PluginTool<DraftNewArgs, object> {
 function sendReplyTool(deps: MailToolsDeps): PluginTool<DraftReplyArgs, object> {
     return {
         name: "mail_send_reply",
+        level: "approval",
         description:
             "Send a reply immediately. When `mail.allowSend` is false " +
             "or any recipient is outside `mail.recipientWhitelist`, " +
@@ -580,6 +581,7 @@ function sendReplyTool(deps: MailToolsDeps): PluginTool<DraftReplyArgs, object> 
 function sendForwardTool(deps: MailToolsDeps): PluginTool<DraftForwardArgs, object> {
     return {
         name: "mail_send_forward",
+        level: "approval",
         description:
             "Forward one mail immediately. When `mail.allowSend` is " +
             "false or any recipient is outside the whitelist, the tool " +
@@ -627,6 +629,7 @@ function sendForwardTool(deps: MailToolsDeps): PluginTool<DraftForwardArgs, obje
 function sendNewTool(deps: MailToolsDeps): PluginTool<DraftNewArgs, object> {
     return {
         name: "mail_send_new",
+        level: "approval",
         description:
             "Send a brand-new mail immediately. When `mail.allowSend` " +
             "is false or any recipient is outside the whitelist, the " +

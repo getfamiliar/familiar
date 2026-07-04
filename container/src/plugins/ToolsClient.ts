@@ -1,4 +1,10 @@
-import { CORE_PLUGIN_ID, type Logger, ToolError } from "@getfamiliar/shared";
+import {
+    CORE_PLUGIN_ID,
+    DEFAULT_TOOL_LEVEL,
+    type Logger,
+    ToolError,
+    type ToolLevel,
+} from "@getfamiliar/shared";
 import { jsonSchema, type ToolSet, tool } from "ai";
 
 /**
@@ -50,6 +56,12 @@ interface CatalogEntry {
      * implicit-default `core` set.
      */
     readonly groups: readonly string[];
+    /**
+     * Security classification the host resolved for this tool. The
+     * container folds it into `ToolsFactory`'s per-key level map so a
+     * non-`default` tool is refused in a non-privileged run.
+     */
+    readonly level: ToolLevel;
 }
 
 /**
@@ -99,11 +111,13 @@ export class PluginToolsClient {
         tools: ToolSet;
         keysById: ReadonlyMap<string, ReadonlySet<string>>;
         groupKeys: ReadonlyMap<string, ReadonlySet<string>>;
+        levelsByKey: ReadonlyMap<string, ToolLevel>;
     }> {
         const catalog = await this.fetchCatalog();
         const toolSet: ToolSet = {};
         const keysById = new Map<string, Set<string>>();
         const groupKeys = new Map<string, Set<string>>();
+        const levelsByKey = new Map<string, ToolLevel>();
         for (const entry of catalog) {
             toolSet[entry.key] = tool({
                 description: entry.description,
@@ -111,6 +125,7 @@ export class PluginToolsClient {
                 execute: async (args: unknown) =>
                     this.invoke(entry.key, args, eventId, agentrunId, toolCallOffloadingLimit),
             });
+            levelsByKey.set(entry.key, entry.level);
             // The `core` sentinel is a registration handle, not an
             // addressable plugin id — skip its auto-group so it can't
             // shadow the curated `core` group in the evaluator's
@@ -132,7 +147,7 @@ export class PluginToolsClient {
                 perGroup.add(entry.key);
             }
         }
-        return { tools: toolSet, keysById, groupKeys };
+        return { tools: toolSet, keysById, groupKeys, levelsByKey };
     }
 
     /**
@@ -167,6 +182,7 @@ export class PluginToolsClient {
                     description: string;
                     inputSchema: object;
                     groups?: unknown;
+                    level?: unknown;
                 };
                 const groups: string[] = [];
                 if (Array.isArray(raw.groups)) {
@@ -182,6 +198,7 @@ export class PluginToolsClient {
                     description: raw.description,
                     inputSchema: raw.inputSchema,
                     groups,
+                    level: parseToolLevel(raw.level),
                 });
             }
         }
@@ -244,6 +261,18 @@ export class PluginToolsClient {
         }
         return body;
     }
+}
+
+/**
+ * Coerce a wire `level` value to a {@link ToolLevel}. Unknown or absent
+ * values fall back to {@link DEFAULT_TOOL_LEVEL} — the host always
+ * serializes a concrete level, so this is just a defensive parse.
+ */
+function parseToolLevel(raw: unknown): ToolLevel {
+    if (raw === "privileged" || raw === "approval" || raw === "default") {
+        return raw;
+    }
+    return DEFAULT_TOOL_LEVEL;
 }
 
 /**

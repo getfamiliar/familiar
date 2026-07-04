@@ -57,6 +57,24 @@ export interface McpEntry {
     readonly args: readonly string[];
     readonly command: string | null;
     readonly network: McpNetwork;
+    /**
+     * Per-MCP tool gating globs (bare tool names, `*` wildcard, matched
+     * with {@link import("@getfamiliar/shared").toolPatternMatches}).
+     * Resolved container-side in order: allowlist → denylist → approval
+     * → privileged (privileged wins over approval on overlap).
+     *
+     * - `allowlist` — if non-empty, only matching tools survive; empty
+     *   ⇒ allow all.
+     * - `denylist` — matching survivors are dropped (invisible to the agent).
+     * - `approval` / `privileged` — surviving matches are assigned that
+     *   security {@link import("@getfamiliar/shared").ToolLevel}.
+     *
+     * All default to `[]` (no filtering, all tools `default`).
+     */
+    readonly allowlist: readonly string[];
+    readonly denylist: readonly string[];
+    readonly approval: readonly string[];
+    readonly privileged: readonly string[];
     /** Required when `source === "docker-mcp-registry"`. */
     readonly image?: string;
     /** Required when `source === "npm"` or `source === "pypi"`. */

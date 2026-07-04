@@ -129,6 +129,7 @@ export class PluginToolsGateway implements BastionModule {
             description: t.description,
             inputSchema: t.inputSchema,
             groups: [...t.groups].sort(),
+            level: t.level,
         }));
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(catalog));

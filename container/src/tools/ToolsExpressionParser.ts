@@ -1,4 +1,9 @@
-import { ALL_GROUP_NAME, IDENT_PATTERN, NONE_GROUP_NAME } from "@getfamiliar/shared";
+import {
+    ALL_GROUP_NAME,
+    IDENT_PATTERN,
+    NONE_GROUP_NAME,
+    toolPatternMatches,
+} from "@getfamiliar/shared";
 
 /**
  * Per-handler tool resolution. A handler's `tools:` frontmatter is a
@@ -105,7 +110,8 @@ export function resolveTools(
  * the matches. Patterns without `*` are exact-match; `*` is a
  * wildcard for any character sequence (including `_`, since the
  * keys themselves contain `_`). A pattern that matches nothing
- * contributes nothing — no error.
+ * contributes nothing — no error. Per-key semantics come from the
+ * shared {@link toolPatternMatches}.
  */
 export function matchTools(pattern: string, available: ReadonlySet<string>): Set<string> {
     const out = new Set<string>();
@@ -115,14 +121,8 @@ export function matchTools(pattern: string, available: ReadonlySet<string>): Set
         }
         return out;
     }
-    const regex = new RegExp(
-        `^${pattern
-            .split("*")
-            .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-            .join(".*")}$`,
-    );
     for (const key of available) {
-        if (regex.test(key)) {
+        if (toolPatternMatches(pattern, key)) {
             out.add(key);
         }
     }

@@ -1,5 +1,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
+import type { AgentRunRow } from "@getfamiliar/shared";
+import { jsonSchema, type ToolSet, tool } from "ai";
 import { ToolsFactory } from "./ToolsFactory.js";
 
 /**
@@ -41,5 +43,82 @@ describe("ToolsFactory — error wrapping", () => {
         // must succeed rather than throw.
         const out = await ToolsFactory.build({});
         assert.deepEqual(Object.keys(out).sort(), ["tool_call", "tool_list"]);
+    });
+});
+
+/**
+ * A non-`default` tool is refused in a non-privileged run but runs
+ * normally in a privileged one. The guard lives in the tool wrapper, so
+ * it applies to every pool tool uniformly (built-in, plugin, MCP).
+ */
+describe("ToolsFactory — security-level enforcement", () => {
+    /** Build a one-plugin-tool pool at the given level + privilege. */
+    async function buildWithDangerTool(
+        level: "approval" | "privileged",
+        privileged: boolean,
+    ): Promise<ToolSet> {
+        const pluginTools: ToolSet = {
+            danger_do: tool({
+                description: "does the dangerous thing",
+                inputSchema: jsonSchema<Record<string, never>>({
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {},
+                }),
+                execute: async () => "ran",
+            }),
+        };
+        return ToolsFactory.build({
+            tools: ["danger_do"],
+            pluginTools,
+            pluginLevelsByKey: new Map([["danger_do", level]]),
+            parent: { id: "1", privileged } as unknown as AgentRunRow,
+        });
+    }
+
+    /** Invoke a tool's wrapped `execute` with empty args. */
+    function invoke(tools: ToolSet, name: string): Promise<unknown> {
+        const execute = tools[name]?.execute as
+            | ((input: unknown, options: unknown) => Promise<unknown>)
+            | undefined;
+        assert.ok(execute, `${name} missing or not executable`);
+        return execute({}, { toolCallId: "t", messages: [] });
+    }
+
+    for (const level of ["approval", "privileged"] as const) {
+        it(`refuses a ${level} tool in a non-privileged run`, async () => {
+            const tools = await buildWithDangerTool(level, false);
+            await assert.rejects(invoke(tools, "danger_do"), (err: unknown) => {
+                assert.ok(err instanceof Error);
+                assert.match(err.message, /danger_do/);
+                assert.match(err.message, /non-privileged/);
+                return true;
+            });
+        });
+
+        it(`runs a ${level} tool in a privileged run`, async () => {
+            const tools = await buildWithDangerTool(level, true);
+            assert.equal(await invoke(tools, "danger_do"), "ran");
+        });
+    }
+
+    it("runs a default tool in a non-privileged run", async () => {
+        const pluginTools: ToolSet = {
+            safe_do: tool({
+                description: "safe",
+                inputSchema: jsonSchema<Record<string, never>>({
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {},
+                }),
+                execute: async () => "ran",
+            }),
+        };
+        const tools = await ToolsFactory.build({
+            tools: ["safe_do"],
+            pluginTools,
+            parent: { id: "1", privileged: false } as unknown as AgentRunRow,
+        });
+        assert.equal(await invoke(tools, "safe_do"), "ran");
     });
 });

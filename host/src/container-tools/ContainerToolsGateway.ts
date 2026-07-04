@@ -108,7 +108,8 @@ function isContainerToolInfo(value: unknown): value is ContainerToolInfo {
         typeof obj.description === "string" &&
         typeof obj.inputSchema === "object" &&
         obj.inputSchema !== null &&
-        Array.isArray(obj.groups)
+        Array.isArray(obj.groups) &&
+        (obj.level === "default" || obj.level === "approval" || obj.level === "privileged")
     );
 }
 

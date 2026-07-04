@@ -1,4 +1,4 @@
-import { runJsonLinesTool, type ToolRunContext } from "@getfamiliar/shared";
+import { runJsonLinesTool, type ToolLevel, type ToolRunContext } from "@getfamiliar/shared";
 import { jsonSchema, type Tool, tool } from "ai";
 
 /** Metadata the `tool_list` tool searches and renders. */
@@ -7,6 +7,8 @@ export interface ToolCatalogEntry {
     readonly name: string;
     /** Full tool description (searched in full; truncated for display). */
     readonly description: string;
+    /** Security level gating who may call the tool. */
+    readonly level: ToolLevel;
 }
 
 interface ToolListInput {
@@ -46,8 +48,11 @@ export function buildToolListTool(
             "tool; only a subset is preloaded into your toolset. Call this to search the full " +
             "pool, then invoke anything it returns with `tool_call`. Pass {search} as a " +
             "case-insensitive substring matched against tool names and descriptions, or omit " +
-            "it to list everything. Each JSONL line is {name, loaded, description}; `loaded: " +
-            "true` means the tool is already in your toolset and can be called directly.",
+            "it to list everything. Each JSONL line is {name, loaded, level, description}; " +
+            "`loaded: true` means the tool is already in your toolset and can be called " +
+            "directly. `level` is the tool's security class: `default` (anyone), `approval` " +
+            "(needs user approval), or `privileged` (only in privileged runs) — non-`default` " +
+            "tools are refused in non-privileged runs.",
         inputSchema: jsonSchema<ToolListInput>({
             type: "object",
             additionalProperties: false,
@@ -73,6 +78,7 @@ export function buildToolListTool(
                 return matches.map((entry) => ({
                     name: entry.name,
                     loaded: loaded.has(entry.name),
+                    level: entry.level,
                     description: truncateForDisplay(entry.description),
                 }));
             }, ctx),

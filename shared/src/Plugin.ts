@@ -11,6 +11,7 @@ import type { MailApi } from "./Mail.js";
 import type { MailStyleTemplate } from "./MailStyleTemplate.js";
 import type { ModelMetaData, ModelProviderDescriptor } from "./ModelMetaData.js";
 import type { StepResultRow } from "./StepResult.js";
+import type { ToolLevel } from "./ToolLevel.js";
 import type { ToolRunContext } from "./ToolRunner.js";
 import type { WorkspaceWatcherApi } from "./WorkspaceFile.js";
 
@@ -515,6 +516,14 @@ export interface PluginTool<TInput = unknown, TOutput = unknown> {
      * violation.
      */
     readonly groups?: readonly string[];
+    /**
+     * Security classification gating who may invoke this tool. Omitted
+     * ⇒ {@link DEFAULT_TOOL_LEVEL} (`default`, anyone). Set `approval`
+     * for external mutations (sending mail, …) and `privileged` for
+     * capabilities restricted to trusted-input runs. Enforced
+     * container-side in `ToolsFactory`. See {@link ToolLevel}.
+     */
+    readonly level?: ToolLevel;
 }
 
 /**

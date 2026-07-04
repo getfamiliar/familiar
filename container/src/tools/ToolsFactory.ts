@@ -2,10 +2,13 @@ import {
     type AgentRunBus,
     type AgentRunRow,
     type ContainerToolInfo,
+    DEFAULT_TOOL_LEVEL,
     estimateTokens,
     type Logger,
     type ScheduledHandlerBus,
     type ToolCallBus,
+    ToolError,
+    type ToolLevel,
     type ToolRunContext,
 } from "@getfamiliar/shared";
 import { asSchema, type Tool, type ToolSet } from "ai";
@@ -82,6 +85,21 @@ const CONTAINER_TOOL_GROUPS: Readonly<Record<string, readonly string[]>> = {
     fs_remove: ["fs"],
     bash: ["bash"],
 };
+
+/**
+ * Security level for container built-ins that are not `default`. Any
+ * key absent here (including every built-in above and the meta-tools)
+ * is `default`. See {@link import("@getfamiliar/shared").ToolLevel}.
+ *
+ * Deliberately empty today: the fs write tools keep their finer
+ * path-scoped privilege gate (a blanket `privileged` would wrongly
+ * block their legitimate non-privileged scratch writes), and `bash`
+ * keeps its OS-confined `unpriv` downgrade. The non-`default` tools
+ * currently live on the plugin side (`mail_send_*`, `event_replay`,
+ * `mailstyle_update`); this table exists so built-ins can be
+ * reclassified without new plumbing.
+ */
+const CONTAINER_TOOL_LEVELS: Readonly<Record<string, ToolLevel>> = {};
 
 /** Inputs the {@link AgentRunner} threads into the factory per agentrun. */
 export interface ToolsFactoryContext {
@@ -167,6 +185,22 @@ export interface ToolsFactoryContext {
      * `core` set without any other plumbing.
      */
     readonly pluginGroupKeys?: ReadonlyMap<string, ReadonlySet<string>>;
+    /**
+     * Plugin tool key → its security {@link ToolLevel}, from the
+     * host-resolved `/plugin-tools/` catalog. Folded into the per-key
+     * level map `build()` assembles (together with
+     * `CONTAINER_TOOL_LEVELS`) so the tool wrapper can refuse a
+     * non-`default` tool in a non-privileged run.
+     */
+    readonly pluginLevelsByKey?: ReadonlyMap<string, ToolLevel>;
+    /**
+     * MCP tool key (`${id}_${name}`) → its security {@link ToolLevel},
+     * resolved from each MCP's `mcp.yml` `approval` / `privileged`
+     * globs by the {@link import("../mcp/McpClientPool").McpClientPool}.
+     * Folded into the per-key level map alongside built-in and plugin
+     * levels; keys absent here are `default`.
+     */
+    readonly mcpLevelsByKey?: ReadonlyMap<string, ToolLevel>;
     /**
      * Per-call runner context (byte budget + spill function). Threaded
      * into every container-side tool wrapper so the three
@@ -344,16 +378,25 @@ export class ToolsFactory {
             }
         }
 
-        // Wrap every pool tool once: clamp its description and record
-        // each invocation. Both the projected toolset and `tool_call`
-        // dispatch through this wrapped map, so a proxied call records
-        // under the real tool name exactly as a direct call would.
+        // Per-key security level: built-ins from CONTAINER_TOOL_LEVELS,
+        // plugin tools from the host-resolved catalog. MCP keys are
+        // absent ⇒ `default`. Drives the wrapper's privilege guard and
+        // the `tool_list` listing.
+        const levelsByKey = buildLevelsByKey(context, systemTools);
+        const privileged = context.parent?.privileged ?? false;
+
+        // Wrap every pool tool once: enforce its security level, clamp
+        // its description, and record each invocation. Both the projected
+        // toolset and `tool_call` dispatch through this wrapped map, so a
+        // proxied call is guarded and recorded under the real tool name
+        // exactly as a direct call would be.
         const maxDescriptionChars =
             context.maxToolDescriptionChars ?? DEFAULT_MAX_TOOL_DESCRIPTION_CHARS;
         const record = buildToolCallRecorder(context);
         const wrappedTools: ToolSet = {};
         for (const [name, t] of Object.entries(allTools)) {
-            wrappedTools[name] = wrapTool(name, t, maxDescriptionChars, record);
+            const level = levelsByKey.get(name) ?? DEFAULT_TOOL_LEVEL;
+            wrappedTools[name] = wrapTool(name, t, maxDescriptionChars, record, level, privileged);
         }
 
         // The guaranteed set: the handler's `tools:` (empty ⇒ implicit
@@ -397,6 +440,7 @@ export class ToolsFactory {
         const catalog: ToolCatalogEntry[] = Object.entries(allTools).map(([name, t]) => ({
             name,
             description: t.description ?? "",
+            level: levelsByKey.get(name) ?? DEFAULT_TOOL_LEVEL,
         }));
         const metaToolRunContext = context.toolRunContext ?? FALLBACK_TOOL_RUN_CONTEXT;
         out[TOOL_LIST_KEY] = buildToolListTool(catalog, loaded, metaToolRunContext);
@@ -445,6 +489,7 @@ export class ToolsFactory {
                 description: t.description ?? "",
                 inputSchema: await readRawInputSchema(t),
                 groups: CONTAINER_TOOL_GROUPS[name] ?? [],
+                level: CONTAINER_TOOL_LEVELS[name] ?? DEFAULT_TOOL_LEVEL,
             });
         }
         return out;
@@ -562,6 +607,8 @@ function wrapTool(
     original: Tool,
     maxDescriptionChars: number,
     record: (toolName: string, successful: boolean) => void,
+    level: ToolLevel,
+    privileged: boolean,
 ): Tool {
     const description = clampDescription(original.description, maxDescriptionChars);
     const originalExecute = original.execute as
@@ -570,10 +617,19 @@ function wrapTool(
     if (typeof originalExecute !== "function") {
         return { ...original, description } as Tool;
     }
+    // A privileged (or, until the approval gate exists, approval-level)
+    // tool refuses in a non-privileged run. The guard short-circuits
+    // before execute — the tool never ran, so the refusal is not
+    // recorded to `tool_calls`. The tool stays visible in the toolset /
+    // `tool_list`; only the invocation errors.
+    const guarded = !privileged && (level === "privileged" || level === "approval");
     return {
         ...original,
         description,
         execute: async (args: unknown, options: unknown) => {
+            if (guarded) {
+                throw new ToolError("PrivilegeDenied", toolLevelRefusal(name, level));
+            }
             try {
                 const result = await originalExecute(args, options);
                 record(name, true);
@@ -584,6 +640,59 @@ function wrapTool(
             }
         },
     } as Tool;
+}
+
+/**
+ * Assemble the per-key security-level map for one run: container
+ * built-ins from {@link CONTAINER_TOOL_LEVELS} (keyed off the tools
+ * actually registered this run) plus plugin tools from the host-resolved
+ * `context.pluginLevelsByKey`. Keys absent from both (MCP tools, most
+ * built-ins) resolve to {@link DEFAULT_TOOL_LEVEL} at lookup time.
+ */
+function buildLevelsByKey(
+    context: ToolsFactoryContext,
+    systemTools: ToolSet,
+): Map<string, ToolLevel> {
+    const levels = new Map<string, ToolLevel>();
+    for (const name of Object.keys(systemTools)) {
+        const level = CONTAINER_TOOL_LEVELS[name];
+        if (level !== undefined) {
+            levels.set(name, level);
+        }
+    }
+    if (context.pluginLevelsByKey) {
+        for (const [key, level] of context.pluginLevelsByKey) {
+            levels.set(key, level);
+        }
+    }
+    if (context.mcpLevelsByKey) {
+        for (const [key, level] of context.mcpLevelsByKey) {
+            levels.set(key, level);
+        }
+    }
+    return levels;
+}
+
+/**
+ * The self-contained refusal message for a non-`default` tool invoked
+ * by a non-privileged run. Wording differs by level: `privileged` is a
+ * hard trust boundary; `approval` is an interim restriction until the
+ * approval gate lands.
+ */
+function toolLevelRefusal(name: string, level: ToolLevel): string {
+    if (level === "approval") {
+        return (
+            `Tool "${name}" requires user approval before running. The approval gate ` +
+            "isn't available yet, so for now it only runs in a privileged agentrun " +
+            "(one descending from trusted user input, e.g. the cli-chat REPL or an " +
+            "allowlisted Telegram sender). This run is non-privileged, so the call was refused."
+        );
+    }
+    return (
+        `Tool "${name}" is privileged: it only runs in a privileged agentrun (one ` +
+        "descending from trusted user input, e.g. the cli-chat REPL or an allowlisted " +
+        "Telegram sender). This run is non-privileged, so the call was refused."
+    );
 }
 
 /** Clamp a description to `max` chars with a trailing ellipsis. */

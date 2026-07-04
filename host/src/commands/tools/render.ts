@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import type { ToolLevel } from "@getfamiliar/shared";
 import type { PluginMcpService } from "../../mcp/PluginMcpService.js";
 import { isProcessAlive } from "../pidfile.js";
 
@@ -29,6 +30,8 @@ export interface CatalogTool {
     readonly groups: readonly string[];
     /** Source classifier. */
     readonly origin: ToolOrigin;
+    /** Security level. MCP tools are unclassified and reported as `default`. */
+    readonly level: ToolLevel;
     /** Argument JSON Schema, when known (built-ins, plugin tools, MCP tools all carry one). */
     readonly inputSchema?: JsonSchemaObject;
     /** Return JSON Schema — only MCP tools advertise one. */
@@ -128,10 +131,11 @@ export function renderAlignedTable(
     lines.push(columns.map((c) => "─".repeat(c.width)).join("  "));
 
     for (const tool of tools) {
+        const badgedDescription = withLevelBadge(tool);
         const descriptionLines =
             level === 0
-                ? [truncateLine(oneLine(tool.description), widths.description)]
-                : wrapWords(oneLine(tool.description), widths.description);
+                ? [truncateLine(oneLine(badgedDescription), widths.description)]
+                : wrapWords(oneLine(badgedDescription), widths.description);
         const cells = verbose
             ? [
                   wrapWords(tool.name, widths.name),
@@ -168,9 +172,9 @@ export function renderRawMarkdownTable(tools: readonly CatalogTool[], level: Ver
                   `\`${tool.name}\``,
                   escapeCell(formatSchemaInline(tool.inputSchema, "_(none)_")),
                   escapeCell(formatReturnsInline(tool.outputSchema)),
-                  escapeCell(oneLine(tool.description)),
+                  escapeCell(oneLine(withLevelBadge(tool))),
               ]
-            : [`\`${tool.name}\``, escapeCell(oneLine(tool.description))],
+            : [`\`${tool.name}\``, escapeCell(oneLine(withLevelBadge(tool)))],
     );
     const header = `| ${columns.join(" | ")} |`;
     const separator = `| ${columns.map(() => "---").join(" | ")} |`;
@@ -385,6 +389,18 @@ export function coerceSchema(value: unknown): JsonSchemaObject | undefined {
         return undefined;
     }
     return value as JsonSchemaObject;
+}
+
+/**
+ * Prefix a non-`default` tool's description with a compact `[level]`
+ * badge so the security class is visible in every render mode without a
+ * dedicated column. `default` tools are shown unbadged.
+ */
+export function withLevelBadge(tool: CatalogTool): string {
+    if (tool.level === "default") {
+        return tool.description;
+    }
+    return `[${tool.level}] ${tool.description}`;
 }
 
 /** Collapse a multi-line description to a single space-separated line. */

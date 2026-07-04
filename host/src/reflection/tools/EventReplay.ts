@@ -20,6 +20,7 @@ export function buildEventReplayTool(
 ): PluginTool<EventReplayArgs, string> {
     return {
         name: "event_replay",
+        level: "privileged",
         description:
             "Re-emit one or more existing events as fresh events. `ids` is a " +
             'comma-separated list of single ids and/or inclusive spans, e.g. `"4711"`, ' +
