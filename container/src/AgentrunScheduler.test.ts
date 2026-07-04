@@ -115,6 +115,12 @@ function buildHarness(opts: HarnessOptions): Harness {
             installSchema: async () => {},
             pruneBefore: async () => 0,
         } as unknown as SchedulerDeps["inferenceEventBus"],
+        toolCallBus: {
+            add: async () => {},
+            topToolsForHandler: async () => [],
+            installSchema: async () => {},
+            pruneBefore: async () => 0,
+        } as unknown as SchedulerDeps["toolCallBus"],
         scheduledHandlerBus: scheduledHandlerBus as unknown as SchedulerDeps["scheduledHandlerBus"],
         timezone: "UTC",
         log,
@@ -799,6 +805,12 @@ describe("AgentrunScheduler — disaster recovery", () => {
                 installSchema: async () => {},
                 pruneBefore: async () => 0,
             } as unknown as SchedulerDeps["inferenceEventBus"],
+            toolCallBus: {
+                add: async () => {},
+                topToolsForHandler: async () => [],
+                installSchema: async () => {},
+                pruneBefore: async () => 0,
+            } as unknown as SchedulerDeps["toolCallBus"],
             log,
             clock,
             runnerFactory: buildRunnerFactory({

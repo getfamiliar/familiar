@@ -13,6 +13,7 @@ import {
     PostgresConnection,
     ScheduledHandlerBus,
     StepResultBus,
+    ToolCallBus,
 } from "@getfamiliar/shared";
 import { AgentrunScheduler, subscribeAgentrunsChanges } from "./AgentrunScheduler.js";
 import { AgentRunner } from "./agent-runner/AgentRunner.js";
@@ -83,9 +84,9 @@ async function main(): Promise<void> {
     });
     await mcpPool.start();
 
-    // Report our built-in tool catalog to the host so `tools list` and
-    // the `tool_list` reflection tool can show built-ins. Best-effort —
-    // a failed report only leaves the host's built-in listing stale.
+    // Report our built-in tool catalog to the host so the `tools list`
+    // CLI can show built-ins. Best-effort — a failed report only leaves
+    // the host's built-in listing stale.
     await reportContainerToolCatalog(
         bastionUrl,
         await ToolsFactory.catalog(),
@@ -103,6 +104,7 @@ async function main(): Promise<void> {
     const eventBus = new EventBus(connection, log.child({ component: "event-bus" }));
     const stepBus = new StepResultBus(connection, log.child({ component: "step-bus" }));
     const inferenceEventBus = new InferenceEventBus(connection);
+    const toolCallBus = new ToolCallBus(connection);
     const scheduledHandlerBus = new ScheduledHandlerBus(
         connection,
         log.child({ component: "scheduled-handler-bus" }),
@@ -119,6 +121,7 @@ async function main(): Promise<void> {
         eventBus,
         stepBus,
         inferenceEventBus,
+        toolCallBus,
         scheduledHandlerBus,
         timezone,
         log: log.child({ component: "agentrun-scheduler" }),
@@ -130,6 +133,11 @@ async function main(): Promise<void> {
         recovery,
         stepTimeoutMs,
         retryCap,
+        maxToolDescriptionChars: PassedConfig.get<number>("core.maxToolDescriptionChars"),
+        toolDefinitionsContextFraction: PassedConfig.get<number>(
+            "core.toolDefinitionsContextFraction",
+        ),
+        toolHeuristicRunWindow: PassedConfig.get<number>("core.toolHeuristicRunWindow"),
         maxConcurrentExecuting: 1,
         subscribeChanges: (handler) => subscribeAgentrunsChanges(connection, handler),
     });

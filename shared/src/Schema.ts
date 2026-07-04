@@ -513,6 +513,31 @@ CREATE INDEX IF NOT EXISTS inference_events_model_time_idx
   ON inference_events (model, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS inference_events_occurred_at_idx
   ON inference_events (occurred_at DESC);
+
+-- ───────── tool_calls ─────────
+--
+-- Append-only record of every tool invocation an agentrun attempted,
+-- tagged with the resolved handler markdown path and whether the call
+-- threw. Written by the tool wrapper in the container's ToolsFactory on
+-- each execute() outcome. Read by the heuristic tool-preloader
+-- (ToolCallBus.topToolsForHandler): the tools a handler successfully
+-- used across its recent non-error runs get loaded up front on the next
+-- run, so warm handlers rarely need a tool_list / tool_call round-trip.
+-- NULL agent_run_id survives a parent-event cascade so the historical
+-- usage signal outlives the run row.
+CREATE TABLE IF NOT EXISTS tool_calls (
+  id           bigserial PRIMARY KEY,
+  agent_run_id bigint REFERENCES agentruns(id) ON DELETE SET NULL,
+  handler_path text NOT NULL,
+  tool_name    text NOT NULL,
+  successful   boolean NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS tool_calls_handler_run_idx
+  ON tool_calls (handler_path, agent_run_id DESC);
+CREATE INDEX IF NOT EXISTS tool_calls_created_at_idx
+  ON tool_calls (created_at DESC);
 `;
 
 /**

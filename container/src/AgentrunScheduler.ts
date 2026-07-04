@@ -10,6 +10,7 @@ import {
     type PostgresConnection,
     type ScheduledHandlerBus,
     type StepResultBus,
+    type ToolCallBus,
 } from "@getfamiliar/shared";
 import type { AgentRunner, AgentRunnerContext } from "./agent-runner/AgentRunner.js";
 import { AgentRunTimeoutError } from "./agent-runner/AgentRunTimeoutError.js";
@@ -44,6 +45,13 @@ export interface SchedulerDeps {
      * a successful agentrun into a failed one.
      */
     readonly inferenceEventBus: InferenceEventBus;
+    /**
+     * Append-only `tool_calls` client. The Scheduler threads it into
+     * `ToolsFactory.build` so every tool invocation is recorded (audit
+     * + heuristic preloader) and past usage drives which tools load up
+     * front. Write failures are swallowed inside the tool wrapper.
+     */
+    readonly toolCallBus: ToolCallBus;
     readonly scheduledHandlerBus: ScheduledHandlerBus;
     /**
      * IANA timezone string — typically `core.timezone` from the passed
@@ -84,6 +92,14 @@ export interface SchedulerDeps {
     readonly stepTimeoutMs: number;
     /** Default retry cap; overridden per-handler via YAML frontmatter. */
     readonly retryCap: number;
+    /**
+     * Dynamic-tool-loading knobs, sourced from `core.*` config. Each is
+     * optional — an undefined value lets the `ToolsFactory` call-site
+     * default apply (defaults live there, not here).
+     */
+    readonly maxToolDescriptionChars?: number;
+    readonly toolDefinitionsContextFraction?: number;
+    readonly toolHeuristicRunWindow?: number;
     /**
      * Maximum number of runners executing (not paused) at once. Today
      * always `1` to match Featherless's single Pro slot; per-model
@@ -633,12 +649,16 @@ export class AgentrunScheduler {
             eventBus,
             stepBus,
             inferenceEventBus,
+            toolCallBus,
             scheduledHandlerBus,
             timezone,
             mcpPool,
             pluginToolsClient,
             chat,
             log,
+            maxToolDescriptionChars,
+            toolDefinitionsContextFraction,
+            toolHeuristicRunWindow,
         } = this.deps;
         const waitForSubagent = (childId: string) => this.waitForSubagent(row.id, childId);
 
@@ -653,7 +673,7 @@ export class AgentrunScheduler {
             row,
             signal: active.abortController.signal,
             waitForSubagent,
-            buildTools: async (tools, offloadTokenThreshold) => {
+            buildTools: async (tools, offloadTokenThreshold, handlerPath, contextLimit) => {
                 const toolRunContext = buildContainerToolRunContext(
                     row.eventId,
                     offloadTokenThreshold,
@@ -679,6 +699,12 @@ export class AgentrunScheduler {
                     pluginGroupKeys: pluginToolset.groupKeys,
                     toolRunContext,
                     log,
+                    toolCallBus,
+                    handlerPath,
+                    contextLimit,
+                    maxToolDescriptionChars,
+                    toolDefinitionsContextFraction,
+                    toolHeuristicRunWindow,
                 });
             },
             eventsView: eventBus,

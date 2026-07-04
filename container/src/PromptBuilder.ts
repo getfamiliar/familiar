@@ -140,7 +140,11 @@ export function buildSystemPrompt(
 
     const toolList =
         toolNames.length > 0 ? toolNames.map((name) => `- ${name}`).join("\n") : "(none)";
-    sections.push(verbatim(`# Available tools\n\n${toolList}`));
+    const discoveryNote =
+        "\n\nThese are preloaded for convenience — not the limit of what you can do. Many more " +
+        "tools are available: call `tool_list` (optionally with a search term) to discover them, " +
+        "then invoke any of them by name with `tool_call`.";
+    sections.push(verbatim(`# Available tools\n\n${toolList}${discoveryNote}`));
 
     return {
         full: truncate(sections.map((s) => s.full).join("\n\n"), MAX_SYSTEM_CHARS),

@@ -1,7 +1,4 @@
 import type { PluginTool, PostgresConnection } from "@getfamiliar/shared";
-import type { ContainerToolsRegistry } from "../container-tools/ContainerToolsRegistry.js";
-import type { McpRegistry } from "../mcp/McpRegistry.js";
-import type { PluginToolsRegistry } from "../plugins/ToolsRegistry.js";
 import { buildAgentrunReportTool } from "./tools/AgentrunReport.js";
 import { buildAgentrunSyspromptTool } from "./tools/AgentrunSysprompt.js";
 import { buildEventListTool } from "./tools/EventList.js";
@@ -10,13 +7,15 @@ import { buildEventReportTool } from "./tools/EventReport.js";
 import { buildInferenceStatusTool } from "./tools/InferenceStatus.js";
 import { buildLogSearchTool } from "./tools/LogSearch.js";
 import { buildSystemStatusTool } from "./tools/SystemStatus.js";
-import { buildToolListTool } from "./tools/ToolList.js";
 
 /**
- * Dependencies the eight reflection tools need at build time. The
- * registries are closed over by reference, so the tool bodies read
- * whatever has been registered by the time the agent calls them —
- * not just what existed at registrar invocation.
+ * Dependencies the reflection tools need at build time.
+ *
+ * Tool discovery (`tool_list`) and dynamic invocation (`tool_call`) now
+ * live container-side in `ToolsFactory`, where the full live per-tool
+ * pool (built-ins ∪ every connected MCP's tools ∪ plugin tools) is
+ * available — so the old host-side per-MCP-server `tool_list` and its
+ * registry deps were removed.
  */
 export interface ReflectionToolsDeps {
     /**
@@ -30,16 +29,6 @@ export interface ReflectionToolsDeps {
     readonly logsDir: string;
     /** Absolute host path of the scratch root that mounts at `/scratch` in the agent container. */
     readonly scratchDir: string;
-    /** Parsed `mcp.yml` catalog — `tool_list` enumerates per-MCP entries from here. */
-    readonly mcpRegistry: McpRegistry;
-    /** Plugin-tools catalog — `tool_list` enumerates plugin tools from here. */
-    readonly pluginToolsRegistry: PluginToolsRegistry;
-    /**
-     * Container built-ins catalog the agent reported on startup —
-     * `tool_list` enumerates built-ins from here (read by reference, so
-     * it reflects the latest report).
-     */
-    readonly containerToolsRegistry: ContainerToolsRegistry;
 }
 
 /**
@@ -64,6 +53,5 @@ export function buildReflectionTools(deps: ReflectionToolsDeps): readonly Plugin
         buildInferenceStatusTool(deps),
         buildLogSearchTool(deps),
         buildSystemStatusTool(deps),
-        buildToolListTool(deps),
     ];
 }

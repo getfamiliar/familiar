@@ -9,8 +9,8 @@ import { ToolsFactory } from "./ToolsFactory.js";
  * message.
  */
 describe("ToolsFactory — error wrapping", () => {
-    it("wraps an unknown-group error with the resolve prefix", () => {
-        assert.throws(
+    it("wraps an unknown-group error with the resolve prefix", async () => {
+        await assert.rejects(
             () => ToolsFactory.build({ tools: ["thisgroupdoesnotexist"] }),
             (err: unknown) => {
                 assert.ok(err instanceof Error);
@@ -24,9 +24,9 @@ describe("ToolsFactory — error wrapping", () => {
         );
     });
 
-    it("preserves the original error as `cause`", () => {
+    it("preserves the original error as `cause`", async () => {
         try {
-            ToolsFactory.build({ tools: ["thisgroupdoesnotexist"] });
+            await ToolsFactory.build({ tools: ["thisgroupdoesnotexist"] });
             assert.fail("expected throw");
         } catch (err) {
             assert.ok(err instanceof Error);
@@ -35,10 +35,11 @@ describe("ToolsFactory — error wrapping", () => {
         }
     });
 
-    it("an omitted `tools:` falls back to the implicit core default (empty here)", () => {
+    it("an omitted `tools:` falls back to the implicit core default (empty here)", async () => {
         // No tools registered (no chat/parent/bus), so `core` is empty —
-        // but the call must succeed rather than throw.
-        const out = ToolsFactory.build({});
-        assert.deepEqual(Object.keys(out), []);
+        // but the discovery meta-tools are always injected, and the call
+        // must succeed rather than throw.
+        const out = await ToolsFactory.build({});
+        assert.deepEqual(Object.keys(out).sort(), ["tool_call", "tool_list"]);
     });
 });

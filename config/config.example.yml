@@ -40,6 +40,29 @@ core:
   # falls back to 16000 when omitted.
   # toolCallOffloadingLimit: 16000
 
+  # ── Dynamic tool discovery ──
+  # Every handler run can reach every tool: the `tools:` frontmatter is
+  # now a guaranteed-preloaded *default*, not a whitelist. On top of it,
+  # the agent discovers tools with the always-present `tool_list` tool
+  # and invokes any of them with `tool_call`; a usage heuristic also
+  # auto-preloads the tools a handler has recently used. These knobs
+  # tune that machinery; all optional.
+
+  # Max characters of a tool's description shown to the model. Longer
+  # descriptions are truncated to keep tool definitions compact.
+  # Falls back to 1024 when omitted.
+  # maxToolDescriptionChars: 1024
+
+  # Fraction of the model's context window budgeted for heuristically
+  # auto-loaded tool definitions. More budget → more tools preloaded
+  # up front (fewer `tool_list`/`tool_call` round-trips), at the cost of
+  # a larger cacheable prefix. Falls back to 0.15 when omitted.
+  # toolDefinitionsContextFraction: 0.15
+
+  # How many of a handler's most recent non-error runs the heuristic
+  # scans to decide which tools to preload. Falls back to 20 when omitted.
+  # toolHeuristicRunWindow: 20
+
   # Controls whether — and how — each agentrun's resolved system
   # prompt is persisted into agentruns.system_prompt. The report
   # layer surfaces it in the Agentrun Start section when the

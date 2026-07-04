@@ -10,6 +10,7 @@ import {
     type LogStream,
     prettyStdoutStream,
     ScheduledHandlerBus,
+    ToolCallBus,
 } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import type { Bootstrap } from "../Bootstrap.js";
@@ -41,6 +42,7 @@ import { CronjobScheduler } from "../cron/CronjobScheduler.js";
 import { ModelMetadataRefresher } from "../cron/ModelMetadataRefresher.js";
 import { ScheduledHandlerScheduler } from "../cron/ScheduledHandlerScheduler.js";
 import { ScratchGc } from "../cron/ScratchGc.js";
+import { ToolCallsGc } from "../cron/ToolCallsGc.js";
 import { ensureNetwork, ISOLATED_NETWORK_NAME, SHARED_NETWORK_NAME } from "../DockerTools.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { McpGateway } from "../mcp/McpGateway.js";
@@ -230,9 +232,8 @@ export const startCommand = defineCommand({
             log: log.child({ component: "plugin-tools-gateway" }),
         });
         // The agent container reports its built-in tool catalog here on
-        // startup; the registry backs both `tools list` and `tool_list`.
+        // startup; the registry backs the `tools list` CLI.
         const containerToolsRegistry = new ContainerToolsRegistry();
-        pluginHost.setContainerToolsRegistry(containerToolsRegistry);
         const containerToolsGateway = new ContainerToolsGateway({
             registry: containerToolsRegistry,
             log: log.child({ component: "container-tools-gateway" }),
@@ -324,6 +325,9 @@ export const startCommand = defineCommand({
         containerConfig.addConfigKey("core.postgresPassword");
         containerConfig.addConfigKey("core.agentStepTimeout");
         containerConfig.addConfigKey("core.toolCallOffloadingLimit");
+        containerConfig.addConfigKey("core.maxToolDescriptionChars");
+        containerConfig.addConfigKey("core.toolDefinitionsContextFraction");
+        containerConfig.addConfigKey("core.toolHeuristicRunWindow");
         containerConfig.addConfigKey("core.timezone");
         containerConfig.addConfigKey("inference.defaultProvider");
         containerConfig.addConfigKey("inference.defaultModel");
@@ -451,6 +455,12 @@ export const startCommand = defineCommand({
         });
         scratchGc.start();
 
+        const toolCallsGc = new ToolCallsGc({
+            toolCallBus: new ToolCallBus(await pluginHost.ensureConnection()),
+            log: log.child({ component: "tool-calls-gc" }),
+        });
+        toolCallsGc.start();
+
         // The models.dev cache was already refreshed (refresh-if-stale)
         // before provider resolution above; keep it fresh daily from here.
         const modelMetadataRefresher = new ModelMetadataRefresher({
@@ -478,6 +488,7 @@ export const startCommand = defineCommand({
                 // postgres container disappears underneath it.
                 removePidFile(boot.pidFile);
                 scratchGc.stop();
+                toolCallsGc.stop();
                 modelMetadataRefresher.stop();
                 await safeStop(log, "scheduled-handler scheduler", () =>
                     scheduledHandlerScheduler.stop(),

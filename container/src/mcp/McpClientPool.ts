@@ -1,5 +1,5 @@
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
-import { type Logger, sanitizeToolKey } from "@getfamiliar/shared";
+import type { Logger } from "@getfamiliar/shared";
 import type { ToolSet } from "ai";
 
 /**
@@ -117,11 +117,9 @@ export class McpClientPool {
     }
 
     /**
-     * Map of MCP id → that MCP's sanitized tool keys. The host's
-     * `mcp.yml` linter constrains ids to alnum-only, so the id
-     * itself is already a valid tool group name and no fold
-     * is needed; only the tool keys (which prepend a tool name
-     * possibly carrying hyphens) pass through `sanitizeToolKey`.
+     * Map of MCP id → that MCP's namespaced tool keys (`${id}_${name}`,
+     * verbatim). The host's `mcp.yml` linter constrains ids to
+     * alnum-only, so the id itself is already a valid tool group name.
      *
      * The container threads this into {@link
      * import("../tools/ToolsFactory").ToolsFactory}'s `builtins`
@@ -199,28 +197,16 @@ export class McpClientPool {
     }
 
     /**
-     * Build the merged tool set with `${id}_${toolName}` keys, with
-     * every non-alnum-underscore character replaced by `_`. The
-     * sanitization step matters because some open-source LLMs
-     * (notably GLM 5.1, several Qwen variants, others) emit tool
-     * calls in a grammar that doesn't recognize hyphens in tool
-     * names — the model still *reasons* about calling
-     * `ms365_verify-login`, but its function-call decoder drops the
-     * call and the AI SDK reports `finishReason: "other"` with
-     * zero parsed calls. By registering the tool under
-     * `ms365_verify_login` instead, the model emits a name its
-     * decoder accepts and the call routes through cleanly. The
-     * back-map happens implicitly: the AI SDK looks up the tool by
-     * key, and the underlying `Tool` object knows nothing about
-     * its registered name — it executes against the real MCP tool
-     * either way.
+     * Build the merged tool set with verbatim `${id}_${toolName}` keys.
+     * Tool names pass through unchanged — including any hyphens
+     * (`ms365_verify-login`), which are valid in the OpenAI / Anthropic
+     * function-name grammar. The AI SDK looks each tool up by its
+     * registered key and the underlying `Tool` object executes against
+     * the real MCP tool regardless of the key, so no back-map is
+     * needed.
      *
-     * Collisions across MCPs are impossible by construction since
-     * the id is part of every key. Collisions *within* a single
-     * MCP that happen to differ only in non-alnum punctuation
-     * (e.g. `verify-login` and `verify_login`) are theoretically
-     * possible but unobserved; if they ever crop up we can add a
-     * suffix-disambiguation pass.
+     * Collisions across MCPs are impossible by construction since the
+     * id is part of every key.
      */
     private buildMergedAndIndex(): {
         merged: ToolSet;
@@ -231,7 +217,7 @@ export class McpClientPool {
         for (const c of this.clients) {
             const idKeys = new Set<string>();
             for (const [toolName, tool] of Object.entries(c.tools)) {
-                const key = sanitizeToolKey(`${c.id}_${toolName}`);
+                const key = `${c.id}_${toolName}`;
                 merged[key] = tool;
                 idKeys.add(key);
             }

@@ -1,10 +1,12 @@
-import type {
-    AgentRunBus,
-    AgentRunRow,
-    ContainerToolInfo,
-    Logger,
-    ScheduledHandlerBus,
-    ToolRunContext,
+import {
+    type AgentRunBus,
+    type AgentRunRow,
+    type ContainerToolInfo,
+    estimateTokens,
+    type Logger,
+    type ScheduledHandlerBus,
+    type ToolCallBus,
+    type ToolRunContext,
 } from "@getfamiliar/shared";
 import { asSchema, type Tool, type ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
@@ -15,7 +17,40 @@ import { buildGetScheduledHandlersTool } from "./getScheduledHandlers.js";
 import { buildScheduleHandlerTool } from "./scheduleHandler.js";
 import { buildSendChatTool } from "./sendChat.js";
 import { MCP_GROUP_NAME, resolveTools } from "./ToolsExpressionParser.js";
+import { buildToolCallTool } from "./toolCall.js";
+import { buildToolListTool, type ToolCatalogEntry } from "./toolList.js";
 import { buildUnscheduleHandlerTool } from "./unscheduleHandler.js";
+
+/** Agent-facing keys of the always-present discovery meta-tools. */
+const TOOL_LIST_KEY = "tool_list";
+const TOOL_CALL_KEY = "tool_call";
+
+/**
+ * Default per-tool description clamp (characters). Keeps individual
+ * tool definitions compact in the model-facing toolset; overridable via
+ * `core.maxToolDescriptionChars`.
+ */
+const DEFAULT_MAX_TOOL_DESCRIPTION_CHARS = 1024;
+
+/**
+ * Default fraction of the model's context window budgeted for
+ * heuristically auto-loaded tool definitions. Overridable via
+ * `core.toolDefinitionsContextFraction`.
+ */
+const DEFAULT_TOOL_DEFINITIONS_CONTEXT_FRACTION = 0.15;
+
+/**
+ * Default number of recent non-error runs the heuristic scans for a
+ * handler's tool usage. Overridable via `core.toolHeuristicRunWindow`.
+ */
+const DEFAULT_TOOL_HEURISTIC_RUN_WINDOW = 20;
+
+/**
+ * Number of heuristic candidates to load when the model's context
+ * window size is unknown (metadata missing), so warm handlers still
+ * benefit without a token budget to size against.
+ */
+const FALLBACK_HEURISTIC_TOOL_CAP = 10;
 
 /**
  * Curated groups every container-built-in tool joins. The
@@ -146,6 +181,33 @@ export interface ToolsFactoryContext {
      * emitted (kept for future use).
      */
     readonly log?: Logger;
+    /**
+     * Tool-call recorder. When present (together with `handlerPath` and
+     * a `parent` carrying an id), every tool invocation is written to
+     * `tool_calls` — feeding both the audit trail and the heuristic
+     * preloader. Absent in test / catalog paths, which then skip
+     * recording and preloading.
+     */
+    readonly toolCallBus?: ToolCallBus;
+    /**
+     * Resolved handler markdown path (workspace-relative, e.g.
+     * `chat/telegram/index.md`). Keys the heuristic: the tools this
+     * handler successfully used across its recent non-error runs are
+     * auto-loaded up front. Also stamped on every recorded tool call.
+     */
+    readonly handlerPath?: string;
+    /**
+     * Resolved model's context window in tokens. Bounds how many
+     * heuristic tools are auto-loaded (a fraction of this budgets their
+     * definitions). When undefined, a fixed candidate cap applies.
+     */
+    readonly contextLimit?: number;
+    /** Per-tool description clamp; defaults to {@link DEFAULT_MAX_TOOL_DESCRIPTION_CHARS}. */
+    readonly maxToolDescriptionChars?: number;
+    /** Fraction of `contextLimit` budgeted for auto-loaded tool defs; see default. */
+    readonly toolDefinitionsContextFraction?: number;
+    /** How many recent non-error runs the heuristic scans; see default. */
+    readonly toolHeuristicRunWindow?: number;
 }
 
 /**
@@ -174,12 +236,17 @@ export interface ToolsFactoryContext {
 // biome-ignore lint/complexity/noStaticOnlyClass: Reserved as a growth point for tool registration.
 export class ToolsFactory {
     /**
-     * Build the tool set for one agentrun. Resolves the handler's
-     * `tools:` entries (or the implicit `core` default) against the
-     * unified system + MCP + plugin pool and returns the projected
-     * `ToolSet`.
+     * Build the tool set for one agentrun.
+     *
+     * The handler's `tools:` entries (or the implicit `core` default)
+     * are the **guaranteed** preload — always present. On top of that,
+     * the heuristic auto-loads the tools this handler has recently used
+     * (bounded by a token budget), and the always-present `tool_list` /
+     * `tool_call` meta-tools let the agent reach anything else in the
+     * pool. Every non-meta tool is wrapped so its calls are recorded
+     * (feeding the heuristic) and its description is clamped.
      */
-    static build(context: ToolsFactoryContext = {}): ToolSet {
+    static async build(context: ToolsFactoryContext = {}): Promise<ToolSet> {
         const systemTools: ToolSet = {};
         const toolRunContext = context.toolRunContext ?? FALLBACK_TOOL_RUN_CONTEXT;
         if (context.chat && context.eventId) {
@@ -277,7 +344,21 @@ export class ToolsFactory {
             }
         }
 
-        const matched = resolveMatched({
+        // Wrap every pool tool once: clamp its description and record
+        // each invocation. Both the projected toolset and `tool_call`
+        // dispatch through this wrapped map, so a proxied call records
+        // under the real tool name exactly as a direct call would.
+        const maxDescriptionChars =
+            context.maxToolDescriptionChars ?? DEFAULT_MAX_TOOL_DESCRIPTION_CHARS;
+        const record = buildToolCallRecorder(context);
+        const wrappedTools: ToolSet = {};
+        for (const [name, t] of Object.entries(allTools)) {
+            wrappedTools[name] = wrapTool(name, t, maxDescriptionChars, record);
+        }
+
+        // The guaranteed set: the handler's `tools:` (empty ⇒ implicit
+        // `core`). Always loaded, never dropped by the budget.
+        const guaranteed = resolveMatched({
             available: availableKeys,
             mcpKeys,
             mcpKeysById: context.mcpKeysById,
@@ -287,12 +368,39 @@ export class ToolsFactory {
         });
 
         const out: ToolSet = {};
-        for (const name of matched) {
-            const tool = allTools[name];
+        for (const name of guaranteed) {
+            const tool = wrappedTools[name];
             if (tool !== undefined) {
                 out[name] = tool;
             }
         }
+
+        // Heuristic auto-load: this handler's recently-used tools, most-
+        // used first, filling the tool-definition token budget left over
+        // after the guaranteed set. Never overrides an already-loaded key.
+        const heuristic = await selectHeuristicTools({
+            context,
+            allTools,
+            guaranteed,
+        });
+        for (const name of heuristic) {
+            if (out[name] === undefined && wrappedTools[name] !== undefined) {
+                out[name] = wrappedTools[name];
+            }
+        }
+
+        // Discovery meta-tools are always present and bypass the filter,
+        // so the agent can always find and invoke the rest of the pool.
+        // They are not wrapped (discovery is not heuristic signal, and
+        // `tool_call` delegates to the already-wrapped pool).
+        const loaded = new Set(Object.keys(out));
+        const catalog: ToolCatalogEntry[] = Object.entries(allTools).map(([name, t]) => ({
+            name,
+            description: t.description ?? "",
+        }));
+        const metaToolRunContext = context.toolRunContext ?? FALLBACK_TOOL_RUN_CONTEXT;
+        out[TOOL_LIST_KEY] = buildToolListTool(catalog, loaded, metaToolRunContext);
+        out[TOOL_CALL_KEY] = buildToolCallTool(wrappedTools);
         return out;
     }
 
@@ -300,9 +408,8 @@ export class ToolsFactory {
      * Enumerate every container built-in as a flat catalog of name +
      * description + raw JSON input schema + curated groups. The
      * container POSTs this to the host's `/container-tools/` bastion
-     * endpoint on startup so the `tools list` CLI and the `tool_list`
-     * reflection tool can show built-ins without a hand-maintained
-     * host-side copy.
+     * endpoint on startup so the `tools list` CLI can show built-ins
+     * without a hand-maintained host-side copy.
      *
      * Each tool is constructed through its real builder with inert stub
      * deps: construction never touches the runtime deps (they are only
@@ -416,6 +523,167 @@ function errorMessage(err: unknown): string {
         return err.message;
     }
     return String(err);
+}
+
+/**
+ * Build the fire-and-forget tool-call recorder. Returns a no-op when
+ * the recording deps (bus, handler path, agentrun id) aren't all
+ * present (test / catalog paths). Recording never faults the tool
+ * result — an audit-write failure is logged and swallowed.
+ */
+function buildToolCallRecorder(
+    context: ToolsFactoryContext,
+): (toolName: string, successful: boolean) => void {
+    const bus = context.toolCallBus;
+    const handlerPath = context.handlerPath;
+    const agentRunId = context.parent?.id;
+    if (bus === undefined || handlerPath === undefined || agentRunId === undefined) {
+        return () => {};
+    }
+    return (toolName, successful) => {
+        void bus.add({ agentRunId, handlerPath, toolName, successful }).catch((err) => {
+            context.log?.warn(
+                `failed to record tool call ${toolName} (successful=${successful}) for handler ${handlerPath}: ${errorMessage(err)}`,
+            );
+        });
+    };
+}
+
+/**
+ * Wrap one pool tool: clamp its description to `maxDescriptionChars`
+ * and record each invocation's outcome. `successful` is "execute did
+ * not throw" — a hard throw is the clean "don't preload this" signal;
+ * tools that report errors in-band still count as successful (a known
+ * limitation of this first cut). Tools without an `execute` (not
+ * expected in this pool) are description-clamped only.
+ */
+function wrapTool(
+    name: string,
+    original: Tool,
+    maxDescriptionChars: number,
+    record: (toolName: string, successful: boolean) => void,
+): Tool {
+    const description = clampDescription(original.description, maxDescriptionChars);
+    const originalExecute = original.execute as
+        | ((input: unknown, options: unknown) => unknown)
+        | undefined;
+    if (typeof originalExecute !== "function") {
+        return { ...original, description } as Tool;
+    }
+    return {
+        ...original,
+        description,
+        execute: async (args: unknown, options: unknown) => {
+            try {
+                const result = await originalExecute(args, options);
+                record(name, true);
+                return result;
+            } catch (err) {
+                record(name, false);
+                throw err;
+            }
+        },
+    } as Tool;
+}
+
+/** Clamp a description to `max` chars with a trailing ellipsis. */
+function clampDescription(description: string | undefined, max: number): string | undefined {
+    if (description === undefined || description.length <= max) {
+        return description;
+    }
+    return `${description.slice(0, max).trimEnd()}…`;
+}
+
+/**
+ * Rank and select this handler's recently-used tools to auto-load,
+ * filling the tool-definition token budget left after the guaranteed
+ * set. Candidates come from {@link import("@getfamiliar/shared").ToolCallBus#topToolsForHandler}
+ * (most-used first) and are filtered to keys that exist in the pool,
+ * aren't already guaranteed, and aren't the meta-tools. Returns `[]`
+ * when recording deps are absent or nothing qualifies.
+ */
+async function selectHeuristicTools(args: {
+    context: ToolsFactoryContext;
+    allTools: ToolSet;
+    guaranteed: ReadonlySet<string>;
+}): Promise<string[]> {
+    const { context, allTools, guaranteed } = args;
+    if (context.toolCallBus === undefined || context.handlerPath === undefined) {
+        return [];
+    }
+    const runWindow = context.toolHeuristicRunWindow ?? DEFAULT_TOOL_HEURISTIC_RUN_WINDOW;
+    const ranked = await context.toolCallBus.topToolsForHandler(context.handlerPath, runWindow);
+    const candidates = ranked
+        .map((r) => r.toolName)
+        .filter(
+            (name) =>
+                allTools[name] !== undefined &&
+                !guaranteed.has(name) &&
+                name !== TOOL_LIST_KEY &&
+                name !== TOOL_CALL_KEY,
+        );
+    if (candidates.length === 0) {
+        return [];
+    }
+
+    // No context window known → load a fixed number rather than sizing
+    // against a budget we can't compute.
+    if (context.contextLimit === undefined) {
+        return candidates.slice(0, FALLBACK_HEURISTIC_TOOL_CAP);
+    }
+
+    const fraction =
+        context.toolDefinitionsContextFraction ?? DEFAULT_TOOL_DEFINITIONS_CONTEXT_FRACTION;
+    const budgetTokens = Math.floor(context.contextLimit * fraction);
+    let remaining = budgetTokens - (await sumDefinitionTokens(guaranteed, allTools));
+    const selected: string[] = [];
+    for (const name of candidates) {
+        const tool = allTools[name];
+        if (tool === undefined) {
+            continue;
+        }
+        const cost = await estimateToolDefinitionTokens(name, tool);
+        if (cost > remaining) {
+            // Skip this one; a smaller lower-ranked tool may still fit.
+            continue;
+        }
+        remaining -= cost;
+        selected.push(name);
+    }
+    return selected;
+}
+
+/** Sum the estimated definition-token size of every named tool present in the pool. */
+async function sumDefinitionTokens(names: Iterable<string>, pool: ToolSet): Promise<number> {
+    let total = 0;
+    for (const name of names) {
+        const tool = pool[name];
+        if (tool !== undefined) {
+            total += await estimateToolDefinitionTokens(name, tool);
+        }
+    }
+    return total;
+}
+
+/**
+ * Estimate the token cost of a tool's model-facing definition —
+ * name + description + raw input JSON Schema — via the shared
+ * character-based `estimateTokens` heuristic. Schema-read failures
+ * degrade to sizing name + description only rather than faulting the
+ * build.
+ */
+async function estimateToolDefinitionTokens(name: string, tool: Tool): Promise<number> {
+    let inputSchema: object = {};
+    if (tool.inputSchema !== undefined) {
+        try {
+            inputSchema = await readRawInputSchema(tool);
+        } catch {
+            inputSchema = {};
+        }
+    }
+    return estimateTokens(
+        JSON.stringify({ name, description: tool.description ?? "", inputSchema }),
+    );
 }
 
 /**

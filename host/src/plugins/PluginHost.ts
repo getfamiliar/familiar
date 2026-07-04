@@ -18,7 +18,6 @@ import { CalendarStore } from "../calendar/CalendarStore.js";
 import { buildCalendarTools } from "../calendar/CalendarTools.js";
 import { inspectPidFile } from "../commands/pidfile.js";
 import { HostConfigService } from "../config/ConfigService.js";
-import { ContainerToolsRegistry } from "../container-tools/ContainerToolsRegistry.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { MailRegistry } from "../mail/MailRegistry.js";
 import { MailSafety } from "../mail/MailSafety.js";
@@ -80,7 +79,6 @@ export class PluginHost {
     private readonly eventContextRegistry: EventContextRegistry;
     private readonly modelMetadataService: ModelMetadataService;
     private toolsRegistry: PluginToolsRegistry | undefined;
-    private containerToolsRegistry: ContainerToolsRegistry | undefined;
     private workspaceWatcher: WorkspaceWatcher | undefined;
     private bastionBaseUrl: string = DEFAULT_BASTION_BASE_URL;
     private connection: PostgresConnection | undefined;
@@ -274,16 +272,6 @@ export class PluginHost {
      */
     setToolsRegistry(registry: PluginToolsRegistry): void {
         this.toolsRegistry = registry;
-    }
-
-    /**
-     * Wire the registry the agent container reports its built-in tool
-     * catalog into. Read by the `tool_list` reflection tool so it can
-     * enumerate container built-ins without a hand-maintained copy.
-     * Optional — when unset, `tool_list` simply shows no built-ins.
-     */
-    setContainerToolsRegistry(registry: ContainerToolsRegistry): void {
-        this.containerToolsRegistry = registry;
     }
 
     /**
@@ -501,10 +489,6 @@ export class PluginHost {
                     ensureConnection: () => this.ensureConnection(),
                     logsDir: this.boot.logsDir,
                     scratchDir: this.boot.scratchDir,
-                    mcpRegistry: this.mcpRegistry,
-                    pluginToolsRegistry: this.toolsRegistry,
-                    containerToolsRegistry:
-                        this.containerToolsRegistry ?? new ContainerToolsRegistry(),
                 }),
             ];
             this.toolsRegistry.register("core", coreCtx, coreTools);

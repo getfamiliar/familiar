@@ -138,6 +138,8 @@ export {
     parseInZone,
     renderInZone,
 } from "./Timezone.js";
+export type { NewToolCall, ToolCallRow, ToolUsageCount } from "./ToolCall.js";
+export { ToolCallBus } from "./ToolCallBus.js";
 export {
     DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
     type OffloadedJson,
@@ -155,7 +157,6 @@ export {
     MCP_GROUP_NAME,
     NONE_GROUP_NAME,
     RESERVED_GROUP_NAMES,
-    sanitizeToolKey,
     validateGroupName,
 } from "./ToolsExpressionUtils.js";
 export type {

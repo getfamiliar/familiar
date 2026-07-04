@@ -81,15 +81,3 @@ export function validateGroupName(name: string): void {
         );
     }
 }
-
-/**
- * Replace every character outside `[a-zA-Z0-9_]` with `_`. Used to
- * build agent-facing tool keys (`${id}_${name}`) safe for every
- * model's function-call grammar — several open-source models (GLM
- * 5.1, some Qwen variants) silently drop tool calls when names
- * contain hyphens, which is why the MCP layer started folding them.
- * The plugin-tools layer reuses the same fold for consistency.
- */
-export function sanitizeToolKey(key: string): string {
-    return key.replace(/[^a-zA-Z0-9_]/g, "_");
-}

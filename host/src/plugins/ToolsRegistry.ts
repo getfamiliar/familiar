@@ -5,7 +5,6 @@ import {
     type Logger,
     type PluginTool,
     RESERVED_GROUP_NAMES,
-    sanitizeToolKey,
     validateGroupName,
 } from "@getfamiliar/shared";
 import type { McpRegistry } from "../mcp/McpRegistry.js";
@@ -23,9 +22,8 @@ export interface RegisteredPluginTool {
     /** Bare tool name as the plugin declared it. */
     readonly toolName: string;
     /**
-     * Public agent-facing key. For `pluginId === "core"` this is
-     * `sanitizeToolKey(toolName)`; for any other plugin it is
-     * `sanitizeToolKey(`${pluginId}_${toolName}`)`.
+     * Public agent-facing key. For `pluginId === "core"` this is the
+     * bare `toolName`; for any other plugin it is `${pluginId}_${toolName}`.
      */
     readonly key: string;
     /** Description forwarded to the agent's tool list. */
@@ -136,12 +134,10 @@ export class PluginToolsRegistry {
         const pluginLog = this.log.child({ plugin: pluginId });
 
         for (const tool of tools) {
-            const key = isCore
-                ? sanitizeToolKey(tool.name)
-                : sanitizeToolKey(`${pluginId}_${tool.name}`);
+            const key = isCore ? tool.name : `${pluginId}_${tool.name}`;
             if (this.tools.has(key)) {
                 throw new Error(
-                    `plugin "${pluginId}" tool "${tool.name}" sanitizes to key "${key}" which ` +
+                    `plugin "${pluginId}" tool "${tool.name}" maps to key "${key}" which ` +
                         `is already registered.`,
                 );
             }

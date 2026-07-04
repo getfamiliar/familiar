@@ -236,6 +236,8 @@ export interface AgentRunnerContext {
     readonly buildTools: (
         tools: readonly string[] | undefined,
         offloadTokenThreshold: number,
+        handlerPath: string,
+        contextLimit: number | undefined,
     ) => Promise<ToolSet>;
     /**
      * Suspend the current run until the named child agentrun (and
@@ -374,7 +376,12 @@ export class AgentRunner {
             modelMetaData?.contextLimit,
             offloadTokenCap,
         );
-        const tools = await ctx.buildTools(handler.header.tools, offloadTokenThreshold);
+        const tools = await ctx.buildTools(
+            handler.header.tools,
+            offloadTokenThreshold,
+            handler.relativePath,
+            modelMetaData?.contextLimit,
+        );
         const toolNames = Object.keys(tools);
         const toolList =
             toolNames.length === 0
