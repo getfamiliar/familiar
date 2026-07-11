@@ -4,8 +4,6 @@ NEXT:
 
 Features:
 
-
-
 * File Storages like Onedrive, Dropbox, Google Drive, ... - read & write access, search. Done like calendar + mail, a default set of tools for all providers and provider-specific implementations in plugins.
 * Host-side LLM chat with access to console tools for selections, prompts etc. as a service - used for setup and plugin CLI tools.
 * Diff Tool for the workspace vs default workspace
@@ -78,7 +76,7 @@ plugins:
   - docker
   - npm i
   - npm run build --workspaces --if-present (attention: does not resolve the order of dependencies, trying to build telegram before whisper etc. - AST based dependency resolution would be nice)
-  - Use node-linux or node-mac packages to create a native service
+  - Use node-linux or node-mac packages to create a native service!
 
 Important: many services need a restart after login (whatsapp, o365, ...). Request that?
 
