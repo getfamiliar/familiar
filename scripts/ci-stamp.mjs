@@ -21,7 +21,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** All workspace package directories (repo-relative), except the root. */
 function packageDirs() {
-    const dirs = ["shared", "host", "container", "familiar"];
+    const dirs = ["shared", "host", "container", "cli"];
     const pluginsRoot = join(root, "plugins");
     for (const entry of readdirSync(pluginsRoot, { withFileTypes: true })) {
         if (entry.isDirectory() && existsSync(join(pluginsRoot, entry.name, "package.json"))) {
@@ -69,7 +69,7 @@ for (const [dir, { path, pkg }] of manifests) {
         url: "git+https://github.com/getfamiliar/familiar.git",
         directory: dir,
     };
-    if (pkg.name === "familiar") {
+    if (pkg.name === "@getfamiliar/cli") {
         pkg.dependencies = pkg.dependencies ?? {};
         for (const name of bundledPlugins) {
             pkg.dependencies[name] = version;

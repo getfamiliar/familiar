@@ -6,7 +6,7 @@ This document explains how Familiar is packaged, released, and installed — the
 
 Familiar runs in one of two modes, and almost everything below follows from the distinction:
 
-- **Installed mode** — the normal way to run Familiar. You install the `familiar` npm package into an ordinary project folder (e.g. `~/familiar`) that holds your `config/`, `data/`, and `tmp/`. The CLI runs your instance from that folder and **pulls** prebuilt, version-locked Docker images from a registry. Updating is `npm update` + restart.
+- **Installed mode** — the normal way to run Familiar. You install the `@getfamiliar/cli` npm package (which provides the `familiar` command) into an ordinary project folder (e.g. `~/familiar`) that holds your `config/`, `data/`, and `tmp/`. The CLI runs your instance from that folder and **pulls** prebuilt, version-locked Docker images from a registry. Updating is `npm update` + restart.
 - **Development mode** — a checkout of the monorepo, driven by `./cli.sh`. Source is rebuilt on demand, container images are **built locally**, and `container/src` + `shared/build` are bind-mounted into the agent for hot-reload.
 
 The same code powers both; the mode changes only *where paths resolve* and *whether images are built or pulled*.
@@ -26,7 +26,7 @@ A release publishes to two places under one shared version:
 
 | Channel | Artifacts |
 | --- | --- |
-| **npm** (public registry) | `@getfamiliar/shared`, `@getfamiliar/host`, the `@getfamiliar/plugin-*` packages, and the top-level `familiar` meta-package |
+| **npm** (public registry) | `@getfamiliar/shared`, `@getfamiliar/host`, the `@getfamiliar/plugin-*` packages, and the `@getfamiliar/cli` meta-package |
 | **GHCR** (`ghcr.io/getfamiliar`) | `familiar-agent`, `familiar-bastion-bridge-img`, `familiar-mcp-runtime-npm`, `familiar-mcp-runtime-pypi` — each `linux/amd64,linux/arm64` |
 
 `@getfamiliar/container` is **not** published to npm: its code is baked into the `familiar-agent` image.
@@ -39,14 +39,16 @@ The two channels are bound together at runtime: the host pulls the image tag **e
 
 ```bash
 mkdir ~/familiar && cd ~/familiar
-npx familiar init
+npx @getfamiliar/cli init
 ```
+
+The installable package is `@getfamiliar/cli`; the command it provides is `familiar`. After a global install (`npm i -g @getfamiliar/cli`) or a project install, you invoke everything as `familiar …`.
 
 `familiar init` scaffolds the folder — it never overwrites existing files, so it is safe to re-run:
 
 ```
 ~/familiar/
-  package.json          # depends on `familiar`
+  package.json          # depends on @getfamiliar/cli
   config/
     config.yml          # from the template; fill this in
     mcp.yml             # MCP server config
@@ -69,7 +71,7 @@ On first `start`, the CLI pulls the version-locked images from GHCR (no local Do
 ### Updating
 
 ```bash
-npm update      # pull a newer familiar (and plugins)
+npm update      # pull a newer @getfamiliar/cli (and plugins)
 familiar start  # picks up the matching images automatically
 ```
 
@@ -92,7 +94,7 @@ Every command except `init` (and `--help`/`--version`) requires an initialized h
 
 Plugins are npm packages that add capabilities (event sources, tools, model providers). The active set for an instance is the **union** of two sources:
 
-1. **Prebundled core plugins** — always on, shipped as dependencies of the `familiar` meta-package, no configuration required.
+1. **Prebundled core plugins** — always on, shipped as dependencies of the `@getfamiliar/cli` meta-package, no configuration required.
 2. **Whitelisted plugins** — everything else, listed one per line in `config/plugins`.
 
 There is no name-pattern magic: a plugin is active because it is bundled or because it is named in the whitelist. Any package — first-party or third-party, under any npm scope — becomes a plugin by adding its name to `config/plugins`.
@@ -108,7 +110,7 @@ Whether a first-party plugin is core is declared by a single flag in its own `pa
 }
 ```
 
-This flag is the single source of truth. At release time the pipeline reads it to decide which plugins become dependencies of the `familiar` meta-package (and populates the meta's generated `familiar.bundledPlugins` list). At runtime the host loads the bundled set plus the whitelist.
+This flag is the single source of truth. At release time the pipeline reads it to decide which plugins become dependencies of the `@getfamiliar/cli` meta-package (and populates the meta's generated `familiar.bundledPlugins` list). At runtime the host loads the bundled set plus the whitelist.
 
 The current split:
 
@@ -189,7 +191,7 @@ test ──▶ version ──┬──▶ publish-npm ────┐
 
 1. **test** — `npm ci`, full build, `format:check`, `lint`, and the workspace test suites. Gates everything else.
 2. **version** — computes the release version (see below) and exposes it as an output.
-3. **publish-npm** — vendors the `init` templates into the host package, stamps the version across all packages, builds, and publishes to npm in dependency order (`shared` → plugins → `host` → `familiar`) with npm provenance.
+3. **publish-npm** — vendors the `init` templates into the host package, stamps the version across all packages, builds, and publishes to npm in dependency order (`shared` → plugins → `host` → `@getfamiliar/cli`) with npm provenance.
 4. **publish-images** — Buildx multi-arch build + push of the four images to GHCR, tagged with the version and `latest`, using the GitHub Actions layer cache.
 5. **release** — creates the annotated git tag `v<version>` and a GitHub release with generated notes.
 
@@ -202,7 +204,7 @@ test ──▶ version ──┬──▶ publish-npm ────┐
 - sets `version` to the release version,
 - rewrites internal `"@getfamiliar/*": "*"` (and `"familiar": "*"`) dependencies to that exact version,
 - adds a `repository` field (required for npm provenance),
-- and, for the `familiar` meta-package, injects the bundled plugins as pinned dependencies and writes the generated `familiar.bundledPlugins` list — all derived from each plugin's `familiar.bundled` flag.
+- and, for the `@getfamiliar/cli` meta-package, injects the bundled plugins as pinned dependencies and writes the generated `familiar.bundledPlugins` list — all derived from each plugin's `familiar.bundled` flag.
 
 `scripts/sync-templates.mjs` copies the canonical `config/*.example.yml` and `data/workspace-template/` into `host/template/` so the published `@getfamiliar/host` package carries everything `familiar init` needs. That directory is generated at publish time and is not committed.
 
@@ -224,7 +226,7 @@ In this mode the core plugin set is read directly from each `plugins/*/package.j
 
 | Path | Role |
 | --- | --- |
-| `familiar/` | The `familiar` meta-package (bin shim + CI-injected core-plugin deps) |
+| `cli/` | The `@getfamiliar/cli` meta-package (bin shim + CI-injected core-plugin deps) |
 | `host/` | `@getfamiliar/host` — the CLI engine; ships `build/` and generated `template/` |
 | `shared/` | `@getfamiliar/shared` — types + bus clients used host- and container-side |
 | `container/` | Source for the `familiar-agent` image (private; not published to npm) |
@@ -236,7 +238,7 @@ In this mode the core plugin set is read directly from each `plugins/*/package.j
 
 ## One-time operational setup
 
-- **`NPM_TOKEN`** — a repository secret with publish rights to the `@getfamiliar` scope and the `familiar` name. GHCR uses the automatic `GITHUB_TOKEN` (the workflow requests `packages: write`).
+- **`NPM_TOKEN`** — a repository secret (npm automation token) with publish rights to the `@getfamiliar` scope. GHCR uses the automatic `GITHUB_TOKEN` (the workflow requests `packages: write`).
 - **GHCR visibility** — the first publish creates the image packages as private. Make them public so instances can pull anonymously.
 - **npm provenance** — requires the workflow's `id-token: write` permission (already set) and the `repository` field that `ci-stamp` injects.
 

@@ -60,7 +60,7 @@ export const initCommand = defineCommand({
                 name: "familiar-home",
                 private: true,
                 type: "module",
-                dependencies: { familiar: `^${boot.version}` },
+                dependencies: { "@getfamiliar/cli": `^${boot.version}` },
             };
             writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
             log.info(`wrote ${pkgPath}`);

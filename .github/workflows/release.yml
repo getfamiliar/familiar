@@ -75,7 +75,7 @@ jobs:
             npm publish -w "@getfamiliar/plugin-$p" --provenance --access public
           done
           npm publish -w @getfamiliar/host --provenance --access public
-          npm publish -w familiar --provenance --access public
+          npm publish -w @getfamiliar/cli --provenance --access public
 
   publish-images:
     needs: version

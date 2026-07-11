@@ -39,8 +39,8 @@ function readPackageJson(path: string): FamiliarPackageJson | null {
  * checkout (`<homeDir>/plugins/` exists) this reads each workspace
  * plugin's `familiar.bundled` flag directly, so the flag is the live
  * source of truth during development. Once installed, the CI-generated
- * `familiar.bundledPlugins` list on the `familiar` meta-package is read
- * instead — no first-party name-pattern scan of node_modules.
+ * `familiar.bundledPlugins` list on the `@getfamiliar/cli` meta-package is
+ * read instead — no first-party name-pattern scan of node_modules.
  *
  * @param boot Bootstrap providing the home dir.
  * @param req Require function anchored at the project, used to locate the meta-package.
@@ -63,11 +63,11 @@ function discoverBundled(boot: Bootstrap, req: NodeRequire, log: Logger): string
         return out;
     }
     try {
-        const pkg = readPackageJson(req.resolve("familiar/package.json"));
+        const pkg = readPackageJson(req.resolve("@getfamiliar/cli/package.json"));
         return [...(pkg?.familiar?.bundledPlugins ?? [])];
     } catch {
         log.warn(
-            "familiar meta-package not resolvable from the project; no bundled plugins will load",
+            "@getfamiliar/cli meta-package not resolvable from the project; no bundled plugins will load",
         );
         return [];
     }

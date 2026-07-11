@@ -10,7 +10,7 @@
         "shared",
         "host",
         "container",
-        "familiar",
+        "cli",
         "plugins/*"
     ],
     "scripts": {

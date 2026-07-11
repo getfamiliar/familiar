@@ -1,5 +1,5 @@
 {
-  "name": "familiar",
+  "name": "@getfamiliar/cli",
   "version": "0.0.1",
   "description": "Familiar — your personal, local, markdown AI executive assistant. Batteries-included CLI (`familiar init`, `familiar start`).",
   "type": "module",
