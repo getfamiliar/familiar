@@ -68,9 +68,10 @@ export function buildToolCallTool(pool: ToolSet): Tool<ToolCallInput, unknown> {
 /**
  * Compose an error message for an unknown tool name, offering the
  * closest matches (substring, else prefix) so the agent can retry
- * without a separate `tool_list` round-trip.
+ * without a separate `tool_list` round-trip. Shared with `tool_describe`
+ * so both meta-tools report unknown names identically.
  */
-function unknownToolMessage(name: string, pool: ToolSet): string {
+export function unknownToolMessage(name: string, pool: ToolSet): string {
     const needle = name.toLowerCase();
     const keys = Object.keys(pool);
     const suggestions = keys

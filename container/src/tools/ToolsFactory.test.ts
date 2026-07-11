@@ -42,7 +42,7 @@ describe("ToolsFactory — error wrapping", () => {
         // but the discovery meta-tools are always injected, and the call
         // must succeed rather than throw.
         const out = await ToolsFactory.build({});
-        assert.deepEqual(Object.keys(out).sort(), ["tool_call", "tool_list"]);
+        assert.deepEqual(Object.keys(out).sort(), ["tool_call", "tool_describe", "tool_list"]);
     });
 });
 

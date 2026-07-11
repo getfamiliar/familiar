@@ -21,12 +21,14 @@ import { buildSendChatTool } from "./sendChat.js";
 import { buildStartSubagentTool, type WaitForSubagent } from "./startSubagent.js";
 import { MCP_GROUP_NAME, resolveTools } from "./ToolsExpressionParser.js";
 import { buildToolCallTool } from "./toolCall.js";
+import { buildToolDescribeTool } from "./toolDescribe.js";
 import { buildToolListTool, type ToolCatalogEntry } from "./toolList.js";
 import { buildUnscheduleSubagentTool } from "./unscheduleSubagent.js";
 
 /** Agent-facing keys of the always-present discovery meta-tools. */
 const TOOL_LIST_KEY = "tool_list";
 const TOOL_CALL_KEY = "tool_call";
+const TOOL_DESCRIBE_KEY = "tool_describe";
 
 /**
  * Default per-tool description clamp (characters). Keeps individual
@@ -445,6 +447,12 @@ export class ToolsFactory {
         const metaToolRunContext = context.toolRunContext ?? FALLBACK_TOOL_RUN_CONTEXT;
         out[TOOL_LIST_KEY] = buildToolListTool(catalog, loaded, metaToolRunContext);
         out[TOOL_CALL_KEY] = buildToolCallTool(wrappedTools);
+        out[TOOL_DESCRIBE_KEY] = buildToolDescribeTool(
+            allTools,
+            levelsByKey,
+            loaded,
+            metaToolRunContext,
+        );
         return out;
     }
 
@@ -729,7 +737,8 @@ async function selectHeuristicTools(args: {
                 allTools[name] !== undefined &&
                 !guaranteed.has(name) &&
                 name !== TOOL_LIST_KEY &&
-                name !== TOOL_CALL_KEY,
+                name !== TOOL_CALL_KEY &&
+                name !== TOOL_DESCRIBE_KEY,
         );
     if (candidates.length === 0) {
         return [];

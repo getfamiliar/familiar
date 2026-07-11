@@ -46,7 +46,8 @@ export function buildToolListTool(
         description:
             "Discover tools beyond the ones already loaded. Every handler run can reach every " +
             "tool; only a subset is preloaded into your toolset. Call this to search the full " +
-            "pool, then invoke anything it returns with `tool_call`. Pass {search} as a " +
+            "pool, use `tool_describe` for a tool's full description and input schema, then " +
+            "invoke anything it returns with `tool_call`. Pass {search} as a " +
             "case-insensitive substring matched against tool names and descriptions, or omit " +
             "it to list everything. Each JSONL line is {name, loaded, level, description}; " +
             "`loaded: true` means the tool is already in your toolset and can be called " +
