@@ -11,7 +11,7 @@ import {
     POSTGRES_PORT,
     POSTGRES_USER,
     PostgresConnection,
-    ScheduledHandlerBus,
+    ScheduledSubagentBus,
     StepResultBus,
     ToolCallBus,
 } from "@getfamiliar/shared";
@@ -105,9 +105,9 @@ async function main(): Promise<void> {
     const stepBus = new StepResultBus(connection, log.child({ component: "step-bus" }));
     const inferenceEventBus = new InferenceEventBus(connection);
     const toolCallBus = new ToolCallBus(connection);
-    const scheduledHandlerBus = new ScheduledHandlerBus(
+    const scheduledSubagentBus = new ScheduledSubagentBus(
         connection,
-        log.child({ component: "scheduled-handler-bus" }),
+        log.child({ component: "scheduled-subagent-bus" }),
     );
     const chat = new ChatManager(new ChatMessageBus(connection));
     const recovery = new AgentrunRecovery(connection, log.child({ component: "recovery" }));
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
         stepBus,
         inferenceEventBus,
         toolCallBus,
-        scheduledHandlerBus,
+        scheduledSubagentBus,
         timezone,
         log: log.child({ component: "agentrun-scheduler" }),
         clock: RealClock,

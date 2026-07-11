@@ -11,8 +11,8 @@ import type { AgentRunRow, EventRow, StepResultRow } from "@getfamiliar/shared";
  * Shape: the event header (fields table + prompt + payload), then the
  * root agentrun's block (handler/model line, optional system prompt and
  * initial message history, the numbered Step Protocol), then the final
- * result. Each subagent a step spawned (`call_handler` /
- * `schedule_handler`) is rendered inline as a markdown blockquote right
+ * result. Each subagent a step spawned (`start_subagent` /
+ * `schedule_subagent`) is rendered inline as a markdown blockquote right
  * after the spawning step; nesting recurses (a grandchild's lines are
  * blockquote-prefixed twice → `> > `).
  *
@@ -327,11 +327,11 @@ function renderStep(
 
 /**
  * Correlate each step's tool calls to the child agentruns they spawned.
- * No link is stored, so: `call_handler` consumes the next unconsumed
- * `'called'` child in creation order; `schedule_handler` (immediate)
+ * No link is stored, so: `start_subagent` consumes the next unconsumed
+ * `'started'` child in creation order; `schedule_subagent` (immediate)
  * carries `{ agentrunId }` in its result and is matched by id exactly,
- * falling back to the next `'queued'` child if the id is unavailable;
- * `schedule_handler` (deferred) carries `{ key, when }`, spawns no child,
+ * falling back to the next `'scheduled'` child if the id is unavailable;
+ * `schedule_subagent` (deferred) carries `{ key, when }`, spawns no child,
  * and yields an inline placeholder. Anything left over is returned as an
  * orphan so the caller still renders it.
  */
@@ -348,22 +348,22 @@ function correlateChildren(
         arr.push(att);
         attachmentsByStep.set(stepId, arr);
     };
-    const nextUnconsumed = (calltype: "called" | "queued"): AgentRunRow | undefined =>
+    const nextUnconsumed = (calltype: "started" | "scheduled"): AgentRunRow | undefined =>
         children.find((c) => !consumed.has(c.id) && c.calltype === calltype);
 
     for (const step of ctx.stepsByRun.get(run.id) ?? []) {
         const results = asArray(step.toolResults);
         for (const call of asArray(step.toolCalls)) {
             const name = (call as { toolName?: string }).toolName;
-            if (name === "call_handler") {
-                const child = nextUnconsumed("called");
+            if (name === "start_subagent") {
+                const child = nextUnconsumed("started");
                 if (child) {
                     consumed.add(child.id);
                     attach(step.id, { kind: "child", child });
                 }
                 continue;
             }
-            if (name !== "schedule_handler") {
+            if (name !== "schedule_subagent") {
                 continue;
             }
             const callId = (call as { toolCallId?: string }).toolCallId;
@@ -400,7 +400,7 @@ function correlateChildren(
                 continue;
             }
             // Offloaded / unexpected result shape: fall back to creation order.
-            const child = nextUnconsumed("queued");
+            const child = nextUnconsumed("scheduled");
             if (child) {
                 consumed.add(child.id);
                 attach(step.id, { kind: "child", child });

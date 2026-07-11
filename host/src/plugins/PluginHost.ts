@@ -484,7 +484,7 @@ export class PluginHost {
                 // Reflection tools live alongside the other host-owned
                 // core tools so they share the bare-key registration
                 // path and join the `reflection` tool group with the
-                // container-side `get_scheduled_handlers`.
+                // container-side `get_scheduled_subagents`.
                 ...buildReflectionTools({
                     ensureConnection: () => this.ensureConnection(),
                     logsDir: this.boot.logsDir,

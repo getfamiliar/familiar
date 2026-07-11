@@ -12,13 +12,13 @@ import {
  * handler. The event then sits in `running` until its root agentrun
  * settles — {@link AgentRunBus.settle} flips the event to `done` /
  * `failed` to mirror the root's terminal state via
- * `EVENT_TERMINAL_UPDATE_SQL`. Non-root agentruns (`call_handler`
- * children, `schedule_handler` immediate-mode children) settle out of
+ * `EVENT_TERMINAL_UPDATE_SQL`. Non-root agentruns (`start_subagent`
+ * children, `schedule_subagent` immediate-mode children) settle out of
  * band and do not affect the event's outcome.
  *
  * This watcher does no handler resolution and runs no agent code; it
  * only routes input events to the agentrun queue. Markdown loading and
- * subagent resolution (`schedule_handler`, `call_handler`) live in the
+ * subagent resolution (`schedule_subagent`, `start_subagent`) live in the
  * {@link AgentrunScheduler}.
  *
  * **Crash window** (intentional, fix in a later pass): if the process

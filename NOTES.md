@@ -1,7 +1,6 @@
 NEXT:
 
-* Rename the call_handler etc calls to start_subagent etc. to reflect what this is about now
-* Rework all existing handlers to not encourage call_handler just to get additional tools anymore, rather just read files and follow their instructions.
+* Sweep the remaining workspace handlers for any lingering "start a subagent just to get a tool" guidance — every tool is directly callable now, so those should read files and follow instructions instead. (The tool rename to start_subagent / schedule_subagent and the core semantics reword in CONTEXT.md, chat/index.md and the skills catalog are done.)
 
 Features:
 

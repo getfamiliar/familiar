@@ -5,13 +5,13 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import type {
     AgentRunRow,
-    NewScheduledHandler,
-    ScheduledHandlerRow,
+    NewScheduledSubagent,
+    ScheduledSubagentRow,
     ToolRunContext,
 } from "@getfamiliar/shared";
 import { MockAgentRunBus, MockBusStore } from "@getfamiliar/shared/testing";
 import { HandlerFile } from "../HandlerFile.js";
-import { buildScheduleHandlerTool } from "./scheduleHandler.js";
+import { buildScheduleSubagentTool } from "./scheduleSubagent.js";
 
 const TOOL_CTX: ToolRunContext = {
     limit: 10000,
@@ -23,14 +23,14 @@ const TOOL_CTX: ToolRunContext = {
 const TIMEZONE = "Europe/Berlin";
 
 /**
- * Minimal stand-in for {@link import("@getfamiliar/shared").ScheduledHandlerBus}
+ * Minimal stand-in for {@link import("@getfamiliar/shared").ScheduledSubagentBus}
  * supporting only `upsert` — that's all the unified tool calls in this
  * dispatch direction. Records every insert in `rows` keyed by `key`.
  */
-class FakeScheduledHandlerBus {
-    readonly rows = new Map<string, NewScheduledHandler>();
+class FakeScheduledSubagentBus {
+    readonly rows = new Map<string, NewScheduledSubagent>();
 
-    async upsert(row: NewScheduledHandler): Promise<ScheduledHandlerRow> {
+    async upsert(row: NewScheduledSubagent): Promise<ScheduledSubagentRow> {
         this.rows.set(row.key, row);
         return {
             key: row.key,
@@ -48,7 +48,7 @@ class FakeScheduledHandlerBus {
 
 /** Per-test workspace with a single handler file the tool's HandlerFile.load can resolve. */
 function setupWorkspaceWithHandler(topic: string, handler: string): string {
-    const root = mkdtempSync(path.join(tmpdir(), "schedule-handler-test-"));
+    const root = mkdtempSync(path.join(tmpdir(), "schedule-subagent-test-"));
     const topicDir = path.join(root, ...topic.split(":"));
     mkdirSync(topicDir, { recursive: true });
     writeFileSync(path.join(topicDir, `${handler}.md`), "# stub handler\n");
@@ -93,13 +93,13 @@ interface ToolExecutor {
 
 async function callTool(
     agentruns: MockAgentRunBus,
-    scheduled: FakeScheduledHandlerBus,
+    scheduled: FakeScheduledSubagentBus,
     parent: AgentRunRow,
     input: Record<string, unknown>,
 ): Promise<unknown> {
-    const t = buildScheduleHandlerTool(
-        agentruns as unknown as Parameters<typeof buildScheduleHandlerTool>[0],
-        scheduled as unknown as Parameters<typeof buildScheduleHandlerTool>[1],
+    const t = buildScheduleSubagentTool(
+        agentruns as unknown as Parameters<typeof buildScheduleSubagentTool>[0],
+        scheduled as unknown as Parameters<typeof buildScheduleSubagentTool>[1],
         parent,
         TIMEZONE,
         TOOL_CTX,
@@ -123,12 +123,12 @@ function futureLocalIso(offsetMinutes: number): string {
     return fmt.format(target).replace(" ", "T");
 }
 
-describe("schedule_handler — immediate mode (no `when`)", () => {
-    it("inserts a child agentruns row with calltype='queued' and returns { agentrunId }", async () => {
+describe("schedule_subagent — immediate mode (no `when`)", () => {
+    it("inserts a child agentruns row with calltype='scheduled' and returns { agentrunId }", async () => {
         setupWorkspaceWithHandler("demo", "followup");
         const store = new MockBusStore();
         const agentruns = new MockAgentRunBus(store);
-        const scheduled = new FakeScheduledHandlerBus();
+        const scheduled = new FakeScheduledSubagentBus();
         const parent = buildParent("42");
 
         const out = (await callTool(agentruns, scheduled, parent, {
@@ -138,7 +138,7 @@ describe("schedule_handler — immediate mode (no `when`)", () => {
         assert.ok(out.agentrunId);
         const child = store.agentruns.get(out.agentrunId);
         assert.ok(child);
-        assert.equal(child.calltype, "queued");
+        assert.equal(child.calltype, "scheduled");
         assert.equal(child.parentAgentrunId, parent.id);
         assert.equal(child.eventId, parent.eventId);
         assert.equal(scheduled.rows.size, 0);
@@ -148,7 +148,7 @@ describe("schedule_handler — immediate mode (no `when`)", () => {
         setupWorkspaceWithHandler("mail", "send-digest");
         const store = new MockBusStore();
         const agentruns = new MockAgentRunBus(store);
-        const scheduled = new FakeScheduledHandlerBus();
+        const scheduled = new FakeScheduledSubagentBus();
         // Parent's topic is "demo"; the slash-shaped handler should
         // override it via the derived topic from leading segments.
         const parent = buildParent("42");
@@ -161,16 +161,16 @@ describe("schedule_handler — immediate mode (no `when`)", () => {
         assert.ok(child);
         assert.equal(child.topic, "mail");
         assert.equal(child.handler, "send-digest");
-        assert.equal(child.calltype, "queued");
+        assert.equal(child.calltype, "scheduled");
     });
 });
 
-describe("schedule_handler — scheduled mode (future `when`)", () => {
-    it("inserts a scheduled_handlers row and returns { key, when }", async () => {
+describe("schedule_subagent — scheduled mode (future `when`)", () => {
+    it("inserts a scheduled_subagents row and returns { key, when }", async () => {
         setupWorkspaceWithHandler("demo", "followup");
         const store = new MockBusStore();
         const agentruns = new MockAgentRunBus(store);
-        const scheduled = new FakeScheduledHandlerBus();
+        const scheduled = new FakeScheduledSubagentBus();
         const parent = buildParent("42");
 
         const when = futureLocalIso(60);
@@ -189,7 +189,7 @@ describe("schedule_handler — scheduled mode (future `when`)", () => {
         setupWorkspaceWithHandler("demo", "followup");
         const store = new MockBusStore();
         const agentruns = new MockAgentRunBus(store);
-        const scheduled = new FakeScheduledHandlerBus();
+        const scheduled = new FakeScheduledSubagentBus();
         const parent = buildParent("42");
 
         const out = (await callTool(agentruns, scheduled, parent, {
@@ -204,12 +204,12 @@ describe("schedule_handler — scheduled mode (future `when`)", () => {
     });
 });
 
-describe("schedule_handler — key without when", () => {
+describe("schedule_subagent — key without when", () => {
     it("throws BadKey", async () => {
         setupWorkspaceWithHandler("demo", "followup");
         const store = new MockBusStore();
         const agentruns = new MockAgentRunBus(store);
-        const scheduled = new FakeScheduledHandlerBus();
+        const scheduled = new FakeScheduledSubagentBus();
         const parent = buildParent("42");
 
         await assert.rejects(
@@ -230,12 +230,12 @@ describe("schedule_handler — key without when", () => {
     });
 });
 
-describe("schedule_handler — past `when` silently demotes to immediate", () => {
-    it("inserts an agentruns row, scheduled_handlers untouched", async () => {
+describe("schedule_subagent — past `when` silently demotes to immediate", () => {
+    it("inserts an agentruns row, scheduled_subagents untouched", async () => {
         setupWorkspaceWithHandler("demo", "followup");
         const store = new MockBusStore();
         const agentruns = new MockAgentRunBus(store);
-        const scheduled = new FakeScheduledHandlerBus();
+        const scheduled = new FakeScheduledSubagentBus();
         const parent = buildParent("42");
 
         const pastWhen = "2000-01-01T12:00:00";
@@ -246,7 +246,7 @@ describe("schedule_handler — past `when` silently demotes to immediate", () =>
 
         assert.ok(out.agentrunId);
         const child = store.agentruns.get(out.agentrunId);
-        assert.equal(child?.calltype, "queued");
+        assert.equal(child?.calltype, "scheduled");
         assert.equal(scheduled.rows.size, 0);
     });
 
@@ -254,7 +254,7 @@ describe("schedule_handler — past `when` silently demotes to immediate", () =>
         setupWorkspaceWithHandler("demo", "followup");
         const store = new MockBusStore();
         const agentruns = new MockAgentRunBus(store);
-        const scheduled = new FakeScheduledHandlerBus();
+        const scheduled = new FakeScheduledSubagentBus();
         const parent = buildParent("42");
 
         const out = (await callTool(agentruns, scheduled, parent, {

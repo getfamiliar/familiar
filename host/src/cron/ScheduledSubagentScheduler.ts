@@ -2,16 +2,16 @@ import {
     EVENT_PRIORITY,
     type Logger,
     type NewEvent,
-    type ScheduledHandlerBus,
-    type ScheduledHandlerNotification,
-    type ScheduledHandlerRow,
+    type ScheduledSubagentBus,
+    type ScheduledSubagentNotification,
+    type ScheduledSubagentRow,
 } from "@getfamiliar/shared";
 import { Cron } from "croner";
 
 /**
- * Host-side companion to the container's `schedule_handler` family of
- * tools. Listens to the `scheduled_handlers_changed` NOTIFY channel
- * via {@link ScheduledHandlerBus.listen} and keeps an in-memory map
+ * Host-side companion to the container's `schedule_subagent` family of
+ * tools. Listens to the `scheduled_subagents_changed` NOTIFY channel
+ * via {@link ScheduledSubagentBus.listen} and keeps an in-memory map
  * of Croner jobs in sync with the table:
  *
  * - On daemon startup: delete past-due rows (warn-log), then install
@@ -26,15 +26,15 @@ import { Cron } from "croner";
  * {@link CronjobScheduler} uses, so cron-fired and one-off events
  * share identical chat-channel stamping and audit behavior.
  */
-export class ScheduledHandlerScheduler {
-    private readonly bus: ScheduledHandlerBus;
+export class ScheduledSubagentScheduler {
+    private readonly bus: ScheduledSubagentBus;
     private readonly emit: (event: NewEvent) => Promise<{ id: string }>;
     private readonly log: Logger;
     private readonly jobs = new Map<string, Cron>();
     private unsubscribe: (() => Promise<void>) | undefined;
 
     constructor(opts: {
-        bus: ScheduledHandlerBus;
+        bus: ScheduledSubagentBus;
         emit: (event: NewEvent) => Promise<{ id: string }>;
         log: Logger;
     }) {
@@ -50,7 +50,7 @@ export class ScheduledHandlerScheduler {
         if (dropped > 0) {
             this.log.warn(
                 { dropped },
-                `dropped ${dropped} past-due scheduled handler row(s) on startup`,
+                `dropped ${dropped} past-due scheduled subagent row(s) on startup`,
             );
         }
 
@@ -63,7 +63,7 @@ export class ScheduledHandlerScheduler {
             this.onNotification(notification),
         );
 
-        this.log.info({ count: this.jobs.size }, "scheduled-handler scheduler ready");
+        this.log.info({ count: this.jobs.size }, "scheduled-subagent scheduler ready");
     }
 
     /** Cancel every job and detach from NOTIFY. Idempotent. */
@@ -83,7 +83,7 @@ export class ScheduledHandlerScheduler {
         return this.jobs.size;
     }
 
-    private async onNotification(notification: ScheduledHandlerNotification): Promise<void> {
+    private async onNotification(notification: ScheduledSubagentNotification): Promise<void> {
         const existing = this.jobs.get(notification.key);
         if (existing) {
             existing.stop();
@@ -91,7 +91,7 @@ export class ScheduledHandlerScheduler {
         }
 
         if (notification.op === "d") {
-            this.log.debug({ key: notification.key }, "scheduled handler unscheduled");
+            this.log.debug({ key: notification.key }, "scheduled subagent unscheduled");
             return;
         }
 
@@ -102,7 +102,7 @@ export class ScheduledHandlerScheduler {
             // deleted it. Nothing to install.
             this.log.debug(
                 { key: notification.key },
-                "scheduled handler upsert NOTIFY but row missing — racing delete?",
+                "scheduled subagent upsert NOTIFY but row missing — racing delete?",
             );
             return;
         }
@@ -115,7 +115,7 @@ export class ScheduledHandlerScheduler {
      * braces — the firing callback also deletes the row, so even a
      * spurious second invocation would be a no-op.
      */
-    private install(row: ScheduledHandlerRow): void {
+    private install(row: ScheduledSubagentRow): void {
         let job: Cron;
         try {
             job = new Cron(row.fireAt, { maxRuns: 1 }, () => {
@@ -128,7 +128,7 @@ export class ScheduledHandlerScheduler {
                     fireAt: row.fireAt,
                     err: err instanceof Error ? err.message : String(err),
                 },
-                "could not schedule one-off handler; dropping",
+                "could not schedule one-off subagent; dropping",
             );
             void this.bus.deleteByKey(row.key).catch(() => {});
             return;
@@ -136,29 +136,29 @@ export class ScheduledHandlerScheduler {
         this.jobs.set(row.key, job);
         this.log.info(
             { key: row.key, fireAt: row.fireAt, topic: row.topic, handler: row.handler },
-            "scheduled handler armed",
+            "scheduled subagent armed",
         );
     }
 
     private async fire(key: string): Promise<void> {
         this.jobs.delete(key);
 
-        let row: ScheduledHandlerRow | undefined;
+        let row: ScheduledSubagentRow | undefined;
         try {
             row = await this.bus.claimAndDeleteForFiring(key);
         } catch (err) {
             this.log.error(
                 { key, err: err instanceof Error ? err.message : String(err) },
-                "scheduled handler claim failed",
+                "scheduled subagent claim failed",
             );
             return;
         }
         if (!row) {
-            this.log.debug({ key }, "scheduled handler fired but row already gone");
+            this.log.debug({ key }, "scheduled subagent fired but row already gone");
             return;
         }
 
-        const prompt = row.prompt ?? "Scheduled handler fired";
+        const prompt = row.prompt ?? "Scheduled subagent fired";
         const payload = (row.payload ?? {}) as Record<string, unknown>;
         const event: NewEvent = {
             topic: row.topic,
@@ -172,7 +172,7 @@ export class ScheduledHandlerScheduler {
             const handle = await this.emit(event);
             this.log.info(
                 { key, eventId: handle.id, topic: row.topic, handler: row.handler },
-                "scheduled handler fired",
+                "scheduled subagent fired",
             );
         } catch (err) {
             this.log.error(
@@ -182,7 +182,7 @@ export class ScheduledHandlerScheduler {
                     handler: row.handler,
                     err: err instanceof Error ? err.message : String(err),
                 },
-                "scheduled handler fired but emit failed",
+                "scheduled subagent fired but emit failed",
             );
         }
     }

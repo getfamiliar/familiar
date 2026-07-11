@@ -258,22 +258,22 @@ export class AgentRunBus {
     }
 
     /**
-     * `true` when every `calltype='called'` child of `parentId` is in
+     * `true` when every `calltype='started'` child of `parentId` is in
      * a terminal state (`done` / `failed`). Used by the Scheduler
-     * after a called child settles, to decide whether the parent can
+     * after a started child settles, to decide whether the parent can
      * leave `waiting` and go back to `pending`.
      *
-     * Returns `true` when there are no called children at all (the
+     * Returns `true` when there are no started children at all (the
      * trivially-vacuous case); the Scheduler still owns the "should
      * we actually re-pend this parent?" decision and only invokes
-     * this method when at least one called child has just settled.
+     * this method when at least one started child has just settled.
      */
-    async areAllCalledChildrenSettled(parentId: string): Promise<boolean> {
+    async areAllStartedChildrenSettled(parentId: string): Promise<boolean> {
         const result = await this.connection.getPool().query<{ exists: boolean }>(
             `SELECT EXISTS (
                SELECT 1 FROM agentruns
                WHERE parent_agentrun_id = $1
-                 AND calltype = 'called'
+                 AND calltype = 'started'
                  AND state NOT IN ('done','failed')
              ) AS exists`,
             [parentId],
@@ -444,7 +444,7 @@ function mapRow(raw: RawAgentRunRow): AgentRunRow {
         error: raw.error,
         privileged: raw.privileged,
         calltype:
-            raw.calltype === "queued" || raw.calltype === "called"
+            raw.calltype === "scheduled" || raw.calltype === "started"
                 ? (raw.calltype as AgentRunCallType)
                 : null,
         retryCount: raw.retry_count,

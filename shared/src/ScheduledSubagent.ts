@@ -1,15 +1,15 @@
 /**
- * A persisted row in `scheduled_handlers` — one future one-off wake-up
+ * A persisted row in `scheduled_subagents` — one future one-off wake-up
  * the agent has asked the host to fire. Only produced when the agent
- * called `schedule_handler` with a future `when`; without `when`, the
+ * called `schedule_subagent` with a future `when`; without `when`, the
  * tool inserts a child agentrun directly instead and never touches
  * this table. Lifecycle:
  *
- * 1. Container's `schedule_handler` tool upserts (on `key`) a row with
+ * 1. Container's `schedule_subagent` tool upserts (on `key`) a row with
  *    `fireAt` in UTC, copying the calling agentrun's `priority` and
  *    `privileged` flag.
- * 2. Host's `ScheduledHandlerScheduler` reacts to the
- *    `scheduled_handlers_changed` NOTIFY and installs a Croner job for
+ * 2. Host's `ScheduledSubagentScheduler` reacts to the
+ *    `scheduled_subagents_changed` NOTIFY and installs a Croner job for
  *    `fireAt` with `maxRuns: 1`.
  * 3. When the job fires, the host atomically claims-and-deletes the
  *    row, then emits a fresh event with the row's topic / handler /
@@ -17,10 +17,10 @@
  *
  * `prompt` is optional at the table level so the agent can schedule
  * "the handler knows what to do" wake-ups; the firing path supplies
- * a generic default (`Scheduled handler fired`) before calling
+ * a generic default (`Scheduled subagent fired`) before calling
  * `EventBus.add`, which requires a non-empty prompt.
  */
-export interface ScheduledHandlerRow {
+export interface ScheduledSubagentRow {
     /** Agent-supplied unique id. UPSERT target. */
     readonly key: string;
     /** UTC ISO-8601 firing time (e.g. `2026-05-21T13:00:00Z`). */
@@ -35,10 +35,10 @@ export interface ScheduledHandlerRow {
 }
 
 /**
- * Insert shape for {@link ScheduledHandlerBus.upsert}. Mirrors
- * {@link ScheduledHandlerRow} minus `createdAt` (filled by the DB).
+ * Insert shape for {@link ScheduledSubagentBus.upsert}. Mirrors
+ * {@link ScheduledSubagentRow} minus `createdAt` (filled by the DB).
  */
-export interface NewScheduledHandler {
+export interface NewScheduledSubagent {
     readonly key: string;
     readonly fireAt: string;
     readonly topic: string;

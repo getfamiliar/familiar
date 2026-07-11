@@ -135,11 +135,11 @@ export class MockAgentRunBus {
             .sort((a, b) => b.priority - a.priority || Number(a.id) - Number(b.id));
     }
 
-    async areAllCalledChildrenSettled(parentId: string): Promise<boolean> {
+    async areAllStartedChildrenSettled(parentId: string): Promise<boolean> {
         for (const row of this.store.agentruns.values()) {
             if (
                 row.parentAgentrunId === parentId &&
-                row.calltype === "called" &&
+                row.calltype === "started" &&
                 row.state !== "done" &&
                 row.state !== "failed"
             ) {

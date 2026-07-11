@@ -227,7 +227,7 @@ export interface AgentRunnerContext {
      * Build the tool set for this run from the handler's `tools:`
      * entries. The Scheduler-provided closure threads in `bus`,
      * `parent`, `mcpPool`, `pluginToolsClient`, and the per-row
-     * `waitForSubagent` callback so `call_handler` is wired with
+     * `waitForSubagent` callback so `start_subagent` is wired with
      * the right Scheduler hooks. The runner reads `handler.header.tools`,
      * computes the offload token threshold from model metadata, and
      * calls this once. The threshold flows into both the container-side
@@ -241,8 +241,8 @@ export interface AgentRunnerContext {
     ) => Promise<ToolSet>;
     /**
      * Suspend the current run until the named child agentrun (and
-     * every other `calltype='called'` sibling) has settled. The real
-     * runner reaches this hook through the `call_handler` tool that
+     * every other `calltype='started'` sibling) has settled. The real
+     * runner reaches this hook through the `start_subagent` tool that
      * `buildTools` returns; it's also exposed on the context so
      * test runners can drive the same suspend semantics without
      * going through the SDK + tool plumbing.
@@ -518,7 +518,7 @@ export class AgentRunner {
         // flag AND on this run being the root of its tree. Chat events
         // feed prior turns from `chatmessages` for the root only; every
         // other agentrun (cron firings, mail ingestion, jira webhooks,
-        // and any `schedule_handler` / `call_handler` descendant —
+        // and any `schedule_subagent` / `start_subagent` descendant —
         // including descendants of a chat root) feeds the agentrun
         // lineage instead. Root-only is critical for chat events: a
         // subagent spawned mid-conversation must NOT see the live
@@ -558,7 +558,7 @@ export class AgentRunner {
             // lineage. Both `prompt` and `resultText` of each ancestor
             // are assistant-side artifacts here — the prompt was
             // written by the host emitter (cron, mail plugin) or by
-            // the parent agent's `schedule_handler` / `call_handler`,
+            // the parent agent's `schedule_subagent` / `start_subagent`,
             // never by a literal user. Tagging it `user` would falsely
             // imply user authorship.
             const ancestors = await fetchAncestorChain(ctx.agentRunsView, ctx.row.parentAgentrunId);

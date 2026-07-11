@@ -80,12 +80,12 @@ function fakeStep(over: Partial<StepResultRow>): StepResultRow {
  * Build a representative tree:
  *   root #3289 (done)
  *     step01: thinking + fs_read
- *     step02: call_handler  -> child #3290 (called, done)
- *                                 step01: call_handler -> grandchild #3293 (called, done)
- *     step03: schedule_handler (immediate -> #3291 queued/pending),
- *             schedule_handler (deferred -> placeholder)
+ *     step02: start_subagent  -> child #3290 (started, done)
+ *                                 step01: start_subagent -> grandchild #3293 (started, done)
+ *     step03: schedule_subagent (immediate -> #3291 scheduled/pending),
+ *             schedule_subagent (deferred -> placeholder)
  *     step04: stop
- *   orphan #3294 (called, done) — no matching tool call
+ *   orphan #3294 (started, done) — no matching tool call
  */
 function buildTree(): {
     event: EventRow;
@@ -103,28 +103,28 @@ function buildTree(): {
         id: "3290",
         parentAgentrunId: "3289",
         handler: "respond",
-        calltype: "called",
+        calltype: "started",
         resultText: "respond done",
     });
     const grandchild = fakeRun({
         id: "3293",
         parentAgentrunId: "3290",
         handler: "summarize",
-        calltype: "called",
+        calltype: "started",
         resultText: "grandchild done",
     });
     const immediate = fakeRun({
         id: "3291",
         parentAgentrunId: "3289",
         handler: "notify",
-        calltype: "queued",
+        calltype: "scheduled",
         state: "pending",
     });
     const orphan = fakeRun({
         id: "3294",
         parentAgentrunId: "3289",
         handler: "stray",
-        calltype: "called",
+        calltype: "started",
         resultText: "orphan done",
     });
 
@@ -146,7 +146,7 @@ function buildTree(): {
             id: "s1",
             stepNumber: 1,
             toolCalls: [
-                { toolCallId: "c2", toolName: "call_handler", input: { handler: "respond" } },
+                { toolCallId: "c2", toolName: "start_subagent", input: { handler: "respond" } },
             ],
             toolResults: [{ type: "tool-result", toolCallId: "c2", output: "respond done" }],
         }),
@@ -154,8 +154,8 @@ function buildTree(): {
             id: "s2",
             stepNumber: 2,
             toolCalls: [
-                { toolCallId: "c3", toolName: "schedule_handler", input: { handler: "notify" } },
-                { toolCallId: "c4", toolName: "schedule_handler", input: { handler: "digest" } },
+                { toolCallId: "c3", toolName: "schedule_subagent", input: { handler: "notify" } },
+                { toolCallId: "c4", toolName: "schedule_subagent", input: { handler: "digest" } },
             ],
             toolResults: [
                 { type: "tool-result", toolCallId: "c3", output: { agentrunId: "3291" } },
@@ -174,7 +174,7 @@ function buildTree(): {
             agentRunId: "3290",
             stepNumber: 0,
             toolCalls: [
-                { toolCallId: "g1", toolName: "call_handler", input: { handler: "summarize" } },
+                { toolCallId: "g1", toolName: "start_subagent", input: { handler: "summarize" } },
             ],
             toolResults: [{ type: "tool-result", toolCallId: "g1", output: "grandchild done" }],
         }),
@@ -227,7 +227,7 @@ describe("renderEventReport — structure & correlation", () => {
         assert.match(md, /> ### Agentrun #3290 \(started[^\n]*\n>\n/);
     });
 
-    it("double-prefixes a grandchild (call_handler within a called child)", () => {
+    it("double-prefixes a grandchild (start_subagent within a started child)", () => {
         const { event, runs, stepsByRun } = buildTree();
         const md = renderEventReport(event, runs, stepsByRun, { verbosity: 0, truncate: false });
         assert.match(md, /> > ### Agentrun #3293 \(started 1970-01-01/);
@@ -327,7 +327,7 @@ describe("renderEventReport — verbosity levels", () => {
         // String tool output renders as a backtick template, preserving text.
         assert.match(md, /fs_read\(\{[\s\S]*?\}\) => `\nfile contents here\n`/);
         // Object tool output renders as JSON.
-        assert.match(md, /schedule_handler\([\s\S]*?\) => \{\n\s+"agentrunId": "3291"\n\}/);
+        assert.match(md, /schedule_subagent\([\s\S]*?\) => \{\n\s+"agentrunId": "3291"\n\}/);
     });
 
     it("level 2 shows the not-recorded note when initial_messages is null", () => {

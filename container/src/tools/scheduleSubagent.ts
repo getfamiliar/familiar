@@ -5,7 +5,7 @@ import {
     parseInZone,
     renderInZone,
     runJsonTool,
-    type ScheduledHandlerBus,
+    type ScheduledSubagentBus,
     ToolError,
     type ToolRunContext,
 } from "@getfamiliar/shared";
@@ -13,7 +13,7 @@ import { jsonSchema, type Tool, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
 import { normalizeHandlerSpec } from "./HandlerSpec.js";
 
-interface ScheduleHandlerInput {
+interface ScheduleSubagentInput {
     readonly handler: string;
     readonly topic?: string;
     readonly prompt?: string;
@@ -22,57 +22,58 @@ interface ScheduleHandlerInput {
     readonly key?: string;
 }
 
-/** Whitelisted shape for scheduled-handler keys. Predictable enough for the
+/** Whitelisted shape for scheduled-subagent keys. Predictable enough for the
  * agent to reuse (e.g. `briefing_<eventId>`) without colliding with
  * other agents' keys, but strict enough to avoid surprises in logs. */
 const KEY_PATTERN = /^[A-Za-z0-9_:.-]{1,128}$/;
 
 /**
- * Build the `schedule_handler` tool — the one verb for spawning a
- * detached handler invocation.
+ * Build the `schedule_subagent` tool — the one verb for spawning a
+ * detached subagent, now or later.
  *
  * Two dispatch modes, chosen by the presence of `when`:
  *
  * - **Immediate** (`when` omitted, or `when` parses to a past instant):
  *   inserts a child `agentruns` row under the calling agentrun via
- *   {@link AgentRunBus.add} with `calltype='queued'`. Fire-and-forget;
+ *   {@link AgentRunBus.add} with `calltype='scheduled'`. Fire-and-forget;
  *   no result returned to the caller, child stays under the current
  *   `event_id`. Returns `{ agentrunId }`.
  *
  * - **Scheduled** (`when` parses to a future instant): upserts a row
- *   into `scheduled_handlers` via {@link ScheduledHandlerBus.upsert}.
+ *   into `scheduled_subagents` via {@link ScheduledSubagentBus.upsert}.
  *   When the host fires it at `when`, the new agentrun runs under a
  *   fresh event (no `parent_agentrun_id`, new `event_id`). Re-using
  *   `key` overwrites the previous schedule. Returns `{ key, when }`.
  *
  * `priority` and `privileged` are inherited from the calling agentrun
- * in both modes — same trust-propagation rule as `call_handler`.
+ * in both modes — same trust-propagation rule as `start_subagent`.
  *
  * Failure modes (bad key, malformed `when`, unknown handler,
  * non-serializable payload) throw a {@link ToolError} so the agent
  * sees a `tool-error` block and can recover. A successfully-parsed
  * past `when` does *not* throw — it silently demotes to immediate.
  */
-export function buildScheduleHandlerTool(
+export function buildScheduleSubagentTool(
     agentruns: AgentRunBus,
-    scheduled: ScheduledHandlerBus,
+    scheduled: ScheduledSubagentBus,
     parent: AgentRunRow,
     timezone: string,
     ctx: ToolRunContext,
-): Tool<ScheduleHandlerInput, object> {
-    return tool<ScheduleHandlerInput, object>({
+): Tool<ScheduleSubagentInput, object> {
+    return tool<ScheduleSubagentInput, object>({
         description:
-            "Spawn a handler invocation. Omit `when` to run immediately as a child of this " +
-            "agentrun under the same event (fire-and-forget — you do NOT see its result). Provide " +
-            "a future `when` (ISO-8601 wall-clock in the user's local timezone, e.g. " +
-            "`2026-05-22T13:55:00`) to defer it as a fresh event at that time; pass a stable `key` " +
-            "to make rescheduling idempotent (reusing a key overwrites the previous schedule). A " +
-            "`when` in the past is silently treated as immediate. Topic defaults to the current " +
-            "agentrun's topic, but can also be embedded in `handler` with `/` as the separator " +
-            '(e.g. `handler: "mail/whatsapp/send"` is the same as `topic: "mail:whatsapp", ' +
-            'handler: "send"`); a trailing `.md` is silently stripped. Inherits priority and ' +
-            "trust level from this run. Use `unschedule_handler` to cancel a scheduled wake-up.",
-        inputSchema: jsonSchema<ScheduleHandlerInput>({
+            "Schedule a subagent to run later, or spawn one now fire-and-forget. Provide a future " +
+            "`when` (ISO-8601 wall-clock in the user's local timezone, e.g. `2026-05-22T13:55:00`) " +
+            "to defer it as a fresh event at that time — an alarm; pass a stable `key` to make " +
+            "rescheduling idempotent (reusing a key overwrites the previous schedule). Omit `when` " +
+            "to run it immediately as a fire-and-forget child of this agentrun under the same event " +
+            "(you do NOT see its result). A `when` in the past is silently treated as immediate. " +
+            "Topic defaults to the current agentrun's topic, but can also be embedded in `handler` " +
+            'with `/` as the separator (e.g. `handler: "mail/whatsapp/send"` is the same as ' +
+            '`topic: "mail:whatsapp", handler: "send"`); a trailing `.md` is silently stripped. ' +
+            "Inherits priority and trust level from this run. Use `unschedule_subagent` to cancel a " +
+            "scheduled wake-up.",
+        inputSchema: jsonSchema<ScheduleSubagentInput>({
             type: "object",
             additionalProperties: false,
             required: ["handler"],
@@ -189,7 +190,7 @@ export function buildScheduleHandlerTool(
                         prompt: prompt ?? null,
                         payload: payload ?? {},
                         privileged: parent.privileged,
-                        calltype: "queued",
+                        calltype: "scheduled",
                     });
                     return { agentrunId: row.id };
                 }

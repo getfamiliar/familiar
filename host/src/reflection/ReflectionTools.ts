@@ -41,7 +41,7 @@ export interface ReflectionToolsDeps {
  *
  * Every tool declares `groups: ["reflection"]` so a handler can opt
  * in with frontmatter like `tools: core + reflection`. The container-
- * side `get_scheduled_handlers` already lives in the same group.
+ * side `get_scheduled_subagents` already lives in the same group.
  */
 export function buildReflectionTools(deps: ReflectionToolsDeps): readonly PluginTool[] {
     return [

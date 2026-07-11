@@ -92,9 +92,9 @@ function buildHarness(opts: HarnessOptions): Harness {
         }),
     };
 
-    const scheduledHandlerBus = {
+    const scheduledSubagentBus = {
         upsert: async () => {
-            throw new Error("scheduledHandlerBus.upsert not implemented in harness");
+            throw new Error("scheduledSubagentBus.upsert not implemented in harness");
         },
         deleteByKey: async () => false,
         listInRange: async () => [],
@@ -121,7 +121,8 @@ function buildHarness(opts: HarnessOptions): Harness {
             installSchema: async () => {},
             pruneBefore: async () => 0,
         } as unknown as SchedulerDeps["toolCallBus"],
-        scheduledHandlerBus: scheduledHandlerBus as unknown as SchedulerDeps["scheduledHandlerBus"],
+        scheduledSubagentBus:
+            scheduledSubagentBus as unknown as SchedulerDeps["scheduledSubagentBus"],
         timezone: "UTC",
         log,
         clock,
@@ -213,9 +214,9 @@ describe("AgentrunScheduler — happy path", () => {
 });
 
 describe("AgentrunScheduler — subagents", () => {
-    it("call_handler-style: parent suspends, child runs, parent resumes with text", async () => {
+    it("start_subagent-style: parent suspends, child runs, parent resumes with text", async () => {
         // Capture the harness's bus inside the parent behavior so it
-        // can insert the child row the way the real `call_handler`
+        // can insert the child row the way the real `start_subagent`
         // tool would.
         let agentRunBus!: MockAgentRunBus;
 
@@ -228,7 +229,7 @@ describe("AgentrunScheduler — subagents", () => {
                 priority: ctx.row.priority,
                 payload: {},
                 privileged: ctx.row.privileged,
-                calltype: "called",
+                calltype: "started",
             });
             const settled = await ctx.waitForSubagent(child.id);
             assert.equal(settled.state, "done");
@@ -258,7 +259,7 @@ describe("AgentrunScheduler — subagents", () => {
             const children = harness.store.childrenOf(root.id);
             assert.equal(children.length, 1);
             assert.equal(children[0].state, "done");
-            assert.equal(children[0].calltype, "called");
+            assert.equal(children[0].calltype, "started");
 
             await flush();
             assert.equal(harness.store.events.get(event.id)?.state, "done");
@@ -278,7 +279,7 @@ describe("AgentrunScheduler — subagents", () => {
                 handler: "analyze",
                 payload: {},
                 privileged: ctx.row.privileged,
-                calltype: "called",
+                calltype: "started",
             });
             const settled = await ctx.waitForSubagent(child.id);
             // We don't fail the parent — we just record the error.
@@ -327,7 +328,7 @@ describe("AgentrunScheduler — subagents", () => {
                 handler: "a",
                 payload: {},
                 privileged: ctx.row.privileged,
-                calltype: "called",
+                calltype: "started",
             });
             const b = await agentRunBus.add({
                 eventId: ctx.row.eventId,
@@ -336,7 +337,7 @@ describe("AgentrunScheduler — subagents", () => {
                 handler: "b",
                 payload: {},
                 privileged: ctx.row.privileged,
-                calltype: "called",
+                calltype: "started",
             });
             const [ra, rb] = await Promise.all([
                 ctx.waitForSubagent(a.id),
@@ -573,7 +574,7 @@ describe("AgentrunScheduler — timeouts", () => {
                 handler: "slow",
                 payload: {},
                 privileged: ctx.row.privileged,
-                calltype: "called",
+                calltype: "started",
             });
             await ctx.waitForSubagent(child.id);
             return "parent fast finish";
@@ -639,7 +640,7 @@ describe("AgentrunScheduler — step limit", () => {
     });
 });
 
-describe("AgentrunScheduler — schedule_handler (immediate mode, fire-and-forget)", () => {
+describe("AgentrunScheduler — schedule_subagent (immediate mode, fire-and-forget)", () => {
     it("queued child runs separately; event terminal mirrors root, ignoring the child", async () => {
         let agentRunBus!: MockAgentRunBus;
 
@@ -651,7 +652,7 @@ describe("AgentrunScheduler — schedule_handler (immediate mode, fire-and-forge
                 handler: "followup",
                 payload: {},
                 privileged: ctx.row.privileged,
-                calltype: "queued",
+                calltype: "scheduled",
             });
             return "parent done";
         };

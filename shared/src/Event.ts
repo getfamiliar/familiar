@@ -107,7 +107,7 @@ export interface EventRow {
      * (the operator at the local terminal via cli-chat, the operator on
      * Telegram). Stamped at emit time, never mutated. Propagated verbatim
      * to the root agentrun and to every child agentrun spawned via
-     * `schedule_handler` / `call_handler`, so future system tools can gate
+     * `schedule_subagent` / `start_subagent`, so future system tools can gate
      * risky reads / writes
      * (editing SOUL.md, etc.) on whether the run descends from a trusted
      * input. `false` for everything else (mail, webhooks, cron-driven

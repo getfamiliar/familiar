@@ -3,8 +3,8 @@ import { TOPIC_PATTERN, ToolError } from "@getfamiliar/shared";
 const TOPIC_REGEXP = new RegExp(TOPIC_PATTERN);
 
 /**
- * Normalize the `topic` / `handler` pair the agent passed to `call_handler`
- * or `schedule_handler` into the canonical shape the rest of the stack
+ * Normalize the `topic` / `handler` pair the agent passed to `start_subagent`
+ * or `schedule_subagent` into the canonical shape the rest of the stack
  * expects: a colon-separated topic and a bare handler basename.
  *
  * The agent sometimes packs the whole topic+basename into the `handler`

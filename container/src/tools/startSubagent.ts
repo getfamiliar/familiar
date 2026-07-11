@@ -10,7 +10,7 @@ import { jsonSchema, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
 import { normalizeHandlerSpec } from "./HandlerSpec.js";
 
-interface CallHandlerInput {
+interface StartSubagentInput {
     readonly topic?: string;
     readonly handler: string;
     readonly prompt?: string;
@@ -21,18 +21,24 @@ interface CallHandlerInput {
  * Callback the Scheduler binds to each runner — when invoked, the
  * Scheduler flips the parent agentrun to `state='waiting'`, pauses
  * its timeout, and returns a Promise that resolves with the child's
- * settled row once **every** `calltype='called'` child of the parent
+ * settled row once **every** `calltype='started'` child of the parent
  * has reached `done`/`failed`. The resolved row is specifically the
  * child this call was waiting on.
  */
 export type WaitForSubagent = (childId: string) => Promise<AgentRunRow>;
 
 /**
- * Build the `call_handler` tool for one agentrun. Spawns a child
- * agentrun and **suspends** the current run until the child settles,
- * then returns the child's `resultText` as the tool's text result.
+ * Build the `start_subagent` tool for one agentrun. Spawns a child
+ * agentrun in its own fresh context and **suspends** the current run
+ * until the child settles, then returns the child's `resultText` as
+ * the tool's text result.
  *
- * Unlike `schedule_handler` (fire-and-forget when called without
+ * A subagent is not needed to reach a tool — every tool is directly
+ * callable. Start one when you want isolation: an empty context, or a
+ * different model / tool set (both taken from the target handler's
+ * frontmatter). Parallel fan-out is planned.
+ *
+ * Unlike `schedule_subagent` (fire-and-forget when called without
  * `when`), the caller awaits and receives the subagent's output —
  * making it possible to react to the result. The parent's watcher
  * slot is released while suspended, so the child can run (and any
@@ -40,7 +46,7 @@ export type WaitForSubagent = (childId: string) => Promise<AgentRunRow>;
  * parent's slot for the full duration.
  *
  * The child inherits `event_id`, `priority`, and `privileged` from
- * the parent and is tagged `calltype='called'`. Topic defaults to
+ * the parent and is tagged `calltype='started'`. Topic defaults to
  * the parent's topic when omitted.
  *
  * Errors during child insertion, handler resolution, or a failed
@@ -48,24 +54,26 @@ export type WaitForSubagent = (childId: string) => Promise<AgentRunRow>;
  * `tool-error` block so the calling handler can decide how to react
  * (read the failure message, pick a different handler, etc.).
  */
-export function buildCallHandlerTool(
+export function buildStartSubagentTool(
     bus: AgentRunBus,
     parent: AgentRunRow,
     waitForSubagent: WaitForSubagent,
     ctx: ToolRunContext,
-): Tool<CallHandlerInput, string> {
-    return tool<CallHandlerInput, string>({
+): Tool<StartSubagentInput, string> {
+    return tool<StartSubagentInput, string>({
         description:
-            "Spawn a subagent and WAIT for its result. The current agentrun suspends; once the " +
-            "subagent settles, this tool returns the subagent's final text. Use " +
-            "`schedule_handler` (without `when`) instead when you don't need the subagent's " +
-            "output. Topic defaults to the current agentrun's topic, but can also be embedded " +
-            'in `handler` with `/` as the separator (e.g. `handler: "mail/whatsapp/send"` is ' +
-            'the same as `topic: "mail:whatsapp", handler: "send"`); a trailing `.md` is ' +
-            "silently stripped. Inherits the event and trust level from this run. If the " +
-            "subagent fails, the tool surfaces an error so the calling handler can decide how " +
-            "to react.",
-        inputSchema: jsonSchema<CallHandlerInput>({
+            "Start a subagent to run a target handler in its own fresh context, and WAIT for its " +
+            "result. The current agentrun suspends; once the subagent settles, this tool returns " +
+            "the subagent's final text. A subagent is NOT needed to reach a tool — every tool is " +
+            "directly callable. Start one for isolation: an empty context, or a different model / " +
+            "tool set (both taken from the target handler's frontmatter). Parallel fan-out is " +
+            "planned. Use `schedule_subagent` (without `when`) instead when you don't need the " +
+            "subagent's output. Topic defaults to the current agentrun's topic, but can also be " +
+            'embedded in `handler` with `/` as the separator (e.g. `handler: "mail/whatsapp/send"` ' +
+            'is the same as `topic: "mail:whatsapp", handler: "send"`); a trailing `.md` is ' +
+            "silently stripped. Inherits the event and trust level from this run. If the subagent " +
+            "fails, the tool surfaces an error so the calling handler can decide how to react.",
+        inputSchema: jsonSchema<StartSubagentInput>({
             type: "object",
             additionalProperties: false,
             required: ["handler"],
@@ -73,7 +81,7 @@ export function buildCallHandlerTool(
                 topic: {
                     type: "string",
                     description:
-                        "Optional topic for the called subagent. Defaults to the current " +
+                        "Optional topic for the started subagent. Defaults to the current " +
                         "agentrun's topic.",
                 },
                 handler: {
@@ -141,7 +149,7 @@ export function buildCallHandlerTool(
                         prompt: prompt ?? null,
                         payload: payload ?? {},
                         privileged: parent.privileged,
-                        calltype: "called",
+                        calltype: "started",
                     });
                 } catch (err) {
                     throw new ToolError(

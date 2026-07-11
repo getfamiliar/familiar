@@ -5,7 +5,7 @@ import {
     DEFAULT_TOOL_LEVEL,
     estimateTokens,
     type Logger,
-    type ScheduledHandlerBus,
+    type ScheduledSubagentBus,
     type ToolCallBus,
     ToolError,
     type ToolLevel,
@@ -14,15 +14,15 @@ import {
 import { asSchema, type Tool, type ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
 import { buildBashTool } from "./bash.js";
-import { buildCallHandlerTool, type WaitForSubagent } from "./callHandler.js";
 import { buildFsTools } from "./fs.js";
-import { buildGetScheduledHandlersTool } from "./getScheduledHandlers.js";
-import { buildScheduleHandlerTool } from "./scheduleHandler.js";
+import { buildGetScheduledSubagentsTool } from "./getScheduledSubagents.js";
+import { buildScheduleSubagentTool } from "./scheduleSubagent.js";
 import { buildSendChatTool } from "./sendChat.js";
+import { buildStartSubagentTool, type WaitForSubagent } from "./startSubagent.js";
 import { MCP_GROUP_NAME, resolveTools } from "./ToolsExpressionParser.js";
 import { buildToolCallTool } from "./toolCall.js";
 import { buildToolListTool, type ToolCatalogEntry } from "./toolList.js";
-import { buildUnscheduleHandlerTool } from "./unscheduleHandler.js";
+import { buildUnscheduleSubagentTool } from "./unscheduleSubagent.js";
 
 /** Agent-facing keys of the always-present discovery meta-tools. */
 const TOOL_LIST_KEY = "tool_list";
@@ -60,7 +60,7 @@ const FALLBACK_HEURISTIC_TOOL_CAP = 10;
  * `core` group is the implicit default tool set handed to handlers
  * that omit `tools:`; `fs` bundles the filesystem family for
  * `tools: fs`; `reflection` collects introspection tools like
- * `get_scheduled_handlers`. Names not listed here are fine — new
+ * `get_scheduled_subagents`. Names not listed here are fine — new
  * groups are coined by listing them in this table or in a plugin
  * tool's `groups` field.
  *
@@ -71,10 +71,10 @@ const FALLBACK_HEURISTIC_TOOL_CAP = 10;
  */
 const CONTAINER_TOOL_GROUPS: Readonly<Record<string, readonly string[]>> = {
     send_chat: ["core"],
-    call_handler: ["core"],
-    schedule_handler: ["core"],
-    unschedule_handler: ["core"],
-    get_scheduled_handlers: ["reflection"],
+    start_subagent: ["core"],
+    schedule_subagent: ["core"],
+    unschedule_subagent: ["core"],
+    get_scheduled_subagents: ["reflection"],
     fs_read: ["core", "fs"],
     fs_write: ["fs"],
     fs_str_replace: ["fs"],
@@ -118,33 +118,33 @@ export interface ToolsFactoryContext {
      */
     readonly tools?: readonly string[];
     /**
-     * Agentrun bus; required to register `schedule_handler` (immediate
-     * mode inserts a child agentrun) and `call_handler`.
+     * Agentrun bus; required to register `schedule_subagent` (immediate
+     * mode inserts a child agentrun) and `start_subagent`.
      */
     readonly bus?: AgentRunBus;
     /**
-     * Scheduled-handler bus; required to register `schedule_handler`,
-     * `unschedule_handler`, and `get_scheduled_handlers`. The host's
-     * `ScheduledHandlerScheduler` observes the same table and installs
+     * Scheduled-subagent bus; required to register `schedule_subagent`,
+     * `unschedule_subagent`, and `get_scheduled_subagents`. The host's
+     * `ScheduledSubagentScheduler` observes the same table and installs
      * Croner jobs for inserted rows.
      */
-    readonly scheduledHandlerBus?: ScheduledHandlerBus;
+    readonly scheduledSubagentBus?: ScheduledSubagentBus;
     /**
      * IANA timezone (typically `core.timezone`) used by the scheduled-
-     * handler tools to convert between wall-clock and UTC. When
-     * omitted, the scheduled-handler tools are not registered.
+     * subagent tools to convert between wall-clock and UTC. When
+     * omitted, the scheduled-subagent tools are not registered.
      */
     readonly timezone?: string;
     /**
      * The currently-running agentrun row; closed over by
-     * `schedule_handler` and `call_handler` for parent inheritance.
+     * `schedule_subagent` and `start_subagent` for parent inheritance.
      */
     readonly parent?: AgentRunRow;
     /**
      * Scheduler-provided callback that, given a freshly-inserted
      * child agentrun id, suspends the parent until the child settles
      * and resolves with the child's terminal row. Required to register
-     * `call_handler`; `schedule_handler` does not need it.
+     * `start_subagent`; `schedule_subagent` does not need it.
      */
     readonly waitForSubagent?: WaitForSubagent;
     /**
@@ -249,8 +249,8 @@ export interface ToolsFactoryContext {
  * hands to the Vercel AI SDK's tool-loop agent.
  *
  * **One pool, one resolution.** Built-in container tools (`send_chat`,
- * `schedule_handler`, `call_handler`, `unschedule_handler`,
- * `get_scheduled_handlers`, `fs_*`), MCP tools (`${id}_${name}`), and
+ * `schedule_subagent`, `start_subagent`, `unschedule_subagent`,
+ * `get_scheduled_subagents`, `fs_*`), MCP tools (`${id}_${name}`), and
  * plugin tools are merged into a single available set. The handler's
  * `tools:` entries — or, when omitted, the implicit `core` default —
  * decide what survives.
@@ -291,29 +291,29 @@ export class ToolsFactory {
             );
         }
         if (context.bus && context.parent && context.waitForSubagent) {
-            systemTools.call_handler = buildCallHandlerTool(
+            systemTools.start_subagent = buildStartSubagentTool(
                 context.bus,
                 context.parent,
                 context.waitForSubagent,
                 toolRunContext,
             );
         }
-        if (context.scheduledHandlerBus && context.parent && context.timezone) {
+        if (context.scheduledSubagentBus && context.parent && context.timezone) {
             if (context.bus) {
-                systemTools.schedule_handler = buildScheduleHandlerTool(
+                systemTools.schedule_subagent = buildScheduleSubagentTool(
                     context.bus,
-                    context.scheduledHandlerBus,
+                    context.scheduledSubagentBus,
                     context.parent,
                     context.timezone,
                     toolRunContext,
                 );
             }
-            systemTools.unschedule_handler = buildUnscheduleHandlerTool(
-                context.scheduledHandlerBus,
+            systemTools.unschedule_subagent = buildUnscheduleSubagentTool(
+                context.scheduledSubagentBus,
                 toolRunContext,
             );
-            systemTools.get_scheduled_handlers = buildGetScheduledHandlersTool(
-                context.scheduledHandlerBus,
+            systemTools.get_scheduled_subagents = buildGetScheduledSubagentsTool(
+                context.scheduledSubagentBus,
                 context.timezone,
                 toolRunContext,
             );
@@ -467,17 +467,17 @@ export class ToolsFactory {
         const ctx = FALLBACK_TOOL_RUN_CONTEXT;
         const chat = {} as Parameters<typeof buildSendChatTool>[0];
         const bus = {} as AgentRunBus;
-        const scheduled = {} as ScheduledHandlerBus;
+        const scheduled = {} as ScheduledSubagentBus;
         const parent = {} as AgentRunRow;
         const waitForSubagent: WaitForSubagent = async () => {
             throw new Error("ToolsFactory.catalog stub: waitForSubagent must not be invoked");
         };
         const tools: ToolSet = {
             send_chat: buildSendChatTool(chat, "", ctx),
-            call_handler: buildCallHandlerTool(bus, parent, waitForSubagent, ctx),
-            schedule_handler: buildScheduleHandlerTool(bus, scheduled, parent, "UTC", ctx),
-            unschedule_handler: buildUnscheduleHandlerTool(scheduled, ctx),
-            get_scheduled_handlers: buildGetScheduledHandlersTool(scheduled, "UTC", ctx),
+            start_subagent: buildStartSubagentTool(bus, parent, waitForSubagent, ctx),
+            schedule_subagent: buildScheduleSubagentTool(bus, scheduled, parent, "UTC", ctx),
+            unschedule_subagent: buildUnscheduleSubagentTool(scheduled, ctx),
+            get_scheduled_subagents: buildGetScheduledSubagentsTool(scheduled, "UTC", ctx),
             ...buildFsTools(parent, ctx),
             bash: buildBashTool(parent, ctx),
         };

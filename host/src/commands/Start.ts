@@ -9,7 +9,7 @@ import {
     type Logger,
     type LogStream,
     prettyStdoutStream,
-    ScheduledHandlerBus,
+    ScheduledSubagentBus,
     ToolCallBus,
 } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
@@ -40,7 +40,7 @@ import { ContainerToolsGateway } from "../container-tools/ContainerToolsGateway.
 import { ContainerToolsRegistry } from "../container-tools/ContainerToolsRegistry.js";
 import { CronjobScheduler } from "../cron/CronjobScheduler.js";
 import { ModelMetadataRefresher } from "../cron/ModelMetadataRefresher.js";
-import { ScheduledHandlerScheduler } from "../cron/ScheduledHandlerScheduler.js";
+import { ScheduledSubagentScheduler } from "../cron/ScheduledSubagentScheduler.js";
 import { ScratchGc } from "../cron/ScratchGc.js";
 import { ToolCallsGc } from "../cron/ToolCallsGc.js";
 import { ensureNetwork, ISOLATED_NETWORK_NAME, SHARED_NETWORK_NAME } from "../DockerTools.js";
@@ -434,20 +434,20 @@ export const startCommand = defineCommand({
         });
         await chatCompactor.start();
 
-        const scheduledHandlerConn = await pluginHost.ensureConnection();
-        const scheduledHandlerBus = new ScheduledHandlerBus(
-            scheduledHandlerConn,
-            log.child({ component: "scheduled-handler-bus" }),
+        const scheduledSubagentConn = await pluginHost.ensureConnection();
+        const scheduledSubagentBus = new ScheduledSubagentBus(
+            scheduledSubagentConn,
+            log.child({ component: "scheduled-subagent-bus" }),
         );
-        const scheduledHandlerScheduler = new ScheduledHandlerScheduler({
-            bus: scheduledHandlerBus,
+        const scheduledSubagentScheduler = new ScheduledSubagentScheduler({
+            bus: scheduledSubagentBus,
             emit: async (event) => {
                 const handle = await cronCtx.events.emit(event);
                 return { id: handle.id };
             },
-            log: log.child({ component: "scheduled-handler-scheduler" }),
+            log: log.child({ component: "scheduled-subagent-scheduler" }),
         });
-        await scheduledHandlerScheduler.start();
+        await scheduledSubagentScheduler.start();
 
         const scratchGc = new ScratchGc({
             scratchDir: boot.scratchDir,
@@ -490,8 +490,8 @@ export const startCommand = defineCommand({
                 scratchGc.stop();
                 toolCallsGc.stop();
                 modelMetadataRefresher.stop();
-                await safeStop(log, "scheduled-handler scheduler", () =>
-                    scheduledHandlerScheduler.stop(),
+                await safeStop(log, "scheduled-subagent scheduler", () =>
+                    scheduledSubagentScheduler.stop(),
                 );
                 await safeStop(log, "chat compactor", () => chatCompactor.stop());
                 await safeStop(log, "cron scheduler", () => cronScheduler.stop());

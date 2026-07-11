@@ -22,7 +22,7 @@ core:
 
   # Hard cap (seconds) on a *single SDK step* of `agent.generate()`.
   # The timer resets on every completed step (and pauses while the
-  # runner is parked on `call_handler`/`waitForSubagent`), so this
+  # runner is parked on `start_subagent`/`waitForSubagent`), so this
   # bounds the slowest single step — catching a wedged tool call or
   # stuck model — without penalising long-but-healthy runs of many
   # short steps. The Scheduler aborts the runner's signal with an

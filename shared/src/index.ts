@@ -112,20 +112,20 @@ export {
     PostgresConnection,
     type PostgresConnectionConfig,
 } from "./PostgresConnection.js";
-export type { NewScheduledHandler, ScheduledHandlerRow } from "./ScheduledHandler.js";
+export type { NewScheduledSubagent, ScheduledSubagentRow } from "./ScheduledSubagent.js";
 export {
-    ScheduledHandlerBus,
-    type ScheduledHandlerNotification,
-    type ScheduledHandlerOp,
-    type ScheduledHandlerUnsubscribe,
-} from "./ScheduledHandlerBus.js";
+    ScheduledSubagentBus,
+    type ScheduledSubagentNotification,
+    type ScheduledSubagentOp,
+    type ScheduledSubagentUnsubscribe,
+} from "./ScheduledSubagentBus.js";
 export {
     AGENTRUNS_CHANNEL,
     CHATMESSAGES_NEW_CHANNEL,
     EVENT_TERMINAL_UPDATE_SQL,
     EVENTS_NEW_CHANNEL,
     EVENTS_STATE_CHANNEL,
-    SCHEDULED_HANDLERS_CHANNEL,
+    SCHEDULED_SUBAGENTS_CHANNEL,
     SCHEMA_SQL,
     STEPRESULTS_NEW_CHANNEL,
     TOPIC_PATTERN,

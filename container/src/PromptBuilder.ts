@@ -561,9 +561,11 @@ function capString(value: string, max: number): string {
  *
  * The `(read)` marker is rendered for skills whose frontmatter does
  * not declare a non-empty `tools` field: with no tools the skill is
- * pure context and can be consumed by `fs_read` alone; otherwise it
- * has to be invoked via `call_handler` so the agent execution context
- * grants those tools.
+ * pure context — `fs_read` it and follow it. A skill that declares
+ * `tools` ships its own handler config (its own model / tool set); you
+ * can run it as a subagent via `start_subagent` to get it in that
+ * fresh context, but that is no longer required to reach its tools —
+ * every tool is directly callable regardless.
  *
  * @returns The fully-formatted section (heading + preamble + bullets),
  *   or `null` when the `skills/` directory is missing or contains no
@@ -628,9 +630,11 @@ function buildAvailableSkillsSection(): string | null {
 
     const preamble = [
         "The following skills are available in the `skills/` folder.",
-        'Use like `fs_read({path: "skills/<id>/SKILL.md"})` or',
-        '`call_handler({topic: "skills:<id>", handler: "SKILL", prompt?, payload?})`.',
-        "If reading is sufficient, this is marked in the list.",
+        'Read one with `fs_read({path: "skills/<id>/SKILL.md"})` and follow it —',
+        "every tool a skill mentions is directly callable, so you don't need a subagent to use them.",
+        "Optionally run a skill in its own fresh context via",
+        '`start_subagent({topic: "skills:<id>", handler: "SKILL", prompt?, payload?})`.',
+        "Skills marked (read) are pure context — just read them.",
     ].join(" ");
 
     return `# Available skills\n\n${preamble}\n\n${bullets.map((b) => b.line).join("\n")}`;

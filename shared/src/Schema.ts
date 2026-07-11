@@ -12,8 +12,8 @@
  * - `agentruns` is the assistant's response tree. Each row is one agent
  *   invocation. The container's input-event watcher inserts the root
  *   agentrun for each new event; child agentruns are spawned by the
- *   `schedule_handler` (fire-and-forget when called without `when`) and
- *   `call_handler` (suspending) tools inside a running handler.
+ *   `schedule_subagent` (fire-and-forget when called without `when`) and
+ *   `start_subagent` (suspending) tools inside a running handler.
  *
  * Four tables, five NOTIFY channels:
  *
@@ -43,13 +43,13 @@ export const AGENTRUNS_CHANNEL = "agentruns_changed";
 export const STEPRESULTS_NEW_CHANNEL = "stepresults_new";
 export const CHATMESSAGES_NEW_CHANNEL = "chatmessages_new";
 /**
- * NOTIFY channel for `scheduled_handlers` mutations. Payload format is
+ * NOTIFY channel for `scheduled_subagents` mutations. Payload format is
  * `<key>:<op>` where `op` is `u` (insert / update) or `d` (delete). The
- * host-side `ScheduledHandlerScheduler` listens here to install or
+ * host-side `ScheduledSubagentScheduler` listens here to install or
  * cancel Croner jobs as the agent schedules / unschedules one-off
- * handlers.
+ * subagents.
  */
-export const SCHEDULED_HANDLERS_CHANNEL = "scheduled_handlers_changed";
+export const SCHEDULED_SUBAGENTS_CHANNEL = "scheduled_subagents_changed";
 
 /**
  * Topic regex used by the events check constraint and by the container
@@ -115,7 +115,7 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS start_handler text;
 -- Privileged events originate from a trusted user-input source (operator
 -- at the local terminal via cli-chat, operator on Telegram). The flag
 -- propagates verbatim to the root agentrun and to every child agentrun
--- spawned via schedule_handler / call_handler, so future system tools can
+-- spawned via schedule_subagent / start_subagent, so future system tools can
 -- gate risky reads / writes (editing SOUL.md etc.) on whether the run
 -- descends from a trusted input. Default false: any plugin that doesn't
 -- explicitly opt in produces non-privileged events.
@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS agentruns (
 -- Safe no-op on fresh databases where the column already exists.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS result_text text;
 -- Inherited from the originating event (root agentrun) or parent
--- agentrun (children spawned via schedule_handler / call_handler). See
+-- agentrun (children spawned via schedule_subagent / start_subagent). See
 -- the matching ALTER on the events table for the trust-model rationale.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS privileged boolean NOT NULL DEFAULT false;
 -- Number of retry attempts already made on this agentrun. Bumped each
@@ -188,24 +188,24 @@ ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS system_prompt text;
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS initial_messages jsonb;
 
 -- Distinguishes how a child agentrun was spawned.
---   NULL     — root agentrun (created by the input-event watcher, no parent).
---   'queued' — fire-and-forget child spawned by \`schedule_handler\` without
---              a future \`when\` (immediate dispatch under the same event).
---   'called' — synchronous child spawned via the \`call_handler\` tool; the
---              parent is parked in state='waiting' until this row settles.
+--   NULL        — root agentrun (created by the input-event watcher, no parent).
+--   'scheduled' — fire-and-forget child spawned by \`schedule_subagent\` without
+--                 a future \`when\` (immediate dispatch under the same event).
+--   'started'   — synchronous child spawned via the \`start_subagent\` tool; the
+--                 parent is parked in state='waiting' until this row settles.
 -- The Scheduler reads this column to decide whether settling a row should
 -- wake a waiting parent.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS calltype text;
 ALTER TABLE agentruns DROP CONSTRAINT IF EXISTS agentruns_calltype_format;
 ALTER TABLE agentruns ADD CONSTRAINT agentruns_calltype_format
-  CHECK (calltype IS NULL OR calltype IN ('queued','called'));
+  CHECK (calltype IS NULL OR calltype IN ('scheduled','started'));
 
--- Partial index for the "are all called children of $parent settled?"
--- check the Scheduler runs after every 'called' child settles. Indexes
+-- Partial index for the "are all started children of $parent settled?"
+-- check the Scheduler runs after every 'started' child settles. Indexes
 -- only the rows that actually participate in the question.
 CREATE INDEX IF NOT EXISTS agentruns_parent_calltype_state_idx
   ON agentruns (parent_agentrun_id, state)
-  WHERE calltype = 'called';
+  WHERE calltype = 'started';
 
 -- Forward-compat: relax the topic CHECK constraint to allow arbitrarily
 -- deep \`a:b:c:…\` topics. CREATE TABLE IF NOT EXISTS above doesn't
@@ -438,11 +438,11 @@ CREATE INDEX IF NOT EXISTS calendar_events_series_idx
 CREATE INDEX IF NOT EXISTS calendar_events_generation_idx
   ON calendar_events (calendar_id, scan_generation);
 
--- ───────── scheduled_handlers ─────────
+-- ───────── scheduled_subagents ─────────
 --
 -- One-off agent-scheduled wake-ups. Each row is upserted by the
--- container's \`schedule_handler\` tool and read by the host-side
--- \`ScheduledHandlerScheduler\`, which installs a Croner job per row
+-- container's \`schedule_subagent\` tool and read by the host-side
+-- \`ScheduledSubagentScheduler\`, which installs a Croner job per row
 -- and atomically deletes the row when it fires. \`key\` is the
 -- agent-supplied unique id used for replace-on-conflict semantics
 -- ("rescheduling a key overwrites the previous timing"). \`fire_at\`
@@ -451,7 +451,7 @@ CREATE INDEX IF NOT EXISTS calendar_events_generation_idx
 -- past-due rows are deleted with a warn log; future rows are
 -- reinstalled. See [[feedback_agent_facing_format]] — UTC storage,
 -- local-tz projection at every agent-facing edge.
-CREATE TABLE IF NOT EXISTS scheduled_handlers (
+CREATE TABLE IF NOT EXISTS scheduled_subagents (
   key         text PRIMARY KEY,
   fire_at     timestamptz NOT NULL,
   topic       text NOT NULL,
@@ -461,13 +461,13 @@ CREATE TABLE IF NOT EXISTS scheduled_handlers (
   priority    smallint NOT NULL DEFAULT 50,
   privileged  boolean NOT NULL DEFAULT false,
   created_at  timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT scheduled_handlers_topic_format CHECK (topic ~ '${TOPIC_PATTERN}')
+  CONSTRAINT scheduled_subagents_topic_format CHECK (topic ~ '${TOPIC_PATTERN}')
 );
 
-CREATE INDEX IF NOT EXISTS scheduled_handlers_fire_at_idx
-  ON scheduled_handlers (fire_at);
+CREATE INDEX IF NOT EXISTS scheduled_subagents_fire_at_idx
+  ON scheduled_subagents (fire_at);
 
-CREATE OR REPLACE FUNCTION scheduled_handlers_notify_changed() RETURNS trigger AS $$
+CREATE OR REPLACE FUNCTION scheduled_subagents_notify_changed() RETURNS trigger AS $$
 DECLARE
   payload_key text;
   op text;
@@ -479,15 +479,15 @@ BEGIN
     payload_key := NEW.key;
     op := 'u';
   END IF;
-  PERFORM pg_notify('${SCHEDULED_HANDLERS_CHANNEL}', payload_key || ':' || op);
+  PERFORM pg_notify('${SCHEDULED_SUBAGENTS_CHANNEL}', payload_key || ':' || op);
   RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS scheduled_handlers_notify_changed_trg ON scheduled_handlers;
-CREATE TRIGGER scheduled_handlers_notify_changed_trg
-  AFTER INSERT OR UPDATE OR DELETE ON scheduled_handlers
-  FOR EACH ROW EXECUTE FUNCTION scheduled_handlers_notify_changed();
+DROP TRIGGER IF EXISTS scheduled_subagents_notify_changed_trg ON scheduled_subagents;
+CREATE TRIGGER scheduled_subagents_notify_changed_trg
+  AFTER INSERT OR UPDATE OR DELETE ON scheduled_subagents
+  FOR EACH ROW EXECUTE FUNCTION scheduled_subagents_notify_changed();
 
 -- ───────── inference_events ─────────
 --
@@ -546,8 +546,8 @@ CREATE INDEX IF NOT EXISTS tool_calls_created_at_idx
  * agentrun's terminal UPDATE.
  *
  * The event's outcome mirrors the root agentrun's outcome. Non-root
- * agentruns — `call_handler` children that surface their result back
- * to the parent, and `schedule_handler` immediate-mode children that
+ * agentruns — `start_subagent` children that surface their result back
+ * to the parent, and `schedule_subagent` immediate-mode children that
  * the parent fired and forgot — are out-of-band side effects. They
  * never flip the event on their own; the root decides.
  *

@@ -8,7 +8,7 @@ import {
     type NewStepResult,
     type NotificationHandler,
     type PostgresConnection,
-    type ScheduledHandlerBus,
+    type ScheduledSubagentBus,
     type StepResultBus,
     type ToolCallBus,
 } from "@getfamiliar/shared";
@@ -52,13 +52,13 @@ export interface SchedulerDeps {
      * front. Write failures are swallowed inside the tool wrapper.
      */
     readonly toolCallBus: ToolCallBus;
-    readonly scheduledHandlerBus: ScheduledHandlerBus;
+    readonly scheduledSubagentBus: ScheduledSubagentBus;
     /**
      * IANA timezone string — typically `core.timezone` from the passed
      * container config, resolved by `resolveTimezone()`. Threaded into
      * agent-facing tools that need
      * to convert between wall-clock and UTC (currently
-     * `schedule_handler` / `get_scheduled_handlers`).
+     * `schedule_subagent` / `get_scheduled_subagents`).
      */
     readonly timezone: string;
     readonly log: Logger;
@@ -175,11 +175,11 @@ type RunOutcome =
  *    pending rows from the bus, prefers ones already in the map
  *    (resume candidates), and starts or resumes them until the
  *    executing limit is reached.
- * 4. **Subagent suspension.** When the call_handler tool calls
+ * 4. **Subagent suspension.** When the start_subagent tool calls
  *    `waitForSubagent(childId)` via the per-runner closure, the
  *    Scheduler flips the parent to `waiting`, pauses its timeout,
  *    and parks a promise. When the awaited child settles AND every
- *    `calltype='called'` sibling is also settled, the parent moves
+ *    `calltype='started'` sibling is also settled, the parent moves
  *    `waiting → pending` and the next pick picks it up as a resume.
  * 5. **Timeouts, retries, failure routing.** Owns the abort
  *    controller, the per-step timer (reset on every completed step
@@ -560,12 +560,12 @@ export class AgentrunScheduler {
             );
         }
 
-        // If this was a called child, check whether the parent can now
+        // If this was a started child, check whether the parent can now
         // leave `waiting`. The parent is re-pended (which the picker
         // will resolve as a resume).
-        if (row.calltype === "called" && row.parentAgentrunId) {
+        if (row.calltype === "started" && row.parentAgentrunId) {
             const parentId = row.parentAgentrunId;
-            const allDone = await agentRunBus.areAllCalledChildrenSettled(parentId);
+            const allDone = await agentRunBus.areAllStartedChildrenSettled(parentId);
             if (allDone) {
                 const parent = await agentRunBus.getById(parentId);
                 if (parent?.state === "waiting") {
@@ -650,7 +650,7 @@ export class AgentrunScheduler {
             stepBus,
             inferenceEventBus,
             toolCallBus,
-            scheduledHandlerBus,
+            scheduledSubagentBus,
             timezone,
             mcpPool,
             pluginToolsClient,
@@ -688,7 +688,7 @@ export class AgentrunScheduler {
                     eventId: row.eventId,
                     tools,
                     bus: agentRunBus,
-                    scheduledHandlerBus,
+                    scheduledSubagentBus,
                     timezone,
                     parent: row,
                     waitForSubagent,

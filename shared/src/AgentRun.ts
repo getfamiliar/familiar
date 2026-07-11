@@ -6,13 +6,13 @@
  *
  * - `pending`: ready to be picked by the {@link AgentrunScheduler}.
  *   Either fresh (no in-memory runner) or a paused runner that has
- *   been re-pended after its `call_handler` children all settled.
+ *   been re-pended after its `start_subagent` children all settled.
  * - `running`: actively executing JS / making model calls. The
  *   Scheduler holds an in-memory entry for this row.
- * - `waiting`: parked inside a `call_handler` tool callback. The
+ * - `waiting`: parked inside a `start_subagent` tool callback. The
  *   in-memory runner is still alive but its `agent.generate()` is
  *   awaiting the subagent. Moves back to `pending` once every
- *   `calltype='called'` child of this row has settled.
+ *   `calltype='started'` child of this row has settled.
  * - `done` / `failed`: terminal. Set by {@link AgentRunBus.settle},
  *   which also recomputes the parent event's terminal state in the
  *   same transaction.
@@ -24,7 +24,7 @@ export type AgentRunState = "pending" | "running" | "waiting" | "done" | "failed
  * created by the input-event watcher in response to an event). See
  * the matching SQL CHECK in `Schema.ts`.
  */
-export type AgentRunCallType = "queued" | "called";
+export type AgentRunCallType = "scheduled" | "started";
 
 /**
  * Shape of a row in the `agentruns` table after JSON-decoding from
@@ -107,7 +107,7 @@ export interface AgentRunRow {
     readonly error: string | null;
     /**
      * Inherited from the originating event (root agentrun) or the parent
-     * agentrun (children spawned via `schedule_handler` / `call_handler`).
+     * agentrun (children spawned via `schedule_subagent` / `start_subagent`).
      * `true` when the run descends from a trusted user-input source;
      * `false` otherwise. Tools that gate risky behavior on the call
      * site's trust level read this flag rather than rummaging through
@@ -116,9 +116,9 @@ export interface AgentRunRow {
     readonly privileged: boolean;
     /**
      * How this agentrun was spawned. `null` for root agentruns;
-     * `'queued'` for children spawned by `schedule_handler` without a
-     * future `when` (fire-and-forget immediate dispatch); `'called'`
-     * for children of `call_handler` (parent parks in `waiting` until
+     * `'scheduled'` for children spawned by `schedule_subagent` without a
+     * future `when` (fire-and-forget immediate dispatch); `'started'`
+     * for children of `start_subagent` (parent parks in `waiting` until
      * this row settles).
      */
     readonly calltype: AgentRunCallType | null;
@@ -170,8 +170,8 @@ export interface NewAgentRun {
     readonly privileged?: boolean;
     /**
      * How this agentrun was spawned. Omitted / `null` for root rows
-     * inserted by the input-event watcher. Set to `'queued'` or
-     * `'called'` by the tool that spawned the child.
+     * inserted by the input-event watcher. Set to `'scheduled'` or
+     * `'started'` by the tool that spawned the child.
      */
     readonly calltype?: AgentRunCallType | null;
 }

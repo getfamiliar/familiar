@@ -4,8 +4,8 @@ import type { AgentRunBus, AgentRunRow } from "@getfamiliar/shared";
  * Walk the `parent_agentrun_id` chain upward from `startParentId`, root-first.
  *
  * The cron scheduler (and any future host-side event source) emits root agentruns
- * with `parentAgentrunId = null`; both `schedule_handler` (fire-and-forget when
- * called without `when`) and `call_handler` (suspending) link children to their
+ * with `parentAgentrunId = null`; both `schedule_subagent` (fire-and-forget when
+ * called without `when`) and `start_subagent` (suspending) link children to their
  * spawning agentrun via this column. Walking the chain therefore yields every
  * prior agentrun that contributed to the current invocation — the surrounding
  * "workflow" tree from the current leaf's perspective.

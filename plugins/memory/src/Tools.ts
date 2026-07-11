@@ -31,8 +31,8 @@ export function buildMemoryTools(store: MemoryStore, cfg: MemoryConfig): readonl
         // threads, places. Listing `core` here adds both memory
         // tools to the implicit-default tool set every handler
         // omitting `tools:` receives, alongside the container's
-        // built-in `fs_read`, `send_chat`, `call_handler`,
-        // `schedule_handler`, and `unschedule_handler`.
+        // built-in `fs_read`, `send_chat`, `start_subagent`,
+        // `schedule_subagent`, and `unschedule_subagent`.
         groups: ["core"],
         description:
             "Search the long-term memory, including every markdown file in the workspace with a hybrid vector + BM25 approach. Returns a markdown report of found associations.",

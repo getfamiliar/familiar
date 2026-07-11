@@ -9,7 +9,7 @@ const POOL = new Set([
     "atlassian_jira_get_issue",
     "atlassian_confluence_get_page",
     "send_chat",
-    "schedule_handler",
+    "schedule_subagent",
     "fs_read",
     "fs_write",
     "fs_ls",
@@ -21,7 +21,7 @@ const POOL = new Set([
  * appears in both `core` and `fs`, exercising the multi-group
  * membership the `PluginTool.groups` API enables.
  */
-const CORE_KEYS = new Set(["send_chat", "schedule_handler", "fs_read"]);
+const CORE_KEYS = new Set(["send_chat", "schedule_subagent", "fs_read"]);
 
 const FS_KEYS = new Set(["fs_read", "fs_write", "fs_ls", "fs_grep"]);
 

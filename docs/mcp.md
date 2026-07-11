@@ -199,8 +199,8 @@ YAML list. Use it to prime a handler toward the right tools and to make the firs
 heuristic has any history) fast. It selects across the same shared pool.
 
 **Omitted ⇒ implicit `core`.** A handler with no `tools:` line — or an empty list / empty string —
-preloads every tool whose declared `groups` lists `core` (`send_chat`, `call_handler`,
-`schedule_handler`, `unschedule_handler`, `fs_read`, plus opted-in plugin tools like
+preloads every tool whose declared `groups` lists `core` (`send_chat`, `start_subagent`,
+`schedule_subagent`, `unschedule_subagent`, `fs_read`, plus opted-in plugin tools like
 `memory_search` / `memory_save`). `tools: none` preloads nothing — but the agent can still reach
 tools through `tool_list`/`tool_call`. `tools: all` preloads the entire pool. The entry syntax below
 is unchanged.

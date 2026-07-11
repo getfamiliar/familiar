@@ -3,40 +3,40 @@ import {
     parseInZone,
     renderInZone,
     runJsonLinesTool,
-    type ScheduledHandlerBus,
+    type ScheduledSubagentBus,
     ToolError,
     type ToolRunContext,
 } from "@getfamiliar/shared";
 import { jsonSchema, type Tool, tool } from "ai";
 
-interface GetScheduledHandlersInput {
+interface GetScheduledSubagentsInput {
     readonly from?: string;
     readonly to?: string;
     readonly day?: string;
 }
 
 /**
- * Build the `get_scheduled_handlers` tool — list scheduled wake-ups in
+ * Build the `get_scheduled_subagents` tool — list scheduled wake-ups in
  * a time range, rendered in the user's `core.timezone`. Returns one
  * row per line as JSONL.
  *
  * Accepts either a `from` / `to` pair (each parsed like
- * `schedule_handler`'s `when`) or a `day` (date-only, `YYYY-MM-DD`,
+ * `schedule_subagent`'s `when`) or a `day` (date-only, `YYYY-MM-DD`,
  * resolved to the local-day bounds in `timezone`). When neither is
  * supplied, defaults to "from now, for the next 7 days".
  */
-export function buildGetScheduledHandlersTool(
-    bus: ScheduledHandlerBus,
+export function buildGetScheduledSubagentsTool(
+    bus: ScheduledSubagentBus,
     timezone: string,
     ctx: ToolRunContext,
-): Tool<GetScheduledHandlersInput, string> {
-    return tool<GetScheduledHandlersInput, string>({
+): Tool<GetScheduledSubagentsInput, string> {
+    return tool<GetScheduledSubagentsInput, string>({
         description:
-            "List scheduled one-off handlers. Pass either {day: 'YYYY-MM-DD'} for one local " +
+            "List scheduled one-off subagents. Pass either {day: 'YYYY-MM-DD'} for one local " +
             "calendar day, or {from?, to?} for a range (each a wall-clock ISO in the user's " +
             "local timezone). With no arguments, returns the next 7 days from now. Output " +
             "times are rendered in the user's local timezone, one schedule per JSONL line.",
-        inputSchema: jsonSchema<GetScheduledHandlersInput>({
+        inputSchema: jsonSchema<GetScheduledSubagentsInput>({
             type: "object",
             additionalProperties: false,
             properties: {
