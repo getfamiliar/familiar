@@ -53,6 +53,7 @@ import {
 } from "../models/ProviderResolution.js";
 import { HostContextImpl } from "../plugins/HostContextImpl.js";
 import { PluginHost } from "../plugins/PluginHost.js";
+import { loadPlugins } from "../plugins/PluginLoader.js";
 import { PluginToolsGateway } from "../plugins/ToolsGateway.js";
 import { PluginToolsRegistry } from "../plugins/ToolsRegistry.js";
 import { rollingFileStream } from "../tools/LogRetentionTools.js";
@@ -160,7 +161,8 @@ export const startCommand = defineCommand({
         // here if the file is malformed.
         const mcpRegistry = new McpRegistry(boot.mcpConfigFile, log);
 
-        const pluginHost = new PluginHost(boot, log, config, mcpRegistry);
+        const plugins = await loadPlugins(boot, log);
+        const pluginHost = new PluginHost(boot, log, plugins, config, mcpRegistry);
         pluginHost.installWorkspaceTemplates();
         log.info("plugin workspace templates installed");
 
@@ -219,6 +221,7 @@ export const startCommand = defineCommand({
             scratchDir: boot.scratchDir,
             hostUid: boot.hostUid,
             hostGid: boot.hostGid,
+            boot,
             log: log.child({ component: "mcp-gateway" }),
         });
         const pluginToolsRegistry = new PluginToolsRegistry(
@@ -299,7 +302,7 @@ export const startCommand = defineCommand({
         // socat bridge sidecar — on `familiar-net` it reaches the host
         // bastion, on `familiar-isolated` it serves the agent — and point
         // the agent's `BASTION_URL` at it.
-        await ensureBridgeImage(log);
+        await ensureBridgeImage(boot, log);
         const bridge = new BastionBridgeContainer({
             imageName: BRIDGE_IMAGE_TAG,
             bastionPort: bastion.listenPort,
@@ -314,7 +317,7 @@ export const startCommand = defineCommand({
         // image build-arg; it also rides in the container config blob so the
         // bash tool's help section can name the installed packages.
         const pythonPackages = config.getStringList("python.packages", DEFAULT_PYTHON_PACKAGES);
-        await ensureAgentImage(log, pythonPackages);
+        await ensureAgentImage(boot, log, pythonPackages);
 
         // Everything the container's Node code reads is collected into one
         // JSON blob (the container reads it back through `PassedConfig`).
@@ -355,6 +358,7 @@ export const startCommand = defineCommand({
             dataPath: boot.dataDir,
             containerSrcPath: boot.containerSrcDir,
             sharedBuildPath: boot.sharedBuildDir,
+            mountSource: boot.imageMode === "build",
             scratchPath: boot.scratchDir,
             containerConfigJson: containerConfig.toJSON(),
             writablePaths,

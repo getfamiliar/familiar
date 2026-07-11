@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 
 /**
@@ -6,6 +8,13 @@ import { resolve } from "node:path";
  * `--help` and other introspective commands don't touch the
  * filesystem.
  *
+ * Two distinct roots feed the paths below, deliberately kept separate:
+ * {@link homeDir} (the user's project folder — data, tmp, config) and
+ * {@link assetRoot} (the installed `@getfamiliar/host` package — its own
+ * version and packaged template assets). In a monorepo checkout the two
+ * coincide at the repo root; once installed via npm they diverge, which
+ * is what lets a user run Familiar out of any folder.
+ *
  * Environment-variable handling and required-setting validation no
  * longer live here — both moved to the YAML-backed `ConfigService`
  * (see `host/src/config/`). Commands that need configured values
@@ -13,6 +22,28 @@ import { resolve } from "node:path";
  * typed accessors.
  */
 export interface Bootstrap {
+    /**
+     * The user's project folder — `process.env.FAMILIAR_HOME ?? process.cwd()`.
+     * Holds `config/`, `data/`, `tmp/`. Every user-data path below is
+     * rooted here, so `familiar` can run out of any initialized folder
+     * (e.g. `~/familiar`). In a dev checkout `cli.sh` exports
+     * `FAMILIAR_HOME="$ROOT"` so this equals the repo root.
+     */
+    readonly homeDir: string;
+    /**
+     * Root of the installed `@getfamiliar/host` package
+     * (`host/build/Bootstrap.js` → `..`). Used to read the host's own
+     * version and to locate packaged `template/` assets consumed by
+     * `familiar init`. Independent of {@link homeDir} once installed.
+     */
+    readonly assetRoot: string;
+    /**
+     * The host package's own version (from `assetRoot/package.json`). Used
+     * to pin the `familiar` dependency that `familiar init` scaffolds, and
+     * as the default {@link imageTag} so a CLI release pulls the matching
+     * image built in the same CI run.
+     */
+    readonly version: string;
     readonly dataDir: string;
     /**
      * Pidfile written by the daemon and consumed by `./cli.sh stop`.
@@ -104,6 +135,28 @@ export interface Bootstrap {
      */
     readonly scratchDir: string;
     /**
+     * How the daemon obtains its Docker images. `"build"` (dev /
+     * monorepo) builds them locally from the checkout; `"pull"` (default
+     * for installed instances) pulls prebuilt, version-tagged images from
+     * {@link imageRegistry}. Defaults to `"build"` in dev mode
+     * ({@link isDevMode}), else `"pull"`, overridable via
+     * `FAMILIAR_IMAGE_MODE`.
+     */
+    readonly imageMode: "build" | "pull";
+    /**
+     * Registry namespace prefix for pulled images, e.g.
+     * `ghcr.io/getfamiliar`. Combined with the image's published name and
+     * {@link imageTag} to form a pull reference. Overridable via
+     * `FAMILIAR_IMAGE_REGISTRY` (mirrors, air-gapped registries).
+     */
+    readonly imageRegistry: string;
+    /**
+     * Tag pulled in `"pull"` mode. Defaults to the host package's own
+     * version so a given CLI release always pulls the matching image
+     * built in the same CI run. Overridable via `FAMILIAR_IMAGE_TAG`.
+     */
+    readonly imageTag: string;
+    /**
      * UID of the daemon process. Passed to docker as `--user` for
      * the npm/pypi runtime containers so files written into
      * `tmp/mcp-mount-<id>/` end up host-user-owned. Read once via
@@ -129,18 +182,56 @@ export function isDevMode(): boolean {
 }
 
 /**
- * Build the singleton {@link Bootstrap} object. The data directory is
- * resolved relative to the compiled JS location: `host/build/Bootstrap.js`
- * lives two levels under the project root, so `data/` is at
- * `import.meta.dirname/../../data`.
+ * Read the host package's own version from its `package.json`
+ * (`assetRoot/package.json`). Resolved relative to this module so it
+ * works both in a monorepo checkout and once installed under
+ * `node_modules/@getfamiliar/host`.
+ *
+ * @returns the `version` string from the host package manifest.
+ */
+function readHostVersion(): string {
+    const require = createRequire(import.meta.url);
+    const pkg = require("../package.json") as { version: string };
+    return pkg.version;
+}
+
+/**
+ * Resolve the image-acquisition mode. Dev/monorepo defaults to building
+ * locally; installed instances default to pulling prebuilt images. An
+ * explicit `FAMILIAR_IMAGE_MODE` of `build` or `pull` overrides either
+ * default (e.g. a prod user who customizes `python.packages` sets
+ * `build`).
+ *
+ * @returns `"build"` or `"pull"`.
+ */
+function resolveImageMode(): "build" | "pull" {
+    const override = process.env.FAMILIAR_IMAGE_MODE?.toLowerCase();
+    if (override === "build" || override === "pull") {
+        return override;
+    }
+    return isDevMode() ? "build" : "pull";
+}
+
+/**
+ * Build the singleton {@link Bootstrap} object. User-data paths are
+ * rooted at {@link Bootstrap.homeDir} (`FAMILIAR_HOME` or the current
+ * working directory); package assets and the host version are resolved
+ * relative to this compiled module's location
+ * ({@link Bootstrap.assetRoot}). In a dev checkout the two coincide at
+ * the repo root because `cli.sh` exports `FAMILIAR_HOME="$ROOT"`.
  */
 export function bootstrap(): Bootstrap {
-    const projectRoot = resolve(import.meta.dirname, "../..");
-    const dataDir = `${projectRoot}/data`;
-    const tmpDir = `${projectRoot}/tmp`;
-    const containerSrcDir = `${projectRoot}/container/src`;
-    const sharedBuildDir = `${projectRoot}/shared/build`;
+    const homeDir = process.env.FAMILIAR_HOME ?? process.cwd();
+    const assetRoot = resolve(import.meta.dirname, "..");
+    const version = readHostVersion();
+    const dataDir = `${homeDir}/data`;
+    const tmpDir = `${homeDir}/tmp`;
+    const containerSrcDir = `${homeDir}/container/src`;
+    const sharedBuildDir = `${homeDir}/shared/build`;
     return Object.freeze({
+        homeDir,
+        assetRoot,
+        version,
         dataDir,
         pidFile: `${tmpDir}/.daemon.pid`,
         postgresPortFile: `${tmpDir}/.postgres-port`,
@@ -152,11 +243,52 @@ export function bootstrap(): Bootstrap {
         mcpLogsDir: `${dataDir}/logs/mcp`,
         containerSrcDir,
         sharedBuildDir,
-        configFile: `${projectRoot}/config/config.yml`,
-        mcpConfigFile: `${projectRoot}/config/mcp.yml`,
+        configFile: `${homeDir}/config/config.yml`,
+        mcpConfigFile: `${homeDir}/config/mcp.yml`,
         tmpDir,
         scratchDir: `${tmpDir}/scratch`,
+        imageMode: resolveImageMode(),
+        imageRegistry: process.env.FAMILIAR_IMAGE_REGISTRY ?? "ghcr.io/getfamiliar",
+        imageTag: process.env.FAMILIAR_IMAGE_TAG ?? version,
         hostUid: process.getuid?.() ?? 0,
         hostGid: process.getgid?.() ?? 0,
     });
+}
+
+/**
+ * Assert that {@link Bootstrap.homeDir} points at an initialized
+ * Familiar project — i.e. `config/config.yml` exists. Every command
+ * except `familiar init` calls this first, replacing the config-existence
+ * gate that used to live in `cli.sh`.
+ *
+ * @param boot the bootstrap object whose {@link Bootstrap.homeDir} to check.
+ * @throws Error when `config/config.yml` is absent under the home dir.
+ */
+export function requireHomeDir(boot: Bootstrap): void {
+    if (existsSync(boot.configFile)) {
+        return;
+    }
+    throw new Error(
+        `${boot.homeDir} is not an initialized Familiar project (no config/config.yml). ` +
+            `Run 'familiar init' here, or set FAMILIAR_HOME to your project folder.`,
+    );
+}
+
+/**
+ * Resolve the Docker reference for one of Familiar's images. In
+ * `"build"` mode the daemon builds and tags images locally, so the plain
+ * local name is returned; in `"pull"` mode the registry-qualified,
+ * version-tagged reference is returned so the matching prebuilt image is
+ * pulled. The image name is used verbatim both as the local tag and as
+ * the name under {@link Bootstrap.imageRegistry}.
+ *
+ * @param boot bootstrap providing image mode, registry, and tag.
+ * @param imageName the image's name (e.g. `familiar-agent`).
+ * @returns the reference to pass to `docker run` / `docker pull`.
+ */
+export function imageRef(boot: Bootstrap, imageName: string): string {
+    if (boot.imageMode === "build") {
+        return imageName;
+    }
+    return `${boot.imageRegistry}/${imageName}:${boot.imageTag}`;
 }

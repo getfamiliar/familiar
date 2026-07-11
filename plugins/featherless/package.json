@@ -2,13 +2,19 @@
     "name": "@getfamiliar/plugin-featherless",
     "type": "module",
     "version": "0.0.1",
-    "private": true,
     "description": "Familiar plugin: supplies model metadata for Featherless-hosted models (the provider models.dev doesn't cover).",
     "publishConfig": {
         "access": "public"
     },
     "main": "build/index.js",
     "types": "build/index.d.ts",
+    "files": [
+        "build",
+        "workspace-template"
+    ],
+    "engines": {
+        "node": ">=24"
+    },
     "scripts": {
         "build": "tsc",
         "test": "tsx --test 'src/**/*.test.ts'",

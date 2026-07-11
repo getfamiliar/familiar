@@ -1,0 +1,164 @@
+name: release
+
+# Every push to master publishes one lockstep version of all packages to
+# npm and pushes matching version-tagged images to GHCR. The host binds
+# the two channels at runtime by pulling the image tag equal to its own
+# npm version, so they must ship from the same VERSION — which this single
+# workflow guarantees.
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".claude/**"
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run format:check --workspaces --if-present
+      - run: npm run lint --workspaces --if-present
+      - run: npm test --workspaces --if-present
+
+  version:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+    steps:
+      # Monotonic, no commit-back: base 0.1 + the run number. Bump the base
+      # here for a minor/major line; run_number keeps patches increasing.
+      - id: compute
+        run: echo "version=0.1.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+  publish-npm:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # npm provenance via GitHub OIDC
+      contents: read
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+      - run: npm ci
+      # Vendor the init templates into host/, then stamp VERSION across all
+      # packages (versions, internal-dep pins, meta bundled-plugin deps).
+      - run: node scripts/sync-templates.mjs
+      - run: node scripts/ci-stamp.mjs "$VERSION"
+      - run: npm run build
+      - name: Publish (shared → plugins → host → meta)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -e
+          npm publish -w @getfamiliar/shared --provenance --access public
+          for p in cli-chat featherless memory ms365 telegram transcribe-whisper whatsapp; do
+            npm publish -w "@getfamiliar/plugin-$p" --provenance --access public
+          done
+          npm publish -w @getfamiliar/host --provenance --access public
+          npm publish -w familiar --provenance --access public
+
+  publish-images:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      REGISTRY: ghcr.io/${{ github.repository_owner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: agent image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: container/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          # Must match DEFAULT_PYTHON_PACKAGES in
+          # host/src/container-runner/AgentContainer.ts — pull-mode `familiar
+          # start` doesn't pass a build-arg, so the baked set is authoritative.
+          build-args: |
+            PYTHON_PACKAGES=numpy pandas scipy sympy pillow matplotlib openpyxl python-docx pypdf python-pptx lxml beautifulsoup4 markdown pyyaml ics
+          tags: |
+            ${{ env.REGISTRY }}/familiar-agent:${{ env.VERSION }}
+            ${{ env.REGISTRY }}/familiar-agent:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: bridge image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: container/bridge.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.REGISTRY }}/familiar-bastion-bridge-img:${{ env.VERSION }}
+            ${{ env.REGISTRY }}/familiar-bastion-bridge-img:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: mcp npm-runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: mcp-runtime/npm
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.REGISTRY }}/familiar-mcp-runtime-npm:${{ env.VERSION }}
+            ${{ env.REGISTRY }}/familiar-mcp-runtime-npm:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: mcp pypi-runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: mcp-runtime/pypi
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.REGISTRY }}/familiar-mcp-runtime-pypi:${{ env.VERSION }}
+            ${{ env.REGISTRY }}/familiar-mcp-runtime-pypi:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    needs: [publish-npm, publish-images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" --generate-notes --title "v$VERSION"

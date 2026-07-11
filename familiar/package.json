@@ -1,0 +1,25 @@
+{
+  "name": "familiar",
+  "version": "0.0.1",
+  "description": "Familiar — your personal, local, markdown AI executive assistant. Batteries-included CLI (`familiar init`, `familiar start`).",
+  "type": "module",
+  "bin": {
+    "familiar": "bin/familiar.mjs"
+  },
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "scripts": {
+    "build": "true"
+  },
+  "dependencies": {
+    "@getfamiliar/host": "*"
+  }
+}

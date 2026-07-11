@@ -93,6 +93,19 @@ export async function isNetworkPresent(name: string): Promise<boolean> {
     return code === 0;
 }
 
+/**
+ * Whether a Docker image with the given reference is present in the
+ * local image store. Used by the pull-mode image lifecycle to avoid
+ * re-pulling a version-pinned image that's already local.
+ *
+ * @param ref Image reference (tag or registry-qualified `name:tag`).
+ * @returns true if `docker image inspect` succeeds.
+ */
+export async function isImagePresent(ref: string): Promise<boolean> {
+    const { code } = await dockerCapture(["image", "inspect", ref]);
+    return code === 0;
+}
+
 /** Options for {@link buildNetworkCreateArgs} / {@link ensureNetwork}. */
 export interface NetworkCreateOptions {
     /**

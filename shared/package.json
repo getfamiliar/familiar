@@ -18,6 +18,10 @@
             "default": "./build/testing/index.js"
         }
     },
+    "files": ["build"],
+    "engines": {
+        "node": ">=24"
+    },
     "scripts": {
         "build": "tsc",
         "format": "biome format --write --config-path .. src/",

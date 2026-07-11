@@ -5,5 +5,9 @@ build/
 .env
 config/config.yml
 config/mcp.yml
+config/plugins
 data/*
 !data/workspace-template/
+# Generated at publish time by scripts/ci-stamp.mjs (canonical sources are
+# config/*.example.yml and data/workspace-template/). Not committed.
+host/template/

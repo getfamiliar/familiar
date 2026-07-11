@@ -1,5 +1,6 @@
-import { resolve } from "node:path";
 import type { Logger } from "@getfamiliar/shared";
+import type { Bootstrap } from "../Bootstrap.js";
+import { pullImageIfNeeded } from "../container-runner/Images.js";
 import { dockerExec } from "../DockerTools.js";
 
 /**
@@ -18,25 +19,36 @@ export const PYPI_RUNTIME_IMAGE = "familiar-mcp-runtime-pypi";
 
 /**
  * Absolute host path to the `mcp-runtime/<source>/` Dockerfile
- * directory. Resolved relative to the compiled JS location so it
- * works the same in dev and from a packaged build:
- * `host/build/mcp/RuntimeImages.js` lives three levels under the
- * project root.
+ * directory, under the project's {@link Bootstrap.homeDir}. Only used in
+ * build mode (a monorepo checkout, where `homeDir` is the repo root).
  */
-function runtimeDockerfileDir(source: "npm" | "pypi"): string {
-    return resolve(import.meta.dirname, "../../..", "mcp-runtime", source);
+function runtimeDockerfileDir(homeDir: string, source: "npm" | "pypi"): string {
+    return `${homeDir}/mcp-runtime/${source}`;
 }
 
 /**
- * Build the runtime image for the given source if it isn't already
- * up to date with its Dockerfile. Idempotent: docker's layer cache
- * makes the no-change case ~1 s, so calling this on every daemon
- * start is cheap and removes the need to track "did we already
- * build this".
+ * Ensure the runtime image for the given source is available under its
+ * well-known local tag. In `"pull"` mode the version-pinned image is
+ * pulled and tagged locally; in `"build"` mode it's built from
+ * `mcp-runtime/<source>/Dockerfile`. Idempotent: the pull path skips when
+ * the versioned image is already local, and docker's layer cache makes
+ * the build path's no-change case ~1 s, so calling this on every daemon
+ * start is cheap.
+ *
+ * @param source The MCP runtime flavor (`npm` or `pypi`).
+ * @param boot Bootstrap providing image mode, registry/tag, and (build mode) the context root.
+ * @param log Logger for the build/pull step.
  */
-export async function ensureRuntimeImage(source: "npm" | "pypi", log: Logger): Promise<void> {
+export async function ensureRuntimeImage(
+    source: "npm" | "pypi",
+    boot: Bootstrap,
+    log: Logger,
+): Promise<void> {
     const tag = source === "npm" ? NPM_RUNTIME_IMAGE : PYPI_RUNTIME_IMAGE;
-    const dir = runtimeDockerfileDir(source);
+    if (await pullImageIfNeeded(boot, tag, log)) {
+        return;
+    }
+    const dir = runtimeDockerfileDir(boot.homeDir, source);
     log.info(`building ${tag} from ${dir}`);
     await dockerExec(["build", "-t", tag, dir]);
 }

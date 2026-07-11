@@ -2,10 +2,8 @@
   "name": "@getfamiliar/container",
   "type": "module",
   "version": "0.0.1",
-  "description": "Familiar — long-running agent container that consumes events from the bus-state postgres.",
-  "publishConfig": {
-    "access": "public"
-  },
+  "private": true,
+  "description": "Familiar — long-running agent container that consumes events from the bus-state postgres. Delivered as the familiar-agent Docker image, not published to npm.",
   "main": "index.js",
   "scripts": {
     "build": "tsc",

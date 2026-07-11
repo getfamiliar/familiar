@@ -1,5 +1,5 @@
-import { resolve } from "node:path";
 import type { Logger } from "@getfamiliar/shared";
+import type { Bootstrap } from "../Bootstrap.js";
 import {
     connectNetwork,
     dockerExec,
@@ -9,6 +9,7 @@ import {
     SHARED_NETWORK_NAME,
     stopContainer,
 } from "../DockerTools.js";
+import { pullImageIfNeeded } from "./Images.js";
 
 /**
  * Name of the bastion-bridge sidecar container, and the hostname the
@@ -28,21 +29,24 @@ const CONTAINER_NAME = BASTION_BRIDGE_HOST;
 export const BRIDGE_IMAGE_TAG = "familiar-bastion-bridge-img";
 
 /**
- * Build the bastion-bridge image if it isn't already up to date with its
- * Dockerfile. Idempotent — docker's layer cache makes the no-change case
- * fast. Mirrors {@link ensureAgentImage}. The `apk add socat` inside the
+ * Ensure the bastion-bridge image is available under
+ * {@link BRIDGE_IMAGE_TAG}. In `"pull"` mode the version-pinned image is
+ * pulled and tagged locally; in `"build"` mode it's built from
+ * `container/bridge.Dockerfile` with the checkout as context. Idempotent.
+ * Mirrors {@link ensureAgentImage}. The `apk add socat` inside the
  * Dockerfile needs host internet on first build only; the result is
  * cached.
  *
- * @param log Logger for the build step.
+ * @param boot Bootstrap providing image mode, registry/tag, and (build mode) the context root.
+ * @param log Logger for the build/pull step.
  */
-export async function ensureBridgeImage(log: Logger): Promise<void> {
-    // host/build/container-runner/BastionBridgeContainer.js lives three
-    // levels under the project root.
-    const projectRoot = resolve(import.meta.dirname, "../../..");
-    const dockerfile = `${projectRoot}/container/bridge.Dockerfile`;
+export async function ensureBridgeImage(boot: Bootstrap, log: Logger): Promise<void> {
+    if (await pullImageIfNeeded(boot, BRIDGE_IMAGE_TAG, log)) {
+        return;
+    }
+    const dockerfile = `${boot.homeDir}/container/bridge.Dockerfile`;
     log.info(`building ${BRIDGE_IMAGE_TAG} from ${dockerfile}`);
-    await dockerExec(["build", "-t", BRIDGE_IMAGE_TAG, "-f", dockerfile, projectRoot]);
+    await dockerExec(["build", "-t", BRIDGE_IMAGE_TAG, "-f", dockerfile, boot.homeDir]);
 }
 
 /** Configuration for the {@link BastionBridgeContainer}. */

@@ -30,6 +30,7 @@ Neues CLI Tool: `logs`
 - Protect the bastion port on the host? Maybe a simple basic auth?
 - Spotify MCP based on https://github.com/aome510/spotify-player
 - Alternativen Modellprovider testen: Synthetic.new - wie Featherless, 30€ / Monat, scheinbar zuverlässiger
+- User-based extra PIP packages need a new method - the baked-in packages from the image cannot / should not be directly extended by endusers as this requires a full checkout of the project source to be able to build. Seems overkill, we need a better feature here that allows adding PIP packages with a short-timed online agent container.
 
 - Plugin-specific config linters as extension point. Special Cases:
   - ms365.calendar.refreshCron: check if it's a valid cron expression. If not, thats a problem because the delta will never be updated and the calendar will never be refreshed / keep the same from/to dates forever.

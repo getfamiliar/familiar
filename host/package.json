@@ -7,6 +7,10 @@
     "access": "public"
   },
   "main": "build/index.js",
+  "files": ["build", "template"],
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "tsc",
     "format": "biome format --write --config-path .. src/",
@@ -18,13 +22,6 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@getfamiliar/plugin-cli-chat": "*",
-    "@getfamiliar/plugin-featherless": "*",
-    "@getfamiliar/plugin-memory": "*",
-    "@getfamiliar/plugin-ms365": "*",
-    "@getfamiliar/plugin-telegram": "*",
-    "@getfamiliar/plugin-transcribe-whisper": "*",
-    "@getfamiliar/plugin-whatsapp": "*",
     "@getfamiliar/shared": "*",
     "@inquirer/prompts": "^7.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -1,11 +1,7 @@
-import { resolve } from "node:path";
 import type { Logger } from "@getfamiliar/shared";
-import {
-    dockerExec,
-    ISOLATED_NETWORK_NAME,
-    removeContainer,
-    stopContainer,
-} from "../DockerTools.js";
+import type { Bootstrap } from "../Bootstrap.js";
+import { dockerExec, ISOLATED_NETWORK_NAME, removeContainer, stopContainer } from "../DockerTools.js";
+import { pullImageIfNeeded } from "./Images.js";
 import { isSafePipRequirement } from "./PythonPackages.js";
 
 const CONTAINER_NAME = "familiar-agent";
@@ -102,26 +98,30 @@ export function buildAgentImageArgs(
 }
 
 /**
- * Build the agent container image if it isn't already up to date with
- * its Dockerfile. Idempotent — docker's layer cache makes the
- * no-change case fast, so calling this on every daemon start is cheap
- * and fresh checkouts don't need a separate manual build step.
- * Mirrors {@link ensureRuntimeImage} for MCP runtimes.
+ * Ensure the agent image is available under {@link AGENT_IMAGE_TAG}. In
+ * `"pull"` mode (installed instances) the version-pinned image is pulled
+ * from the registry and tagged locally; in `"build"` mode (dev/monorepo)
+ * it's built from `container/Dockerfile` with the checkout as context.
+ * Idempotent — the pull path skips when the versioned image is already
+ * local, and docker's layer cache makes the build path's no-change case
+ * fast. Mirrors {@link ensureRuntimeImage} for MCP runtimes.
  *
+ * @param boot Bootstrap providing image mode, registry/tag, and (build mode) the context root.
  * @param log Logger.
- * @param pythonPackages Pip requirements baked into the image's venv;
+ * @param pythonPackages Pip requirements baked into the image's venv (build mode only);
  *   defaults to {@link DEFAULT_PYTHON_PACKAGES}.
  */
 export async function ensureAgentImage(
+    boot: Bootstrap,
     log: Logger,
     pythonPackages: readonly string[] = DEFAULT_PYTHON_PACKAGES,
 ): Promise<void> {
-    // host/build/container-runner/AgentContainer.js lives three levels
-    // under the project root.
-    const projectRoot = resolve(import.meta.dirname, "../../..");
-    const dockerfile = `${projectRoot}/container/Dockerfile`;
+    if (await pullImageIfNeeded(boot, AGENT_IMAGE_TAG, log)) {
+        return;
+    }
+    const dockerfile = `${boot.homeDir}/container/Dockerfile`;
     log.info(`building ${AGENT_IMAGE_TAG} from ${dockerfile}`);
-    await dockerExec(buildAgentImageArgs(dockerfile, projectRoot, pythonPackages));
+    await dockerExec(buildAgentImageArgs(dockerfile, boot.homeDir, pythonPackages));
 }
 
 /** Configuration for the single long-running agent container. */
@@ -144,8 +144,18 @@ export interface AgentContainerConfig {
      * the daemon starts, so it's always fresh by the time the
      * container boots — shared edits no longer need a container
      * image rebuild, only a daemon restart.
+     *
+     * Only mounted when {@link mountSource} is true.
      */
     readonly sharedBuildPath: string;
+    /**
+     * Whether to bind-mount the host's {@link containerSrcPath} and
+     * {@link sharedBuildPath} over the image's baked-in copies. True in
+     * build/dev mode (hot-reload against the checkout); false in pull
+     * mode, where the prebuilt image already contains the exact versioned
+     * code and no source tree is guaranteed to exist on the host.
+     */
+    readonly mountSource: boolean;
     /**
      * Absolute host path of `tmp/scratch/`. Bind-mounted at
      * `/scratch/` inside the container (read-write) so the agent can
@@ -261,7 +271,7 @@ export class AgentContainer {
  */
 export function buildAgentRunArgs(config: AgentContainerConfig): string[] {
     const workspaceDir = `${config.dataPath}/workspace`;
-    return [
+    const args = [
         "run",
         "-d",
         "--name",
@@ -282,12 +292,18 @@ export function buildAgentRunArgs(config: AgentContainerConfig): string[] {
         `HOST_GID=${config.hostGid}`,
         "-v",
         `${workspaceDir}:/workspace`,
-        "-v",
-        `${config.containerSrcPath}:/app/src:ro`,
-        "-v",
-        `${config.sharedBuildPath}:/shared/build:ro`,
-        "-v",
-        `${config.scratchPath}:/scratch`,
-        config.imageName,
     ];
+    // In pull mode the prebuilt image already carries the exact versioned
+    // container/src and shared/build; only dev/build mode overlays the
+    // host's live copies for hot-reload.
+    if (config.mountSource) {
+        args.push(
+            "-v",
+            `${config.containerSrcPath}:/app/src:ro`,
+            "-v",
+            `${config.sharedBuildPath}:/shared/build:ro`,
+        );
+    }
+    args.push("-v", `${config.scratchPath}:/scratch`, config.imageName);
+    return args;
 }

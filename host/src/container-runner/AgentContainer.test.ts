@@ -18,6 +18,7 @@ function configFixture(overrides: Partial<AgentContainerConfig> = {}): AgentCont
         dataPath: "/data",
         containerSrcPath: "/src",
         sharedBuildPath: "/shared/build",
+        mountSource: true,
         scratchPath: "/scratch",
         containerConfigJson: JSON.stringify({ bastionUrl: "http://familiar-bastion-bridge:8788" }),
         writablePaths: [],
@@ -78,6 +79,28 @@ describe("buildAgentRunArgs — egress lockdown invariant", () => {
             argv.includes(`CORE_WRITABLE_PATHS=${JSON.stringify(["wiki/**", "files/**"])}`),
             "CORE_WRITABLE_PATHS env expected",
         );
+    });
+});
+
+describe("buildAgentRunArgs — source mounts follow mountSource", () => {
+    it("overlays container/src and shared/build in build mode (mountSource: true)", () => {
+        const argv = buildAgentRunArgs(configFixture({ mountSource: true }));
+        assert.ok(argv.includes("/src:/app/src:ro"), "container/src overlay expected");
+        assert.ok(argv.includes("/shared/build:/shared/build:ro"), "shared/build overlay expected");
+        // The workspace and scratch mounts are always present.
+        assert.ok(argv.includes("/data/workspace:/workspace"));
+        assert.ok(argv.includes("/scratch:/scratch"));
+    });
+
+    it("omits the source overlays in pull mode (mountSource: false) — image is baked", () => {
+        const argv = buildAgentRunArgs(configFixture({ mountSource: false }));
+        assert.ok(!argv.some((a) => a === "/src:/app/src:ro"), "no container/src overlay");
+        assert.ok(!argv.some((a) => a.endsWith(":/shared/build:ro")), "no shared/build overlay");
+        // Workspace and scratch mounts remain.
+        assert.ok(argv.includes("/data/workspace:/workspace"));
+        assert.ok(argv.includes("/scratch:/scratch"));
+        // The image is still the last positional arg.
+        assert.equal(argv[argv.length - 1], "familiar-agent");
     });
 });
 

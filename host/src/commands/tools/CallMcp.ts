@@ -122,7 +122,7 @@ export const callMcpCommand = defineCommand({
         // `tools call-mcp` works even when the daemon has never run.
         if (entry.source === "npm" || entry.source === "pypi") {
             mkdirSync(mcpMountDirFor(boot.tmpDir, id), { recursive: true });
-            void ensureRuntimeImage(entry.source, log).then(
+            void ensureRuntimeImage(entry.source, boot, log).then(
                 () => spawnAndExit(entry, runtimeConfig, extraArgs, id),
                 (err: unknown) => {
                     const cause = err instanceof Error ? err.message : String(err);

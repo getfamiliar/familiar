@@ -6,6 +6,7 @@ import type {
     Logger,
     ModelMetaData,
     ModelProviderDescriptor,
+    PluginManifest,
     PostgresConnection,
 } from "@getfamiliar/shared";
 import { EventBus, ModelNotSupported } from "@getfamiliar/shared";
@@ -32,7 +33,6 @@ import { buildReflectionTools } from "../reflection/ReflectionTools.js";
 import type { WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
 import { EventContextRegistry } from "./EventContextRegistry.js";
 import { HostContextImpl } from "./HostContextImpl.js";
-import { plugins } from "./Registry.js";
 import type { PluginToolsRegistry } from "./ToolsRegistry.js";
 
 /**
@@ -68,6 +68,11 @@ const DEFAULT_BASTION_BASE_URL = "http://127.0.0.1:8788";
 export class PluginHost {
     private readonly boot: Bootstrap;
     private readonly log: Logger;
+    /**
+     * The active plugins, loaded once by {@link loadPlugins} and injected.
+     * Every lifecycle / collection method iterates this list in order.
+     */
+    private readonly plugins: readonly PluginManifest[];
     private readonly config: ConfigService;
     private readonly mcpRegistry: McpRegistry;
     private readonly mcpService: PluginMcpService;
@@ -92,9 +97,16 @@ export class PluginHost {
      */
     private readonly daemonDownController = new AbortController();
 
-    constructor(boot: Bootstrap, log: Logger, config?: ConfigService, mcpRegistry?: McpRegistry) {
+    constructor(
+        boot: Bootstrap,
+        log: Logger,
+        plugins: readonly PluginManifest[],
+        config?: ConfigService,
+        mcpRegistry?: McpRegistry,
+    ) {
         this.boot = boot;
         this.log = log;
+        this.plugins = plugins;
         this.config = config ?? new HostConfigService(boot.configFile);
         this.mcpRegistry = mcpRegistry ?? new McpRegistry(boot.mcpConfigFile, log);
         this.mcpService = new PluginMcpService({
@@ -145,7 +157,7 @@ export class PluginHost {
     listModelProviders(): ModelProviderDescriptor[] {
         const out: ModelProviderDescriptor[] = [];
         const seen = new Set<string>();
-        for (const plugin of plugins) {
+        for (const plugin of this.plugins) {
             const hook = plugin.host?.getModelProviders;
             if (!hook) {
                 continue;
@@ -236,7 +248,7 @@ export class PluginHost {
      *   `undefined` when no plugin knows the model.
      */
     async lookupModelMetaData(provider: string, model: string): Promise<ModelMetaData | undefined> {
-        for (const plugin of plugins) {
+        for (const plugin of this.plugins) {
             const hook = plugin.host?.getModelMetaData;
             if (!hook) {
                 continue;
@@ -352,7 +364,7 @@ export class PluginHost {
      */
     buildSubCommands(): Record<string, AnyCommandDef> {
         const map: Record<string, AnyCommandDef> = {};
-        for (const plugin of plugins) {
+        for (const plugin of this.plugins) {
             if (map[plugin.id]) {
                 throw new Error(`Duplicate plugin id: ${plugin.id}`);
             }
@@ -392,7 +404,7 @@ export class PluginHost {
                 errorOnExist: false,
             });
         }
-        for (const plugin of plugins) {
+        for (const plugin of this.plugins) {
             if (!plugin.workspaceTemplate) {
                 continue;
             }
@@ -426,7 +438,7 @@ export class PluginHost {
         if (this.prepared) {
             return;
         }
-        for (const plugin of plugins) {
+        for (const plugin of this.plugins) {
             if (!plugin.host?.prepare) {
                 continue;
             }
@@ -446,7 +458,7 @@ export class PluginHost {
      * runs.
      */
     async startDaemons(): Promise<void> {
-        for (const plugin of plugins) {
+        for (const plugin of this.plugins) {
             const host = plugin.host;
             if (!host?.start && !host?.tools) {
                 continue;
@@ -514,8 +526,8 @@ export class PluginHost {
      * sink relays through host services that are alive at this point.
      */
     async close(): Promise<void> {
-        for (let i = plugins.length - 1; i >= 0; i--) {
-            const plugin = plugins[i];
+        for (let i = this.plugins.length - 1; i >= 0; i--) {
+            const plugin = this.plugins[i];
             const stop = plugin?.host?.stop;
             if (!stop) {
                 continue;

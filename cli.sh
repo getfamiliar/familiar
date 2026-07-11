@@ -17,6 +17,13 @@ SHARED="${ROOT}/shared"
 PLUGINS_DIR="${ROOT}/plugins"
 CONFIG_FILE="${ROOT}/config/config.yml"
 
+# cli.sh is the monorepo launcher: the project folder IS this checkout, and
+# the Dockerfiles + build context live here, so build images locally rather
+# than pulling prebuilt ones. Both are overridable for local testing of an
+# installed-style setup.
+export FAMILIAR_HOME="${FAMILIAR_HOME:-${ROOT}}"
+export FAMILIAR_IMAGE_MODE="${FAMILIAR_IMAGE_MODE:-build}"
+
 if [ ! -f "${CONFIG_FILE}" ]; then
   echo "Error: ${CONFIG_FILE} not found." >&2
   echo "Copy config/config.example.yml to config/config.yml and fill it in." >&2

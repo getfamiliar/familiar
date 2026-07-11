@@ -2,13 +2,19 @@
     "name": "@getfamiliar/plugin-ms365",
     "type": "module",
     "version": "0.0.1",
-    "private": true,
     "description": "Familiar plugin: Microsoft 365 integration via direct Graph calls. Mail today, calendar next.",
     "publishConfig": {
         "access": "public"
     },
     "main": "build/index.js",
     "types": "build/index.d.ts",
+    "files": [
+        "build",
+        "workspace-template"
+    ],
+    "engines": {
+        "node": ">=24"
+    },
     "scripts": {
         "build": "tsc",
         "format": "biome format --write --config-path ../.. src/",

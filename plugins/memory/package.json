@@ -2,13 +2,22 @@
     "name": "@getfamiliar/plugin-memory",
     "type": "module",
     "version": "0.0.1",
-    "private": true,
     "description": "Familiar plugin: long-term memory for the agent. Search backend pending replacement; memory_save handler still active.",
     "publishConfig": {
         "access": "public"
     },
     "main": "build/index.js",
     "types": "build/index.d.ts",
+    "familiar": {
+        "bundled": true
+    },
+    "files": [
+        "build",
+        "workspace-template"
+    ],
+    "engines": {
+        "node": ">=24"
+    },
     "scripts": {
         "build": "tsc",
         "format": "biome format --write --config-path ../.. src/",

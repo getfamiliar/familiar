@@ -2,13 +2,22 @@
     "name": "@getfamiliar/plugin-transcribe-whisper",
     "type": "module",
     "version": "0.0.1",
-    "private": true,
     "description": "Familiar plugin: transcribeAudio() backed by OpenAI's Whisper API.",
     "publishConfig": {
         "access": "public"
     },
     "main": "build/index.js",
     "types": "build/index.d.ts",
+    "familiar": {
+        "bundled": true
+    },
+    "files": [
+        "build",
+        "workspace-template"
+    ],
+    "engines": {
+        "node": ">=24"
+    },
     "scripts": {
         "build": "tsc",
         "format": "biome format --write --config-path ../.. src/",

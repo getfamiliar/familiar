@@ -7,6 +7,7 @@ import { DEFAULT_PYTHON_PACKAGES } from "../container-runner/AgentContainer.js";
 import { checkPackagesOnPyPI } from "../container-runner/PythonPackages.js";
 import { validateConfiguredProviders } from "../models/ProviderResolution.js";
 import { PluginHost } from "../plugins/PluginHost.js";
+import { loadPlugins } from "../plugins/PluginLoader.js";
 
 /** 24 hours in milliseconds — staleness window for the models.dev cache. */
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -98,7 +99,8 @@ async function validateProviders(boot: ReturnType<typeof bootstrap>): Promise<st
     if (keys.length === 0) {
         return [];
     }
-    const pluginHost = new PluginHost(boot, log, config);
+    const plugins = await loadPlugins(boot, log);
+    const pluginHost = new PluginHost(boot, log, plugins, config);
     await pluginHost.modelMetadata.refreshIfStale(ONE_DAY_MS);
     return validateConfiguredProviders(keys, (key) => pluginHost.modelMetadata.lookupProvider(key));
 }

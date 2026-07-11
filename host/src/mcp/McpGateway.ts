@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Logger } from "@getfamiliar/shared";
 import type { Bastion, BastionModule } from "../bastion/Bastion.js";
+import type { Bootstrap } from "../Bootstrap.js";
 import { DockerMcpRegistryFactory } from "./factories/DockerMcpRegistryFactory.js";
 import { ExternalFactory } from "./factories/ExternalFactory.js";
 import { NpmFactory } from "./factories/NpmFactory.js";
@@ -45,6 +46,12 @@ export interface McpGatewayConfig {
     /** Host UID and GID used as `--user` for npm/pypi runtime containers. */
     readonly hostUid: number;
     readonly hostGid: number;
+    /**
+     * Bootstrap, forwarded to {@link ensureRuntimeImage} so npm/pypi
+     * runtime images follow the same build-vs-pull policy as the agent
+     * and bridge images.
+     */
+    readonly boot: Bootstrap;
     /** Logger used for load / dispatch / error lines. */
     readonly log: Logger;
 }
@@ -107,10 +114,10 @@ export class McpGateway implements BastionModule {
             mkdirSync(this.config.tmpDir, { recursive: true });
         }
         if (sources.has("npm")) {
-            await ensureRuntimeImage("npm", this.config.log);
+            await ensureRuntimeImage("npm", this.config.boot, this.config.log);
         }
         if (sources.has("pypi")) {
-            await ensureRuntimeImage("pypi", this.config.log);
+            await ensureRuntimeImage("pypi", this.config.boot, this.config.log);
         }
 
         for (const entry of entries) {
