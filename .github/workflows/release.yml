@@ -77,15 +77,49 @@ jobs:
           npm publish -w @getfamiliar/host --provenance --access public
           npm publish -w @getfamiliar/cli --provenance --access public
 
+  # Each image is (re)published under three tags: a content hash of its
+  # build inputs (`src-<hash>`), the release `<version>`, and `latest`.
+  # When the input hash already exists in the registry the image is NOT
+  # rebuilt — the version and latest tags are just pointed at the existing
+  # digest (a metadata-only operation). So an image is built only when its
+  # own sources change; a host- or docs-only release just re-tags. Every
+  # release still yields a `<version>` tag for every image, which is what
+  # the host pulls (it pulls the tag equal to its own npm version).
   publish-images:
     needs: version
     runs-on: ubuntu-latest
     permissions:
       packages: write
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: familiar-agent
+            file: container/Dockerfile
+            # Rebuilt when container/ or shared/ sources change, or when the
+            # baked Python set changes. Must match DEFAULT_PYTHON_PACKAGES in
+            # host/src/container-runner/AgentContainer.ts — pull-mode `familiar
+            # start` passes no build-arg, so the baked set is authoritative.
+            hash_paths: container shared
+            build_args: |
+              PYTHON_PACKAGES=numpy pandas scipy sympy pillow matplotlib openpyxl python-docx pypdf python-pptx lxml beautifulsoup4 markdown pyyaml ics
+          - image: familiar-bastion-bridge-img
+            file: container/bridge.Dockerfile
+            hash_paths: container/bridge.Dockerfile
+            build_args: ""
+          - image: familiar-mcp-runtime-npm
+            file: mcp-runtime/npm/Dockerfile
+            hash_paths: mcp-runtime/npm/Dockerfile
+            build_args: ""
+          - image: familiar-mcp-runtime-pypi
+            file: mcp-runtime/pypi/Dockerfile
+            hash_paths: mcp-runtime/pypi/Dockerfile
+            build_args: ""
     env:
       VERSION: ${{ needs.version.outputs.version }}
       REGISTRY: ghcr.io/${{ github.repository_owner }}
+      IMAGE: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -95,53 +129,54 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: agent image
+      # Content hash of the image's build inputs (git tree/blob SHAs of the
+      # relevant paths, plus the build args). Deterministic and
+      # content-addressed, so identical inputs across releases yield the
+      # same tag.
+      - name: Compute content hash
+        id: hash
+        env:
+          BUILD_ARGS: ${{ matrix.build_args }}
+        run: |
+          set -euo pipefail
+          refs=""
+          for p in ${{ matrix.hash_paths }}; do refs="$refs HEAD:$p"; done
+          tree=$(git rev-parse $refs | sha256sum | cut -c1-16)
+          hash=$(printf '%s|%s' "$tree" "$BUILD_ARGS" | sha256sum | cut -c1-16)
+          echo "tag=src-$hash" >> "$GITHUB_OUTPUT"
+      - name: Check whether this image is already built
+        id: check
+        run: |
+          set -uo pipefail
+          if docker buildx imagetools inspect "$REGISTRY/$IMAGE:${{ steps.hash.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Re-tag existing image (no rebuild)
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          set -euo pipefail
+          echo "Reusing $IMAGE:${{ steps.hash.outputs.tag }} for $VERSION"
+          docker buildx imagetools create \
+            -t "$REGISTRY/$IMAGE:$VERSION" \
+            -t "$REGISTRY/$IMAGE:latest" \
+            "$REGISTRY/$IMAGE:${{ steps.hash.outputs.tag }}"
+      - name: Build and push
+        if: steps.check.outputs.exists != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: container/Dockerfile
+          file: ${{ matrix.file }}
           platforms: linux/amd64,linux/arm64
-          # Must match DEFAULT_PYTHON_PACKAGES in
-          # host/src/container-runner/AgentContainer.ts — pull-mode `familiar
-          # start` doesn't pass a build-arg, so the baked set is authoritative.
-          build-args: |
-            PYTHON_PACKAGES=numpy pandas scipy sympy pillow matplotlib openpyxl python-docx pypdf python-pptx lxml beautifulsoup4 markdown pyyaml ics
+          push: true
+          build-args: ${{ matrix.build_args }}
           tags: |
-            ${{ env.REGISTRY }}/familiar-agent:${{ env.VERSION }}
-            ${{ env.REGISTRY }}/familiar-agent:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: bridge image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: container/bridge.Dockerfile
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ env.REGISTRY }}/familiar-bastion-bridge-img:${{ env.VERSION }}
-            ${{ env.REGISTRY }}/familiar-bastion-bridge-img:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: mcp npm-runtime image
-        uses: docker/build-push-action@v6
-        with:
-          context: mcp-runtime/npm
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ env.REGISTRY }}/familiar-mcp-runtime-npm:${{ env.VERSION }}
-            ${{ env.REGISTRY }}/familiar-mcp-runtime-npm:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: mcp pypi-runtime image
-        uses: docker/build-push-action@v6
-        with:
-          context: mcp-runtime/pypi
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ env.REGISTRY }}/familiar-mcp-runtime-pypi:${{ env.VERSION }}
-            ${{ env.REGISTRY }}/familiar-mcp-runtime-pypi:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ env.REGISTRY }}/${{ matrix.image }}:${{ steps.hash.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ matrix.image }}:${{ env.VERSION }}
+            ${{ env.REGISTRY }}/${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
   release:
     needs: [publish-npm, publish-images]

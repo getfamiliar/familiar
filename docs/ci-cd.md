@@ -192,10 +192,21 @@ test ──▶ version ──┬──▶ publish-npm ────┐
 1. **test** — `npm ci`, full build, `format:check`, `lint`, and the workspace test suites. Gates everything else.
 2. **version** — computes the release version (see below) and exposes it as an output.
 3. **publish-npm** — vendors the `init` templates into the host package, stamps the version across all packages, builds, and publishes to npm in dependency order (`shared` → plugins → `host` → `@getfamiliar/cli`) with npm provenance.
-4. **publish-images** — Buildx multi-arch build + push of the four images to GHCR, tagged with the version and `latest`, using the GitHub Actions layer cache.
+4. **publish-images** — a matrix over the four images. Each is **built only when its own inputs change**; otherwise the release tag is re-pointed at the existing image (see below). Multi-arch (`linux/amd64,linux/arm64`), tagged with the version and `latest`, with a per-image GitHub Actions layer cache.
 5. **release** — creates the annotated git tag `v<version>` and a GitHub release with generated notes.
 
 `publish-npm` and `publish-images` run in parallel; both consume the same version, which is what keeps npm and GHCR in lockstep.
+
+### Building images only when they change
+
+Container image builds — especially the multi-arch, Python-heavy `familiar-agent` — are expensive, and the images change far less often than the code. Each image is therefore tagged three ways: a **content hash** of its build inputs (`src-<hash>`), the release **`<version>`**, and **`latest`**.
+
+The hash is a deterministic digest of the git tree/blob SHAs of the paths that actually affect the image (for `familiar-agent`: `container/` + `shared/` + the baked Python-packages arg; for the bridge and MCP-runtime images: just their Dockerfile), so identical inputs across releases produce the same tag. On each release, per image:
+
+- if `…:src-<hash>` already exists in the registry, the build is **skipped** and the `<version>` and `latest` tags are pointed at the existing digest with `docker buildx imagetools create` — a metadata-only operation that takes seconds;
+- otherwise the image is built and pushed under all three tags.
+
+Every release still produces a `<version>` tag for every image (so the host, which pulls the tag equal to its own npm version, always finds a match), but an actual rebuild happens only when that image's sources change. A host-, plugin-, or docs-only release re-tags all four images without building any of them; the `familiar-agent` image rebuilds only when `container/` or `shared/` changes.
 
 ### Version stamping
 
