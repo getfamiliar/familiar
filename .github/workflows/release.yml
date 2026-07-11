@@ -179,7 +179,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
   release:
-    needs: [publish-npm, publish-images]
+    needs: [version, publish-npm, publish-images]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -192,6 +192,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
+          if [ -z "$VERSION" ]; then echo "VERSION is empty — aborting release" >&2; exit 1; fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "v$VERSION" -m "Release v$VERSION"
