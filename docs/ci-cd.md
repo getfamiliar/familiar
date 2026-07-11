@@ -180,7 +180,7 @@ Use these for mirrors, air-gapped registries, or pinning an instance to a specif
 
 ## The release pipeline
 
-`.github/workflows/release.yml` runs on every push to `master` (and via manual dispatch). Doc-only changes (`**.md`, `docs/**`, `.claude/**`) are skipped. A `release` concurrency group with `cancel-in-progress: false` ensures a half-finished publish is never aborted mid-flight.
+`.github/workflows/release.yml` runs on every push to `main` (and via manual dispatch). Doc-only changes (`**.md`, `docs/**`, `.claude/**`) are skipped. A `release` concurrency group with `cancel-in-progress: false` ensures a half-finished publish is never aborted mid-flight.
 
 ### Jobs
 

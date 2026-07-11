@@ -54,7 +54,9 @@ const addCommand = defineCommand({
 
         const { bundled } = pluginSources(boot, log);
         if (bundled.includes(pkg)) {
-            log.info(`"${pkg}" is a prebundled core plugin; installed but not added to config/plugins`);
+            log.info(
+                `"${pkg}" is a prebundled core plugin; installed but not added to config/plugins`,
+            );
             return;
         }
         const lines = readWhitelistLines(boot);
@@ -72,10 +74,13 @@ const addCommand = defineCommand({
 /**
  * `familiar plugin remove <pkg>` — remove a plugin from `config/plugins`
  * and uninstall the package. Refuses to remove a prebundled core plugin
- * (those are managed by the `familiar` meta-package, not the whitelist).
+ * (those are managed by the `@getfamiliar/cli` meta-package, not the whitelist).
  */
 const removeCommand = defineCommand({
-    meta: { name: "remove", description: "Disable a plugin (drop from config/plugins) and uninstall it" },
+    meta: {
+        name: "remove",
+        description: "Disable a plugin (drop from config/plugins) and uninstall it",
+    },
     args: { pkg: { type: "positional", required: true, description: "npm package name" } },
     run({ args }) {
         const boot = bootstrap();

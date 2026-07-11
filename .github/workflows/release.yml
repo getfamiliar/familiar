@@ -1,13 +1,13 @@
 name: release
 
-# Every push to master publishes one lockstep version of all packages to
+# Every push to main publishes one lockstep version of all packages to
 # npm and pushes matching version-tagged images to GHCR. The host binds
 # the two channels at runtime by pulling the image tag equal to its own
 # npm version, so they must ship from the same VERSION — which this single
 # workflow guarantees.
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths-ignore:
       - "**.md"
       - "docs/**"

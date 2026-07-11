@@ -70,7 +70,11 @@ export const initCommand = defineCommand({
             mkdirSync(join(home, dir), { recursive: true });
         }
 
-        copyIfMissing(join(templateDir, "config.example.yml"), join(home, "config", "config.yml"), log);
+        copyIfMissing(
+            join(templateDir, "config.example.yml"),
+            join(home, "config", "config.yml"),
+            log,
+        );
         copyIfMissing(join(templateDir, "mcp.example.yml"), join(home, "config", "mcp.yml"), log);
         copyIfMissing(join(templateDir, "plugins"), join(home, "config", "plugins"), log);
         cpSync(join(templateDir, "workspace-template"), join(home, "data", "workspace-template"), {

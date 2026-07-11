@@ -1,6 +1,11 @@
 import type { Logger } from "@getfamiliar/shared";
 import type { Bootstrap } from "../Bootstrap.js";
-import { dockerExec, ISOLATED_NETWORK_NAME, removeContainer, stopContainer } from "../DockerTools.js";
+import {
+    dockerExec,
+    ISOLATED_NETWORK_NAME,
+    removeContainer,
+    stopContainer,
+} from "../DockerTools.js";
 import { pullImageIfNeeded } from "./Images.js";
 import { isSafePipRequirement } from "./PythonPackages.js";
 
