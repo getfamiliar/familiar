@@ -254,7 +254,7 @@ export class WorkspaceWatcher {
 /**
  * One-shot workspace scan that mirrors what {@link WorkspaceWatcher}
  * does on startup, without spinning up chokidar. Used by CLI commands
- * (e.g. `cli.sh cron list`) that need a snapshot without a live daemon.
+ * (e.g. `familiar cron list`) that need a snapshot without a live daemon.
  *
  * Returns every `.md` file under `workspaceDir` whose frontmatter
  * satisfies the filter. Hidden files and directories are skipped.

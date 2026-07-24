@@ -18,7 +18,7 @@ interface EventReportArgs {
 
 /**
  * Build the `event_report` reflection tool — the agent-facing
- * equivalent of `./cli.sh events report <id>`. Renders the event and
+ * equivalent of `familiar events report <id>`. Renders the event and
  * its full agentrun tree as one hierarchical markdown document, with
  * subagents nested inline. `verbosity` (0/1/2) climbs the same ladder as
  * the CLI's `-v`/`-vv`; `truncate` (default `true`) caps long prose /

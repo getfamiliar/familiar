@@ -6,7 +6,7 @@ import { transcribeAudio } from "./Whisper.js";
 
 /**
  * Build the citty subcommands exposed under
- * `./cli.sh transcribe-whisper`. Currently a single smoke-test
+ * `familiar transcribe-whisper`. Currently a single smoke-test
  * command; future operational commands (e.g. `cost`, `models`) land
  * here.
  */
@@ -16,7 +16,7 @@ export function buildCommands(_ctx: HostContext): readonly CommandDef<any>[] {
 }
 
 /**
- * `./cli.sh transcribe-whisper test <path>` — read a local audio
+ * `familiar transcribe-whisper test <path>` — read a local audio
  * file, send it through {@link transcribeAudio}, and print the
  * transcript. The operator's smoke test for
  * "is `inference.apiKeys.openai` set up correctly?" without needing

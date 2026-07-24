@@ -66,7 +66,7 @@ import { acquirePidFile, removePidFile } from "./pidfile.js";
  * shutdown is well under this; the deadline only fires when
  * something genuinely wedges. On expiry the daemon force-exits
  * with code 2 so the failure mode is visible to whoever invoked
- * `cli.sh stop`.
+ * `familiar stop`.
  */
 const DRAINING_DEADLINE_MS = 15_000;
 
@@ -98,7 +98,7 @@ export const startCommand = defineCommand({
         const verbose = Boolean(args.verbose);
         const dev = isDevMode();
         // Dev mode raises the default log level so a `FAMILIAR_DEV=1
-        // ./cli.sh start` produces debug output without also typing
+        // familiar start` produces debug output without also typing
         // `--verbose`. An explicit `--verbose` still wins (and in
         // production is the only way to get debug).
         const debugLogging = verbose || dev;
@@ -512,7 +512,7 @@ export const startCommand = defineCommand({
             // Last-resort shutdown deadline. Even with the per-
             // step belts inside each stop method, we never want a
             // future plugin or syscall to block the daemon
-            // indefinitely on SIGINT — the operator's `cli.sh
+            // indefinitely on SIGINT — the operator's `familiar
             // stop` would silently wedge. After
             // {@link DRAINING_DEADLINE_MS} we force-exit with a
             // distinct code so the failure is visible.
@@ -527,7 +527,7 @@ export const startCommand = defineCommand({
                 process.exit(2);
             }
             // Terminal log line. If this isn't in the rolling file
-            // after a `cli.sh stop`, the shutdown wedged somewhere
+            // after a `familiar stop`, the shutdown wedged somewhere
             // between SIGTERM and here — exactly the failure mode
             // the deadline above guards against, but the explicit
             // line makes it visible without having to count
@@ -550,7 +550,7 @@ export const startCommand = defineCommand({
         // anything that slips past (e.g. a listener that throws
         // synchronously inside an async callback). uncaughtException
         // is treated as program-level corruption — log + initiate an
-        // orderly shutdown so the operator's `cli.sh start` reports
+        // orderly shutdown so the operator's `familiar start` reports
         // the failure cleanly instead of dying mid-step.
         process.on("unhandledRejection", (reason) => {
             const err = reason instanceof Error ? reason : new Error(String(reason));

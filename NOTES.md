@@ -2,6 +2,8 @@ NEXT:
 
 * Sweep the remaining workspace handlers for any lingering "start a subagent just to get a tool" guidance — every tool is directly callable now, so those should read files and follow instructions instead. (The tool rename to start_subagent / schedule_subagent and the core semantics reword in CONTEXT.md, chat/index.md and the skills catalog are done.)
 
+* Calendar und Mails: nicht leere Ergebnisliste zurückgeben, wenn kein Mailbox / Calendar Provider registriert ist, sondern eine passende Fehlermeldung für den Agent.
+
 Features:
 
 * File Storages like Onedrive, Dropbox, Google Drive, ... - read & write access, search. Done like calendar + mail, a default set of tools for all providers and provider-specific implementations in plugins.
@@ -20,7 +22,7 @@ Neues CLI Tool: `logs`
 
 ### For production deployments:
 
-* cli.sh replacen mit `npx familiar`, die prechecks über den npm hook prepublishOnly laufen lassen. Gleichheit zwischen dev und prod sicherstellen.
+* ~~Das alte Shell-Launcher-Script durch `familiar` ersetzen~~ — erledigt: dev läuft jetzt über `npm run dev -- <cmd>` (Wrapper `cli/dev.mjs`), der dieselbe `familiar`-bin wie prod aufruft; das Shell-Script wurde entfernt.
 
 ## For later
 

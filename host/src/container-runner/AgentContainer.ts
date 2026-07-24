@@ -145,7 +145,7 @@ export interface AgentContainerConfig {
      * Absolute host path of `shared/build/`. Bind-mounted (read-only)
      * over `/shared/build` so the container resolves
      * `@getfamiliar/shared` against the host's just-rebuilt
-     * artifacts. The host (`cli.sh`) refreshes this directory before
+     * artifacts. The `npm run dev` launcher refreshes this directory before
      * the daemon starts, so it's always fresh by the time the
      * container boots — shared edits no longer need a container
      * image rebuild, only a daemon restart.
@@ -207,7 +207,7 @@ export interface AgentContainerConfig {
  * Mounts:
  *   - {dataPath}/workspace → /workspace (assistant memory)
  *   - {containerSrcPath} → /app/src (read-only, hot-reload via tsx watch)
- *   - {sharedBuildPath} → /shared/build (read-only, fresh per cli.sh rebuild)
+ *   - {sharedBuildPath} → /shared/build (read-only, fresh per dev-launcher rebuild)
  *   - {scratchPath} → /scratch (read-write, shared with every MCP)
  *
  * Container joins the egress-less `familiar-isolated` network only: it

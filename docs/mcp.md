@@ -70,8 +70,8 @@ CLI entrypoint to override. Use a custom image if you need to.
 3. **Edit `mcp.yml`.** The example already contains a working `fetch` entry. For other servers,
    add a new top-level key under `mcps:` and fill in `title`, `description`,
    `source: docker-mcp-registry`, and `image`.
-4. **Lint.** `./cli.sh tools lint-mcps` checks structure and required fields without starting anything.
-5. **Restart the daemon.** `./cli.sh stop && ./cli.sh start`. Logs from `familiar-mcp-<id>` flow into
+4. **Lint.** `familiar tools lint-mcps` checks structure and required fields without starting anything.
+5. **Restart the daemon.** `familiar stop && familiar start`. Logs from `familiar-mcp-<id>` flow into
    the host log stream the same way the agent's logs do.
 
 ## `mcp.yml` reference
@@ -242,7 +242,7 @@ table in `ToolsFactory`; plugin tools join via `PluginTool.groups`. Coining a ne
 matter of listing the name on one or more tools.
 
 The three reserved names (`all`, `mcp`, `none`) are rejected as MCP ids by
-`./cli.sh tools lint-mcps` and as plugin-tool group names by the host plugin tool registry, so a
+`familiar tools lint-mcps` and as plugin-tool group names by the host plugin tool registry, so a
 name collision fails up front instead of being silently shadowed.
 
 MCP ids are constrained to lowercase alphanumeric (no hyphens, no underscores) precisely because
@@ -323,7 +323,7 @@ tool can be listed and visible yet still refuse to execute:
 A non-privileged run that calls an `approval`/`privileged` tool gets a `PrivilegeDenied` tool error
 explaining why; the tool stays visible in `tool_list`. Container built-in and plugin tool levels are
 set in code (e.g. `mail_send_*` = `approval`); **MCP tool levels come from `mcp.yml`** (next
-section). `tool_list` reports each tool's level, and `./cli.sh tools list` badges the non-`default`
+section). `tool_list` reports each tool's level, and `familiar tools list` badges the non-`default`
 ones.
 
 ## Gating MCP tools: `allowlist` / `denylist` / `approval` / `privileged`
@@ -345,7 +345,7 @@ Glob semantics match the `tools:` matcher: a bare name is an exact match; `*` ma
 (including `_`), fully anchored (`comment_*` matches `comment_reply` but not `commentary`).
 
 The config lives host-side in `mcp.yml`; the `/mcp/` catalog ships the four lists verbatim and the
-container resolves them (read once at boot — a change needs a daemon restart). `./cli.sh tools list`
+container resolves them (read once at boot — a change needs a daemon restart). `familiar tools list`
 applies the same gating so the operator sees exactly the agent's surface.
 
 ```yaml
@@ -362,7 +362,7 @@ atlassian:
 
 ## Operations
 
-- **List every tool.** `./cli.sh tools list [search]` lists every tool the agent can use — container
+- **List every tool.** `familiar tools list [search]` lists every tool the agent can use — container
   built-ins (`send_chat`, `fs_*`, `bash`, …), host plugin tools (`mail_*`, `whatsapp_*`, the
   reflection tools), and MCP functions — grouped by tool group. Non-`default` tools are badged
   (`[approval]` / `[privileged]`), and MCP `allowlist`/`denylist` gating is reflected (denied tools
@@ -372,20 +372,20 @@ atlassian:
   parameters, `--mcp` / `--native` restrict to MCP-only or non-MCP-only, and `--raw` emits unstyled
   markdown. Requires the daemon: built-ins come from the catalog the agent container reports to the
   bastion on startup, plugin tools from the plugin-tools gateway, and MCP tools from the live bastion.
-- **Lint.** `./cli.sh tools lint-mcps` validates `config/mcp.yml` and lists the configured MCPs (id,
+- **Lint.** `familiar tools lint-mcps` validates `config/mcp.yml` and lists the configured MCPs (id,
   source, package). A missing file is treated as "no MCPs" and is not an error.
-- **List declared MCPs.** `./cli.sh tools list-mcps` prints every entry in `mcp.yml`, its source, and
+- **List declared MCPs.** `familiar tools list-mcps` prints every entry in `mcp.yml`, its source, and
   whether the per-id container is `live` or `idle` right now (one `docker ps` shot at the start).
   For `npm`/`pypi` entries a `(cached)` annotation appears next to the package name when
   `tmp/mcp-mount-<id>/` already holds package files — useful to know *before* running `tools purge-mcps`.
   When the docker daemon is unreachable the command still prints the declared list and notes that
   live state couldn't be probed.
-- **Purge cached package mounts.** `./cli.sh tools purge-mcps` removes every `tmp/mcp-mount-*` directory.
+- **Purge cached package mounts.** `familiar tools purge-mcps` removes every `tmp/mcp-mount-*` directory.
   **Refuses while the daemon is up** (a live `familiar-mcp-<id>` container could be reading from one);
-  stop the daemon first with `./cli.sh stop`. Reports the number of directories removed and
+  stop the daemon first with `familiar stop`. Reports the number of directories removed and
   approximate bytes freed. `tmp/` itself is left in place so the daemon's next start doesn't fail
   on a missing parent.
-- **Add a new MCP interactively.** `./cli.sh tools add-mcp <package>` searches the Docker MCP registry
+- **Add a new MCP interactively.** `familiar tools add-mcp <package>` searches the Docker MCP registry
   first
   (`https://raw.githubusercontent.com/docker/mcp-registry/main/servers/<name>/server.yaml`), then
   falls back to the official MCP registry
@@ -406,7 +406,7 @@ atlassian:
   default. Registry types other than `oci`/`npm`/`pypi` (`nuget`, `mcpb`) are not supported and
   are dropped from the candidate list.
 
-- **One-shot CLI invocations.** `./cli.sh tools call-mcp <id> -- <args...>` runs a single foreground
+- **One-shot CLI invocations.** `familiar tools call-mcp <id> -- <args...>` runs a single foreground
   container with the entry's mount, env, `--user`, and network settings, but with the user's args
   appended after the package or image. Designed for out-of-band setup steps the bastion's normal
   stdio-server invocation can't reach — the canonical case is OAuth login flows that write a
@@ -416,7 +416,7 @@ atlassian:
   The `--` is required: it tells citty's parser to stop and pass everything after verbatim, so
   flags like `--login` aren't interpreted as our own. Example:
   ```
-  ./cli.sh tools call-mcp ms365 -- --login
+  familiar tools call-mcp ms365 -- --login
   ```
   No `--name` is set on the docker invocation, so the call won't collide with a bastion-managed
   `familiar-mcp-<id>` container that may be running concurrently. The exit status of the docker child is

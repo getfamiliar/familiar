@@ -13,7 +13,7 @@ calendars they have delegated access to. Group calendars and team / Microsoft
 
 The plugin runs on operational defaults — no `ms365:` block in `config.yml` is
 required. Real enablement is gated on at least one cached login under
-`data/ms365/auth/`; run `./cli.sh ms365 login` to add one.
+`data/ms365/auth/`; run `familiar ms365 login` to add one.
 
 ## What the agent sees
 
@@ -154,7 +154,7 @@ same set.
 ### 2. Log in
 
 ```bash
-./cli.sh ms365 login
+familiar ms365 login
 ```
 
 The CLI prints a Microsoft device-code URL and a short code; visit the URL on
@@ -168,7 +168,7 @@ cache file and is polled separately.
 ### 3. Verify
 
 ```bash
-./cli.sh ms365 status
+familiar ms365 status
 ```
 
 Lists every cached login, marks each as `✓` or `✗`, lists configured
@@ -185,7 +185,7 @@ To produce the template, fire the `mail/extract-style` workspace handler from cl
 once per mailbox you want styled:
 
 ```
-./cli.sh cli-chat
+familiar cli-chat
 > /mail/extract-style Extract for adam@example.com
 ```
 
@@ -271,16 +271,16 @@ project. To register your own Entra ID Public Client app:
      tenantId: "common"   # or your tenant guid
    ```
 
-7. Re-run `./cli.sh ms365 login` and consent against your app this time.
+7. Re-run `familiar ms365 login` and consent against your app this time.
 
 ## CLI reference
 
 ```
-./cli.sh ms365                # show help
-./cli.sh ms365 status         # logins, mailboxes, send gate
-./cli.sh ms365 login          # add a new account via device-code
-./cli.sh ms365 logout [upn]   # remove one or all logins
-./cli.sh ms365 cal list       # list every calendar each active login can reach
+familiar ms365                # show help
+familiar ms365 status         # logins, mailboxes, send gate
+familiar ms365 login          # add a new account via device-code
+familiar ms365 logout [upn]   # remove one or all logins
+familiar ms365 cal list       # list every calendar each active login can reach
 ```
 
 All subcommands work without the daemon — they talk to Microsoft Graph

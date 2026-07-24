@@ -1,5 +1,5 @@
 /**
- * Parse the id-spec accepted by `cli.sh events replay`.
+ * Parse the id-spec accepted by `familiar events replay`.
  *
  * Accepts a comma-separated list of either single event ids or inclusive
  * spans. Whitespace around commas and the dash is ignored.

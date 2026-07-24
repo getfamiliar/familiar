@@ -15,7 +15,7 @@ import { parseEventIdSpec } from "./EventIdSpec.js";
 import { verbosityFrom } from "./tools/verbosity.js";
 
 /**
- * `cli.sh events emit <topic> [prompt] [--payload JSON] [--priority N]` —
+ * `familiar events emit <topic> [prompt] [--payload JSON] [--priority N]` —
  * insert one event into the bus-state DB and print the persisted row as
  * JSON. Replaces the old `event` top-level command; `prompt` is now the
  * common positional and `payload` the rarely-needed flag.
@@ -79,7 +79,7 @@ const eventsEmitCommand = defineCommand({
 });
 
 /**
- * `cli.sh events report <id>` — render the full markdown report for one
+ * `familiar events report <id>` — render the full markdown report for one
  * event by reading the bus tables directly: the event header, the root
  * agentrun's step protocol with every subagent nested inline, and the
  * final result. Works on a finished or in-flight event.
@@ -162,7 +162,7 @@ const eventsReportCommand = defineCommand({
 });
 
 /**
- * `cli.sh events replay <id-spec>` — re-emit one or more existing events
+ * `familiar events replay <id-spec>` — re-emit one or more existing events
  * as fresh events. The id-spec is a comma-separated list of event ids
  * and/or inclusive spans:
  *
@@ -275,7 +275,7 @@ function printTable(headers: readonly string[], rows: readonly (readonly string[
 }
 
 /**
- * `cli.sh events list [search] [-n N]` — print a table of the last N events
+ * `familiar events list [search] [-n N]` — print a table of the last N events
  * (default 10), newest first. Columns: ID, TOPIC, HANDLER, STATE,
  * PROMPT (first ~100 chars). When `search` is given, only rows whose
  * topic, start_handler, prompt, or payload case-insensitively contain

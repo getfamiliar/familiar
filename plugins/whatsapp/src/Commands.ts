@@ -9,7 +9,7 @@ import { buildBaileysLogger, resolveWaVersion } from "./WhatsAppDaemon.js";
 const BROWSER_DESCRIPTION: [string, string, string] = ["familiar", "Chrome", "1.0"];
 
 /**
- * Build the citty subcommands exposed under `./cli.sh whatsapp`.
+ * Build the citty subcommands exposed under `familiar whatsapp`.
  *
  * Subcommands:
  * - `status` — read-only summary of pairing state.
@@ -27,7 +27,7 @@ export function buildCommands(ctx: HostContext): readonly CommandDef<any>[] {
 }
 
 /**
- * `./cli.sh whatsapp status` — print whether the device is linked,
+ * `familiar whatsapp status` — print whether the device is linked,
  * which auth dir the creds live in, and the current group allowlist
  * (if any). Read-only; no socket connection is opened.
  */
@@ -43,7 +43,7 @@ function statusCommand(ctx: HostContext) {
                 process.stdout.write(`Linked. Auth state: ${auth.authDir}\n`);
             } else {
                 process.stdout.write(
-                    `Not linked. Run \`./cli.sh whatsapp link\` to pair this device.\nAuth dir (will be created on link): ${auth.authDir}\n`,
+                    `Not linked. Run \`familiar whatsapp link\` to pair this device.\nAuth dir (will be created on link): ${auth.authDir}\n`,
                 );
             }
             const allowlist = ctx.config
@@ -61,14 +61,14 @@ function statusCommand(ctx: HostContext) {
 }
 
 /**
- * `./cli.sh whatsapp link` — connect to WhatsApp, render every QR
+ * `familiar whatsapp link` — connect to WhatsApp, render every QR
  * code baileys produces to the terminal, and exit when the connection
  * reaches `open` (success) or fails terminally.
  *
  * Run this once per device. The user opens WhatsApp on their phone,
  * goes to *Settings → Linked devices → Link a device*, scans the QR.
  * Baileys persists creds to `<dataDir>/whatsapp/auth/` via
- * `creds.update`, so the next `./cli.sh start` reuses them silently.
+ * `creds.update`, so the next `familiar start` reuses them silently.
  *
  * Multiple QR codes may appear because baileys rotates them every ~20
  * seconds; just scan whichever is currently displayed.
@@ -84,7 +84,7 @@ function linkCommand(ctx: HostContext) {
             const auth = await loadAuth(ctx);
             if (auth.hasExistingCreds) {
                 process.stdout.write(
-                    "Already linked. Run `./cli.sh whatsapp logout` first if you want to re-pair.\n",
+                    "Already linked. Run `familiar whatsapp logout` first if you want to re-pair.\n",
                 );
                 return;
             }
@@ -117,7 +117,7 @@ function linkCommand(ctx: HostContext) {
                     await auth.saveCreds();
                     const me = auth.state.creds.me?.id ?? "unknown";
                     process.stdout.write(
-                        `\nLinked successfully as ${me}. Run \`./cli.sh start\` to bring the daemon up.\n`,
+                        `\nLinked successfully as ${me}. Run \`familiar start\` to bring the daemon up.\n`,
                     );
                     process.exit(0);
                 }
@@ -138,7 +138,7 @@ function linkCommand(ctx: HostContext) {
 }
 
 /**
- * `./cli.sh whatsapp logout` — wipe local creds. The next `./cli.sh
+ * `familiar whatsapp logout` — wipe local creds. The next `familiar
  * whatsapp link` will start a fresh pairing flow. Does NOT remove the
  * device from the user's phone — that has to be done in WhatsApp's
  * Linked Devices UI. Local-only state is the host's only concern.

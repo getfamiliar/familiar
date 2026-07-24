@@ -8,7 +8,7 @@ import { inspectPidFile } from "../pidfile.js";
 const MOUNT_DIR_PREFIX = "mcp-mount-";
 
 /**
- * `cli.sh tools purge-mcps` — remove every `tmp/mcp-mount-*` directory. Refuses
+ * `familiar tools purge-mcps` — remove every `tmp/mcp-mount-*` directory. Refuses
  * while the daemon is up so we never yank a cache out from under a
  * live `familiar-mcp-<id>` container reading from it.
  *
@@ -29,7 +29,7 @@ export const purgeMcpsCommand = defineCommand({
         const status = inspectPidFile(boot.pidFile);
         if (status.kind === "alive") {
             process.stderr.write(
-                `daemon is running (pid=${status.pid}); stop it first with ./cli.sh stop\n`,
+                `daemon is running (pid=${status.pid}); stop it first with familiar stop\n`,
             );
             process.exit(1);
         }

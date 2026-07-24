@@ -9,7 +9,7 @@ interface EventReplayArgs {
 
 /**
  * Build the `event_replay` reflection tool — the agent-facing
- * equivalent of `./cli.sh events replay <id-spec>`. Accepts the same
+ * equivalent of `familiar events replay <id-spec>`. Accepts the same
  * comma-separated id / span spec the CLI does and re-emits each
  * resolved event as a fresh one. Per-id misses are reported inline
  * and skipped (matching the CLI), so a partial batch still surfaces

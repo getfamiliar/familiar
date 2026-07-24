@@ -185,7 +185,7 @@ export function stopContainer(name: string): Promise<void> {
  * Run a docker CLI command with the parent process's stdin/stdout/
  * stderr inherited, blocking until the child exits. Used by
  * subcommands that hand the user's terminal to a foreground docker
- * process (`./cli.sh psql`'s psql shell, `./cli.sh mcp call`'s
+ * process (`familiar psql`'s psql shell, `familiar mcp call`'s
  * one-shot CLI invocations against an MCP runtime container).
  *
  * Returns the child's exit status — `null`-on-signal collapses to

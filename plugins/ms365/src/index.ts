@@ -20,7 +20,7 @@ import { buildSentSampleTool } from "./mail/SentSampleTool.js";
  *
  * The plugin runs on operational defaults — no `ms365:` block in
  * `config.yml` is required. Real enablement is gated on at least one
- * login being cached in `data/ms365/auth/`; run `./cli.sh ms365 login`
+ * login being cached in `data/ms365/auth/`; run `familiar ms365 login`
  * to add one.
  */
 export default definePlugin({

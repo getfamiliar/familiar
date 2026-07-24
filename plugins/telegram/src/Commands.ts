@@ -8,7 +8,7 @@ import {
 } from "./TelegramDaemon.js";
 
 /**
- * Build the citty subcommands exposed under `./cli.sh telegram`.
+ * Build the citty subcommands exposed under `familiar telegram`.
  *
  * Each subcommand re-reads `ctx.config` on invocation rather than
  * capturing a snapshot from the daemon — invoking the CLI typically
@@ -21,7 +21,7 @@ export function buildCommands(ctx: HostContext): readonly CommandDef<any>[] {
 }
 
 /**
- * `./cli.sh telegram status` — print token presence, bot identity (via
+ * `familiar telegram status` — print token presence, bot identity (via
  * a live `getMe` when the token is set), authorization state, and a
  * pointer to `core.defaultChatChannel`. Read-only; no side effects.
  */
@@ -67,7 +67,7 @@ function statusCommand(ctx: HostContext) {
 }
 
 /**
- * `./cli.sh telegram send "<text>"` — direct Bot API push to the
+ * `familiar telegram send "<text>"` — direct Bot API push to the
  * authorized user. Useful as a smoke test that the token + user id
  * combination is wired up. Bypasses the chatmessages pipeline, so
  * messages sent this way do NOT appear in the agent's chat history.
@@ -97,7 +97,7 @@ function sendCommand(ctx: HostContext) {
             if (config.authorizedUserId === null) {
                 process.stderr.write(
                     "Cannot send: telegram.authorizedUserId is not set. " +
-                        "Set it in config/config.yml (run `./cli.sh telegram status` for guidance).\n",
+                        "Set it in config/config.yml (run `familiar telegram status` for guidance).\n",
                 );
                 process.exit(1);
             }

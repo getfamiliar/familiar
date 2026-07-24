@@ -294,7 +294,7 @@ async function runTurn(
         if (!sawAgentRun) {
             process.stderr.write(
                 chalk.yellow(
-                    "[cli-chat] no agentrun observed yet — is `./cli.sh start` running and the agent container picking up events?\n",
+                    "[cli-chat] no agentrun observed yet — is `familiar start` running and the agent container picking up events?\n",
                 ),
             );
         }
@@ -435,7 +435,7 @@ function isAbortError(err: unknown): boolean {
 }
 
 /**
- * One-shot mode: `./cli.sh cli-chat "<message>"`. Parses, validates,
+ * One-shot mode: `familiar cli-chat "<message>"`. Parses, validates,
  * emits a single event, and either renders the full RunRenderer
  * output or — with `returnOnly` — just prints the final assistant
  * text once the event settles.

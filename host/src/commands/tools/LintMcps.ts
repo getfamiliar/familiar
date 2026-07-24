@@ -6,7 +6,7 @@ import { lintMcpConfigFile } from "../../mcp/McpConfigLoader.js";
 import { McpRegistry } from "../../mcp/McpRegistry.js";
 
 /**
- * `cli.sh tools lint-mcps` — validate `config/mcp.yml` (readable or
+ * `familiar tools lint-mcps` — validate `config/mcp.yml` (readable or
  * absent, parses, every entry has the fields its source requires) and,
  * when it's valid, list the configured MCPs. Output is markdown,
  * rendered with `marked-terminal`.

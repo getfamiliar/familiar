@@ -33,7 +33,7 @@ export interface NpmFactoryConfig extends RuntimeContainerConfig {
  *     familiar-mcp-runtime-npm
  *     <package>[@<version>] [entry.args...]
  *
- * `options` lets one-shot callers (e.g. `./cli.sh mcp call`)
+ * `options` lets one-shot callers (e.g. `familiar mcp call`)
  * tweak the bastion defaults: `interactive: true` adds `-t`,
  * `containerName: null` drops `--name` so the call doesn't
  * collide with a live bastion-managed container of the same id,

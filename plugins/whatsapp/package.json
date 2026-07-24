@@ -9,6 +9,7 @@
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "familiar": {
+        "plugin": true,
         "bundled": true
     },
     "files": [

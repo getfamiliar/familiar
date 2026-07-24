@@ -277,7 +277,7 @@ export interface HostContext {
      */
     readonly tmpDir: string;
     /**
-     * Cheap synchronous probe for whether the host daemon (`./cli.sh
+     * Cheap synchronous probe for whether the host daemon (`familiar
      * start`) is currently running on this machine. Inspects the
      * daemon's pidfile under `<tmpDir>/.daemon.pid` and confirms the
      * recorded pid is still alive — no network calls, no MCP traffic.
@@ -388,7 +388,7 @@ export interface HostContext {
      * {@link WorkspaceWatcherApi} for the full contract.
      *
      * Only available inside the daemon: one-shot CLI invocations
-     * (`./cli.sh <plugin> …`) do not spin up the watcher, so calling
+     * (`familiar <plugin> …`) do not spin up the watcher, so calling
      * either method from a CLI command throws synchronously. Daemon
      * plugins are the intended consumer.
      */
@@ -415,11 +415,11 @@ export interface HostContext {
     };
     /**
      * Aborts when the host daemon is no longer running — i.e. when the
-     * `./cli.sh start` process backing this context has stopped or
+     * `familiar start` process backing this context has stopped or
      * crashed. Always present; consumers don't need to null-check.
      *
-     * Intended use: one-shot CLI commands (`./cli.sh <plugin> ...`,
-     * `./cli.sh cli-chat`, etc.) race long waits (`emit().settled`,
+     * Intended use: one-shot CLI commands (`familiar <plugin> ...`,
+     * `familiar cli-chat`, etc.) race long waits (`emit().settled`,
      * polling loops, interactive prompts) against this signal and exit
      * cleanly when it fires instead of hanging on a postgres connection
      * the dying daemon took with it.
@@ -667,20 +667,20 @@ export interface PluginHostManifest {
     getModelProviders?(ctx: HostContext): readonly ModelProviderDescriptor[];
     /**
      * Default command for the plugin's CLI root. When set, invoking
-     * the plugin id with no subcommand (e.g. `cli.sh cli-chat`) runs
+     * the plugin id with no subcommand (e.g. `familiar cli-chat`) runs
      * this command's `run`. Its `args` are also lifted onto the root.
      * Useful for plugins whose primary mode is interactive (REPL-like)
      * — the user shouldn't have to remember a subcommand name.
      *
      * Subcommands declared in {@link commands} are still available
-     * under the same root, so `cli.sh cli-chat send "hi"` keeps
+     * under the same root, so `familiar cli-chat send "hi"` keeps
      * working alongside the bare-root invocation.
      */
     main?(ctx: HostContext): AnyCommandDef;
     /**
      * Citty commands contributed by this plugin. They are mounted
      * under `subCommands[<plugin.id>]` in the root CLI by default
-     * (e.g. `cli.sh cli-chat send "hi"`).
+     * (e.g. `familiar cli-chat send "hi"`).
      */
     commands?(ctx: HostContext): readonly AnyCommandDef[];
 }
@@ -697,7 +697,7 @@ export interface PluginHostManifest {
 export interface PluginManifest {
     /**
      * Plugin id, matching `[a-z0-9-]+`. Used to namespace the
-     * plugin's CLI commands (`cli.sh <id> <subcommand>`). A plugin
+     * plugin's CLI commands (`familiar <id> <subcommand>`). A plugin
      * that contributes {@link PluginHostManifest.tools | tools} must
      * additionally satisfy {@link IDENT_PATTERN} so the id is usable
      * as a tool group name; the tools registry enforces that at

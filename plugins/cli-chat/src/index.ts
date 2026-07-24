@@ -6,12 +6,12 @@ import { runOneShot, runRepl } from "./Repl.js";
 /**
  * cli-chat plugin.
  *
- * `./cli.sh cli-chat` (no message) launches an interactive REPL with
+ * `familiar cli-chat` (no message) launches an interactive REPL with
  * an inquirer-based prompt, tab-completion for direct handler calls
  * (`/topic/sub/handler …`), and an ora spinner that summarises the
  * active agentrun while permanent `↳` lines accumulate above it.
  *
- * `./cli.sh cli-chat "<message>"` emits one event and renders the
+ * `familiar cli-chat "<message>"` emits one event and renders the
  * same spinner-driven output until the event settles. With
  * `--return`, the command suppresses the spinner and prints only the
  * final assistant text — handy for scripting.

@@ -133,8 +133,8 @@ function renderLogObject(obj: unknown): string {
  * Self-disables (returns after one log line) when the device hasn't
  * been linked yet — there's no env-var enable flag; presence of
  * baileys credentials on disk *is* the on/off switch. The user runs
- * `./cli.sh whatsapp link` once to pair, and from then on every
- * `./cli.sh start` re-uses the persisted creds without prompting.
+ * `familiar whatsapp link` once to pair, and from then on every
+ * `familiar start` re-uses the persisted creds without prompting.
  */
 export async function startWhatsAppDaemon(
     ctx: HostContext,
@@ -143,7 +143,7 @@ export async function startWhatsAppDaemon(
     const auth = await loadAuth(ctx);
     if (!auth.hasExistingCreds) {
         ctx.logger.info(
-            "whatsapp not linked yet; run `./cli.sh whatsapp link` to pair this device",
+            "whatsapp not linked yet; run `familiar whatsapp link` to pair this device",
         );
         return;
     }
@@ -155,7 +155,7 @@ export async function startWhatsAppDaemon(
     // because no one is watching the daemon log to scan it.
     if (!auth.state.creds.me?.id) {
         ctx.logger.info(
-            "whatsapp creds on disk are incomplete (no `me`); run `./cli.sh whatsapp logout` and re-link",
+            "whatsapp creds on disk are incomplete (no `me`); run `familiar whatsapp logout` and re-link",
         );
         return;
     }
@@ -184,7 +184,7 @@ async function runConnectionLoop(
         const reason = await runConnection(ctx, auth, allowlist, registry);
         if (reason === "loggedOut") {
             ctx.logger.info(
-                "whatsapp logged out (device removed from phone); clearing auth and stopping. Run `./cli.sh whatsapp link` to re-pair.",
+                "whatsapp logged out (device removed from phone); clearing auth and stopping. Run `familiar whatsapp link` to re-pair.",
             );
             await clearAuth(ctx);
             return;

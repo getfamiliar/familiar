@@ -198,7 +198,7 @@ values become container env vars. **Proxy-placeholder API keys** (e.g. `FEATHERL
 inside `familiar-agent`) are hardcoded in the container launcher (`AgentContainer.ts`); the real upstream
 key only flows from config → `ReverseProxyContainer.upstreamApiKey`.
 
-CLI: `./cli.sh config lint` validates the file. `./cli.sh start` runs the linter implicitly before
+CLI: `familiar config lint` validates the file. `familiar start` runs the linter implicitly before
 bringing the daemon up.
 
 Note that `config/mcp.yml` contains the configuration for MCP tools and likely contains sensitive information like API keys as well.
@@ -247,7 +247,7 @@ is passed straight to Croner as a raw cron expression. Invalid expressions are l
 `warn` and silently dropped; the rest of the workspace keeps working. Editing or deleting
 a handler file re-evaluates its job live — no daemon restart needed.
 
-`./cli.sh cron list` prints every handler with a `cron:` field, the verbatim string, and the
+`familiar cron list` prints every handler with a `cron:` field, the verbatim string, and the
 parsed expression. The command runs a standalone filesystem scan, so it works whether the
 daemon is up or not.
 
@@ -380,7 +380,7 @@ The `data/` folder is the persistent host-side storage. Layout:
 
 Ephemeral runtime scratch lives in `tmp/` instead (gitignored, safe to wipe):
 
-- `tmp/.daemon.pid` — pidfile written by the daemon and consumed by `./cli.sh stop`.
+- `tmp/.daemon.pid` — pidfile written by the daemon and consumed by `familiar stop`.
 - `tmp/.postgres-port` — chosen loopback host port that `familiar-postgres` is published on (e.g. `5432`, or the next free port if 5432 was taken at startup). Read by anything host-side that wants to `psql` or use a `pg` client.
 - `tmp/llm-debug/` — model HTTP request/response captures written by the reverse proxy when `inference.captureModelHttpRequestBodies` is on.
 - `tmp/scratch/` — per-event auxiliary files, bind-mounted into the agent and MCP containers as `/scratch/`.
@@ -389,14 +389,14 @@ Ephemeral runtime scratch lives in `tmp/` instead (gitignored, safe to wipe):
 ## Architecture
 
 - **shared/**: TypeScript package (`@getfamiliar/shared`) used by both host and container. Both sides depend on it via `"*"` workspace resolution in their package.json. Contains the `EventBus` / `AgentRunBus` / `PostgresConnection` clients, the events + agentruns schema (with `EVENT_TERMINAL_UPDATE_SQL` helper), and the related types. Must be built (`npm run build`) before host or container can compile. The Docker build handles this automatically.
-- **host/**: Single Node.js CLI entry at `host/src/index.ts` using [citty](https://github.com/unjs/citty) for subcommand dispatch. Subcommands live in `host/src/commands/` (`Start`, `Stop`, `Event`, `Config`); shared paths live in `host/src/Bootstrap.ts`; the YAML-backed `ConfigService` and `ConfigLinter` live in `host/src/config/`. Invoked through one root wrapper, `./cli.sh <subcommand>`, which verifies `config/config.yml` exists and rebuilds the host package if stale. The `start` subcommand runs as a long-running daemon that manages two singleton Docker containers: the bus-state postgres `familiar-postgres` and the agent runtime `familiar-agent`. Both join the shared bridge network `familiar-net`. Postgres is published on `127.0.0.1:<port>:5432` only (port chosen at startup; written to `tmp/.postgres-port`). All host↔container communication flows through the postgres `events` and `agentruns` tables — there is no file-based IPC.
+- **host/**: Single Node.js CLI entry at `host/src/index.ts` using [citty](https://github.com/unjs/citty) for subcommand dispatch. Subcommands live in `host/src/commands/` (`Start`, `Stop`, `Event`, `Config`); shared paths live in `host/src/Bootstrap.ts`; the YAML-backed `ConfigService` and `ConfigLinter` live in `host/src/config/`. Invoked as `familiar <subcommand>` (from a monorepo checkout, `npm run dev -- <subcommand>` via the `cli/dev.mjs` launcher, which rebuilds stale packages first); every command except `init` verifies `config/config.yml` exists via `requireHomeDir`. The `start` subcommand runs as a long-running daemon that manages two singleton Docker containers: the bus-state postgres `familiar-postgres` and the agent runtime `familiar-agent`. Both join the shared bridge network `familiar-net`. Postgres is published on `127.0.0.1:<port>:5432` only (port chosen at startup; written to `tmp/.postgres-port`). All host↔container communication flows through the postgres `events` and `agentruns` tables — there is no file-based IPC.
 - **host/src/db/**: Postgres lifecycle. `PostgresContainer` runs `postgres:16-alpine`, picks a free loopback port, joins `familiar-net`, and waits for `pg_isready`. Hardcoded user / database: `POSTGRES_USER=familiar`, `POSTGRES_DB=familiar`; the password is sourced from `core.postgresPassword` in `config/config.yml`. Container code reaches the DB at `familiar-postgres:5432`; host code at `127.0.0.1:<port>` (port from `tmp/.postgres-port`).
 - **container/**: Docker container definition for the agent runtime. Long-running; built once, started by the host daemon and reused across all tasks.
   - Base image: `node:24-slim`. Currently no LLM SDK is installed — Featherless integration is the next step.
   - `src/TriageWatcher.ts` is a placeholder for the input-event watcher (claims events `pending → running`, currently just marks them done). The real input-event watcher and the new agentrun scheduler land in the next plan.
   - Runs as non-root `node` user.
   - Docker build context is the project root (not `container/`), so `shared/` is available during image build.
-  - Both `container/src/` and `shared/build/` are bind-mounted into the running container (read-only), so source edits in either package take effect on the next daemon restart without an image rebuild. `cli.sh` keeps `shared/build/` fresh before the daemon starts. The agent image itself is (re)built on every `./cli.sh start` via `ensureAgentImage` — docker's layer cache makes the no-change case fast, and `container/Dockerfile` or `package.json` changes are picked up automatically.
+  - Both `container/src/` and `shared/build/` are bind-mounted into the running container (read-only), so source edits in either package take effect on the next daemon restart without an image rebuild. The `npm run dev` launcher keeps `shared/build/` fresh before the daemon starts. The agent image itself is (re)built on every `familiar start` via `ensureAgentImage` — docker's layer cache makes the no-change case fast, and `container/Dockerfile` or `package.json` changes are picked up automatically.
 
 ## Code Style
 

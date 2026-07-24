@@ -13,7 +13,7 @@ import { loadPlugins } from "../plugins/PluginLoader.js";
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * `cli.sh config` — root for config-related subcommands. Today only
+ * `familiar config` — root for config-related subcommands. Today only
  * `lint` is exposed; future additions (`get`, `set`, …) live under
  * the same root so the CLI surface stays organised.
  */
@@ -54,7 +54,7 @@ export const configCommand = defineCommand({
                     // Python-package existence check: each python.packages
                     // entry must resolve to a real distribution on PyPI, so
                     // a typo surfaces here instead of as a buried failure in
-                    // the next `./cli.sh start` image build. Network-only;
+                    // the next `familiar start` image build. Network-only;
                     // an unreachable PyPI degrades to a warning.
                     try {
                         const py = await validatePythonPackages(boot);

@@ -37,7 +37,7 @@ import type { PluginToolsRegistry } from "./ToolsRegistry.js";
 
 /**
  * Poll cadence for the daemon-pidfile watcher in CLI mode. Has to be
- * tight enough that a user pressing `./cli.sh stop` in another
+ * tight enough that a user pressing `familiar stop` in another
  * terminal sees their long-running CLI ({@link plugins/cli-chat})
  * exit cleanly within a beat, and slack enough that the
  * `inspectPidFile` syscall isn't a hot loop. 500 ms picks the middle.
@@ -357,7 +357,7 @@ export class PluginHost {
     /**
      * Build the citty `subCommands` map contributed by all plugins.
      * Each plugin's commands are nested under `subCommands[plugin.id]`,
-     * so users invoke them as `cli.sh <plugin-id> <subcommand>`.
+     * so users invoke them as `familiar <plugin-id> <subcommand>`.
      *
      * @throws If two plugins declare the same id, or if a plugin
      *   command is missing `meta.name`.
@@ -669,10 +669,10 @@ export class PluginHost {
 
 /**
  * Wrap a plugin's commands in a parent command keyed by the plugin's
- * id, so they appear under `cli.sh <plugin-id> ...` in the CLI tree.
+ * id, so they appear under `familiar <plugin-id> ...` in the CLI tree.
  *
  * When `main` is provided, its `args` and `run` are lifted onto the
- * root so `cli.sh <plugin-id>` (no subcommand) executes that command
+ * root so `familiar <plugin-id>` (no subcommand) executes that command
  * directly. Subcommands continue to work alongside it.
  */
 function pluginRoot(

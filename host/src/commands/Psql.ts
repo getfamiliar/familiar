@@ -3,7 +3,7 @@ import { POSTGRES_DB, POSTGRES_HOST, POSTGRES_USER } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 
 /**
- * `cli.sh psql` — drop into an interactive `psql` shell inside the
+ * `familiar psql` — drop into an interactive `psql` shell inside the
  * `familiar-postgres` container. Avoids needing a `psql` client on the host
  * and removes the need to look up the loopback port in
  * `tmp/.postgres-port`. Stdio is inherited so the shell behaves like

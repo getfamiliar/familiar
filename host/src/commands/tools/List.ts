@@ -45,7 +45,7 @@ interface PluginCatalogEntry {
 }
 
 /**
- * `cli.sh tools list [search]` — list every tool the agent can use,
+ * `familiar tools list [search]` — list every tool the agent can use,
  * grouped by tool group: container built-ins (`send_chat`, `fs_*`, …),
  * host plugin tools (`mail_*`, `whatsapp_*`, the reflection tools), and
  * MCP functions. Optional `search` filters by case-insensitive substring
@@ -109,7 +109,7 @@ export const listCommand = defineCommand({
         const boot = bootstrap();
         if (!isDaemonRunning(boot.pidFile)) {
             process.stderr.write(
-                "daemon is not running; start it first (./cli.sh start) — `tools list` " +
+                "daemon is not running; start it first (familiar start) — `tools list` " +
                     "queries the running bastion to enumerate tools.\n",
             );
             process.exit(1);

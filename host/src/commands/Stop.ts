@@ -7,7 +7,7 @@ const POLL_INTERVAL_MS = 100;
 const POLL_TICKS = 100; // 100 × 100 ms = 10 s grace period before SIGKILL.
 
 /**
- * `cli.sh stop` — send SIGTERM to the daemon read from the pidfile, wait up
+ * `familiar stop` — send SIGTERM to the daemon read from the pidfile, wait up
  * to 10 s for graceful shutdown, then SIGKILL. Removes the pidfile in
  * every exit path. Mirrors the previous `cli/stop.sh` UX one-for-one.
  */

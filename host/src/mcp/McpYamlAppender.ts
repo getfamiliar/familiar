@@ -9,7 +9,7 @@ import { lintMcpConfigFile } from "./McpConfigLoader.js";
  */
 const FRESH_FILE_HEADER =
     "# Familiar — MCP servers (see config/mcp.example.yml).\n" +
-    "# Edited by `./cli.sh mcp add`; you can hand-edit too.\n";
+    "# Edited by `familiar mcp add`; you can hand-edit too.\n";
 
 /**
  * Append a single rendered YAML entry block (already

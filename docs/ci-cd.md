@@ -7,7 +7,7 @@ This document explains how Familiar is packaged, released, and installed — the
 Familiar runs in one of two modes, and almost everything below follows from the distinction:
 
 - **Installed mode** — the normal way to run Familiar. You install the `@getfamiliar/cli` npm package (which provides the `familiar` command) into an ordinary project folder (e.g. `~/familiar`) that holds your `config/`, `data/`, and `tmp/`. The CLI runs your instance from that folder and **pulls** prebuilt, version-locked Docker images from a registry. Updating is `npm update` + restart.
-- **Development mode** — a checkout of the monorepo, driven by `./cli.sh`. Source is rebuilt on demand, container images are **built locally**, and `container/src` + `shared/build` are bind-mounted into the agent for hot-reload.
+- **Development mode** — a checkout of the monorepo, driven by `npm run dev -- <subcommand>` (the `cli/dev.mjs` launcher). Source is rebuilt on demand, container images are **built locally**, and `container/src` + `shared/build` are bind-mounted into the agent for hot-reload.
 
 The same code powers both; the mode changes only *where paths resolve* and *whether images are built or pulled*.
 
@@ -18,7 +18,7 @@ A running instance separates two concerns that happen to coincide in a checkout:
 - **Home directory** (`FAMILIAR_HOME`, defaults to the current working directory) — your data: `config/`, `data/`, `tmp/`. This is what makes an instance yours.
 - **Asset root** — the installed `@getfamiliar/host` package: its own version and the `init` templates. Resolved relative to the package, wherever npm put it.
 
-In a monorepo checkout the two coincide at the repo root (`cli.sh` sets `FAMILIAR_HOME` to the checkout). Installed, they diverge — which is exactly what lets you run Familiar from any folder.
+In a monorepo checkout the two coincide at the repo root (the `npm run dev` launcher sets `FAMILIAR_HOME` to the checkout). Installed, they diverge — which is exactly what lets you run Familiar from any folder.
 
 ## Distribution channels
 
@@ -164,7 +164,7 @@ Four images back a running instance:
 The host acquires each image according to `imageMode`:
 
 - **`pull`** (default for installed instances) — pull `ghcr.io/getfamiliar/<image>:<version>` and tag it locally under its plain name, so the rest of the system references a stable local tag. A version is pulled once and reused until the version changes.
-- **`build`** (default in a monorepo checkout; `cli.sh` sets it) — build the image locally from the checkout's Dockerfiles.
+- **`build`** (default in a monorepo checkout; the `npm run dev` launcher sets it) — build the image locally from the checkout's Dockerfiles.
 
 The `familiar-agent` image is self-contained: it bakes both `shared` and the container source, so it runs the same whether or not the source directories are mounted. In development the host overlays `container/src` and `shared/build` for hot-reload; in an installed instance those mounts are omitted and the baked code runs.
 
@@ -225,7 +225,7 @@ Releases are **lockstep**: one version across every package and image. The versi
 
 ## Local development
 
-Contributors work from a checkout via `./cli.sh`, which:
+Contributors work from a checkout via `npm run dev -- <subcommand>`, which:
 
 - sets `FAMILIAR_HOME` to the checkout root, so `config/`, `data/`, and `tmp/` are the repo's,
 - forces `FAMILIAR_IMAGE_MODE=build` (a checkout has the Dockerfiles and build context),

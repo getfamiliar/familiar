@@ -136,7 +136,7 @@ export interface HostContextImplDeps {
     resolveProvider: (key: string) => Promise<ResolvedProvider | undefined>;
     /**
      * Shared workspace watcher backing `ctx.workspace`. Optional because
-     * one-shot CLI invocations (`./cli.sh <plugin> …`) do not spin one
+     * one-shot CLI invocations (`familiar <plugin> …`) do not spin one
      * up; daemon contexts always pass it. When absent, every
      * `ctx.workspace.*` call throws synchronously.
      */

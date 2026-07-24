@@ -28,9 +28,9 @@ still has the old `ea` role and database baked in. The renamed daemon expects
 `familiar` instead, so do this once after pulling:
 
 ```bash
-./cli.sh stop                       # if it was running
+npm run dev -- stop                 # if it was running
 rm -rf data/postgres tmp/.postgres-port
-./cli.sh start                      # recreates the cluster as familiar/familiar
+npm run dev -- start                # recreates the cluster as familiar/familiar
 ```
 
 You'll lose the in-flight `events` and `agentruns` history. Workspace files, configs,

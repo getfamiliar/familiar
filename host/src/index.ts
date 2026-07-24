@@ -11,8 +11,8 @@ import { psqlCommand } from "./commands/Psql.js";
 import { startCommand } from "./commands/Start.js";
 import { stopCommand } from "./commands/Stop.js";
 import { toolsCommand } from "./commands/Tools.js";
-import { loadPlugins } from "./plugins/PluginLoader.js";
 import { PluginHost } from "./plugins/PluginHost.js";
+import { loadPlugins } from "./plugins/PluginLoader.js";
 
 /**
  * Single host CLI entry. Citty parses argv, dispatches to one of the
@@ -20,7 +20,7 @@ import { PluginHost } from "./plugins/PluginHost.js";
  * handles its own bootstrap and env requirements.
  *
  * Plugin commands are folded into the root `subCommands` map under
- * each plugin's id (`cli.sh <plugin-id> <subcommand>`). Building the
+ * each plugin's id (`familiar <plugin-id> <subcommand>`). Building the
  * plugin tree calls into each plugin's `commands(ctx)` factory but
  * doesn't open any sockets — the postgres connection is opened
  * lazily on first `ctx.events.emit` and closed after the plugin

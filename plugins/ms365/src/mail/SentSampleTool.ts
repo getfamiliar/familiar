@@ -210,14 +210,14 @@ function resolveTarget(mailbox: string): import("./MailboxMap.js").MailboxTarget
     if (!store) {
         throw new ToolError(
             "NO_ACTIVE_LOGIN",
-            "no active ms365 logins; run `./cli.sh ms365 login` and restart the daemon",
+            "no active ms365 logins; run `familiar ms365 login` and restart the daemon",
         );
     }
     const auth = store.byUpn(mailbox);
     if (!auth) {
         throw new ToolError(
             "UNKNOWN_MAILBOX",
-            `no active ms365 login for ${mailbox}; run \`./cli.sh ms365 login\` to add one`,
+            `no active ms365 login for ${mailbox}; run \`familiar ms365 login\` to add one`,
         );
     }
     return {

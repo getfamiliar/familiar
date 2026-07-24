@@ -218,7 +218,7 @@ export function sanitizeDescription(raw: string): string {
 
 /**
  * Flat "every hit with score" renderer for the explicit-search
- * surfaces (the `memory_search` agent tool and the `./cli.sh memory
+ * surfaces (the `memory_search` agent tool and the `familiar memory
  * search` CLI). The user/agent asked for a specific query — the
  * caller wants to see what matched, not be silently filtered by a
  * threshold tuned for a different surface (system-prompt injection).

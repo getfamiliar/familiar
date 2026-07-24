@@ -14,6 +14,7 @@
         "plugins/*"
     ],
     "scripts": {
+        "dev": "node cli/dev.mjs",
         "build": "npm run build -w @getfamiliar/shared && npm run build -w @getfamiliar/plugin-transcribe-whisper && npm run build -w @getfamiliar/plugin-cli-chat -w @getfamiliar/plugin-featherless -w @getfamiliar/plugin-memory -w @getfamiliar/plugin-ms365 -w @getfamiliar/plugin-whatsapp -w @getfamiliar/plugin-telegram && npm run build -w @getfamiliar/host && npm run build -w @getfamiliar/container",
         "test": "npm test --workspaces --if-present"
     },

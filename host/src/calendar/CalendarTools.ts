@@ -116,7 +116,7 @@ function getEventsTool(service: CalendarService): PluginTool<GetEventsArgs, stri
                         throw new ToolError(
                             "UnknownCalendar",
                             `unknown calendar reference "${args.calendar_id}" — ` +
-                                "run `./cli.sh ms365 cal list` to see available calendars.",
+                                "run `familiar ms365 cal list` to see available calendars.",
                         );
                     }
                     calendarId = cal.id;
@@ -667,7 +667,7 @@ async function resolveTargetCalendar(
         if (!cal) {
             throw new Error(
                 `unknown calendar reference "${explicit}" — ` +
-                    "run `./cli.sh ms365 cal list` to see available calendars.",
+                    "run `familiar ms365 cal list` to see available calendars.",
             );
         }
         return cal;

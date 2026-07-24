@@ -150,12 +150,12 @@ export class Ms365CalendarProvider implements CalendarProvider {
         const store = getActiveLogins();
         if (!store) {
             throw new Error(
-                "no active ms365 logins; run `./cli.sh ms365 login` and restart the daemon",
+                "no active ms365 logins; run `familiar ms365 login` and restart the daemon",
             );
         }
         const logins = store.list();
         if (logins.length === 0) {
-            throw new Error("no active ms365 logins; run `./cli.sh ms365 login`");
+            throw new Error("no active ms365 logins; run `familiar ms365 login`");
         }
         // v1: use the first login — the calendar owner mapping is
         // expanded once shared/delegated calendars actually live on a

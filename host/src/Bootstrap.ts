@@ -26,8 +26,8 @@ export interface Bootstrap {
      * The user's project folder — `process.env.FAMILIAR_HOME ?? process.cwd()`.
      * Holds `config/`, `data/`, `tmp/`. Every user-data path below is
      * rooted here, so `familiar` can run out of any initialized folder
-     * (e.g. `~/familiar`). In a dev checkout `cli.sh` exports
-     * `FAMILIAR_HOME="$ROOT"` so this equals the repo root.
+     * (e.g. `~/familiar`). In a dev checkout the `npm run dev` launcher
+     * (`cli/dev.mjs`) sets `FAMILIAR_HOME` to the repo root so this equals it.
      */
     readonly homeDir: string;
     /**
@@ -46,7 +46,7 @@ export interface Bootstrap {
     readonly version: string;
     readonly dataDir: string;
     /**
-     * Pidfile written by the daemon and consumed by `./cli.sh stop`.
+     * Pidfile written by the daemon and consumed by `familiar stop`.
      * Lives under `tmp/` because it's only meaningful while the daemon
      * is alive; safe to delete when the daemon isn't running.
      */
@@ -55,7 +55,7 @@ export interface Bootstrap {
      * File recording the loopback host port that `familiar-postgres`
      * is published on. Lives under `tmp/` because it's only meaningful
      * while the postgres container is up; rewritten on each
-     * `./cli.sh start`.
+     * `familiar start`.
      */
     readonly postgresPortFile: string;
     /**
@@ -96,8 +96,8 @@ export interface Bootstrap {
      * Absolute host path of `shared/build/`. Bind-mounted into the
      * agent container at `/shared/build` (read-only) so the
      * container resolves `@getfamiliar/shared` against the
-     * host's just-rebuilt artifacts. `cli.sh` already rebuilds
-     * `shared/build/` before the daemon starts, so by the time the
+     * host's just-rebuilt artifacts. The `npm run dev` launcher already
+     * rebuilds `shared/build/` before the daemon starts, so by the time the
      * agent container boots this path is fresh.
      */
     readonly sharedBuildDir: string;
@@ -170,8 +170,9 @@ export interface Bootstrap {
 /**
  * True when the daemon is running in dev mode, signalled by the
  * `FAMILIAR_DEV` env var being `1` or `true` (case-insensitive).
- * `cli.sh` reads the same variable to pick its rebuild policy and
- * node flags; the host side uses it to raise the default log level
+ * The `npm run dev` launcher (`cli/dev.mjs`) sets the same variable to
+ * enable its rebuild-on-stale and source-map behavior; the host side uses
+ * it to raise the default log level
  * and turn on the inference debug captures when the operator hasn't
  * pinned them explicitly. Production (unset) is the default — deployed
  * environments shouldn't have to opt out.
@@ -218,7 +219,8 @@ function resolveImageMode(): "build" | "pull" {
  * working directory); package assets and the host version are resolved
  * relative to this compiled module's location
  * ({@link Bootstrap.assetRoot}). In a dev checkout the two coincide at
- * the repo root because `cli.sh` exports `FAMILIAR_HOME="$ROOT"`.
+ * the repo root because the `npm run dev` launcher sets `FAMILIAR_HOME`
+ * to the repo root.
  */
 export function bootstrap(): Bootstrap {
     const homeDir = process.env.FAMILIAR_HOME ?? process.cwd();
@@ -259,7 +261,7 @@ export function bootstrap(): Bootstrap {
  * Assert that {@link Bootstrap.homeDir} points at an initialized
  * Familiar project — i.e. `config/config.yml` exists. Every command
  * except `familiar init` calls this first, replacing the config-existence
- * gate that used to live in `cli.sh`.
+ * gate the old shell launcher used to perform.
  *
  * @param boot the bootstrap object whose {@link Bootstrap.homeDir} to check.
  * @throws Error when `config/config.yml` is absent under the home dir.

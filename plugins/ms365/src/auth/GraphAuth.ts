@@ -128,7 +128,7 @@ export class GraphAuth {
         const account = await this.findAccount();
         if (!account) {
             throw new Error(
-                `no account in token cache ${this.cachePath} — run \`./cli.sh ms365 login\``,
+                `no account in token cache ${this.cachePath} — run \`familiar ms365 login\``,
             );
         }
         this.cachedAccount = account;

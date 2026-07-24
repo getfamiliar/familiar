@@ -22,18 +22,18 @@ import {
 import { ensureRuntimeImage, mcpMountDirFor } from "../../mcp/RuntimeImages.js";
 
 /**
- * `cli.sh tools call-mcp <id> -- <args...>` — one-shot interactive
+ * `familiar tools call-mcp <id> -- <args...>` — one-shot interactive
  * invocation of an MCP's runtime container that uses the *same*
  * docker invocation the bastion would build for the same `mcp.yml`
  * entry. Mount, env, `--user`, network, and the entry's `args:`
  * block all flow through unchanged; the user's `-- <tail>` is
  * **appended** to the entry's args (it never replaces them), so a
- * call like `./cli.sh tools call-mcp ms365 -- --login` runs with the
+ * call like `familiar tools call-mcp ms365 -- --login` runs with the
  * mcp.yml-declared flags first (e.g. `--org-mode`) and then
  * `--login`. The OAuth scopes the user authenticates with thus
  * match what the bastion will request silently later.
  *
- * Use case: `./cli.sh tools call-mcp ms-365 -- --login` walks the user
+ * Use case: `familiar tools call-mcp ms-365 -- --login` walks the user
  * through Microsoft's device-code OAuth flow, drops a token into
  * the bind mount, and exits — no daemon restart required.
  *
@@ -69,7 +69,7 @@ export const callMcpCommand = defineCommand({
         const extraArgs = dashIdx >= 0 ? rawArgs.slice(dashIdx + 1) : [];
         if (extraArgs.length === 0) {
             process.stderr.write(
-                `usage: ./cli.sh tools call-mcp <id> -- <args...>\n` +
+                `usage: familiar tools call-mcp <id> -- <args...>\n` +
                     `(at least one arg after \`--\` is required; the args are appended after the package or image)\n`,
             );
             process.exit(1);
@@ -78,7 +78,7 @@ export const callMcpCommand = defineCommand({
         const boot = bootstrap();
         if (!existsSync(boot.mcpConfigFile)) {
             process.stderr.write(
-                `config/mcp.yml not present; declare the MCP entry first (see ./cli.sh tools add-mcp)\n`,
+                `config/mcp.yml not present; declare the MCP entry first (see familiar tools add-mcp)\n`,
             );
             process.exit(1);
         }

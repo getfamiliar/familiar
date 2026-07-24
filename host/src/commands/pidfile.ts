@@ -67,7 +67,7 @@ export function isProcessAlive(pid: number): boolean {
  * and the other observes `EEXIST`.
  *
  * On `EEXIST`, inspect the file:
- * - **alive peer** → print a stderr line with `cli.sh stop` /
+ * - **alive peer** → print a stderr line with `familiar stop` /
  *   `kill -9 <pid>` instructions, then `process.exit(1)`. The
  *   peer is left untouched.
  * - **stale or malformed** → log the cleanup, unlink, and retry
@@ -92,7 +92,7 @@ export function acquirePidFile(path: string, log: Logger): void {
         if (status.kind === "alive") {
             const message =
                 `Another daemon is already running (pid=${status.pid}).\n` +
-                `  Drain it cleanly:    ./cli.sh stop\n` +
+                `  Drain it cleanly:    familiar stop\n` +
                 `  Force a wedged one:  kill -9 ${status.pid}\n`;
             process.stderr.write(message);
             process.exit(1);

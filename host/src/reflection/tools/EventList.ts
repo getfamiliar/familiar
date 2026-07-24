@@ -15,7 +15,7 @@ const PROMPT_PREVIEW_CHARS = 128;
 
 /**
  * Build the `event_list` reflection tool — markdown table of recent
- * events, agent-facing equivalent of `./cli.sh events list`.
+ * events, agent-facing equivalent of `familiar events list`.
  */
 export function buildEventListTool(deps: ReflectionToolsDeps): PluginTool<EventListArgs, string> {
     return {

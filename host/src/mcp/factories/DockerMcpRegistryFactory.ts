@@ -39,7 +39,7 @@ export interface DockerMcpRegistryFactoryConfig {
  *
  * `options` mirrors {@link buildNpmDockerArgs} — `interactive: true`
  * adds `-t`, `containerName: null` drops `--name`, and `appendArgs`
- * is concatenated AFTER `entry.args` (used by `./cli.sh mcp call`,
+ * is concatenated AFTER `entry.args` (used by `familiar mcp call`,
  * which never replaces the mcp.yml args block).
  */
 export function buildDockerRegistryArgs(

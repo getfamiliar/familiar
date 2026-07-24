@@ -10,7 +10,7 @@ import { FOLDER_IDS } from "./mail/Folders.js";
 import { classifyKind } from "./mail/SentSampler.js";
 
 /**
- * Build the `./cli.sh ms365` subcommand tree: `status`, `login`, and
+ * Build the `familiar ms365` subcommand tree: `status`, `login`, and
  * `logout`. All three work whether the daemon is running or not — they
  * talk directly to Microsoft Graph using the host-side token caches,
  * no bastion / MCP involvement. Each command is mounted as a
@@ -29,7 +29,7 @@ export function buildMs365Commands(ctx: HostContext): readonly CommandDef<any>[]
 }
 
 /**
- * `./cli.sh ms365 mail probe-sent <upn>` — diagnostic: list the first
+ * `familiar ms365 mail probe-sent <upn>` — diagnostic: list the first
  * N Sent Items messages of one mailbox and print the signals
  * `SentSampler.classifyKind` consults (subject, conversationIndex byte
  * length, whether `internetMessageHeaders` came back, and the final
@@ -71,7 +71,7 @@ function mailCommand(ctx: HostContext): CommandDef<any> {
                     const auth = store.byUpn(upn);
                     if (!auth) {
                         process.stdout.write(
-                            `No active ms365 login for ${upn}. Run \`./cli.sh ms365 login\`.\n`,
+                            `No active ms365 login for ${upn}. Run \`familiar ms365 login\`.\n`,
                         );
                         return;
                     }
@@ -105,7 +105,7 @@ function mailCommand(ctx: HostContext): CommandDef<any> {
 }
 
 /**
- * `./cli.sh ms365 cal list` — discover and print every calendar each
+ * `familiar ms365 cal list` — discover and print every calendar each
  * active login can reach. Operates entirely host-side (no agent
  * involvement), so the daemon does not need to be running.
  */
@@ -131,7 +131,7 @@ function calCommand(
                     const okLogins = validations.filter((v) => v.ok);
                     if (okLogins.length === 0) {
                         process.stdout.write(
-                            "No active Microsoft 365 logins. Run `./cli.sh ms365 login` first.\n",
+                            "No active Microsoft 365 logins. Run `familiar ms365 login` first.\n",
                         );
                         return;
                     }
@@ -193,7 +193,7 @@ function statusCommand(
             await store.refresh();
             const validations = await store.validateAll();
             if (validations.length === 0) {
-                process.stdout.write("No Microsoft 365 logins yet. Run: ./cli.sh ms365 login\n");
+                process.stdout.write("No Microsoft 365 logins yet. Run: familiar ms365 login\n");
                 return;
             }
             process.stdout.write("Microsoft 365 logins:\n");

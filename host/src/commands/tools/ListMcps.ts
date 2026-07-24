@@ -7,7 +7,7 @@ import { lintMcpConfigFile } from "../../mcp/McpConfigLoader.js";
 import { mcpMountDirFor } from "../../mcp/RuntimeImages.js";
 
 /**
- * `cli.sh tools list-mcps` — print every MCP declared in `config/mcp.yml`,
+ * `familiar tools list-mcps` — print every MCP declared in `config/mcp.yml`,
  * its source, runtime state, and the relevant identifier (image,
  * package@version, or url). Read-only; safe to run any time.
  *

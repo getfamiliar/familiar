@@ -163,9 +163,9 @@ Two non-obvious choices:
 
 | Command | Output |
 |---------|--------|
-| `./cli.sh memory search "<query>"` | Hybrid-search the index. Same renderer the agent uses for `memory_search`, piped through the terminal markdown renderer. Every hit is shown with its raw score — no threshold filtering. |
-| `./cli.sh memory show <path>` | Every indexed chunk for one workspace-relative path, with `Path "..."` headers and the section content. |
-| `./cli.sh memory list` | Every indexed file alphabetically, with chunk count and lastModified. Warns + lists timestamps if chunks of one file disagree on mtime. |
+| `familiar memory search "<query>"` | Hybrid-search the index. Same renderer the agent uses for `memory_search`, piped through the terminal markdown renderer. Every hit is shown with its raw score — no threshold filtering. |
+| `familiar memory show <path>` | Every indexed chunk for one workspace-relative path, with `Path "..."` headers and the section content. |
+| `familiar memory list` | Every indexed file alphabetically, with chunk count and lastModified. Warns + lists timestamps if chunks of one file disagree on mtime. |
 
 All three commands work standalone (no daemon required). They build their
 own short-lived MemoryStore against the persisted index, so what they show

@@ -22,7 +22,7 @@ export { transcribeAudio } from "./Whisper.js";
  *
  * "Library plugin": no event subscription, no workspace template;
  * its purpose is to expose {@link transcribeAudio} to other plugins.
- * The CLI subcommand (`./cli.sh transcribe-whisper test <path>`) is
+ * The CLI subcommand (`familiar transcribe-whisper test <path>`) is
  * a smoke test for the OpenAI API key.
  *
  * The `prepare(ctx)` hook reads the OpenAI key from the host config

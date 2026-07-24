@@ -17,7 +17,7 @@ import {
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
 /**
- * `cli.sh tools add-mcp <package>` — interactive dialogue that finds an MCP
+ * `familiar tools add-mcp <package>` — interactive dialogue that finds an MCP
  * by name in the Docker MCP registry first, falls back to the
  * official MCP registry, lets the user fill in env vars and any
  * extra args, and appends a validated entry to `config/mcp.yml`.
@@ -174,7 +174,7 @@ async function runDialogue(positional: string | undefined): Promise<void> {
         process.stdout.write(`warning: ${w}\n`);
     }
     process.stdout.write(
-        "\nRestart the daemon to load the new MCP: ./cli.sh stop && ./cli.sh start\n",
+        "\nRestart the daemon to load the new MCP: familiar stop && familiar start\n",
     );
 }
 

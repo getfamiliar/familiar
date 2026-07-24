@@ -18,7 +18,7 @@ import { Ms365MailProvider } from "./mail/Ms365MailProvider.js";
  * Boot the Microsoft 365 plugin: load logins, hand the live store to
  * the tools registry, prepare the mail poller, and start its poll
  * loop. Daemon stays up even when nothing is logged in — the user
- * runs `./cli.sh ms365 login` to add an account, then restarts.
+ * runs `familiar ms365 login` to add an account, then restarts.
  *
  * Calendar support lands as a sibling block here once the calendar
  * subdirectory exists. Auth is shared.
@@ -197,7 +197,7 @@ async function collectValidLogins(
     }
     if (valid.length === 0) {
         log(
-            "mail: no usable ms365 logins; run `./cli.sh ms365 login` " +
+            "mail: no usable ms365 logins; run `familiar ms365 login` " +
                 "(or fix the failing logins above)",
         );
     }

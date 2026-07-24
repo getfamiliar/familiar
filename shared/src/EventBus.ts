@@ -272,7 +272,7 @@ export class EventBus {
 
     /**
      * Fetch the most recently created N event rows, newest first. Used by
-     * `./cli.sh events list` to surface recent bus activity for operators
+     * `familiar events list` to surface recent bus activity for operators
      * looking for an event id to inspect with `events report <id>`.
      *
      * @param limit Maximum number of rows to return. Must be a positive integer.
@@ -291,7 +291,7 @@ export class EventBus {
     /**
      * Fetch the most recently created N event rows whose topic, start_handler,
      * prompt, or payload (cast to text) case-insensitively contains `needle`.
-     * Used by `./cli.sh events list <search>` so the operator can grep the
+     * Used by `familiar events list <search>` so the operator can grep the
      * recent bus without piping through `grep`.
      *
      * Substring match via `ILIKE '%needle%'`; the needle is escaped for the

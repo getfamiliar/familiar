@@ -1,18 +1,22 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { dirname, join, parse as parsePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Logger, PluginManifest } from "@getfamiliar/shared";
 import type { Bootstrap } from "../Bootstrap.js";
 
 /**
- * The subset of a package.json this loader reads. `familiar.bundled`
- * marks a first-party plugin as prebundled core; `familiar.bundledPlugins`
- * is the CI-generated list carried by the `familiar` meta-package.
+ * The subset of a package.json this loader reads. `familiar.plugin`
+ * is the required marker that identifies a package as a Familiar plugin —
+ * without it the loader refuses to import the package, so a non-plugin can
+ * never execute its module top-level at host boot. `familiar.bundled` marks
+ * a first-party plugin as prebundled core; `familiar.bundledPlugins` is the
+ * CI-generated list carried by the `familiar` meta-package.
  */
 interface FamiliarPackageJson {
     readonly name?: string;
     readonly familiar?: {
+        readonly plugin?: boolean;
         readonly bundled?: boolean;
         readonly bundledPlugins?: readonly string[];
     };
@@ -31,6 +35,61 @@ function readPackageJson(path: string): FamiliarPackageJson | null {
         return JSON.parse(readFileSync(path, "utf8")) as FamiliarPackageJson;
     } catch {
         return null;
+    }
+}
+
+/**
+ * Whether a parsed package.json marks itself as a Familiar plugin. This is
+ * the required gate: only packages with `familiar.plugin === true` are ever
+ * imported, so a non-plugin package listed in `config/plugins` can't run its
+ * module top-level at host boot.
+ *
+ * @param pkg Parsed package.json, or null when it couldn't be read.
+ * @returns True only when the package declares `familiar.plugin`.
+ */
+export function isFamiliarPlugin(pkg: FamiliarPackageJson | null): boolean {
+    return pkg?.familiar?.plugin === true;
+}
+
+/**
+ * Locate and parse a package's own package.json by name, **without importing
+ * the package** (so a hijacking module top-level never runs). Tries the
+ * package's `<name>/package.json` subpath first, then falls back to walking
+ * up from its resolved main entry to the nearest package.json whose `name`
+ * matches — covering packages whose `exports` map hides `./package.json`.
+ *
+ * @param name Package specifier to inspect.
+ * @param req Require function anchored at the resolution root.
+ * @returns The parsed package.json, or null when it can't be resolved/read.
+ */
+export function resolvePluginPackageJson(
+    name: string,
+    req: NodeRequire,
+): FamiliarPackageJson | null {
+    try {
+        return readPackageJson(req.resolve(`${name}/package.json`));
+    } catch {
+        // exports map may hide ./package.json — fall through to the walk-up.
+    }
+    let dir: string;
+    try {
+        dir = dirname(req.resolve(name));
+    } catch {
+        return null;
+    }
+    const { root } = parsePath(dir);
+    while (true) {
+        const candidate = join(dir, "package.json");
+        if (existsSync(candidate)) {
+            const pkg = readPackageJson(candidate);
+            if (pkg?.name === name) {
+                return pkg;
+            }
+        }
+        if (dir === root) {
+            return null;
+        }
+        dir = dirname(dir);
     }
 }
 
@@ -112,15 +171,23 @@ async function importPlugin(
     log: Logger,
 ): Promise<PluginManifest | null> {
     let resolved: string;
+    let anchoredReq = req;
     try {
         resolved = req.resolve(name);
     } catch {
         try {
-            resolved = createRequire(import.meta.url).resolve(name);
+            anchoredReq = createRequire(import.meta.url);
+            resolved = anchoredReq.resolve(name);
         } catch {
             log.warn(`plugin "${name}" is listed but not installed — skipping`);
             return null;
         }
+    }
+    if (!isFamiliarPlugin(resolvePluginPackageJson(name, anchoredReq))) {
+        log.warn(
+            `plugin "${name}" is not a Familiar plugin (missing \`familiar.plugin\` in its package.json) — skipping`,
+        );
+        return null;
     }
     try {
         const mod = (await import(pathToFileURL(resolved).href)) as {
@@ -194,6 +261,6 @@ export async function loadPlugins(boot: Bootstrap, log: Logger): Promise<PluginM
         seenIds.add(manifest.id);
         out.push(manifest);
     }
-    log.info(`loaded ${out.length} plugin(s): ${out.map((p) => p.id).join(", ") || "none"}`);
+    log.debug(`loaded ${out.length} plugin(s): ${out.map((p) => p.id).join(", ") || "none"}`);
     return out;
 }

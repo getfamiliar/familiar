@@ -386,13 +386,13 @@ export class Ms365MailProvider implements MailProvider {
         const store: LoginStore | undefined = getActiveLogins() ?? undefined;
         if (!store) {
             throw new Error(
-                "no active ms365 logins; run `./cli.sh ms365 login` and restart the daemon",
+                "no active ms365 logins; run `familiar ms365 login` and restart the daemon",
             );
         }
         const auth = store.byUpn(mailbox);
         if (!auth) {
             throw new Error(
-                `no active ms365 login for ${mailbox}; run \`./cli.sh ms365 login\` to add one`,
+                `no active ms365 login for ${mailbox}; run \`familiar ms365 login\` to add one`,
             );
         }
         return new GraphClient(() => auth.getAccessTokenSilent());

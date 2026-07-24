@@ -21,7 +21,7 @@ import { buildWhatsAppTools } from "./WhatsAppTools.js";
  * messages as read (`whatsapp_mark_read`), which mutates per-user state
  * without producing any visible message in the group.
  *
- * Pairing is gated by an explicit `./cli.sh whatsapp link` step. The
+ * Pairing is gated by an explicit `familiar whatsapp link` step. The
  * presence of credentials on disk under `<dataDir>/whatsapp/auth/`
  * is what enables the daemon — there is no parallel `*_ENABLED` env
  * flag.
