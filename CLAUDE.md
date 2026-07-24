@@ -398,6 +398,14 @@ Ephemeral runtime scratch lives in `tmp/` instead (gitignored, safe to wipe):
   - Docker build context is the project root (not `container/`), so `shared/` is available during image build.
   - Both `container/src/` and `shared/build/` are bind-mounted into the running container (read-only), so source edits in either package take effect on the next daemon restart without an image rebuild. The `npm run dev` launcher keeps `shared/build/` fresh before the daemon starts. The agent image itself is (re)built on every `familiar start` via `ensureAgentImage` — docker's layer cache makes the no-change case fast, and `container/Dockerfile` or `package.json` changes are picked up automatically.
 
+## CLI output
+
+All **human-facing** CLI (and plugin) output is produced as markdown and emitted through `writeMarkdown` from `@getfamiliar/shared` (`shared/src/markdownOutput.ts`). It renders ANSI-styled via `renderMarkdown` (`shared/src/markdownTerminal.ts`) when stdout is a TTY, and emits the raw markdown verbatim when piped or redirected. The TTY check lives *inside* `writeMarkdown` — call sites never read `process.stdout.isTTY` themselves; they only optionally pass `{ raw: true }` (wired to a `--raw` flag) to force raw output on a TTY. So a command can never accidentally render box-drawing tables and ANSI escapes into a pipe. Build tables with `markdownTable(headers, rows)` (cells escaped via `escapeTableCell`). All three helpers are exported from `shared/` so plugins can use them too.
+
+Every command that lists, tabulates, or reports for a human exposes `--raw` and ends by handing a markdown string to `writeMarkdown` — see `cron list`, `events list`/`events report`, `tools list`/`tools list-mcps`/`tools lint-mcps`, `plugin list`, `config lint`.
+
+**Exceptions** (and why): the `start` daemon streams through the structured logger (ordering and flush matter); interactive prompts/wizards (`tools add-mcp`) write directly; machine-readable output stays literal (`events emit` prints JSON). The rule of thumb: *if it's a table, list, report, or prose status for a human to read, render it; if it's a stream, a prompt, or data for a machine, don't.*
+
 ## Code Style
 
 All TypeScript code is auto-formatted by [Biome](https://biomejs.dev/) on every edit (via a PostToolUse hook in `.claude/settings.json`). Do not manually adjust formatting.

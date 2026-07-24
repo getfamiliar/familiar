@@ -87,6 +87,7 @@ export {
     type ModelProviderDescriptor,
 } from "./ModelMetaData.js";
 export { renderMarkdownToHtml } from "./markdownHtml.js";
+export { escapeTableCell, markdownTable, writeMarkdown } from "./markdownOutput.js";
 export { renderMarkdown } from "./markdownTerminal.js";
 export { matchesAnyGlob, matchesGlob } from "./PathGlob.js";
 export type {

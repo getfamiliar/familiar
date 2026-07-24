@@ -1,9 +1,11 @@
 import {
     AgentRunBus,
     EventBus,
+    markdownTable,
     renderMarkdown,
     StepResultBus,
     type StepResultRow,
+    writeMarkdown,
 } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
@@ -253,28 +255,6 @@ function renderPromptPreview(prompt: string): string {
 }
 
 /**
- * Write a left-aligned, space-padded table to stdout. Column widths are
- * derived from the longest cell (or header) per column. Mirrors the
- * formatting used by `cron list` so operators see a consistent table
- * style across the CLI.
- *
- * @param headers Column header labels.
- * @param rows One string tuple per row; each row must have `headers.length` cells.
- */
-function printTable(headers: readonly string[], rows: readonly (readonly string[])[]): void {
-    const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((row) => row[i].length)));
-    const fmt = (row: readonly string[]) =>
-        row
-            .map((cell, i) => cell.padEnd(widths[i]))
-            .join("  ")
-            .trimEnd();
-    process.stdout.write(`${fmt(headers)}\n`);
-    for (const row of rows) {
-        process.stdout.write(`${fmt(row)}\n`);
-    }
-}
-
-/**
  * `familiar events list [search] [-n N]` — print a table of the last N events
  * (default 10), newest first. Columns: ID, TOPIC, HANDLER, STATE,
  * PROMPT (first ~100 chars). When `search` is given, only rows whose
@@ -299,6 +279,12 @@ const eventsListCommand = defineCommand({
             alias: "n",
             description: "Maximum number of events to list (default 10).",
             default: "10",
+        },
+        raw: {
+            type: "boolean",
+            description:
+                "Skip terminal styling and emit the raw markdown verbatim. Useful for piping into a file or a markdown viewer.",
+            default: false,
         },
     },
     async run({ args }) {
@@ -326,8 +312,9 @@ const eventsListCommand = defineCommand({
                     ? await events.searchLatest(limit, args.search)
                     : await events.listLatest(limit);
 
+            const raw = args.raw === true;
             if (rows.length === 0) {
-                process.stdout.write("No events found.\n");
+                writeMarkdown("No events found.\n", { raw });
                 return;
             }
 
@@ -338,7 +325,9 @@ const eventsListCommand = defineCommand({
                 row.state,
                 renderPromptPreview(row.prompt),
             ]);
-            printTable(["ID", "TOPIC", "HANDLER", "STATE", "PROMPT"], tableRows);
+            writeMarkdown(markdownTable(["ID", "TOPIC", "HANDLER", "STATE", "PROMPT"], tableRows), {
+                raw,
+            });
         } finally {
             await connection.close();
         }

@@ -1,4 +1,4 @@
-import { parseCron } from "@getfamiliar/shared";
+import { markdownTable, parseCron, writeMarkdown } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
 import { pathToHandlerTarget, readVerbatimCron } from "../cron/CronjobScheduler.js";
@@ -21,7 +21,15 @@ export const cronCommand = defineCommand({
                 description:
                     "List every handler with a `cron:` frontmatter field. Shows the verbatim expression and the parsed Croner expression.",
             },
-            async run() {
+            args: {
+                raw: {
+                    type: "boolean",
+                    description:
+                        "Skip terminal styling and emit the raw markdown verbatim. Useful for piping into a file or a markdown viewer.",
+                    default: false,
+                },
+            },
+            async run({ args }) {
                 const boot = bootstrap();
                 const files = await scanWorkspace(boot.workspaceDir, {
                     frontmatter: { cron: "*" },
@@ -40,7 +48,7 @@ export const cronCommand = defineCommand({
                     });
                 }
                 rows.sort((a, b) => a.path.localeCompare(b.path));
-                printTable(rows);
+                writeMarkdown(renderTable(rows), { raw: args.raw === true });
             },
         }),
     },
@@ -54,21 +62,19 @@ interface Row {
     readonly status: "ok" | "invalid" | "root";
 }
 
-function printTable(rows: readonly Row[]): void {
+/**
+ * Render the cron rows as a markdown document: a GFM table, or a short
+ * prose line when no handler declares a `cron:` field.
+ *
+ * @param rows - the collected cron handler rows
+ * @returns markdown source for {@link writeMarkdown}
+ */
+function renderTable(rows: readonly Row[]): string {
     if (rows.length === 0) {
-        process.stdout.write("No handlers with `cron:` frontmatter found.\n");
-        return;
+        return "No handlers with `cron:` frontmatter found.\n";
     }
-    const headers = ["PATH", "VERBATIM", "PARSED", "SOURCE", "STATUS"];
-    const data = rows.map((r) => [r.path, r.verbatim, r.expression, r.source, r.status]);
-    const widths = headers.map((h, i) => Math.max(h.length, ...data.map((row) => row[i].length)));
-    const fmt = (row: readonly string[]) =>
-        row
-            .map((cell, i) => cell.padEnd(widths[i]))
-            .join("  ")
-            .trimEnd();
-    process.stdout.write(`${fmt(headers)}\n`);
-    for (const row of data) {
-        process.stdout.write(`${fmt(row)}\n`);
-    }
+    return markdownTable(
+        ["PATH", "VERBATIM", "PARSED", "SOURCE", "STATUS"],
+        rows.map((r) => [r.path, r.verbatim, r.expression, r.source, r.status]),
+    );
 }

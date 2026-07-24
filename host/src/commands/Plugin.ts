@@ -3,7 +3,13 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createLogger, type Logger, type LogLevel, prettyStdoutStream } from "@getfamiliar/shared";
+import {
+    createLogger,
+    type Logger,
+    type LogLevel,
+    prettyStdoutStream,
+    writeMarkdown,
+} from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import ora from "ora";
 import { type Bootstrap, bootstrap } from "../Bootstrap.js";
@@ -229,17 +235,26 @@ const removeCommand = defineCommand({
  */
 const listCommand = defineCommand({
     meta: { name: "list", description: "List active plugins (bundled core + whitelisted)" },
-    run() {
+    args: {
+        raw: {
+            type: "boolean",
+            description:
+                "Skip terminal styling and emit the raw markdown verbatim. Useful for piping into a file or a markdown viewer.",
+            default: false,
+        },
+    },
+    run({ args }) {
         const boot = bootstrap();
         const { bundled, whitelisted } = pluginSources(boot, makeLog());
-        process.stdout.write("Bundled (core, always on):\n");
-        for (const name of bundled.length > 0 ? bundled : ["(none)"]) {
-            process.stdout.write(`  ${name}\n`);
-        }
-        process.stdout.write("Whitelisted (config/plugins):\n");
-        for (const name of whitelisted.length > 0 ? whitelisted : ["(none)"]) {
-            process.stdout.write(`  ${name}\n`);
-        }
+        const section = (title: string, names: readonly string[]): string => {
+            const items = names.length > 0 ? names : ["(none)"];
+            return `## ${title}\n${items.map((name) => `- ${name}`).join("\n")}\n`;
+        };
+        const markdown = `${section("Bundled (core, always on)", bundled)}\n${section(
+            "Whitelisted (config/plugins)",
+            whitelisted,
+        )}`;
+        writeMarkdown(markdown, { raw: args.raw === true });
     },
 });
 

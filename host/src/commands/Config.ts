@@ -1,4 +1,9 @@
-import { createLogger, jsonStdoutStream, prettyStdoutStream } from "@getfamiliar/shared";
+import {
+    createLogger,
+    jsonStdoutStream,
+    prettyStdoutStream,
+    writeMarkdown,
+} from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
 import { lintConfigFile } from "../config/ConfigLinter.js";
@@ -29,13 +34,20 @@ export const configCommand = defineCommand({
                 description:
                     "Validate config/config.yml: structure, the platform minimum, and that every inference provider resolves.",
             },
-            async run() {
+            args: {
+                raw: {
+                    type: "boolean",
+                    description:
+                        "Skip terminal styling and emit the raw markdown verbatim. Useful for piping into a file or a markdown viewer.",
+                    default: false,
+                },
+            },
+            async run({ args }) {
                 const boot = bootstrap();
                 const result = lintConfigFile(boot.configFile);
-                for (const w of result.warnings) {
-                    process.stdout.write(`warning: ${w}\n`);
-                }
+                const warnings = [...result.warnings];
                 const errors = [...result.errors];
+                const infos: string[] = [];
 
                 // Provider-resolution check: every inference.apiKeys key
                 // must resolve to a known provider (models.dev catalogue
@@ -58,24 +70,24 @@ export const configCommand = defineCommand({
                     // an unreachable PyPI degrades to a warning.
                     try {
                         const py = await validatePythonPackages(boot);
-                        for (const w of py.warnings) {
-                            process.stdout.write(`warning: ${w}\n`);
-                        }
+                        warnings.push(...py.warnings);
                         errors.push(...py.errors);
+                        if (py.errors.length === 0 && py.checkedCount > 0) {
+                            infos.push(`python.packages: ${py.okCount} ok`);
+                        }
                     } catch (err) {
-                        process.stdout.write(
-                            `warning: could not validate python.packages: ${err instanceof Error ? err.message : String(err)}\n`,
+                        warnings.push(
+                            `could not validate python.packages: ${err instanceof Error ? err.message : String(err)}`,
                         );
                     }
                 }
 
+                writeMarkdown(renderLintReport(warnings, errors, infos), {
+                    raw: args.raw === true,
+                });
                 if (errors.length > 0) {
-                    for (const e of errors) {
-                        process.stderr.write(`error: ${e}\n`);
-                    }
                     process.exit(1);
                 }
-                process.stdout.write(`config/config.yml: ok\n`);
             },
         }),
     },
@@ -109,18 +121,17 @@ async function validateProviders(boot: ReturnType<typeof bootstrap>): Promise<st
  * Check every `python.packages` entry against PyPI. A `not-found` is an
  * error (a typo that would otherwise fail the image build); an
  * `unreachable` PyPI is a warning so `config lint` still passes offline.
- * Prints a `python.packages: <N> ok` summary when nothing is wrong.
  *
  * @param boot Bootstrap paths (for the config file).
- * @returns Error and warning strings for the caller to aggregate.
+ * @returns Errors, warnings, the count of packages checked, and how many resolved.
  */
 async function validatePythonPackages(
     boot: ReturnType<typeof bootstrap>,
-): Promise<{ errors: string[]; warnings: string[] }> {
+): Promise<{ errors: string[]; warnings: string[]; checkedCount: number; okCount: number }> {
     const config = new HostConfigService(boot.configFile);
     const packages = config.getStringList("python.packages", DEFAULT_PYTHON_PACKAGES);
     if (packages.length === 0) {
-        return { errors: [], warnings: [] };
+        return { errors: [], warnings: [], checkedCount: 0, okCount: 0 };
     }
     const checks = await checkPackagesOnPyPI(packages);
     const errors: string[] = [];
@@ -135,8 +146,40 @@ async function validatePythonPackages(
             warnings.push(`python.packages: could not reach PyPI to validate '${check.name}'`);
         }
     }
-    if (errors.length === 0) {
-        process.stdout.write(`python.packages: ${okCount} ok\n`);
+    return { errors, warnings, checkedCount: packages.length, okCount };
+}
+
+/**
+ * Assemble the `config lint` result as a markdown report: a heading, an
+ * optional warnings section, an optional errors section, and a final
+ * status line. On errors the status reads as a failure; otherwise it
+ * confirms the file is ok and lists any info lines (e.g. the
+ * python-package summary).
+ *
+ * @param warnings Collected warning strings.
+ * @param errors Collected error strings (non-empty means the lint failed).
+ * @param infos Neutral summary lines shown only on success.
+ * @returns Markdown source for {@link writeMarkdown}.
+ */
+function renderLintReport(
+    warnings: readonly string[],
+    errors: readonly string[],
+    infos: readonly string[],
+): string {
+    const parts: string[] = ["# config lint\n"];
+    if (warnings.length > 0) {
+        parts.push(`## Warnings\n${warnings.map((w) => `- ${w}`).join("\n")}\n`);
     }
-    return { errors, warnings };
+    if (errors.length > 0) {
+        parts.push(`## Errors\n${errors.map((e) => `- ${e}`).join("\n")}\n`);
+        parts.push(
+            `**config/config.yml: ${errors.length} error${errors.length === 1 ? "" : "s"}** — see above.\n`,
+        );
+        return parts.join("\n");
+    }
+    for (const info of infos) {
+        parts.push(`${info}\n`);
+    }
+    parts.push("`config/config.yml`: ok\n");
+    return parts.join("\n");
 }

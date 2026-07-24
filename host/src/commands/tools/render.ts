@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import type { ToolLevel } from "@getfamiliar/shared";
+import { escapeTableCell, type ToolLevel } from "@getfamiliar/shared";
 import type { PluginMcpService } from "../../mcp/PluginMcpService.js";
 import { isProcessAlive } from "../pidfile.js";
 
@@ -330,12 +330,11 @@ export function wrapWords(text: string, width: number): string[] {
 
 /**
  * Escape characters that would break a markdown table cell in `--raw`
- * mode: `|` splits columns, raw newlines break the row, backslashes
- * need to stay literal. Backticks are left alone so inline-code spans
- * survive.
+ * mode. Delegates to the shared {@link escapeTableCell} so there is a
+ * single implementation of the GFM cell escaping.
  */
 export function escapeCell(text: string): string {
-    return text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+    return escapeTableCell(text);
 }
 
 /**

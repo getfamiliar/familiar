@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { markdownTable, writeMarkdown } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { parse } from "yaml";
 import { bootstrap } from "../../Bootstrap.js";
@@ -32,10 +33,19 @@ export const listMcpsCommand = defineCommand({
         description:
             "List declared MCPs, their source, live/idle state, and (for npm/pypi) cache presence.",
     },
-    async run() {
+    args: {
+        raw: {
+            type: "boolean",
+            description:
+                "Skip terminal styling and emit the raw markdown verbatim. Useful for piping into a file or a markdown viewer.",
+            default: false,
+        },
+    },
+    async run({ args }) {
+        const raw = args.raw === true;
         const boot = bootstrap();
         if (!existsSync(boot.mcpConfigFile)) {
-            process.stdout.write("no MCPs declared (config/mcp.yml not present)\n");
+            writeMarkdown("no MCPs declared (config/mcp.yml not present)\n", { raw });
             return;
         }
 
@@ -52,7 +62,7 @@ export const listMcpsCommand = defineCommand({
 
         const rows = collectRows(boot.mcpConfigFile);
         if (rows.length === 0) {
-            process.stdout.write("no MCPs declared\n");
+            writeMarkdown("no MCPs declared\n", { raw });
             return;
         }
 
@@ -67,10 +77,7 @@ export const listMcpsCommand = defineCommand({
             }
         }
 
-        printTable(rows);
-        if (!live.dockerReachable) {
-            process.stdout.write("\n(docker unreachable; live state unknown — all shown idle)\n");
-        }
+        writeMarkdown(renderTable(rows, live.dockerReachable), { raw });
     },
 });
 
@@ -189,33 +196,22 @@ function isMountCached(tmpDir: string, id: string): boolean {
     }
 }
 
-/** Render the rows as a fixed-column ASCII table to stdout. */
-function printTable(rows: readonly ListRow[]): void {
-    const headers = {
-        id: "ID",
-        title: "TITLE",
-        source: "SOURCE",
-        state: "STATE",
-        detail: "DETAIL",
-    };
-    const widths = {
-        id: Math.max(headers.id.length, ...rows.map((r) => r.id.length)),
-        title: Math.max(headers.title.length, ...rows.map((r) => r.title.length)),
-        source: Math.max(headers.source.length, ...rows.map((r) => r.source.length)),
-        state: Math.max(headers.state.length, ...rows.map((r) => r.state.length)),
-    };
-    const lineFor = (
-        id: string,
-        title: string,
-        source: string,
-        state: string,
-        detail: string,
-    ): string =>
-        `${id.padEnd(widths.id)}  ${title.padEnd(widths.title)}  ${source.padEnd(widths.source)}  ${state.padEnd(widths.state)}  ${detail}\n`;
-    process.stdout.write(
-        lineFor(headers.id, headers.title, headers.source, headers.state, headers.detail),
+/**
+ * Render the MCP rows as a markdown document: a GFM table plus, when
+ * docker could not be reached, a trailing italic note explaining that the
+ * live/idle column is unreliable.
+ *
+ * @param rows - the collected MCP rows (with live/cache annotations applied)
+ * @param dockerReachable - whether the `docker ps` probe succeeded
+ * @returns markdown source for {@link writeMarkdown}
+ */
+function renderTable(rows: readonly ListRow[], dockerReachable: boolean): string {
+    const table = markdownTable(
+        ["ID", "TITLE", "SOURCE", "STATE", "DETAIL"],
+        rows.map((r) => [r.id, r.title, r.source, r.state, r.detail]),
     );
-    for (const row of rows) {
-        process.stdout.write(lineFor(row.id, row.title, row.source, row.state, row.detail));
+    if (dockerReachable) {
+        return table;
     }
+    return `${table}\n_(docker unreachable; live state unknown — all shown idle)_\n`;
 }

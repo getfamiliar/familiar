@@ -42,7 +42,7 @@ import wrapAnsi from "wrap-ansi";
 /** Upper bound on render width; full-width prose is hard to read on ultra-wide terminals. */
 const MAX_WIDTH = 180;
 
-/** Fallback width when stdout is not a TTY (no `columns`). */
+/** Fallback width when stdout reports no usable `columns` (not a TTY, or a degenerate 0-width pty). */
 const FALLBACK_WIDTH = 100;
 
 /** Floor on the content width at deep nesting, so wrapping never degenerates. */
@@ -419,7 +419,12 @@ function buildRenderer(width: number) {
  * @returns ANSI-styled terminal output
  */
 export function renderMarkdown(input: string): string {
-    const width = Math.min(process.stdout.columns ?? FALLBACK_WIDTH, MAX_WIDTH);
+    // `columns` is undefined when stdout is not a TTY and can be a
+    // degenerate 0 under a zero-width pty (e.g. `script`); either way fall
+    // back to a healthy default rather than rendering into no space.
+    const columns = process.stdout.columns;
+    const usableWidth = typeof columns === "number" && columns > 0 ? columns : FALLBACK_WIDTH;
+    const width = Math.min(usableWidth, MAX_WIDTH);
     const marked = new Marked();
     marked.use({ renderer: buildRenderer(width) as never });
     return marked.parse(input) as string;

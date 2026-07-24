@@ -1,7 +1,6 @@
 import { createLogger, prettyStdoutStream } from "@getfamiliar/shared";
 import { defineCommand, runMain } from "citty";
 import { bootstrap, requireHomeDir } from "./Bootstrap.js";
-import { agentrunCommand } from "./commands/Agentrun.js";
 import { configCommand } from "./commands/Config.js";
 import { cronCommand } from "./commands/Cron.js";
 import { eventsCommand } from "./commands/Events.js";
@@ -63,7 +62,6 @@ async function main(): Promise<void> {
                 start: startCommand,
                 stop: stopCommand,
                 events: eventsCommand,
-                agentrun: agentrunCommand,
                 psql: psqlCommand,
                 config: configCommand,
                 cron: cronCommand,
