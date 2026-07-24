@@ -2,7 +2,11 @@ NEXT:
 
 * Sweep the remaining workspace handlers for any lingering "start a subagent just to get a tool" guidance — every tool is directly callable now, so those should read files and follow instructions instead. (The tool rename to start_subagent / schedule_subagent and the core semantics reword in CONTEXT.md, chat/index.md and the skills catalog are done.)
 
+* Additional pypi packages for the agent container: how to do that?
+
 * Calendar und Mails: nicht leere Ergebnisliste zurückgeben, wenn kein Mailbox / Calendar Provider registriert ist, sondern eine passende Fehlermeldung für den Agent.
+
+* Neue Kalender Tools: list all calendars mit sync status und "resync" tool, das einfach die Delta-Dateien löscht und damit den Kalender zu einer neusynchronisation zwingt.
 
 Features:
 
@@ -22,7 +26,7 @@ Neues CLI Tool: `logs`
 
 ### For production deployments:
 
-* ~~Das alte Shell-Launcher-Script durch `familiar` ersetzen~~ — erledigt: dev läuft jetzt über `npm run dev -- <cmd>` (Wrapper `cli/dev.mjs`), der dieselbe `familiar`-bin wie prod aufruft; das Shell-Script wurde entfernt.
+* cli.sh replacen mit `npx familiar`, die prechecks über den npm hook prepublishOnly laufen lassen. Gleichheit zwischen dev und prod sicherstellen.
 
 ## For later
 
@@ -62,7 +66,6 @@ Extreme:
 plugins:
 - Check if chat/compaction/index.md exists and is parseable
 - Check if skills/memory/save.md exists and is parseable
-
 
 ## Before release
 
