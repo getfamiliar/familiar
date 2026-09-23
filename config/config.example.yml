@@ -314,3 +314,19 @@ inference:
 #     refreshCron: "every sunday at 03:00"  # full re-walk via scan-generation tag (drops stale rows)
 #     lookbackDays: 365      # delta window: how far back to surface events
 #     lookaheadDays: 730     # delta window: how far ahead to surface events
+
+# Tesla plugin (read-only). All keys are optional — the defaults are
+# operational, so a fresh install just needs a login (run
+# `./cli.sh tesla login`). See plugins/tesla/README.md for the full
+# guide, including why there are no remote-command tools.
+# tesla:
+#   wakeTimeoutSeconds: 30      # how long a state read waits for a sleeping car before using cached data
+#   deviceCountry: DE           # ISO-3166 alpha-2; sent on every invoice request
+#   deviceLanguage: de          # ISO-639 alpha-2; sent on every invoice request
+#   locale: de_DE               # `httpLocale` on the invoice endpoints
+#   # The invoice endpoints only answer requests that look like the Tesla
+#   # mobile app, and the accepted values are pinned to app releases — so
+#   # these rot. A sudden 403 from `tesla_invoices` is almost always a
+#   # stale app version here rather than a broken login.
+#   teslaAppUserAgent: "TeslaApp/4.28.3-2167"
+#   userAgent: "Tesla/1195 CFNetwork/1388 Darwin/22.0.0"
