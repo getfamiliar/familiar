@@ -375,7 +375,7 @@ function buildRuntimeSection(handler: HandlerFile, topic: string, privileged: bo
         const ancestors = handler.inheritsFrom.map((p) => `\`${p}\``).join(" ← ");
         lines.push(`- Inheriting from: ${ancestors}`);
     }
-    lines.push(`- outputChat: ${handler.header.outputChat === true ? 'true' : 'false'}`);
+    lines.push(`- outputChat: ${handler.header.outputChat === true ? "true" : "false"}`);
     // Privileged runs descend from a trusted user-input source (the
     // operator at the local terminal or on Telegram). Tools that gate
     // risky reads / writes on this flag will refuse non-privileged

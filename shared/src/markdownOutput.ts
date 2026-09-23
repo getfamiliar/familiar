@@ -32,7 +32,9 @@ export function markdownTable(
     const headerLine = `| ${headers.map(escapeTableCell).join(" | ")} |`;
     const separator = `| ${headers.map(() => "---").join(" | ")} |`;
     const body = rows.map((row) => `| ${row.map(escapeTableCell).join(" | ")} |`).join("\n");
-    return body.length > 0 ? `${headerLine}\n${separator}\n${body}\n` : `${headerLine}\n${separator}\n`;
+    return body.length > 0
+        ? `${headerLine}\n${separator}\n${body}\n`
+        : `${headerLine}\n${separator}\n`;
 }
 
 /**
