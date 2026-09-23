@@ -20,8 +20,6 @@ import { EventContextGateway } from "../bastion/EventContextGateway.js";
 import { ModelMetadataGateway } from "../bastion/ModelMetadataGateway.js";
 import { buildProviders, ReverseProxy } from "../bastion/ReverseProxy.js";
 import { ChatCompactor } from "../chat/ChatCompactor.js";
-import { lintOrThrow } from "../utils/ConfigLinter.js";
-import { HostConfigService } from "../utils/ConfigService.js";
 import {
     AGENT_IMAGE_TAG,
     AgentContainer,
@@ -43,7 +41,6 @@ import { ModelMetadataRefresher } from "../cron/ModelMetadataRefresher.js";
 import { ScheduledSubagentScheduler } from "../cron/ScheduledSubagentScheduler.js";
 import { ScratchGc } from "../cron/ScratchGc.js";
 import { ToolCallsGc } from "../cron/ToolCallsGc.js";
-import { ensureNetwork, ISOLATED_NETWORK_NAME, SHARED_NETWORK_NAME } from "../utils/DockerTools.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { McpGateway } from "../mcp/McpGateway.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
@@ -56,6 +53,9 @@ import { PluginHost } from "../plugins/PluginHost.js";
 import { loadPlugins } from "../plugins/PluginLoader.js";
 import { PluginToolsGateway } from "../plugins/ToolsGateway.js";
 import { PluginToolsRegistry } from "../plugins/ToolsRegistry.js";
+import { lintOrThrow } from "../utils/ConfigLinter.js";
+import { HostConfigService } from "../utils/ConfigService.js";
+import { ensureNetwork, ISOLATED_NETWORK_NAME, SHARED_NETWORK_NAME } from "../utils/DockerTools.js";
 import { rollingFileStream } from "../utils/LogRetentionTools.js";
 import { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
 import { acquirePidFile, removePidFile } from "./pidfile.js";
@@ -408,6 +408,7 @@ export const startCommand = defineCommand({
             mcp: pluginHost.mcp,
             calendar: pluginHost.calendar,
             mail: pluginHost.mail,
+            devMode: dev,
             mailStyleStore: pluginHost.mailStyle,
             eventContextRegistry: pluginHost.eventContext,
             resolveProvider: (key) => pluginHost.resolveProvider(key),

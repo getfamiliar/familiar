@@ -68,7 +68,7 @@ export async function startMs365Daemon(ctx: HostContext): Promise<void> {
                 ctx,
                 log,
                 logDebug,
-                emit: (event) => ctx.events.emit(event),
+                emit: (event) => ctx.mail.emitMailEvent(event),
                 mailboxMap,
             });
             if (mailPoller === null) {

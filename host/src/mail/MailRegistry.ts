@@ -6,9 +6,11 @@ import type { MailApi, MailProvider } from "@getfamiliar/shared";
  * id's `<pluginId>:` prefix and look the provider up here.
  *
  * Mirrors `CalendarRegistry` in shape and lifetime: one instance per
- * host process, shared across every plugin's `HostContext`.
+ * host process, shared across every plugin's `HostContext`. The other
+ * half of `ctx.mail` (`emitMailEvent`) is per-context and lives on
+ * `HostContextImpl`, since it reuses that context's `events.emit`.
  */
-export class MailRegistry implements MailApi {
+export class MailRegistry implements Pick<MailApi, "registerProvider"> {
     private readonly providers = new Map<string, MailProvider>();
 
     /**

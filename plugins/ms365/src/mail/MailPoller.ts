@@ -31,7 +31,11 @@ export interface MailPollerOptions {
     readonly log: (msg: string) => void;
     /** Debug-level log sink for benign high-volume lines (tombstones, dedup skips). */
     readonly logDebug: (msg: string) => void;
-    readonly emit: (event: NewEvent) => Promise<EmitHandle>;
+    /**
+     * Event sink, wired to `ctx.mail.emitMailEvent` so the host can drop
+     * events on dev instances. Resolves `null` when suppressed.
+     */
+    readonly emit: (event: NewEvent) => Promise<EmitHandle | null>;
     /**
      * Pre-resolved mailbox map shared with `Ms365MailProvider` so the
      * poller and the search tool agree on which mailboxes ms365

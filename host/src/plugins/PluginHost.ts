@@ -11,14 +11,13 @@ import type {
 } from "@getfamiliar/shared";
 import { EventBus, ModelNotSupported } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
-import type { Bootstrap } from "../Bootstrap.js";
+import { type Bootstrap, isDevMode } from "../Bootstrap.js";
 import { CalendarRegistry } from "../calendar/CalendarRegistry.js";
 import { CalendarSafety } from "../calendar/CalendarSafety.js";
 import { CalendarService } from "../calendar/CalendarService.js";
 import { CalendarStore } from "../calendar/CalendarStore.js";
 import { buildCalendarTools } from "../calendar/CalendarTools.js";
 import { inspectPidFile } from "../commands/pidfile.js";
-import { HostConfigService } from "../utils/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { MailRegistry } from "../mail/MailRegistry.js";
 import { MailSafety } from "../mail/MailSafety.js";
@@ -30,6 +29,8 @@ import { PluginMcpService } from "../mcp/PluginMcpService.js";
 import { ModelMetadataService } from "../models/ModelMetadataService.js";
 import type { ResolvedProvider } from "../models/ProviderResolution.js";
 import { buildReflectionTools } from "../reflection/ReflectionTools.js";
+import { HostConfigService } from "../utils/ConfigService.js";
+import { type DevEventDomain, isEventEmissionAllowed } from "../utils/DevEventGate.js";
 import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
 import { EventContextRegistry } from "./EventContextRegistry.js";
 import { HostContextImpl } from "./HostContextImpl.js";
@@ -121,6 +122,7 @@ export class PluginHost {
             events: async () => new EventBus(await this.ensureConnection()),
             config: this.config,
             log: log.child({ component: "calendar" }),
+            devMode: isDevMode(),
         });
         this.calendarSafety = new CalendarSafety(this.config);
         this.mailRegistry = new MailRegistry();
@@ -448,6 +450,24 @@ export class PluginHost {
     }
 
     /**
+     * On dev instances, announce once per domain that poller-driven bus
+     * events are being dropped, so an empty `events list` after the
+     * first sync isn't a mystery. Per-event suppressions log at debug.
+     */
+    private logSuppressedDevEvents(): void {
+        const domains: readonly DevEventDomain[] = ["mail", "calendar"];
+        for (const domain of domains) {
+            if (isEventEmissionAllowed(this.config, domain, isDevMode())) {
+                continue;
+            }
+            this.log.info(
+                `dev mode: ${domain}:* bus events are suppressed ` +
+                    `(set ${domain}.emitEventsInDev: true in config.yml to enable)`,
+            );
+        }
+    }
+
+    /**
      * Await each plugin's `start(ctx)` hook in registration order.
      * Used during daemon boot. Failures bubble up — the daemon
      * refuses to start if any plugin daemon fails to initialize.
@@ -458,6 +478,7 @@ export class PluginHost {
      * runs.
      */
     async startDaemons(): Promise<void> {
+        this.logSuppressedDevEvents();
         for (const plugin of this.plugins) {
             const host = plugin.host;
             if (!host?.start && !host?.tools) {
@@ -571,6 +592,7 @@ export class PluginHost {
             mcp: this.mcpService,
             calendar: this.calendarService,
             mail: this.mailRegistry,
+            devMode: isDevMode(),
             mailStyleStore: this.mailStyleStore,
             eventContextRegistry: this.eventContextRegistry,
             resolveProvider: (key) => this.resolveProvider(key),

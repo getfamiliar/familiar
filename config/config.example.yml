@@ -278,16 +278,19 @@ inference:
 #   groupAllowlist:
 #     - "1203....@g.us"
 
-# Core mail safety (cross-provider). Applied by the core `mail_send_*`
-# tools before dispatching to whichever plugin owns the message id.
+# Core mail settings (cross-provider). Safety knobs are applied by the
+# core `mail_send_*` tools before dispatching to whichever plugin owns
+# the message id.
 # mail:
 #   allowSend: false         # false = every send becomes a draft (across every provider)
 #   recipientWhitelist: []   # when allowSend=true: each entry is either a full address or `@domain`
+#   emitEventsInDev: false   # dev instances only (FAMILIAR_DEV=1): false = pollers run but emit no mail:* events
 
-# Core calendar safety (cross-provider). Applied by the core `cal_*`
-# write tools before dispatching to the registered provider.
+# Core calendar settings (cross-provider). Safety knobs are applied by
+# the core `cal_*` write tools before dispatching to the registered provider.
 # calendar:
 #   allowAttendees: false    # when false, attendees passed to cal_create_event are silently dropped
+#   emitEventsInDev: false   # dev instances only (FAMILIAR_DEV=1): false = pollers run but emit no calendar:* events
 
 # Microsoft 365 plugin (mail + calendar). All keys are optional —
 # defaults are operational, so a fresh install just needs at least

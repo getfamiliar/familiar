@@ -306,13 +306,61 @@ describe("CalendarService.endRefresh", () => {
     });
 });
 
+describe("CalendarService dev-instance gate", () => {
+    const calendar = sampleCalendar({ id: "7", pluginId: "ms365" });
+    const row = sampleEvent({ id: "ms365:abc", calendarId: "7" });
+
+    it("drops emitCalendarEvent and endRefresh deletes in dev mode by default", async () => {
+        const captured: NewEvent[] = [];
+        const svc = build({
+            calendars: [calendar],
+            events: [row],
+            captureEmits: captured,
+            endRefreshRows: [row],
+            devMode: true,
+        });
+        await svc.emitCalendarEvent("calendar:new:ms365", "ms365:abc");
+        await svc.emitCalendarEvent("calendar:update:ms365", "ms365:abc");
+        const result = await svc.endRefresh("7", 5);
+        assert.equal(result.removed, 1);
+        assert.equal(captured.length, 0);
+    });
+
+    it("emits in dev mode when calendar.emitEventsInDev is true", async () => {
+        const captured: NewEvent[] = [];
+        const svc = build({
+            calendars: [calendar],
+            events: [row],
+            captureEmits: captured,
+            devMode: true,
+            configMap: { "calendar.emitEventsInDev": true },
+        });
+        await svc.emitCalendarEvent("calendar:new:ms365", "ms365:abc");
+        assert.equal(captured.length, 1);
+    });
+
+    it("ignores calendar.emitEventsInDev=false outside dev mode", async () => {
+        const captured: NewEvent[] = [];
+        const svc = build({
+            calendars: [calendar],
+            events: [row],
+            captureEmits: captured,
+            configMap: { "calendar.emitEventsInDev": false },
+        });
+        await svc.emitCalendarEvent("calendar:new:ms365", "ms365:abc");
+        assert.equal(captured.length, 1);
+    });
+});
+
 interface BuildOptions {
     readonly calendars: readonly CalendarRow[];
     readonly events?: readonly CalendarEventRow[];
     readonly captureEmits?: NewEvent[];
     readonly upsertResults?: Array<{ created: boolean; changed: boolean }>;
     readonly endRefreshRows?: readonly CalendarEventRow[];
-    readonly configMap?: Record<string, string>;
+    readonly configMap?: Record<string, string | boolean>;
+    /** Dev-mode flag handed to the service; defaults to `false` (production). */
+    readonly devMode?: boolean;
     /** When set, the stub `EventBus.add` rejects with this instead of capturing. */
     readonly emitThrows?: Error;
 }
@@ -353,6 +401,7 @@ function build(opts: BuildOptions): CalendarService {
         events: eventsFactory,
         config: stubConfig(opts.configMap ?? {}),
         log: stubLogger(),
+        devMode: opts.devMode ?? false,
     });
 }
 
@@ -402,12 +451,15 @@ function sampleEvent(overrides: Partial<CalendarEventRow>): CalendarEventRow {
     };
 }
 
-function stubConfig(map: Record<string, string>): ConfigService {
+function stubConfig(map: Record<string, string | boolean>): ConfigService {
     return {
         getString: ((key: string, def?: unknown) =>
             map[key] ?? def ?? "") as ConfigService["getString"],
         getNumber: ((_key: string, def?: unknown) => def ?? 0) as ConfigService["getNumber"],
-        getBool: ((_key: string, def?: unknown) => def ?? false) as ConfigService["getBool"],
+        getBool: ((key: string, def?: unknown) => {
+            const value = map[key];
+            return typeof value === "boolean" ? value : (def ?? false);
+        }) as ConfigService["getBool"],
         getArray: ((_key: string, def?: unknown) => def ?? []) as ConfigService["getArray"],
         set: async (_key: string, _value: unknown) => {},
     } as ConfigService;

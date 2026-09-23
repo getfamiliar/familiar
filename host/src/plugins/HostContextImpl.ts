@@ -36,6 +36,7 @@ import { inspectPidFile } from "../commands/pidfile.js";
 import type { MailStyleStore } from "../mail/MailStyleStore.js";
 import type { PluginMcpService } from "../mcp/PluginMcpService.js";
 import type { ResolvedProvider } from "../models/ProviderResolution.js";
+import { isEventEmissionAllowed } from "../utils/DevEventGate.js";
 import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
 import type { EventContextRegistry } from "./EventContextRegistry.js";
 
@@ -110,11 +111,17 @@ export interface HostContextImplDeps {
      */
     calendar: CalendarApi;
     /**
-     * Shared singleton that backs `ctx.mail`. One instance per host
-     * process — owns the `pluginId → MailProvider` registry consumed
-     * by the core `mail_*` tools. No DB layer (no mail cache).
+     * Shared singleton that backs `ctx.mail.registerProvider`. One
+     * instance per host process — owns the `pluginId → MailProvider`
+     * registry consumed by the core `mail_*` tools. No DB layer (no
+     * mail cache). `ctx.mail.emitMailEvent` is implemented per context.
      */
-    mail: MailApi;
+    mail: Pick<MailApi, "registerProvider">;
+    /**
+     * Whether the daemon runs in dev mode (`isDevMode()`). Gates
+     * `ctx.mail.emitMailEvent` via {@link isEventEmissionAllowed}.
+     */
+    devMode: boolean;
     /**
      * Shared per-mailbox style-template store. One instance per host
      * process. Backs both `ctx.getMailStyleTemplate` (plugin read path)
@@ -197,9 +204,10 @@ export class HostContextImpl implements HostContext {
         return this.deps.calendar;
     }
 
-    get mail(): MailApi {
-        return this.deps.mail;
-    }
+    readonly mail: MailApi = {
+        registerProvider: (provider) => this.deps.mail.registerProvider(provider),
+        emitMailEvent: (event) => this.emitMailEvent(event),
+    };
 
     getMailStyleTemplate = (
         mailbox: string,
@@ -303,6 +311,34 @@ export class HostContextImpl implements HostContext {
         const conn = await this.deps.ensureConnection();
         const bus = new ChatMessageBus(conn);
         await bus.insert({ eventId, role, textContent: text });
+    }
+
+    /**
+     * Backs `ctx.mail.emitMailEvent`: drop the event on dev instances
+     * unless `mail.emitEventsInDev` is set, otherwise delegate to
+     * {@link emitAndAwait} so `files` staging and idempotency behave
+     * exactly like `ctx.events.emit`.
+     *
+     * @param event - New-mail event; topic `mail` or `mail:<…>`.
+     * @returns The emit handle, or `null` when suppressed.
+     * @throws If the topic is not a mail topic, or whatever
+     *   {@link emitAndAwait} throws.
+     */
+    private async emitMailEvent(event: NewEvent): Promise<EmitHandle | null> {
+        if (event.topic !== "mail" && !event.topic.startsWith("mail:")) {
+            throw new Error(
+                `ctx.mail.emitMailEvent: topic "${event.topic}" is not a mail topic ` +
+                    `(expected "mail" or "mail:<…>"); use ctx.events.emit for other events`,
+            );
+        }
+        if (!isEventEmissionAllowed(this.deps.config, "mail", this.deps.devMode)) {
+            this.deps.log.debug(
+                `mail: dev mode — suppressed ${event.topic} event ` +
+                    `(idempotency key "${event.idempotencyKey}"; mail.emitEventsInDev is not set)`,
+            );
+            return null;
+        }
+        return this.emitAndAwait(event);
     }
 
     /**

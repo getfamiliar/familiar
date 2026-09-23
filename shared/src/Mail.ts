@@ -21,6 +21,9 @@
  * `INBOX`, `[Gmail]/All Mail`, `[Gmail]/Trash`).
  */
 
+import type { NewEvent } from "./Event.js";
+import type { EmitHandle } from "./Plugin.js";
+
 export type MailFolder = "inbox" | "archive" | "trash" | "sent";
 
 /**
@@ -237,8 +240,8 @@ export interface MailProvider {
 /**
  * Capabilities the host exposes to plugins for mail data. Reached via
  * `ctx.mail` on a plugin's `HostContext`. Tiny by design: there is no
- * mail cache in core, so the only thing plugins do here is register
- * their provider during `start()`.
+ * mail cache in core, so plugins only register their provider during
+ * `start()` and hand new-mail events to the host for emission.
  */
 export interface MailApi {
     /**
@@ -247,6 +250,20 @@ export interface MailApi {
      * wiring bug, not a feature.
      */
     registerProvider(provider: MailProvider): void;
+    /**
+     * Emit a new-mail bus event. Mail pollers must use this instead of
+     * `ctx.events.emit` so the host can apply cross-provider policy:
+     * on dev instances the event is dropped unless
+     * `mail.emitEventsInDev` is set, so a fresh dev database doesn't
+     * replay the whole inbox. Otherwise behaves exactly like
+     * `ctx.events.emit` (idempotency, `files` staging).
+     *
+     * @param event - Event to emit; `topic` must be `mail` or start with `mail:`.
+     * @returns The emit handle, or `null` when the host suppressed the event.
+     * @throws If `topic` is not a mail topic, or whatever `ctx.events.emit`
+     *   throws (e.g. `DuplicateIdempotencyKeyError`).
+     */
+    emitMailEvent(event: NewEvent): Promise<EmitHandle | null>;
 }
 
 /**

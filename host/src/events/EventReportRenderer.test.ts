@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import type { AgentRunRow, EventRow, StepResultRow } from "@getfamiliar/shared";
-import { renderAgentrunReport, renderEventReport } from "./Renderers.js";
+import { renderAgentrunReport, renderEventReport } from "./EventReportRenderer.js";
 
 function fakeEvent(over: Partial<EventRow> = {}): EventRow {
     return {

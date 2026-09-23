@@ -3,7 +3,6 @@ import { createLogger, prettyStdoutStream } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { parse } from "yaml";
 import { bootstrap } from "../../Bootstrap.js";
-import { dockerCapture, dockerInteractive } from "../../utils/DockerTools.js";
 import type {
     DockerArgsOptions,
     RuntimeContainerConfig,
@@ -20,6 +19,7 @@ import {
     type McpSource,
 } from "../../mcp/McpEntry.js";
 import { ensureRuntimeImage, mcpMountDirFor } from "../../mcp/RuntimeImages.js";
+import { dockerCapture, dockerInteractive } from "../../utils/DockerTools.js";
 
 /**
  * `familiar tools call-mcp <id> -- <args...>` — one-shot interactive

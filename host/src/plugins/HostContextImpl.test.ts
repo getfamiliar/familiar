@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { isUsableChannelId } from "./HostContextImpl.js";
+import type { ConfigService, Logger, NewEvent } from "@getfamiliar/shared";
+import { HostContextImpl, type HostContextImplDeps, isUsableChannelId } from "./HostContextImpl.js";
 
 describe("isUsableChannelId", () => {
     it("accepts a non-empty string", () => {
@@ -47,3 +48,58 @@ describe("isUsableChannelId", () => {
         }
     });
 });
+
+describe("HostContextImpl ctx.mail.emitMailEvent", () => {
+    const mailEvent: NewEvent = {
+        topic: "mail:ms365",
+        prompt: "A new e-mail was received",
+        idempotencyKey: "mail:ms365:<abc@example.com>",
+    };
+
+    it("suppresses the event in dev mode when mail.emitEventsInDev is unset", async () => {
+        const ctx = buildContext({ devMode: true, bools: {} });
+        assert.equal(await ctx.mail.emitMailEvent(mailEvent), null);
+    });
+
+    it("delegates to the bus in dev mode when mail.emitEventsInDev is true", async () => {
+        const ctx = buildContext({ devMode: true, bools: { "mail.emitEventsInDev": true } });
+        await assert.rejects(ctx.mail.emitMailEvent(mailEvent), /reached the bus/);
+    });
+
+    it("delegates to the bus outside dev mode", async () => {
+        const ctx = buildContext({ devMode: false, bools: {} });
+        await assert.rejects(ctx.mail.emitMailEvent(mailEvent), /reached the bus/);
+    });
+
+    it("rejects non-mail topics", async () => {
+        const ctx = buildContext({ devMode: false, bools: {} });
+        await assert.rejects(
+            ctx.mail.emitMailEvent({ ...mailEvent, topic: "calendar:new:ms365" }),
+            /not a mail topic/,
+        );
+    });
+});
+
+/**
+ * Build a context whose only live dependencies are config, logger and
+ * the dev flag. `ensureConnection` throws a sentinel so a test can tell
+ * "emission reached the bus" apart from "suppressed" without postgres.
+ */
+function buildContext(opts: { devMode: boolean; bools: Record<string, boolean> }): HostContextImpl {
+    const config = {
+        getBool: ((key: string, def?: unknown) =>
+            opts.bools[key] ?? def) as ConfigService["getBool"],
+    } as ConfigService;
+    const noop = () => {};
+    const log = { debug: noop, info: noop, warn: noop, error: noop } as unknown as Logger;
+    const deps = {
+        pluginId: "ms365",
+        config,
+        log,
+        devMode: opts.devMode,
+        ensureConnection: async () => {
+            throw new Error("reached the bus");
+        },
+    } as unknown as HostContextImplDeps;
+    return new HostContextImpl(deps);
+}

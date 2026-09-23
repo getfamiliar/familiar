@@ -358,8 +358,10 @@ export interface HostContext {
      *
      * Unlike `calendar`, there is no read-side surface here — the
      * core does not cache mail bodies or metadata. Pollers emit
-     * `mail:<plugin>` events with a prefixed `mail_id` in the payload;
-     * the agent reaches the body via `mail_fetch_body` on demand.
+     * `mail:<plugin>` events with a prefixed `mail_id` in the payload
+     * through `ctx.mail.emitMailEvent` (not `ctx.events.emit`, so the
+     * dev-instance gate applies); the agent reaches the body via
+     * `mail_fetch_body` on demand.
      */
     readonly mail: MailApi;
     /**

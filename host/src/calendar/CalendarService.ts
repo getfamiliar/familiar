@@ -13,6 +13,7 @@ import {
     type NewCalendarEvent,
     type UpsertCalendarInput,
 } from "@getfamiliar/shared";
+import { isEventEmissionAllowed } from "../utils/DevEventGate.js";
 import type { CalendarRegistry } from "./CalendarRegistry.js";
 import type { CalendarStore } from "./CalendarStore.js";
 import { readCoreTimezone, renderEventForAgent } from "./EventRenderer.js";
@@ -29,6 +30,12 @@ export interface CalendarServiceDeps {
     readonly events: () => Promise<EventBus>;
     readonly config: ConfigService;
     readonly log: Logger;
+    /**
+     * Whether the daemon runs in dev mode. Dev instances drop every
+     * `calendar:*` bus emission unless `calendar.emitEventsInDev` is
+     * set (see {@link isEventEmissionAllowed}).
+     */
+    readonly devMode: boolean;
 }
 
 /**
@@ -50,7 +57,9 @@ const EMIT_TOPIC_RE = /^calendar:(new|update|delete):([\w-]+)$/;
  *     upsert (using the `{created}` flag to pick new vs update) or
  *     before a tombstone-driven remove. The service additionally
  *     drives `calendar:delete:<pluginId>` for every row pruned by
- *     {@link endRefresh}.
+ *     {@link endRefresh}. On dev instances all three are dropped
+ *     unless `calendar.emitEventsInDev` is set, so a fresh dev database
+ *     doesn't replay the whole calendar backlog.
  *
  * Defaults / lookups:
  *   - `resolveDefaultCalendar` parses `core.defaultCalendar` (format
@@ -207,7 +216,8 @@ export class CalendarService implements CalendarApi {
      * topic shape and pluginId match — this helper trusts both. The
      * verb is parsed from the topic so `endRefresh`'s pre-built
      * `calendar:delete:<pluginId>` path can reuse it without a second
-     * regex pass.
+     * regex pass. Single choke point for the dev-instance gate: returns
+     * without posting when {@link isEventEmissionAllowed} says no.
      */
     private async emitFromRow(
         topic: string,
@@ -220,6 +230,13 @@ export class CalendarService implements CalendarApi {
         }
         const verb = match[1] as CalendarChangePayload["verb"];
         const subjectLabel = row.subject ?? "(no subject)";
+        if (!isEventEmissionAllowed(this.deps.config, "calendar", this.deps.devMode)) {
+            this.deps.log.debug(
+                `calendar: dev mode — suppressed ${topic} for event ${row.id} ` +
+                    `"${subjectLabel}" (calendar.emitEventsInDev is not set)`,
+            );
+            return;
+        }
         const prompt =
             verb === "new"
                 ? `A new calendar event was discovered: ${subjectLabel}.`

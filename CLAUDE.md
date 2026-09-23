@@ -190,6 +190,7 @@ Top-level groups in `config/config.yml`:
 
 - `core` — `postgresPassword`, `defaultChatChannel`, optional `logRetentionDays`. Required.
 - `inference` — `provider`, `defaultModel`, `apiKeys.<provider>` map. Required.
+- `mail` / `calendar` — cross-provider settings (send / attendee safety knobs). `emitEventsInDev` (default `false`) controls whether a dev instance (`FAMILIAR_DEV=1`) emits `mail:*` / `calendar:*` bus events; by default pollers still sync but the events are dropped (`host/src/utils/DevEventGate.ts`), so a dev instance sharing the production account doesn't replay its whole backlog. Production ignores the flag.
 - per-plugin (`telegram`, `whatsapp`, …) — owned by the plugin; plugin parses its own subtree and
   self-disables when absent.
 
