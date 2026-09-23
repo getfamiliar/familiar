@@ -2,7 +2,7 @@ import { markdownTable, parseCron, writeMarkdown } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
 import { pathToHandlerTarget, readVerbatimCron } from "../cron/CronjobScheduler.js";
-import { scanWorkspace } from "../workspace/WorkspaceWatcher.js";
+import { scanWorkspace } from "../utils/WorkspaceWatcher.js";
 
 /**
  * `familiar cron` — root for cronjob-related subcommands. Today only `list`

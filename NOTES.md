@@ -8,6 +8,8 @@ NEXT:
 
 * Neue Kalender Tools: list all calendars mit sync status und "resync" tool, das einfach die Delta-Dateien löscht und damit den Kalender zu einer neusynchronisation zwingt.
 
+* Whatsapp Plugin: Group processing stopped, had to re-login. Check if we can do something against that.
+
 Features:
 
 * File Storages like Onedrive, Dropbox, Google Drive, ... - read & write access, search. Done like calendar + mail, a default set of tools for all providers and provider-specific implementations in plugins.

@@ -36,7 +36,7 @@ import { inspectPidFile } from "../commands/pidfile.js";
 import type { MailStyleStore } from "../mail/MailStyleStore.js";
 import type { PluginMcpService } from "../mcp/PluginMcpService.js";
 import type { ResolvedProvider } from "../models/ProviderResolution.js";
-import type { WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
+import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
 import type { EventContextRegistry } from "./EventContextRegistry.js";
 
 /**

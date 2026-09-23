@@ -8,7 +8,7 @@ import {
     removeContainer,
     SHARED_NETWORK_NAME,
     stopContainer,
-} from "../DockerTools.js";
+} from "../utils/DockerTools.js";
 import { pullImageIfNeeded } from "./Images.js";
 
 /**

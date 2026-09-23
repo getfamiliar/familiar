@@ -99,7 +99,7 @@ jobs:
             file: container/Dockerfile
             # Rebuilt when container/ or shared/ sources change, or when the
             # baked Python set changes. Must match DEFAULT_PYTHON_PACKAGES in
-            # host/src/container-runner/AgentContainer.ts — pull-mode `familiar
+            # host/src/container-bridge/AgentContainer.ts — pull-mode `familiar
             # start` passes no build-arg, so the baked set is authoritative.
             hash_paths: container shared
             build_args: |

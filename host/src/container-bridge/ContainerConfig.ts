@@ -1,4 +1,4 @@
-import type { HostConfigService } from "../config/ConfigService.js";
+import type { HostConfigService } from "../utils/ConfigService.js";
 
 /**
  * Collector for the flat config map the host passes into the agent

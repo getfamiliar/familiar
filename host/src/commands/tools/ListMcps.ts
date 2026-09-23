@@ -3,7 +3,7 @@ import { markdownTable, writeMarkdown } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { parse } from "yaml";
 import { bootstrap } from "../../Bootstrap.js";
-import { dockerCapture } from "../../DockerTools.js";
+import { dockerCapture } from "../../utils/DockerTools.js";
 import { lintMcpConfigFile } from "../../mcp/McpConfigLoader.js";
 import { mcpMountDirFor } from "../../mcp/RuntimeImages.js";
 

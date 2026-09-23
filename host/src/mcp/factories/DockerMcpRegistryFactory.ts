@@ -1,6 +1,6 @@
 import type { Logger } from "@getfamiliar/shared";
-import { SHARED_NETWORK_NAME } from "../../DockerTools.js";
-import { createMcpFileSink, type McpFileSink } from "../../tools/LogRetentionTools.js";
+import { SHARED_NETWORK_NAME } from "../../utils/DockerTools.js";
+import { createMcpFileSink, type McpFileSink } from "../../utils/LogRetentionTools.js";
 import type { McpEntry } from "../McpEntry.js";
 import type { McpServerFactory } from "../McpServerFactory.js";
 import type { McpTransport } from "../transports/McpTransport.js";

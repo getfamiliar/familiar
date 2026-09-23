@@ -175,12 +175,12 @@ All configuration — sensitive and non-sensitive — lives in `config/config.ym
 `config/config.example.yml` is the tracked sample). The host accesses it via two services:
 
 - **`ConfigService`** (interface in `shared/src/Config.ts`, implementation in
-  `host/src/config/ConfigService.ts`) is the runtime read/write surface. Plugin-agnostic; exposes
+  `host/src/utils/ConfigService.ts`) is the runtime read/write surface. Plugin-agnostic; exposes
   `getString(key)` / `getNumber(key)` / `getArray(key)` keyed by dotted paths (e.g.
   `"core.postgresPassword"`, `"telegram.botToken"`), with optional defaults that widen the return
   type to include the default when omitted-vs-throws is the difference between "throw on missing"
   and "return null". Plugins reach it via `ctx.config`. **No plugin-specific types in `shared/`.**
-- **`ConfigLinter`** (`host/src/config/ConfigLinter.ts`) validates the file at boot: file readable,
+- **`ConfigLinter`** (`host/src/utils/ConfigLinter.ts`) validates the file at boot: file readable,
   parses as a YAML mapping, contains the platform-level minimum (`core.postgresPassword`,
   `core.defaultChatChannel`, `inference.provider`, `inference.defaultModel`,
   `inference.apiKeys.<provider>`). Unknown top-level groups are ignored — plugins own their own
@@ -236,7 +236,7 @@ Declares:
 
 Any handler can declare a `cron:` field in its YAML frontmatter. The host's
 `CronjobScheduler` (in `host/src/cron/`) scans the workspace at daemon startup, watches for
-file changes via the generalized `WorkspaceWatcher` (in `host/src/workspace/`), and
+file changes via the generalized `WorkspaceWatcher` (in `host/src/utils/`), and
 registers a Croner job per valid expression. When the cron fires, the scheduler emits a
 fresh event whose `topic` and `startHandler` resolve to the same `.md` file, with the
 prompt `"The cronjob has fired"` and no payload.
@@ -357,7 +357,7 @@ The following are deliberately deferred but should be addressed during implement
 7. **First real plugin** — ms365 plugin end to end as the reference implementation: msal-node device-code login in the host, `mail/index.md` (and optionally `mail/ms365/index.md`) handlers in the workspace, direct Microsoft Graph calls from host-side plugin tools.
 8. **Cron scheduler** — host-side scanning of handler frontmatter for `cron:` fields,
    live re-evaluation on file change, event emission on firing. *(Implemented:
-   `host/src/cron/`, `host/src/workspace/WorkspaceWatcher.ts`.)*
+   `host/src/cron/`, `host/src/utils/WorkspaceWatcher.ts`.)*
 9. **Additional plugins** — calendar, Jira, Telegram, chat (probably web UI for chat).
 
 ## Design principles to preserve

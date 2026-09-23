@@ -9,7 +9,7 @@ import {
     type WorkspaceFile,
 } from "@getfamiliar/shared";
 import { Cron } from "croner";
-import type { WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
+import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
 
 /** A single scheduled cron entry — the parsed expression plus its live job. */
 interface ScheduledEntry {

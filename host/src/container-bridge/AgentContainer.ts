@@ -5,7 +5,7 @@ import {
     ISOLATED_NETWORK_NAME,
     removeContainer,
     stopContainer,
-} from "../DockerTools.js";
+} from "../utils/DockerTools.js";
 import { pullImageIfNeeded } from "./Images.js";
 import { isSafePipRequirement } from "./PythonPackages.js";
 
@@ -173,7 +173,7 @@ export interface AgentContainerConfig {
      * The flat config map the container reads via its `PassedConfig`
      * accessor, serialized to JSON and forwarded as the single
      * `FAMILIAR_CONTAINER_CONFIG` env var. Built host-side by
-     * {@link ../container-runner/ContainerConfig.ContainerConfig} — it
+     * {@link ../container-bridge/ContainerConfig.ContainerConfig} — it
      * carries every value the container's Node code needs (postgres
      * password, bastion URL, inference knobs, log level, timezone, …),
      * replacing the former long list of discrete `-e KEY=VALUE` flags.

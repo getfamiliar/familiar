@@ -3,7 +3,7 @@ import { createLogger, prettyStdoutStream } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { parse } from "yaml";
 import { bootstrap } from "../../Bootstrap.js";
-import { dockerCapture, dockerInteractive } from "../../DockerTools.js";
+import { dockerCapture, dockerInteractive } from "../../utils/DockerTools.js";
 import type {
     DockerArgsOptions,
     RuntimeContainerConfig,

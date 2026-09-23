@@ -6,7 +6,7 @@ import {
     type StepResultRow,
     ToolError,
 } from "@getfamiliar/shared";
-import { renderAgentrunReport, type VerbosityLevel } from "../../reports/Renderers.js";
+import { renderAgentrunReport, type VerbosityLevel } from "../../events/EventReportRenderer.js";
 import type { ReflectionToolsDeps } from "../ReflectionTools.js";
 
 interface AgentrunReportArgs {

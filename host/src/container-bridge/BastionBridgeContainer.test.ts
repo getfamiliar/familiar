@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { ISOLATED_NETWORK_NAME, SHARED_NETWORK_NAME } from "../DockerTools.js";
+import { ISOLATED_NETWORK_NAME, SHARED_NETWORK_NAME } from "../utils/DockerTools.js";
 import { BRIDGE_IMAGE_TAG, buildBridgeRunArgs } from "./BastionBridgeContainer.js";
 
 describe("buildBridgeRunArgs", () => {

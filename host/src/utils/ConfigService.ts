@@ -139,7 +139,7 @@ export class HostConfigService implements ConfigService {
      * intermediate. The caller is responsible for whatever type it expects.
      *
      * Host-only on purpose (not on the shared `ConfigService` interface):
-     * used by {@link ../container-runner/ContainerConfig.ContainerConfig} to
+     * used by {@link ../container-bridge/ContainerConfig.ContainerConfig} to
      * pass config values through to the agent container verbatim, where the
      * container-side reader applies its own typing and defaults.
      *

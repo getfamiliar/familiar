@@ -14,8 +14,8 @@ import {
     removeContainer,
     SHARED_NETWORK_NAME,
     stopContainer,
-} from "../DockerTools.js";
-import { pickFreeLoopbackPort } from "./PortTools.js";
+} from "../utils/DockerTools.js";
+import { pickFreeLoopbackPort } from "../utils/PortTools.js";
 
 const IMAGE_NAME = "postgres:16-alpine";
 

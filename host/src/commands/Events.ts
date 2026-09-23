@@ -9,10 +9,10 @@ import {
 } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
-import { HostConfigService } from "../config/ConfigService.js";
+import { HostConfigService } from "../utils/ConfigService.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { replayOne } from "../events/ReplayEvent.js";
-import { renderEventReport } from "../reports/Renderers.js";
+import { renderEventReport } from "../events/EventReportRenderer.js";
 import { parseEventIdSpec } from "./EventIdSpec.js";
 import { verbosityFrom } from "./tools/verbosity.js";
 

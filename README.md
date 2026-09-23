@@ -20,18 +20,3 @@ call tools add-mcp
 * Secondary: Official MCP Registry, see
 * Custom: just go, remember the tools call-mcp command if necessary
 
-## Upgrading from `effective-assistant`
-
-This project was renamed from `effective-assistant` to **Familiar**. If you have an
-existing checkout with a running daemon and an on-disk postgres cluster, the cluster
-still has the old `ea` role and database baked in. The renamed daemon expects
-`familiar` instead, so do this once after pulling:
-
-```bash
-npm run dev -- stop                 # if it was running
-rm -rf data/postgres tmp/.postgres-port
-npm run dev -- start                # recreates the cluster as familiar/familiar
-```
-
-You'll lose the in-flight `events` and `agentruns` history. Workspace files, configs,
-and the LLM debug logs are untouched.

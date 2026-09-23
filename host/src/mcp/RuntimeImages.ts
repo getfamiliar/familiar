@@ -1,7 +1,7 @@
 import type { Logger } from "@getfamiliar/shared";
 import type { Bootstrap } from "../Bootstrap.js";
-import { pullImageIfNeeded } from "../container-runner/Images.js";
-import { dockerExec } from "../DockerTools.js";
+import { pullImageIfNeeded } from "../container-bridge/Images.js";
+import { dockerExec } from "../utils/DockerTools.js";
 
 /**
  * Tag for the generic node runtime image used by `source: npm`

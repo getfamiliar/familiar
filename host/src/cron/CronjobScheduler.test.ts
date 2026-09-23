@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import type { Logger, WorkspaceFile } from "@getfamiliar/shared";
-import type { WorkspaceWatcher } from "../workspace/WorkspaceWatcher.js";
+import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
 import { CronjobScheduler, pathToHandlerTarget } from "./CronjobScheduler.js";
 
 /** No-op logger satisfying the structured-logging interface used by the scheduler. */

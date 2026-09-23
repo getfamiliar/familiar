@@ -3,8 +3,8 @@ import { rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createInterface } from "node:readline";
 import type { Logger } from "@getfamiliar/shared";
-import { removeContainer } from "../../DockerTools.js";
-import type { McpFileSink } from "../../tools/LogRetentionTools.js";
+import { removeContainer } from "../../utils/DockerTools.js";
+import type { McpFileSink } from "../../utils/LogRetentionTools.js";
 import type { McpTransport } from "./McpTransport.js";
 
 /**

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Logger } from "@getfamiliar/shared";
 import { parse, YAMLParseError } from "yaml";
-import { isSafePipRequirement } from "../container-runner/PythonPackages.js";
+import { isSafePipRequirement } from "../container-bridge/PythonPackages.js";
 
 /**
  * Result of a config lint pass. `errors` are platform-level

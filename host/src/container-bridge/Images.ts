@@ -1,6 +1,6 @@
 import type { Logger } from "@getfamiliar/shared";
 import { type Bootstrap, imageRef } from "../Bootstrap.js";
-import { dockerExec, isImagePresent } from "../DockerTools.js";
+import { dockerExec, isImagePresent } from "../utils/DockerTools.js";
 
 /**
  * In `"pull"` image mode, ensure the version-pinned published image for

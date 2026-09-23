@@ -6,10 +6,10 @@ import {
 } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
-import { lintConfigFile } from "../config/ConfigLinter.js";
-import { HostConfigService } from "../config/ConfigService.js";
-import { DEFAULT_PYTHON_PACKAGES } from "../container-runner/AgentContainer.js";
-import { checkPackagesOnPyPI } from "../container-runner/PythonPackages.js";
+import { lintConfigFile } from "../utils/ConfigLinter.js";
+import { HostConfigService } from "../utils/ConfigService.js";
+import { DEFAULT_PYTHON_PACKAGES } from "../container-bridge/AgentContainer.js";
+import { checkPackagesOnPyPI } from "../container-bridge/PythonPackages.js";
 import { validateConfiguredProviders } from "../models/ProviderResolution.js";
 import { PluginHost } from "../plugins/PluginHost.js";
 import { loadPlugins } from "../plugins/PluginLoader.js";
