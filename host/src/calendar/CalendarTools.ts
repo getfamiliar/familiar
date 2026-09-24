@@ -10,6 +10,8 @@ import {
     type UpdateEventInput,
 } from "@getfamiliar/shared";
 import { DateTime } from "luxon";
+import { resolveDayBounds } from "../utils/DayBounds.js";
+import { dedupName } from "../utils/ScratchNames.js";
 import type { CalendarSafety } from "./CalendarSafety.js";
 import type { CalendarService } from "./CalendarService.js";
 import { readCoreTimezone, renderEventForAgent } from "./EventRenderer.js";
@@ -137,55 +139,6 @@ function getEventsTool(service: CalendarService): PluginTool<GetEventsArgs, stri
                 });
             }, callCtx.toolRunContext),
     };
-}
-
-/**
- * Translate the agent's day-resolution local-TZ inputs into the UTC
- * half-open `[from, to)` interval that {@link CalendarService.findEvents}
- * expects. Accepts either `day` alone or `from_day` + `to_day` together;
- * rejects mixed / missing combinations with an agent-readable error.
- *
- * `to_day` is **inclusive** at the user-facing layer (Mon–Wed includes
- * events on Wed), so the upper bound becomes `to_day + 1` at the
- * start-of-day in `coreTz` before converting to UTC.
- *
- * Exported for unit testing.
- */
-export function resolveDayBounds(
-    args: GetEventsArgs,
-    coreTz: string,
-): { from: string; to: string } {
-    const hasDay = typeof args.day === "string" && args.day.length > 0;
-    const hasFromDay = typeof args.from_day === "string" && args.from_day.length > 0;
-    const hasToDay = typeof args.to_day === "string" && args.to_day.length > 0;
-    if (hasDay && (hasFromDay || hasToDay)) {
-        throw new Error("pass either `day` or `from_day`+`to_day`, not both");
-    }
-    if (!hasDay && hasFromDay !== hasToDay) {
-        throw new Error("`from_day` and `to_day` must be set together");
-    }
-    if (!hasDay && !hasFromDay) {
-        throw new Error("provide `day` (single day) or `from_day`+`to_day` (range)");
-    }
-    const fromDay = hasDay ? (args.day as string) : (args.from_day as string);
-    const toDay = hasDay ? (args.day as string) : (args.to_day as string);
-    const lower = DateTime.fromISO(fromDay, { zone: coreTz }).startOf("day");
-    if (!lower.isValid) {
-        throw new Error(`invalid day "${fromDay}" — expected YYYY-MM-DD`);
-    }
-    const upper = DateTime.fromISO(toDay, { zone: coreTz }).startOf("day").plus({ days: 1 });
-    if (!upper.isValid) {
-        throw new Error(`invalid day "${toDay}" — expected YYYY-MM-DD`);
-    }
-    if (upper <= lower) {
-        throw new Error(`from_day "${fromDay}" must not be after to_day "${toDay}"`);
-    }
-    const from = lower.toUTC().toISO({ suppressMilliseconds: true });
-    const to = upper.toUTC().toISO({ suppressMilliseconds: true });
-    if (!from || !to) {
-        throw new Error("failed to convert day bounds to UTC");
-    }
-    return { from, to };
 }
 
 interface GetEventArgs {
@@ -812,24 +765,4 @@ async function readFromScratch(scratchPath: string, scratchDir: string): Promise
     }
     const absolute = path.join(scratchDir, trimmed);
     return fs.readFile(absolute);
-}
-
-function dedupName(name: string, used: Set<string>): string {
-    const cleaned = name.replace(/[/\\]/g, "_").replace(/^\.+/, "");
-    let candidate = cleaned.length > 0 ? cleaned : "attachment";
-    if (!used.has(candidate)) {
-        used.add(candidate);
-        return candidate;
-    }
-    const dot = candidate.lastIndexOf(".");
-    const stem = dot > 0 ? candidate.slice(0, dot) : candidate;
-    const ext = dot > 0 ? candidate.slice(dot) : "";
-    for (let i = 2; i < 1000; i++) {
-        candidate = `${stem} (${i})${ext}`;
-        if (!used.has(candidate)) {
-            used.add(candidate);
-            return candidate;
-        }
-    }
-    throw new Error("could not dedupe attachment name");
 }

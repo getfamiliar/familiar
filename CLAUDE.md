@@ -191,8 +191,8 @@ Top-level groups in `config/config.yml`:
 - `core` — `postgresPassword`, `defaultChatChannel`, optional `logRetentionDays`. Required.
 - `inference` — `provider`, `defaultModel`, `apiKeys.<provider>` map. Required.
 - `mail` / `calendar` — cross-provider settings (send / attendee safety knobs). `emitEventsInDev` (default `false`) controls whether a dev instance (`FAMILIAR_DEV=1`) emits `mail:*` / `calendar:*` bus events; by default pollers still sync but the events are dropped (`host/src/utils/DevEventGate.ts`), so a dev instance sharing the production account doesn't replay its whole backlog. Production ignores the flag.
-- per-plugin (`telegram`, `whatsapp`, …) — owned by the plugin; plugin parses its own subtree and
-  self-disables when absent.
+- `storage` — cloud-storage mounts and policy (`allowWrite`, `searchTimeoutMs`, `runQuotaMb`, `mounts.<alias>` with `plugin` / `account` / `drive` / `access` / `writeRoots` / `searchByDefault`). Parsed and statically linted by `host/src/storage/StorageConfig.ts` (also part of `config lint` and the daemon boot; plugin-aware checks run after `prepare`). Managed via `familiar storage list|add|remove|lint`; `add` / `remove` splice the file textually (`host/src/utils/ConfigDocument.ts`) so comments survive. Storage providers implement the `StorageProvider` SPI (`shared/src/Storage.ts`) and register via `ctx.storage.registerProvider` in **`prepare()`** (not `start()`) so the CLI reaches them without the daemon; the host `StorageService` owns refs, policy, search fan-out, cross-mount copy and the per-run byte quota, and the core `storage_*` tools are always registered — policy is enforced per call.
+- per-plugin (`telegram`, `whatsapp`, …) — owned by the plugin; plugin parses its own subtree and self-disables when absent.
 
 Container-side env stays explicit: `Start.ts` reads from the config service and hand-picks which
 values become container env vars. **Proxy-placeholder API keys** (e.g. `FEATHERLESS_API_KEY=via-proxy`
@@ -397,7 +397,7 @@ Ephemeral runtime scratch lives in `tmp/` instead (gitignored, safe to wipe):
   - `src/TriageWatcher.ts` is a placeholder for the input-event watcher (claims events `pending → running`, currently just marks them done). The real input-event watcher and the new agentrun scheduler land in the next plan.
   - Runs as non-root `node` user.
   - Docker build context is the project root (not `container/`), so `shared/` is available during image build.
-  - Both `container/src/` and `shared/build/` are bind-mounted into the running container (read-only), so source edits in either package take effect on the next daemon restart without an image rebuild. The `npm run dev` launcher keeps `shared/build/` fresh before the daemon starts. The agent image itself is (re)built on every `familiar start` via `ensureAgentImage` — docker's layer cache makes the no-change case fast, and `container/Dockerfile` or `package.json` changes are picked up automatically.
+  - Both `container/src/` and `shared/build/` are bind-mounted into the running container (read-only), so source edits in either package take effect on the next daemon restart without an image rebuild. The `npm run dev` launcher keeps `shared/build/` fresh before the daemon starts. The agent image itself is (re)built on every `familiar start` via `ensureAgentImage` — docker's layer cache makes the no-change case fast, and `container/Dockerfile` or `package.json` changes are picked up automatically. The Dockerfile orders layers so source edits (`shared/`, `container/src/`) never invalidate the heavy download layers (apt, pip, npm install); pip/npm use BuildKit cache mounts, and every Dockerfile's `FROM` is pinned by digest so upstream tag republishes don't trigger rebuilds (bump pins deliberately via `docker buildx imagetools inspect <tag>`).
 
 ## CLI output
 

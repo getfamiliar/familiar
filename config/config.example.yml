@@ -292,7 +292,30 @@ inference:
 #   allowAttendees: false    # when false, attendees passed to cal_create_event are silently dropped
 #   emitEventsInDev: false   # dev instances only (FAMILIAR_DEV=1): false = pollers run but emit no calendar:* events
 
-# Microsoft 365 plugin (mail + calendar). All keys are optional —
+# Core cloud-storage settings (cross-provider). Mounts map an alias the
+# agent uses in refs ("privat:/Steuer/2025/Bescheid.pdf") onto one
+# plugin / account / drive. Easiest: `familiar storage list` to discover
+# drives, `familiar storage add …` to write a mount, `familiar storage
+# lint --online` to verify. Writes are off unless allowWrite is true AND
+# the mount has access: readwrite; even then only inside writeRoots.
+# storage:
+#   allowWrite: false        # master switch for every storage write (write, mkdir, move, copy, delete)
+#   searchTimeoutMs: 8000    # per-mount timeout of storage_search
+#   runQuotaMb: 200          # bytes moved (down/upload, cross-mount copy) per agent run
+#   mounts:
+#     privat:
+#       plugin: ms365
+#       account: me@example.com
+#       access: read          # read (default) | readwrite
+#     team:
+#       plugin: ms365
+#       account: me@company.com
+#       drive: sites/Verwaltung/Dokumente   # selector from `familiar storage list`; omitted = own OneDrive
+#       access: readwrite
+#       writeRoots: ["/Familiar"]           # default; ["/"] = whole drive
+#       searchByDefault: true               # false = only searched when named in storage_search `mounts`
+
+# Microsoft 365 plugin (mail + calendar + OneDrive/SharePoint storage). All keys are optional —
 # defaults are operational, so a fresh install just needs at least
 # one cached login (run `./cli.sh ms365 login` to add one). See
 # plugins/ms365/README.md for the full guide.
@@ -314,6 +337,8 @@ inference:
 #     refreshCron: "every sunday at 03:00"  # full re-walk via scan-generation tag (drops stale rows)
 #     lookbackDays: 365      # delta window: how far back to surface events
 #     lookaheadDays: 730     # delta window: how far ahead to surface events
+#   storage:
+#     enabled: true          # false = don't offer OneDrive / SharePoint to the core storage_* tools
 
 # Tesla plugin (read-only). All keys are optional — the defaults are
 # operational, so a fresh install just needs a login (run

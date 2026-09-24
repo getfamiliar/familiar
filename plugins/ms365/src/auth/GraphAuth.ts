@@ -6,7 +6,12 @@ import {
     PublicClientApplication,
     type TokenCacheContext,
 } from "@azure/msal-node";
-import { type AppRegistration, authorityUrl, GRAPH_SCOPES } from "./AppRegistration.js";
+import {
+    type AppRegistration,
+    authorityUrl,
+    LOGIN_SCOPES,
+    MAIL_CALENDAR_SCOPES,
+} from "./AppRegistration.js";
 
 /**
  * Information about a logged-in account as seen by the plugin. Lifted
@@ -65,12 +70,14 @@ export class GraphAuth {
      *
      * The first call also seeds {@link cachedAccount}; subsequent calls
      * reuse it, so we don't re-walk the cache for every poll iteration.
+     *
+     * @param scopes - Scopes to acquire; defaults to the mail + calendar set.
      */
-    async getAccessTokenSilent(): Promise<string> {
+    async getAccessTokenSilent(scopes: readonly string[] = MAIL_CALENDAR_SCOPES): Promise<string> {
         const account = await this.ensureAccount();
         const result = await this.app.acquireTokenSilent({
             account,
-            scopes: [...GRAPH_SCOPES],
+            scopes: [...scopes],
         });
         if (!result || result.accessToken.length === 0) {
             throw new Error(`acquireTokenSilent returned no access token for ${account.username}`);
@@ -90,7 +97,7 @@ export class GraphAuth {
         deviceCodeCallback: (message: string) => void,
     ): Promise<AccountSummary> {
         const result = await this.app.acquireTokenByDeviceCode({
-            scopes: [...GRAPH_SCOPES],
+            scopes: [...LOGIN_SCOPES],
             deviceCodeCallback: (response) => deviceCodeCallback(response.message),
         });
         if (!result?.account) {

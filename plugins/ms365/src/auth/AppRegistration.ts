@@ -38,19 +38,18 @@ export const DEFAULT_APP: AppRegistration = {
 };
 
 /**
- * Microsoft Graph permission scopes the plugin requests on every
- * sign-in. Mirrors the consent surface configured on the bundled
- * multi-tenant app — see the "App scopes" table in the plugin README
- * for what each one is used for. `offline_access` is what mints the
- * refresh token msal-node caches; without it every silent-acquire
- * eventually fails.
+ * Graph scopes the mail and calendar features acquire tokens for. Also
+ * part of {@link LOGIN_SCOPES}, so a single login covers every feature.
+ * `offline_access` is what mints the refresh token msal-node caches;
+ * without it every silent-acquire eventually fails.
+ * `MailboxSettings.ReadWrite` is included for a future out-of-office
+ * automation that needs read+write on mailbox settings.
  *
- * Scope set covers mail (own + shared) today. Calendar scopes will be
- * appended here so a single login covers both features once calendar
- * lands. `MailboxSettings.ReadWrite` is included now for a future
- * out-of-office automation that needs read+write on mailbox settings.
+ * Kept separate from {@link STORAGE_SCOPES} on purpose: a silent
+ * acquire asks for exactly these, so logins that predate the storage
+ * scopes keep working for mail and calendar until the user re-logs in.
  */
-export const GRAPH_SCOPES: readonly string[] = [
+export const MAIL_CALENDAR_SCOPES: readonly string[] = [
     "email",
     "Mail.Read",
     "Mail.Read.Shared",
@@ -65,6 +64,27 @@ export const GRAPH_SCOPES: readonly string[] = [
     "OnlineMeetings.ReadWrite",
     "offline_access",
     "User.Read",
+];
+
+/**
+ * Graph scopes the cloud-storage provider (OneDrive + SharePoint
+ * document libraries) acquires tokens for. A login without consent for
+ * these surfaces as `AuthExpired` on storage calls only.
+ */
+export const STORAGE_SCOPES: readonly string[] = [
+    "Files.ReadWrite.All",
+    "Sites.ReadWrite.All",
+    "offline_access",
+    "User.Read",
+];
+
+/**
+ * Everything a `familiar ms365 login` asks consent for — the union of
+ * the per-feature scope sets. See the "App scopes" table in the plugin
+ * README for what each one is used for.
+ */
+export const LOGIN_SCOPES: readonly string[] = [
+    ...new Set([...MAIL_CALENDAR_SCOPES, ...STORAGE_SCOPES]),
 ];
 
 /**

@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { resolveDayBounds } from "./CalendarTools.js";
+import { resolveDayBounds, resolveOpenDayBounds } from "./DayBounds.js";
 
 describe("resolveDayBounds", () => {
     it("turns `day` into the local-tz [00:00, next 00:00) window in UTC (Berlin, CEST)", () => {
@@ -85,5 +85,25 @@ describe("resolveDayBounds — cross-zone day-boundary regression", () => {
         // — so the event must straddle [from, to).
         assert.ok(eventEndUtc >= from, `event end ${eventEndUtc} must be >= from ${from}`);
         assert.ok(eventStartUtc < to, `event start ${eventStartUtc} must be < to ${to}`);
+    });
+});
+
+describe("resolveOpenDayBounds", () => {
+    it("allows either side to be omitted", () => {
+        assert.deepEqual(resolveOpenDayBounds({}, "UTC"), { from: undefined, to: undefined });
+        const onlyFrom = resolveOpenDayBounds({ from_day: "2026-05-21" }, "Europe/Berlin");
+        assert.equal(onlyFrom.from, "2026-05-20T22:00:00Z");
+        assert.equal(onlyFrom.to, undefined);
+        const onlyTo = resolveOpenDayBounds({ to_day: "2026-05-21" }, "Europe/Berlin");
+        assert.equal(onlyTo.from, undefined);
+        assert.equal(onlyTo.to, "2026-05-21T22:00:00Z");
+    });
+
+    it("rejects inverted and malformed ranges", () => {
+        assert.throws(
+            () => resolveOpenDayBounds({ from_day: "2026-05-22", to_day: "2026-05-21" }, "UTC"),
+            /must not be after/,
+        );
+        assert.throws(() => resolveOpenDayBounds({ to_day: "x" }, "UTC"), /invalid day/);
     });
 });

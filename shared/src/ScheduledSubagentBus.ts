@@ -1,7 +1,7 @@
 import type { Logger } from "./logging/Logger.js";
 import type { NotificationHandler, PostgresConnection } from "./PostgresConnection.js";
-import { SCHEDULED_SUBAGENTS_CHANNEL, SCHEMA_SQL } from "./Schema.js";
 import type { NewScheduledSubagent, ScheduledSubagentRow } from "./ScheduledSubagent.js";
+import { SCHEDULED_SUBAGENTS_CHANNEL, SCHEMA_SQL } from "./Schema.js";
 
 /** Disposer returned by {@link ScheduledSubagentBus.listen}. */
 export type ScheduledSubagentUnsubscribe = () => Promise<void>;

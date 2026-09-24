@@ -1,7 +1,8 @@
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ConfigService } from "@getfamiliar/shared";
-import { parse, stringify, YAMLParseError } from "yaml";
+import { parse, YAMLParseError } from "yaml";
+import { setConfigValue } from "./ConfigDocument.js";
 
 /**
  * Host-side {@link ConfigService} backed by `config/config.yml`.
@@ -156,10 +157,16 @@ export class HostConfigService implements ConfigService {
      * overwritten on the unmodified portion of the file.
      */
     async set(key: string, value: unknown): Promise<void> {
-        const fresh = readAndParse(this.filePath);
-        writePath(fresh, key, value);
-        await persist(this.filePath, fresh);
-        this.state = fresh;
+        // Edit through the YAML Document API so the user's comments
+        // survive; re-read from disk first so concurrent hand-edits
+        // aren't silently overwritten.
+        const text = readFileSync(this.filePath, "utf-8");
+        // Validate the key shape (and reject non-mapping intermediates)
+        // against the parsed state before touching the text.
+        writePath(readAndParse(this.filePath), key, value);
+        const updated = setConfigValue(text, key, value);
+        await persist(this.filePath, updated);
+        this.state = readAndParse(this.filePath);
     }
 
     /**
@@ -261,12 +268,11 @@ function writePath(root: Record<string, unknown>, path: string, value: unknown):
 }
 
 /**
- * Serialize `state` back to YAML and atomically replace the file via
+ * Atomically replace the file with already-rendered YAML via
  * write-temp + rename. Atomicity matters because a daemon and an
  * interactive `set` command may both be running.
  */
-async function persist(filePath: string, state: Record<string, unknown>): Promise<void> {
-    const yaml = stringify(state);
+async function persist(filePath: string, yaml: string): Promise<void> {
     const tmp = `${filePath}.tmp.${process.pid}`;
     writeFileSync(tmp, yaml, "utf-8");
     try {

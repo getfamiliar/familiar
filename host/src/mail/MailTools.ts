@@ -16,6 +16,7 @@ import {
 } from "@getfamiliar/shared";
 import { DateTime } from "luxon";
 import { readCoreTimezone } from "../calendar/EventRenderer.js";
+import { dedupName } from "../utils/ScratchNames.js";
 import type { MailRegistry } from "./MailRegistry.js";
 import type { MailSafety } from "./MailSafety.js";
 
@@ -814,29 +815,4 @@ function resolveSender(
 
 function isMailFolder(value: unknown): value is MailFolder {
     return value === "inbox" || value === "archive" || value === "trash" || value === "sent";
-}
-
-/**
- * Pick a basename safe to write under `/scratch/<event-id>/`, disambiguating
- * against names already used in this tool call. Mirrors the helper in
- * `CalendarTools` so a multi-attachment fetch never overwrites itself.
- */
-function dedupName(name: string, used: Set<string>): string {
-    const cleaned = name.replace(/[/\\]/g, "_").replace(/^\.+/, "");
-    let candidate = cleaned.length > 0 ? cleaned : "attachment";
-    if (!used.has(candidate)) {
-        used.add(candidate);
-        return candidate;
-    }
-    const dot = candidate.lastIndexOf(".");
-    const stem = dot > 0 ? candidate.slice(0, dot) : candidate;
-    const ext = dot > 0 ? candidate.slice(dot) : "";
-    for (let i = 2; i < 1000; i++) {
-        candidate = `${stem} (${i})${ext}`;
-        if (!used.has(candidate)) {
-            used.add(candidate);
-            return candidate;
-        }
-    }
-    throw new Error("could not dedupe attachment name");
 }

@@ -150,6 +150,10 @@ same set.
 | `Calendars.ReadWrite`          | Read events from the user's own calendars during delta polling; create new events via `cal_create_event`. |
 | `Calendars.ReadWrite.Shared`   | Same, for calendars shared with the user (delegated access).                          |
 | `OnlineMeetings.ReadWrite`     | Populate `onlineMeeting.joinUrl` on Teams meetings created via `cal_create_event` with `is_videocall: true`. |
+| `Files.ReadWrite.All`          | Cloud storage: read, search and (when `storage.allowWrite` allows) write files in OneDrive and document libraries the user can access. |
+| `Sites.ReadWrite.All`          | Cloud storage: discover SharePoint sites and their document libraries for `familiar storage list` / mounts. |
+
+Mail and calendar acquire tokens for their own scopes only, so a login made before the storage scopes existed keeps working for mail and calendar. Storage calls on such a login fail as "auth expired" until you run `familiar ms365 login` once more for that account and consent to the file permissions.
 
 ### 2. Log in
 
@@ -261,7 +265,7 @@ project. To register your own Entra ID Public Client app:
    `Mail.Read.Shared`, `Mail.ReadWrite`, `Mail.ReadWrite.Shared`, `Mail.Send`,
    `Mail.Send.Shared`, `MailboxFolder.Read`, `MailboxSettings.ReadWrite`,
    `Calendars.ReadWrite`, `Calendars.ReadWrite.Shared`,
-   `OnlineMeetings.ReadWrite`).
+   `OnlineMeetings.ReadWrite`, `Files.ReadWrite.All`, `Sites.ReadWrite.All`).
    Click **Grant admin consent** if your tenant requires it.
 6. Put the values into `config.yml`:
 
@@ -294,19 +298,20 @@ directly using the host-side token cache.
 | `ms365.tenantId`                      | `common` | OAuth authority tenant.                                                            |
 | `ms365.mail.enabled`                  | `true`   | Master switch for the mail feature. `false` skips polling and unregisters the `ms365_*` mail tools. |
 | `ms365.mail.mailboxes`                | `[]`     | Whitelist; empty = every logged-in account's primary mailbox.                      |
-| `ms365.mail.allowSend`                | `false`  | `false` → every `ms365_send_*` becomes a draft.                                    |
-| `ms365.mail.recipientWhitelist`       | `[]`     | Allowed addresses or `@domain` anchors when `allowSend=true`.                      |
+| `mail.allowSend` *(core key)*         | `false`  | `false` → every `mail_send_*` becomes a draft (all providers).                     |
+| `mail.recipientWhitelist` *(core key)* | `[]`    | Allowed addresses or `@domain` anchors when `allowSend=true`.                      |
 | `ms365.mail.pollingInterval`          | 15       | Minutes between successful polls.                                                  |
 | `ms365.mail.pollingBackoff`           | 1        | Minutes; base of exponential backoff on poll errors. Cap = `pollingInterval × 4`.  |
 | `ms365.calendar.enabled`              | `true`   | Master switch for the calendar feature. `false` skips polling and does not register the ms365 calendar provider. |
 | `ms365.calendar.calendars`            | `[]`     | Calendar names to subscribe to. Empty = primary calendar only.                     |
-| `ms365.calendar.allowAttendees`       | `false`  | When `false`, attendees on `cal_create_event` are silently dropped.                |
+| `calendar.allowAttendees` *(core key)* | `false` | When `false`, attendees on `cal_create_event` are silently dropped.                |
 | `ms365.calendar.defaultReminderMinutesBeforeStart` | 15 | Default reminder window for events the agent creates.                            |
 | `ms365.calendar.pollingInterval`      | 15       | Minutes between incremental delta polls.                                           |
 | `ms365.calendar.pollingBackoff`       | 1        | Minutes; base of exponential backoff on poll errors.                               |
 | `ms365.calendar.refreshCron`          | `every sunday at 03:00` | Friendly-cron expression for the full re-walk that reconciles deletions. |
 | `ms365.calendar.lookbackDays`         | 365      | Delta window: how far back the poller surfaces events.                             |
 | `ms365.calendar.lookaheadDays`        | 730      | Delta window: how far ahead the poller surfaces events.                            |
+| `ms365.storage.enabled`               | `true`   | `false` = don't offer OneDrive / SharePoint to the core `storage_*` tools.         |
 
 ## Calendar — the agent's surface
 
@@ -340,3 +345,27 @@ teamsForBusiness` in the Graph payload, so the response carries a `joinUrl`).
 When `ms365.calendar.allowAttendees` is `false`, the plugin silently drops
 the `attendees` list before hitting Graph and surfaces a `note` field in the
 tool's result so the model understands no invitations went out.
+
+## Cloud storage — OneDrive and SharePoint
+
+The plugin registers a storage provider for the core `storage_*` tools (see the main README, "Cloud storage"). It covers the account's own OneDrive and every SharePoint document library the account can reach. Nothing is mounted automatically: discover drives with `familiar storage list` and add mounts with `familiar storage add ms365 <upn> …`.
+
+Drive selectors (the mount's `drive:` value, printed by `familiar storage list`):
+
+| Selector | Drive |
+|---|---|
+| *(omitted)* | the account's own OneDrive |
+| `sites/<site>/<library>` | library of `https://<tenant>.sharepoint.com/sites/<site>` |
+| `teams/<site>/<library>` | library of `https://<tenant>.sharepoint.com/teams/<site>` |
+| `root/<library>` | library of the tenant's root site |
+| `drives/<driveId>` | any drive by Graph id (fallback) |
+
+Behaviour notes:
+
+- Paths are native (`root:/a/b:` addressing); names are unique and case-insensitive per folder.
+- Search uses Graph drive search (names and contents); Graph does not say where a hit matched, so rows report `matched_in: unknown`.
+- Uploads up to 4 MiB are a single PUT; larger files stream through an upload session in 10 MiB chunks. Replacing a file sends the revision (`eTag`) as `If-Match`.
+- Deletes go to the recycle bin (Graph `DELETE`); permanent deletion is never used.
+- Throttling (429 / 503 / 504) is retried with `Retry-After`, for mail and calendar calls too.
+- `ms365.storage.enabled: false` stops the plugin from offering storage at all.
+- Live contract tests: `FAMILIAR_LIVE_MS365=<upn> npm test` in `plugins/ms365` (optional `FAMILIAR_LIVE_MS365_DATA_DIR`, `FAMILIAR_LIVE_MS365_DRIVE`, `FAMILIAR_LIVE_MS365_BASE`). They create and trash a scratch folder on that drive.

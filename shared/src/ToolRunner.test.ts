@@ -185,3 +185,46 @@ test("runTextTool propagates throws", async () => {
         (err: unknown) => err instanceof ToolError && err.code === "Nope",
     );
 });
+
+test("runJsonLinesTool prepends the header line when within budget", async () => {
+    const { ctx } = makeSpyCtx(10_000);
+    const out = await runJsonLinesTool(async () => [{ a: 1 }, { a: 2 }], ctx, { header: "[h]" });
+    assert.equal(out, '[h]\n{"a":1}\n{"a":2}');
+});
+
+test("runJsonLinesTool returns only the header for an empty result", async () => {
+    const { ctx } = makeSpyCtx(10_000);
+    const out = await runJsonLinesTool(async () => [], ctx, { header: "[empty]" });
+    assert.equal(out, "[empty]");
+});
+
+test("runJsonLinesTool computes a lazy header after the body ran", async () => {
+    const { ctx } = makeSpyCtx(10_000);
+    let count = 0;
+    const out = await runJsonLinesTool(
+        async () => {
+            count = 3;
+            return [{ a: 1 }];
+        },
+        ctx,
+        () => ({ header: `[n=${count}]` }),
+    );
+    assert.equal(out.split("\n")[0], "[n=3]");
+});
+
+test("runJsonLinesTool keeps the header on truncation and spills it too", async () => {
+    const { ctx, spills } = makeSpyCtx(100);
+    const rows = Array.from({ length: 50 }, (_, i) => ({ i, pad: "x".repeat(20) }));
+    const out = await runJsonLinesTool(async () => rows, ctx, { header: "[hdr]" });
+    const lines = out.split("\n");
+    assert.equal(lines[0], "[hdr]");
+    assert.match(lines[lines.length - 1] ?? "", /"truncated":true/);
+    assert.ok(spills[0]?.bytes.toString("utf8").startsWith("[hdr]\n"));
+});
+
+test("runTextTool keeps the header on truncation", async () => {
+    const { ctx } = makeSpyCtx(20);
+    const out = await runTextTool(async () => "y".repeat(1000), ctx, { header: "[text]" });
+    assert.ok(out.startsWith("[text]\n"));
+    assert.match(out, /\[truncated; full result at/);
+});

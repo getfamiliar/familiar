@@ -45,7 +45,9 @@ const CALENDAR_EVENT_SELECT =
 const IMMUTABLE_ID_PREFER = 'IdType="ImmutableId"';
 
 /** Token provider — async because msal-node's `acquireTokenSilent` is async. */
-export type TokenProvider = () => Promise<string>;
+import { GraphError, graphFetch, type TokenProvider } from "./GraphHttp.js";
+
+export { GraphError, type TokenProvider };
 
 /**
  * Narrow projection of a Graph calendar. Only the fields the poller
@@ -232,39 +234,6 @@ export interface GraphOutgoing {
 }
 
 /**
- * Thrown when Graph returns a non-2xx response. The host-side log
- * still carries the full URL + raw body for diagnosis; the
- * agent-facing tool layer catches this and converts it into a
- * structured `{ok:false, error:{...}}` payload before returning to
- * the model (see `MailTools.ts`).
- *
- * 410 Gone on a delta URL is the documented "delta link expired,
- * start over" signal — the poll loop catches it and drops the cursor.
- */
-export class GraphError extends Error {
-    readonly status: number;
-    readonly url: string;
-    readonly body: string;
-    /** Graph's `error.code` if the body decoded as JSON; `null` otherwise. */
-    readonly code: string | null;
-    /** Graph's `error.message` if the body decoded as JSON; the raw text otherwise. */
-    readonly graphMessage: string;
-
-    constructor(status: number, url: string, body: string) {
-        const decoded = decodeGraphErrorBody(body);
-        super(
-            `Graph ${status} ${decoded.code ?? "error"}: ${decoded.message.slice(0, 500)} ` +
-                `(${url})`,
-        );
-        this.status = status;
-        this.url = url;
-        this.body = body;
-        this.code = decoded.code;
-        this.graphMessage = decoded.message;
-    }
-}
-
-/**
  * Locate the RFC 2822 header/body separator in a MIME blob — the first
  * blank line, expressed as either `CRLF CRLF` or `LF LF`. Returns the
  * index of the start of that blank line so the caller can `slice(0, idx)`
@@ -280,24 +249,6 @@ function findBlankLine(s: string): number {
         return lf;
     }
     return -1;
-}
-
-/**
- * Pull `{code, message}` out of a Graph error body if possible. Falls
- * back to the raw body string when the response isn't JSON-shaped —
- * Graph occasionally returns HTML on gateway errors.
- */
-function decodeGraphErrorBody(body: string): { code: string | null; message: string } {
-    try {
-        const parsed = JSON.parse(body) as {
-            error?: { code?: unknown; message?: unknown };
-        };
-        const code = typeof parsed.error?.code === "string" ? parsed.error.code : null;
-        const message = typeof parsed.error?.message === "string" ? parsed.error.message : body;
-        return { code, message };
-    } catch {
-        return { code: null, message: body };
-    }
 }
 
 /**
@@ -976,24 +927,10 @@ export class GraphClient {
             extraHeaders?: Record<string, string>;
         },
     ): Promise<Response> {
-        const token = await this.tokenProvider();
         const preferTokens = [IMMUTABLE_ID_PREFER, ...(options?.preferTokens ?? [])];
-        const headers: Record<string, string> = {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-            Prefer: preferTokens.join(", "),
-            ...(options?.extraHeaders ?? {}),
-        };
-        let body: string | undefined;
-        if (options?.jsonBody !== undefined) {
-            headers["Content-Type"] = "application/json";
-            body = JSON.stringify(options.jsonBody);
-        }
-        const response = await fetch(url, { method, headers, body });
-        if (!response.ok) {
-            const text = await response.text().catch(() => "");
-            throw new GraphError(response.status, url, text);
-        }
-        return response;
+        return graphFetch(this.tokenProvider, method, url, {
+            headers: { Prefer: preferTokens.join(", "), ...(options?.extraHeaders ?? {}) },
+            jsonBody: options?.jsonBody,
+        });
     }
 }

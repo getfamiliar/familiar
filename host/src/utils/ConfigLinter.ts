@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type { Logger } from "@getfamiliar/shared";
 import { parse, YAMLParseError } from "yaml";
 import { isSafePipRequirement } from "../container-bridge/PythonPackages.js";
+import { lintStorageStatic } from "../storage/StorageConfig.js";
 
 /**
  * Result of a config lint pass. `errors` are platform-level
@@ -91,6 +92,16 @@ export function lintConfigFile(path: string): ConfigLintResult {
         "inference.contextManagement.slidingWindowPercentage",
         warnings,
     );
+    // Storage is a core group like `inference`; plugin-aware checks
+    // (unknown `plugin:`) need the loaded providers and run separately.
+    for (const finding of lintStorageStatic(config.storage)) {
+        const text = `storage${finding.alias ? `.mounts.${finding.alias}` : ""}: ${finding.message}`;
+        if (finding.severity === "error") {
+            errors.push(text);
+        } else if (finding.severity === "warning") {
+            warnings.push(text);
+        }
+    }
 
     return { ok: errors.length === 0, errors, warnings };
 }

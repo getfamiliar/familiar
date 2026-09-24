@@ -134,6 +134,28 @@ export {
 export type { NewStepResult, StepResultRow } from "./StepResult.js";
 export { StepResultBus, type StepResultUnsubscribe } from "./StepResultBus.js";
 export {
+    type StorageApi,
+    type StorageCapabilities,
+    type StorageConflict,
+    type StorageContentHash,
+    type StorageDownloadResult,
+    type StorageDrive,
+    type StorageDriveKind,
+    StorageError,
+    type StorageErrorCode,
+    type StorageHashAlgo,
+    type StorageItem,
+    type StorageItemKind,
+    type StorageListOrder,
+    type StorageMatchedIn,
+    type StoragePage,
+    type StoragePageOptions,
+    type StorageProvider,
+    type StorageSearchHit,
+    type StorageSearchQuery,
+    type StorageUploadSource,
+} from "./Storage.js";
+export {
     dayBoundsInZone,
     type ParseInZoneResult,
     parseInZone,
@@ -150,6 +172,7 @@ export {
     runTextTool,
     ToolError,
     type ToolRunContext,
+    type ToolRunOptions,
     truncateUtf8,
 } from "./ToolRunner.js";
 export {

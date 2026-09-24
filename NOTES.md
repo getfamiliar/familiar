@@ -2,9 +2,11 @@ NEXT:
 
 * Aliase für Modelle
 
-* Mail: Lass ihn alle ausgehenden Mails verarbeiten und im Original speichern, mit limit.
+* Telegram Group Summaries
 
-* Sweep the remaining workspace handlers for any lingering "start a subagent just to get a tool" guidance — every tool is directly callable now, so those should read files and follow instructions instead. (The tool rename to start_subagent / schedule_subagent and the core semantics reword in CONTEXT.md, chat/index.md and the skills catalog are done.)
+* Whatsapp Single Mode
+
+* Mail: Lass ihn alle ausgehenden Mails verarbeiten und im Original speichern, mit limit.
 
 * Additional pypi packages for the agent container: how to do that?
 

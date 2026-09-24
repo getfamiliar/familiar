@@ -2,8 +2,13 @@ import path from "node:path";
 import type { HostContext } from "@getfamiliar/shared";
 import { type CommandDef, defineCommand } from "citty";
 import { GraphAuth } from "./auth/GraphAuth.js";
-import { LoginStore, loginDirectory } from "./auth/LoginStore.js";
-import { readMs365AuthConfig, readMs365MailConfig, resolveAppRegistration } from "./Config.js";
+import { loginDirectory } from "./auth/LoginStore.js";
+import {
+    makeLoginStore,
+    readMs365AuthConfig,
+    readMs365MailConfig,
+    resolveAppRegistration,
+} from "./Config.js";
 import { calendarTypeOf, ownerNameOf } from "./calendar/Mapping.js";
 import { GraphClient } from "./graph/GraphClient.js";
 import { FOLDER_IDS } from "./mail/Folders.js";
@@ -172,11 +177,6 @@ function readCoreStringArray(ctx: HostContext, key: string): readonly string[] {
         }
     }
     return out;
-}
-
-function makeLoginStore(ctx: HostContext): LoginStore {
-    const auth = readMs365AuthConfig(ctx);
-    return new LoginStore(loginDirectory(ctx.dataDir), resolveAppRegistration(auth));
 }
 
 function statusCommand(

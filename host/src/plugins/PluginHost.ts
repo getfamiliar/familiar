@@ -29,6 +29,10 @@ import { PluginMcpService } from "../mcp/PluginMcpService.js";
 import { ModelMetadataService } from "../models/ModelMetadataService.js";
 import type { ResolvedProvider } from "../models/ProviderResolution.js";
 import { buildReflectionTools } from "../reflection/ReflectionTools.js";
+import { parseStorageSettings } from "../storage/StorageConfig.js";
+import { StorageRegistry } from "../storage/StorageRegistry.js";
+import { StorageService } from "../storage/StorageService.js";
+import { buildStorageTools } from "../storage/StorageTools.js";
 import { HostConfigService } from "../utils/ConfigService.js";
 import { type DevEventDomain, isEventEmissionAllowed } from "../utils/DevEventGate.js";
 import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
@@ -82,6 +86,8 @@ export class PluginHost {
     private readonly mailRegistry: MailRegistry;
     private readonly mailSafety: MailSafety;
     private readonly mailStyleStore: MailStyleStore;
+    private readonly storageRegistry: StorageRegistry;
+    private readonly storageService: StorageService;
     private readonly eventContextRegistry: EventContextRegistry;
     private readonly modelMetadataService: ModelMetadataService;
     private toolsRegistry: PluginToolsRegistry | undefined;
@@ -130,6 +136,14 @@ export class PluginHost {
         this.mailStyleStore = new MailStyleStore(boot.dataDir, (msg) =>
             log.child({ component: "mail-style" }).warn(msg),
         );
+        this.storageRegistry = new StorageRegistry();
+        this.storageService = new StorageService({
+            registry: this.storageRegistry,
+            settings: () => parseStorageSettings(this.readStorageGroup()),
+            scratchDir: boot.scratchDir,
+            stagingDir: `${boot.tmpDir}/storage-staging`,
+            log: log.child({ component: "storage" }),
+        });
         this.eventContextRegistry = new EventContextRegistry();
         this.modelMetadataService = new ModelMetadataService({
             tmpDir: boot.tmpDir,
@@ -348,6 +362,31 @@ export class PluginHost {
     }
 
     /**
+     * The shared storage service (mounts, policy, provider dispatch).
+     * Exposed for the `familiar storage` CLI, which needs the providers
+     * plugins registered during `prepare()`.
+     */
+    get storage(): StorageService {
+        return this.storageService;
+    }
+
+    /** The storage provider registry backing every plugin's `ctx.storage`. */
+    get storageProviders(): StorageRegistry {
+        return this.storageRegistry;
+    }
+
+    /**
+     * Raw `storage` config group, or `undefined`. Sub-tree access needs
+     * the host-only `getValue`; an injected plain `ConfigService` (tests)
+     * has no storage config.
+     */
+    private readStorageGroup(): unknown {
+        return this.config instanceof HostConfigService
+            ? this.config.getValue("storage")
+            : undefined;
+    }
+
+    /**
      * The shared mail-style-template store. Backs `ctx.getMailStyleTemplate`
      * (plugin read path) and the core `mailstyle_*` agent tools (write path).
      * Exposed for the same reason as {@link mail}.
@@ -514,6 +553,7 @@ export class PluginHost {
                     safety: this.mailSafety,
                 }),
                 ...buildMailStyleTools({ store: this.mailStyleStore }),
+                ...buildStorageTools(this.storageService),
                 // Reflection tools live alongside the other host-owned
                 // core tools so they share the bare-key registration
                 // path and join the `reflection` tool group with the
@@ -592,6 +632,7 @@ export class PluginHost {
             mcp: this.mcpService,
             calendar: this.calendarService,
             mail: this.mailRegistry,
+            storage: this.storageRegistry,
             devMode: isDevMode(),
             mailStyleStore: this.mailStyleStore,
             eventContextRegistry: this.eventContextRegistry,

@@ -53,6 +53,7 @@ import { PluginHost } from "../plugins/PluginHost.js";
 import { loadPlugins } from "../plugins/PluginLoader.js";
 import { PluginToolsGateway } from "../plugins/ToolsGateway.js";
 import { PluginToolsRegistry } from "../plugins/ToolsRegistry.js";
+import { lintStorageStatic } from "../storage/StorageConfig.js";
 import { lintOrThrow } from "../utils/ConfigLinter.js";
 import { HostConfigService } from "../utils/ConfigService.js";
 import { ensureNetwork, ISOLATED_NETWORK_NAME, SHARED_NETWORK_NAME } from "../utils/DockerTools.js";
@@ -170,6 +171,20 @@ export const startCommand = defineCommand({
         // plugin module state (e.g. transcribe-whisper's API key) is
         // visible to siblings the moment they begin serving.
         pluginHost.prepareAll();
+
+        // Storage mounts: the schema checks already ran in `lintOrThrow`;
+        // the plugin-aware ones (does `plugin:` name a registered storage
+        // provider?) need the providers registered during `prepare`.
+        // Online checks (logins, drives) deliberately don't run here so
+        // one expired login can't block the daemon.
+        const storageErrors = lintStorageStatic(config.getValue("storage"), {
+            knownPlugins: pluginHost.storageProviders.pluginIds(),
+        }).filter((f) => f.severity === "error");
+        if (storageErrors.length > 0) {
+            throw new Error(
+                `storage config invalid (run \`familiar storage lint\`):\n  - ${storageErrors.map((f) => (f.alias ? `${f.alias}: ${f.message}` : f.message)).join("\n  - ")}`,
+            );
+        }
 
         // Resolve every configured provider against the models.dev
         // catalogue + plugin descriptors. Refresh the catalogue first so
@@ -408,6 +423,7 @@ export const startCommand = defineCommand({
             mcp: pluginHost.mcp,
             calendar: pluginHost.calendar,
             mail: pluginHost.mail,
+            storage: pluginHost.storageProviders,
             devMode: dev,
             mailStyleStore: pluginHost.mailStyle,
             eventContextRegistry: pluginHost.eventContext,

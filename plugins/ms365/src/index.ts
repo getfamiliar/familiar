@@ -1,8 +1,10 @@
 import path from "node:path";
 import { definePlugin } from "@getfamiliar/shared";
 import { buildMs365Commands } from "./Commands.js";
+import { makeLoginStore } from "./Config.js";
 import { startMs365Daemon } from "./Ms365Daemon.js";
 import { buildSentSampleTool } from "./mail/SentSampleTool.js";
+import { Ms365StorageProvider } from "./storage/Ms365StorageProvider.js";
 
 /**
  * Microsoft 365 host-side plugin.
@@ -18,6 +20,11 @@ import { buildSentSampleTool } from "./mail/SentSampleTool.js";
  * {@link startMs365Daemon} via `ctx.mail.registerProvider` and
  * `ctx.calendar.registerProvider`.
  *
+ * Cloud storage (OneDrive + SharePoint document libraries) is offered
+ * to the core `storage_*` tools through a provider registered in
+ * `prepare` — not `start` — so `familiar storage list|add|lint` can
+ * reach it without the daemon. `ms365.storage.enabled: false` opts out.
+ *
  * The plugin runs on operational defaults — no `ms365:` block in
  * `config.yml` is required. Real enablement is gated on at least one
  * login being cached in `data/ms365/auth/`; run `familiar ms365 login`
@@ -27,6 +34,11 @@ export default definePlugin({
     id: "ms365",
     workspaceTemplate: path.join(import.meta.dirname, "..", "workspace-template"),
     host: {
+        prepare: (ctx) => {
+            if (ctx.config.getBool("ms365.storage.enabled", true) !== false) {
+                ctx.storage.registerProvider(new Ms365StorageProvider(() => makeLoginStore(ctx)));
+            }
+        },
         start: (ctx) => startMs365Daemon(ctx),
         commands: (ctx) => buildMs365Commands(ctx),
         tools: () => [buildSentSampleTool()],

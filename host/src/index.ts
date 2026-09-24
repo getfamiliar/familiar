@@ -9,6 +9,7 @@ import { pluginCommand } from "./commands/Plugin.js";
 import { psqlCommand } from "./commands/Psql.js";
 import { startCommand } from "./commands/Start.js";
 import { stopCommand } from "./commands/Stop.js";
+import { buildStorageCommand } from "./commands/Storage.js";
 import { toolsCommand } from "./commands/Tools.js";
 import { PluginHost } from "./plugins/PluginHost.js";
 import { loadPlugins } from "./plugins/PluginLoader.js";
@@ -67,6 +68,7 @@ async function main(): Promise<void> {
                 cron: cronCommand,
                 tools: toolsCommand,
                 plugin: pluginCommand,
+                storage: buildStorageCommand(pluginHost),
                 ...pluginHost.buildSubCommands(),
             },
         }),

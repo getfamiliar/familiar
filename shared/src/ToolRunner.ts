@@ -113,6 +113,18 @@ export async function runJsonTool(
 }
 
 /**
+ * Optional presentation settings for {@link runJsonLinesTool} and
+ * {@link runTextTool}.
+ *
+ *   - `header`: one line prepended to the result (provenance,
+ *     pagination, …). It is always kept inline, also when the body gets
+ *     truncated, and is included at the top of the spilled file.
+ */
+export interface ToolRunOptions {
+    readonly header?: string;
+}
+
+/**
  * Run a tool whose result is a stream of JSON objects, serialized as
  * newline-delimited JSON. If the total fits within the limit, returns
  * all lines joined with `\n`. Otherwise spills the full JSONL to
@@ -128,16 +140,19 @@ export async function runJsonTool(
 export async function runJsonLinesTool(
     body: () => Promise<Iterable<object> | AsyncIterable<object>>,
     ctx: ToolRunContext,
+    options?: ToolRunOptions | (() => ToolRunOptions),
 ): Promise<string> {
     const source = await body();
     const serialized: string[] = [];
     for await (const item of asAsyncIterable(source)) {
         serialized.push(JSON.stringify(item));
     }
+    const header = resolveOptions(options).header;
+    const headerPrefix = header !== undefined ? `${header}\n` : "";
 
-    const inline = serialized.join("\n");
+    const inline = headerPrefix + serialized.join("\n");
     if (estimateTokens(inline) <= ctx.limit) {
-        return inline;
+        return header !== undefined && serialized.length === 0 ? header : inline;
     }
 
     const fullText = inline;
@@ -154,7 +169,7 @@ export async function runJsonLinesTool(
     const markerBudget = estimateTokens(upperBoundMarker);
 
     const kept: string[] = [];
-    let usedTokens = 0;
+    let usedTokens = estimateTokens(headerPrefix);
     for (const line of serialized) {
         const separator = kept.length > 0 ? 1 : 0; // newline before this line (~1 token)
         const newlineBeforeMarker = 1; // newline between last kept line and marker
@@ -170,9 +185,9 @@ export async function runJsonLinesTool(
     const marker = JSON.stringify({ truncated: true, fullResultAt, omittedLines });
 
     if (kept.length === 0) {
-        return marker;
+        return `${headerPrefix}${marker}`;
     }
-    return `${kept.join("\n")}\n${marker}`;
+    return `${headerPrefix}${kept.join("\n")}\n${marker}`;
 }
 
 /**
@@ -189,23 +204,27 @@ export async function runJsonLinesTool(
 export async function runTextTool(
     body: () => Promise<string>,
     ctx: ToolRunContext,
+    options?: ToolRunOptions | (() => ToolRunOptions),
 ): Promise<string> {
-    const text = await body();
+    const bodyText = await body();
+    const header = resolveOptions(options).header;
+    const headerPrefix = header !== undefined ? `${header}\n` : "";
+    const text = headerPrefix + bodyText;
     if (estimateTokens(text) <= ctx.limit) {
-        return text;
+        return header !== undefined && bodyText.length === 0 ? header : text;
     }
 
     const fullResultAt = await ctx.spill("result.txt", Buffer.from(text, "utf8"));
     const footer = `\n\n[truncated; full result at ${fullResultAt}]`;
-    const footerTokens = estimateTokens(footer);
+    const footerTokens = estimateTokens(footer) + estimateTokens(headerPrefix);
     // The budget is in tokens; `truncateUtf8` bounds by character count.
     // estimateTokens(s) = ceil(len/4), so the char budget for the prefix
     // is the remaining token budget × 4. Bounding `truncateUtf8` by that
     // char count is slightly conservative for multi-byte text — fine for
     // a placeholder estimator backing a truncation marker.
     const prefixCharBudget = Math.max(0, (ctx.limit - footerTokens) * 4);
-    const prefix = truncateUtf8(text, prefixCharBudget);
-    return `${prefix}${footer}`;
+    const prefix = truncateUtf8(bodyText, prefixCharBudget);
+    return `${headerPrefix}${prefix}${footer}`;
 }
 
 /**
@@ -232,6 +251,20 @@ export function truncateUtf8(str: string, maxBytes: number): string {
         charIdx += cp >= 0x10000 ? 2 : 1;
     }
     return str.slice(0, charIdx);
+}
+
+/**
+ * Normalize the options argument. A function form lets a tool compute
+ * its header *after* the body ran (e.g. from pagination state the body
+ * produced).
+ */
+function resolveOptions(
+    options: ToolRunOptions | (() => ToolRunOptions) | undefined,
+): ToolRunOptions {
+    if (options === undefined) {
+        return {};
+    }
+    return typeof options === "function" ? options() : options;
 }
 
 /** Lift a sync iterable into an async one so we can `for await` over both. */

@@ -28,6 +28,7 @@ import {
     type PostgresConnection,
     StepResultBus,
     type StepResultUnsubscribe,
+    type StorageApi,
     type WorkspaceFile,
     type WorkspaceFileFilter,
     type WorkspaceWatcherApi,
@@ -118,6 +119,13 @@ export interface HostContextImplDeps {
      */
     mail: Pick<MailApi, "registerProvider">;
     /**
+     * Shared singleton that backs `ctx.storage.registerProvider`. One
+     * instance per host process — owns the `pluginId → StorageProvider`
+     * registry consumed by the `StorageService`, the core `storage_*`
+     * tools and the `familiar storage` CLI.
+     */
+    storage: StorageApi;
+    /**
      * Whether the daemon runs in dev mode (`isDevMode()`). Gates
      * `ctx.mail.emitMailEvent` via {@link isEventEmissionAllowed}.
      */
@@ -207,6 +215,10 @@ export class HostContextImpl implements HostContext {
     readonly mail: MailApi = {
         registerProvider: (provider) => this.deps.mail.registerProvider(provider),
         emitMailEvent: (event) => this.emitMailEvent(event),
+    };
+
+    readonly storage: StorageApi = {
+        registerProvider: (provider) => this.deps.storage.registerProvider(provider),
     };
 
     getMailStyleTemplate = (

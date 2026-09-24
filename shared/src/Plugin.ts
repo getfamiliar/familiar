@@ -11,6 +11,7 @@ import type { MailApi } from "./Mail.js";
 import type { MailStyleTemplate } from "./MailStyleTemplate.js";
 import type { ModelMetaData, ModelProviderDescriptor } from "./ModelMetaData.js";
 import type { StepResultRow } from "./StepResult.js";
+import type { StorageApi } from "./Storage.js";
 import type { ToolLevel } from "./ToolLevel.js";
 import type { ToolRunContext } from "./ToolRunner.js";
 import type { WorkspaceWatcherApi } from "./WorkspaceFile.js";
@@ -364,6 +365,15 @@ export interface HostContext {
      * `mail_fetch_body` on demand.
      */
     readonly mail: MailApi;
+    /**
+     * Shared cloud-storage layer. Plugins that act as storage providers
+     * register a {@link StorageProvider} during **`prepare()`** (not
+     * `start()`) via `ctx.storage.registerProvider(provider)`, so the
+     * `familiar storage` CLI can reach them without the daemon. The core
+     * `storage_*` agent tools route through the host `StorageService`,
+     * which maps the user's configured mounts onto providers.
+     */
+    readonly storage: StorageApi;
     /**
      * Read the per-mailbox style template the user (or the
      * extract-style handler) wrote at `data/mail/templates/<mailbox>/<name>.json`.

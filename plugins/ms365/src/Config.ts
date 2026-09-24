@@ -1,5 +1,6 @@
 import type { HostContext } from "@getfamiliar/shared";
 import { type AppRegistration, DEFAULT_APP } from "./auth/AppRegistration.js";
+import { LoginStore, loginDirectory } from "./auth/LoginStore.js";
 
 /**
  * Auth options shared across every Microsoft 365 feature in this
@@ -241,4 +242,18 @@ export function resolveAppRegistration(auth: Ms365AuthConfig): AppRegistration {
         clientId: auth.clientId.length > 0 ? auth.clientId : DEFAULT_APP.clientId,
         tenantId: auth.tenantId.length > 0 ? auth.tenantId : DEFAULT_APP.tenantId,
     };
+}
+
+/**
+ * Build the login store for the configured app registration. Shared by
+ * the CLI commands and the storage provider.
+ *
+ * @param ctx - Host context (config + data dir).
+ * @returns A store over `data/ms365/auth/`; call `refresh()` before use.
+ */
+export function makeLoginStore(ctx: HostContext): LoginStore {
+    return new LoginStore(
+        loginDirectory(ctx.dataDir),
+        resolveAppRegistration(readMs365AuthConfig(ctx)),
+    );
 }
