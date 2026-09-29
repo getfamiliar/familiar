@@ -71,8 +71,15 @@ jobs:
         run: |
           set -e
           npm publish -w @getfamiliar/shared --provenance --access public
-          for p in cli-chat featherless memory ms365 telegram transcribe-whisper whatsapp; do
-            npm publish -w "@getfamiliar/plugin-$p" --provenance --access public
+          # Every workspace under plugins/ is published — a new plugin needs
+          # no edit here. Opt a plugin out with `"private": true`.
+          for dir in plugins/*/; do
+            dir="${dir%/}"
+            if [ "$(node -p "require('./$dir/package.json').private === true")" = "true" ]; then
+              echo "Skipping private plugin $dir"
+              continue
+            fi
+            npm publish -w "$dir" --provenance --access public
           done
           npm publish -w @getfamiliar/host --provenance --access public
           npm publish -w @getfamiliar/cli --provenance --access public

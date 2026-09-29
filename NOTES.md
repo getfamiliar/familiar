@@ -14,6 +14,8 @@ NEXT:
 
 * Neue Kalender Tools: list all calendars mit sync status und "resync" tool, das einfach die Delta-Dateien löscht und damit den Kalender zu einer neusynchronisation zwingt.
 
+* Web Interface: zentraler Webserver mit Plugin Option und https://www.prompt-kit.com/ basiertem zentralen Chat
+
 * Whatsapp Plugin: Group processing stopped, had to re-login. Check if we can do something against that.
 
 Features:
@@ -47,6 +49,15 @@ Neues CLI Tool: `logs`
 - Plugin-specific config linters as extension point. Special Cases:
   - ms365.calendar.refreshCron: check if it's a valid cron expression. If not, thats a problem because the delta will never be updated and the calendar will never be refreshed / keep the same from/to dates forever.
 
+
+### Later features with external deps
+
+* Firecrawl for web crawling and browsing automation (see firecrawl.dev)
+* VOICE ASSISTANT:
+  - Use Picovoice.ai components:
+    - Porcupine for local wakeword detection
+    - Eagle for speaker recognition
+
 ### Browser Automatisation
 
 - Browser Automatisierungen sind ein komplexes Feld. Läuft wie folgt: 
@@ -56,15 +67,13 @@ Neues CLI Tool: `logs`
     * Speichern von Credentials unterwegs: Username, Passwort, 2FA Seeds (wie speichern wir die sicher?)
     * Am Ende hat man einen Workflow, im idealfall self-healing, den wir unter einem namen abspeichern, bspw. "get-amazon-shopping-list". Der kann vom Agent im Container per Tool `browser_run_workflow` mit dem Namen aufgerufen werden, die Credentials werden automatisch eingespeist, und der Workflow läuft im externen Chromium Docker Container.
     * Der Agent liefert dann in Markdown die Ergebnisse zurück.
+- Recording über das Webinterface, Steuerung per Chat, Streaming von Screenshots aus dem Container.
 
 ## Workspace Linter
 
 - No unexpected .md files in the root
-- Check reserved group names in toolgroups/: "all", "none", "system", mcp group ids
-- Check the tools in the tool groups for existence
 - Parse the tools frontmatter statements and check if they are valid (existing tools and groups and parseable)
 - Parse all cron expressions to check if valid
-- Count tools per handler and warn if there are too many
 - Check token count of the aggregated system prompt and warn if too high
 
 Extreme:

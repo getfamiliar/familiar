@@ -116,7 +116,7 @@ The current split:
 
 | Core (bundled, always on) | Optional (install + whitelist) |
 | --- | --- |
-| `cli-chat`, `memory`, `telegram`, `whatsapp`, `transcribe-whisper` | `featherless`, `ms365` |
+| `cli-chat`, `memory`, `telegram`, `whatsapp`, `transcribe-whisper` | `featherless`, `ms365`, `tesla` |
 
 ### `config/plugins`
 
@@ -191,7 +191,7 @@ test ──▶ version ──┬──▶ publish-npm ────┐
 
 1. **test** — `npm ci`, full build, `format:check`, `lint`, and the workspace test suites. Gates everything else.
 2. **version** — computes the release version (see below) and exposes it as an output.
-3. **publish-npm** — vendors the `init` templates into the host package, stamps the version across all packages, builds, and publishes to npm in dependency order (`shared` → plugins → `host` → `@getfamiliar/cli`) with npm provenance.
+3. **publish-npm** — vendors the `init` templates into the host package, stamps the version across all packages, builds, and publishes to npm in dependency order (`shared` → plugins → `host` → `@getfamiliar/cli`) with npm provenance. Every workspace under `plugins/` is published automatically (the root `build` script builds them via `npm run build -w plugins`), so a new plugin needs no pipeline edit; set `"private": true` in its `package.json` to keep it off npm.
 4. **publish-images** — a matrix over the four images. Each is **built only when its own inputs change**; otherwise the release tag is re-pointed at the existing image (see below). Multi-arch (`linux/amd64,linux/arm64`), tagged with the version and `latest`, with a per-image GitHub Actions layer cache.
 5. **release** — creates the annotated git tag `v<version>` and a GitHub release with generated notes.
 
