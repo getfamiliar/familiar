@@ -202,7 +202,7 @@ export async function beginLogin(email: string): Promise<LoginSession> {
     const hiddenFields = parseHiddenInputs(response.body);
     if (hiddenFields.transaction_id === undefined) {
         throw new LoginBlockedError(
-            "the Tesla SSO authorize page carried no login form" + describePageError(response.body),
+            `the Tesla SSO authorize page carried no login form${describePageError(response.body)}`,
         );
     }
     return {
