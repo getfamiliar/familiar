@@ -81,7 +81,7 @@ export async function buildMailboxMap(
             });
             continue;
         }
-        const sharedOwner = await findReaderForShared(safeLogins, lower);
+        const sharedOwner = await findReaderForShared(safeLogins, lower, log);
         if (sharedOwner) {
             out.push({
                 upn: sharedOwner.upn,
@@ -99,9 +99,21 @@ export async function buildMailboxMap(
     return out;
 }
 
-async function findReaderForShared(
+/**
+ * Find the first login that can read `mailbox` by probing its inbox
+ * with each login's token in turn. Used both at boot (for whitelisted
+ * shared mailboxes) and on demand by the mail provider when the agent
+ * addresses a shared mailbox that isn't in the configured map.
+ *
+ * @param logins - Candidate logins, tried in order.
+ * @param mailbox - Lowercased mailbox address to probe.
+ * @param log - Sink for probe failures that aren't a plain "no access" (5xx, network).
+ * @returns The first login that can read the mailbox, or `null` when none can.
+ */
+export async function findReaderForShared(
     logins: ReadonlyArray<{ upn: string; auth: GraphAuth }>,
     mailbox: string,
+    log: (msg: string) => void,
 ): Promise<{ upn: string; auth: GraphAuth } | null> {
     for (const login of logins) {
         const client = new GraphClient(() => login.auth.getAccessTokenSilent());
@@ -110,8 +122,13 @@ async function findReaderForShared(
             return login;
         } catch (err) {
             if (err instanceof GraphError && err.status < 500) {
-                // Permission denied / not found: try the next login.
+                // Permission denied / not found: this login can't read it, try the next one.
+                continue;
             }
+            const reason = err instanceof Error ? err.message : String(err);
+            log(
+                `mailbox ${mailbox}: probe via login ${login.upn} failed (${reason}); trying next login`,
+            );
         }
     }
     return null;

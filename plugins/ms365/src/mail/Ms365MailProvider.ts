@@ -21,7 +21,7 @@ import {
     type GraphRecipient,
 } from "../graph/GraphClient.js";
 import { FOLDER_IDS, FolderAliasResolver } from "./Folders.js";
-import type { MailboxTarget } from "./MailboxMap.js";
+import { findReaderForShared, type MailboxTarget } from "./MailboxMap.js";
 import { buildMailHit } from "./MessageShape.js";
 import type { MailKind } from "./SentSampler.js";
 import { injectStyle, STYLED_TAGS } from "./StyleInjector.js";
@@ -52,9 +52,9 @@ export class Ms365MailProvider implements MailProvider {
      * Mailbox set this provider considers configured, computed once at
      * daemon start by {@link buildMailboxMap}. Search uses it to fan a
      * query across every configured mailbox when the agent didn't pin
-     * one; mutating operations still resolve their auth per-call via
-     * the active login store (so a token refresh between calls is
-     * picked up without rebuilding the map).
+     * one; every operation resolves shared mailboxes through it to the
+     * delegating login, re-reading auth from the active login store per
+     * call (so a token refresh is picked up without rebuilding the map).
      */
     private readonly mailboxMap: readonly MailboxTarget[];
 
@@ -73,6 +73,13 @@ export class Ms365MailProvider implements MailProvider {
      * outgoing message.
      */
     private readonly warnedMissingTemplate = new Set<string>();
+
+    /**
+     * Shared mailboxes outside the configured map that were resolved
+     * on demand, keyed by lowercased mailbox → UPN of the login that
+     * can read them. Saves re-probing Graph on every call.
+     */
+    private readonly discoveredSharedReaders = new Map<string, string>();
 
     constructor(ctx: HostContext, mailboxMap: readonly MailboxTarget[] = []) {
         this.ctx = ctx;
@@ -278,7 +285,7 @@ export class Ms365MailProvider implements MailProvider {
             }
             const kql = buildKqlQuery(query);
             const folderId = query.folder ? FOLDER_IDS[query.folder] : null;
-            const targets = this.resolveSearchTargets(query.mailbox);
+            const targets = await this.resolveSearchTargets(query.mailbox);
             if (targets.length === 0) {
                 return [];
             }
@@ -341,60 +348,97 @@ export class Ms365MailProvider implements MailProvider {
      * Pick which mailboxes a search call should visit.
      *
      *  - No `mailbox` filter → every entry in the configured map.
-     *  - Filter matches an entry (case-insensitive on the address) →
-     *    just that entry.
-     *  - Filter doesn't match → best-effort fallback: route through the
-     *    active login store (`clientForMailbox`-style) so an unpolled
-     *    but reachable mailbox still works on demand. When no login can
-     *    reach it, return empty so the caller's fan-in stays clean
-     *    (Graph itself would surface the error a beat later anyway).
+     *  - Filter set → the single target {@link findTarget} resolves
+     *    (own mailbox, configured shared mailbox, or an unconfigured
+     *    shared mailbox some login can read). When no login can reach
+     *    it, return empty so the host's cross-provider fan-in stays
+     *    clean — the address may belong to another mail provider.
      */
-    private resolveSearchTargets(explicit: string | undefined): readonly MailboxTarget[] {
+    private async resolveSearchTargets(
+        explicit: string | undefined,
+    ): Promise<readonly MailboxTarget[]> {
         if (typeof explicit !== "string" || explicit.length === 0) {
             return this.mailboxMap;
         }
-        const lower = explicit.toLowerCase();
-        const configured = this.mailboxMap.find((t) => t.mailbox === lower);
-        if (configured) {
-            return [configured];
-        }
-        const store: LoginStore | undefined = getActiveLogins() ?? undefined;
-        if (!store) {
-            return [];
-        }
-        const auth = store.byUpn(lower);
-        if (!auth) {
-            return [];
-        }
-        return [
-            {
-                upn: lower,
-                auth,
-                mailbox: lower,
-                isShared: false,
-            },
-        ];
+        const target = await this.findTarget(explicit);
+        return target ? [target] : [];
     }
 
     /**
-     * Resolve the {@link GraphClient} bound to whichever active login
-     * owns the requested mailbox. Throws agent-readable errors when no
-     * login store has been seeded (daemon not started?) or when no
-     * registered login can reach the mailbox (typo? wrong account?).
+     * Resolve the (login, mailbox) tuple that serves `mailbox`. A
+     * shared mailbox is never a login of its own — it's read through
+     * whichever signed-in account has delegated access. Lookup order:
+     *
+     *  1. The address is a login UPN → that login's primary mailbox.
+     *  2. The address is in the configured mailbox map → the login
+     *     that proved read access at boot.
+     *  3. Previously discovered on demand → the cached login.
+     *  4. Otherwise probe every active login's access and cache the
+     *     first one that can read it.
+     *
+     * Auth is always re-read from the live login store so a login
+     * added or refreshed after boot is picked up.
+     *
+     * @param mailbox - Mailbox address as supplied by the agent (any casing).
+     * @returns The resolved target, or `null` when no active login can read the mailbox.
+     * @throws Error when no login store has been seeded (daemon not started).
      */
-    private async clientForMailbox(mailbox: string): Promise<GraphClient> {
+    private async findTarget(mailbox: string): Promise<MailboxTarget | null> {
         const store: LoginStore | undefined = getActiveLogins() ?? undefined;
         if (!store) {
             throw new Error(
                 "no active ms365 logins; run `familiar ms365 login` and restart the daemon",
             );
         }
-        const auth = store.byUpn(mailbox);
-        if (!auth) {
+        const lower = mailbox.toLowerCase();
+        const ownAuth = store.byUpn(lower);
+        if (ownAuth) {
+            return { upn: lower, auth: ownAuth, mailbox: lower, isShared: false };
+        }
+
+        const configured = this.mailboxMap.find((t) => t.mailbox === lower);
+        if (configured) {
+            return { ...configured, auth: store.byUpn(configured.upn) ?? configured.auth };
+        }
+
+        const cachedUpn = this.discoveredSharedReaders.get(lower);
+        const cachedAuth = cachedUpn === undefined ? undefined : store.byUpn(cachedUpn);
+        if (cachedUpn !== undefined && cachedAuth) {
+            return { upn: cachedUpn, auth: cachedAuth, mailbox: lower, isShared: true };
+        }
+
+        const reader = await findReaderForShared(store.list(), lower, (msg) =>
+            this.ctx.logger.warn(`ms365: ${msg}`),
+        );
+        if (!reader) {
+            return null;
+        }
+        this.discoveredSharedReaders.set(lower, reader.upn);
+        this.ctx.logger.info(
+            `ms365: shared mailbox ${lower} is not configured in ms365.mail.mailboxes; ` +
+                `accessing it via login ${reader.upn}`,
+        );
+        return { upn: reader.upn, auth: reader.auth, mailbox: lower, isShared: true };
+    }
+
+    /**
+     * Resolve the {@link GraphClient} for whichever active login can
+     * read the requested mailbox — the mailbox's own login, or the
+     * delegating login for a shared mailbox (see {@link findTarget}).
+     *
+     * @param mailbox - Mailbox address the operation targets.
+     * @returns A client authenticated as the serving login.
+     * @throws Error with an agent-readable message when no login can reach the mailbox.
+     */
+    private async clientForMailbox(mailbox: string): Promise<GraphClient> {
+        const target = await this.findTarget(mailbox);
+        if (!target) {
             throw new Error(
-                `no active ms365 login for ${mailbox}; run \`familiar ms365 login\` to add one`,
+                `no active ms365 login can read mailbox ${mailbox}; it is neither a login ` +
+                    "(`familiar ms365 login`) nor a shared mailbox any login has delegated access to",
             );
         }
+        const auth = target.auth;
         return new GraphClient(() => auth.getAccessTokenSilent());
     }
 }
