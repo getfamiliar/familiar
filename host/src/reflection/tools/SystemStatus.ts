@@ -1,8 +1,9 @@
 import { exec as execCb } from "node:child_process";
 import os from "node:os";
 import { promisify } from "node:util";
-import { type PluginTool, runTextTool } from "@getfamiliar/shared";
+import { escapeTableCell, type PluginTool, runTextTool } from "@getfamiliar/shared";
 import type { ReflectionToolsDeps } from "../ReflectionTools.js";
+import { collectThermalStatus } from "./ThermalStatus.js";
 
 const exec = promisify(execCb);
 const DF_TIMEOUT_MS = 1500;
@@ -10,8 +11,9 @@ const DF_TIMEOUT_MS = 1500;
 /**
  * Build the `system_status` reflection tool — a one-shot snapshot of
  * the host the daemon runs on: OS, CPU, memory, load average, daemon
- * uptime, and `df` for the two paths the daemon depends on (data dir
- * and scratch dir). Single markdown table. Useful when "is the
+ * uptime, `df` for the two paths the daemon depends on (data dir
+ * and scratch dir), and temperature / throttling in plain language
+ * (see {@link collectThermalStatus}). Single markdown table. Useful when "is the
  * machine wedged?" is part of debugging.
  */
 export function buildSystemStatusTool(
@@ -21,8 +23,10 @@ export function buildSystemStatusTool(
         name: "system_status",
         description:
             "Snapshot of the daemon host: OS / kernel / arch, CPU model + count + load " +
-            "average, memory totals, daemon uptime, and disk usage for the data and " +
-            "scratch directories. Returned as a single markdown table.",
+            "average, memory totals, daemon uptime, disk usage for the data and " +
+            "scratch directories, and the host's temperature and whether it is currently " +
+            "throttled (thermally or by power policy / under-voltage). Returned as a " +
+            "single markdown table.",
         groups: ["reflection"],
         inputSchema: {
             type: "object",
@@ -62,6 +66,10 @@ export function buildSystemStatusTool(
                 for (const row of dfRows) {
                     lines.push(`| Disk \`${row.path}\` | ${row.summary} |`);
                 }
+
+                const thermal = await collectThermalStatus();
+                lines.push(`| Temperature | ${escapeTableCell(thermal.temperature)} |`);
+                lines.push(`| Throttling | ${escapeTableCell(thermal.throttling)} |`);
 
                 return `${lines.join("\n")}\n`;
             }, callCtx.toolRunContext),
