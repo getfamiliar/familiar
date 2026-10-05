@@ -82,3 +82,25 @@ test("start skips cron handlers under writable paths but registers others", asyn
         rmSync(root, { recursive: true, force: true });
     }
 });
+
+test("start skips cron headers in skills but registers handlers", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "cron-skills-test-"));
+    try {
+        const files = [
+            writeCronHandler(root, "skills/jira-issue/SKILL.md"),
+            writeCronHandler(root, "mail/digest.md"),
+        ];
+        const scheduler = new CronjobScheduler({
+            watcher: stubWatcher(files),
+            emit: async () => ({ id: "1" }),
+            log: silentLog,
+        });
+        await scheduler.start();
+
+        const scheduled = scheduler.list().map((r) => r.relativePath);
+        assert.deepEqual(scheduled, ["mail/digest.md"]);
+        await scheduler.stop();
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+});

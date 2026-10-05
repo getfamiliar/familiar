@@ -32,11 +32,25 @@ export interface HandlerPath {
 const RESERVED_ROOT_FILES = new Set(["SOUL.md", "CONTEXT.md"]);
 
 /**
- * Workspace subtrees that contain markdown but never handlers.
- * `skills/<name>/SKILL.md` is a shared recipe loaded via `fs_read`,
- * not an agent entry point.
+ * Top-level workspace folder holding shared recipes
+ * (`skills/<name>/SKILL.md`). Skills are pure context loaded via
+ * `fs_read`, never agent entry points — so nothing under this folder
+ * is ever listed, resolved, loaded or cron-scheduled as a handler.
  */
-const RESERVED_TOP_DIRS = new Set(["skills"]);
+const SKILLS_FOLDER = "skills";
+
+/**
+ * Whether a workspace-relative path lies inside the top-level `skills/`
+ * folder. Shared by host (catalog, cron scheduler, `cron list`) and
+ * container (`HandlerFile.load`) so every side agrees that skills are
+ * never handlers.
+ *
+ * @param relativePath Workspace-relative posix path, e.g. `skills/jira-issue/SKILL.md`.
+ * @returns `true` when the first path segment is `skills`.
+ */
+export function isUnderSkillsFolder(relativePath: string): boolean {
+    return relativePath.split("/")[0] === SKILLS_FOLDER;
+}
 
 /**
  * Read-only view over the `workspace/` directory's handler files.
@@ -119,6 +133,11 @@ export class HandlerCatalog {
             const relPosix = rel.split(path.sep).join("/");
             const absolute = path.join(this.workspaceDir, rel);
             if (await fileExists(absolute)) {
+                // Skills are shared recipes, never handlers — mirror the
+                // container's `HandlerFile.load` guard.
+                if (isUnderSkillsFolder(relPosix)) {
+                    return null;
+                }
                 // A file under `core.writablePaths` is never a handler, even
                 // when it exists — mirror the container's `HandlerFile.load`
                 // guard so host-side callers agree it does not resolve.
@@ -153,7 +172,7 @@ async function walkMarkdown(
     }
     for (const entry of entries) {
         if (entry.isDirectory()) {
-            if (segments.length === 0 && RESERVED_TOP_DIRS.has(entry.name)) {
+            if (segments.length === 0 && entry.name === SKILLS_FOLDER) {
                 continue;
             }
             await walkMarkdown(

@@ -58,3 +58,10 @@ test("load resolves wiki handlers when no writable paths are configured", () => 
     const handler = HandlerFile.load("wiki", "index");
     assert.equal(handler.relativePath, "wiki/index.md");
 });
+
+test("load refuses a skill file as a handler", () => {
+    delete process.env[CONFIG_VAR];
+    touch("skills/jira-issue/SKILL.md", "---\ncron: every monday at 8\n---\n# skill\n");
+
+    assert.throws(() => HandlerFile.load("skills:jira-issue", "SKILL"), /skills\//);
+});

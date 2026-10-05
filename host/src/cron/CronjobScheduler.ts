@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import {
     EVENT_PRIORITY,
+    isUnderSkillsFolder,
     type Logger,
     matchesAnyGlob,
     type NewEvent,
@@ -38,7 +39,8 @@ const CRON_FILTER = { frontmatter: { cron: "*" } } as const;
  * them) are logged at `warn` and dropped — the rest of the workspace
  * keeps working. Handler files at the workspace root are also dropped
  * with a warning: handlers must live under at least one topic folder
- * so the path → topic mapping is unambiguous.
+ * so the path → topic mapping is unambiguous. Files under `skills/`
+ * are dropped with a warning too — skills are never handlers.
  */
 export class CronjobScheduler {
     private readonly watcher: WorkspaceWatcher;
@@ -125,6 +127,13 @@ export class CronjobScheduler {
             this.log.warn(
                 { path: file.relativePath },
                 `cron found on file ${file.relativePath} under core.writablePaths, skipping (writable files are never handlers)`,
+            );
+            return;
+        }
+        if (isUnderSkillsFolder(file.relativePath)) {
+            this.log.warn(
+                { path: file.relativePath },
+                `cron found on file ${file.relativePath} under skills/, skipping (skills are shared recipes, never handlers)`,
             );
             return;
         }

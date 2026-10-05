@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { matchesAnyGlob } from "@getfamiliar/shared";
+import { isUnderSkillsFolder, matchesAnyGlob } from "@getfamiliar/shared";
 import { parse as parseYaml } from "yaml";
 import { PassedConfig } from "./utils/PassedConfig.js";
 
@@ -276,6 +276,15 @@ export class HandlerFile {
         // actually run, so it is the one we gate. Re-read the env per call so
         // the check needs no module-load ordering and stays test-friendly.
         const leafRel = existingDeepestFirst[0].rel;
+        // Skills (`skills/<name>/SKILL.md`) are shared recipes read via
+        // `fs_read` — pure context without tools or privileges. They must
+        // never run as a handler (via cron, schedule_subagent or start_subagent).
+        if (isUnderSkillsFolder(leafRel)) {
+            throw new Error(
+                `Refusing to load handler "${leafRel}": files under skills/ are shared recipes, ` +
+                    `not handlers. Reference the skill from a handler and read it with fs_read instead.`,
+            );
+        }
         if (matchesAnyGlob(PassedConfig.get<string[]>("core.writablePaths") ?? [], leafRel)) {
             throw new Error(
                 `Refusing to load handler "${leafRel}": it lives under a core.writablePaths ` +
