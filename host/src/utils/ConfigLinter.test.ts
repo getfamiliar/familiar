@@ -267,3 +267,59 @@ python:
         );
     });
 });
+
+describe("ConfigLinter — inference.aliases", () => {
+    /**
+     * Build a minimal valid config with the given YAML spliced in under
+     * `inference:` (indented two spaces by the caller).
+     */
+    function withInference(extra: string): string {
+        return write(`
+core:
+  postgresPassword: secret
+  defaultChatChannel: cli
+inference:
+  defaultProvider: featherless
+  defaultModel: workhorse
+  apiKeys:
+    featherless: REAL_KEY
+${extra}
+`);
+    }
+
+    it("accepts a valid alias map", () => {
+        const result = lintConfigFile(
+            withInference(`  aliases:
+    fast: deepseek/deepseek-v4-flash
+    workhorse: zai-org/GLM-5.1
+    big-one: openai/gpt-5`),
+        );
+        assert.equal(result.ok, true, `unexpected errors: ${JSON.stringify(result.errors)}`);
+    });
+
+    it("rejects a non-mapping aliases value", () => {
+        const result = lintConfigFile(withInference("  aliases: [fast]"));
+        assert.equal(result.ok, false);
+        assert.ok(result.errors.some((e) => e.includes("inference.aliases must be a mapping")));
+    });
+
+    it("rejects an empty alias value", () => {
+        const result = lintConfigFile(withInference(`  aliases:\n    fast: ""`));
+        assert.equal(result.ok, false);
+        assert.ok(result.errors.some((e) => e.includes("inference.aliases.fast")));
+    });
+
+    it("rejects an alias name containing a slash", () => {
+        const result = lintConfigFile(withInference(`  aliases:\n    "a/b": zai-org/GLM-5.1`));
+        assert.equal(result.ok, false);
+        assert.ok(result.errors.some((e) => e.includes("inference.aliases.a/b")));
+    });
+
+    it("rejects an alias pointing at another alias", () => {
+        const result = lintConfigFile(
+            withInference(`  aliases:\n    fast: workhorse\n    workhorse: zai-org/GLM-5.1`),
+        );
+        assert.equal(result.ok, false);
+        assert.ok(result.errors.some((e) => e.includes("is itself an alias")));
+    });
+});

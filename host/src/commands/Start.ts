@@ -349,6 +349,7 @@ export const startCommand = defineCommand({
         containerConfig.addConfigKey("core.timezone");
         containerConfig.addConfigKey("inference.defaultProvider");
         containerConfig.addConfigKey("inference.defaultModel");
+        containerConfig.addConfigKey("inference.aliases");
         containerConfig.addConfigKey("inference.maxRetries");
         containerConfig.addConfigKey("inference.outputFallbackPercentage");
         containerConfig.addConfigKey("inference.captureInitialMessageHistory");

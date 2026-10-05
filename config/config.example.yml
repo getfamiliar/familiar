@@ -110,7 +110,18 @@ inference:
   # override per-file with bare ids (`zai-org/GLM-5.1` → default
   # provider) or prefix-qualified ids (`openai/gpt-4o-mini`,
   # `anthropic/claude-opus-4-7`, `featherless/zai-org/GLM-5.1`).
+  # Both this field and handler `model:` fields also accept a name
+  # from `aliases` below.
   defaultModel: zai-org/GLM-5.1
+
+  # Model aliases: alias name → model ref. Handlers can then write
+  # `model: fast` instead of a concrete id, so swapping a model is a
+  # one-line change here. Values are ordinary model refs (bare or
+  # provider-prefixed); they cannot point to another alias. Alias names
+  # may only contain letters, digits, `_` and `-`.
+  # aliases:
+  #   fast: deepseek/deepseek-v4-flash
+  #   workhorse: zai-org/GLM-5.1
 
   # Maximum number of retry attempts on retryable inference errors
   # (`APICallError.isRetryable === true` — typically 408/429/5xx,

@@ -16,7 +16,7 @@ import { PassedConfig } from "./utils/PassedConfig.js";
  * {@link HandlerFile.setHeaderDefaults}.
  */
 export interface HandlerFileHeader {
-    /** Provider-specific model id (e.g. `meta-llama/Meta-Llama-3.1-8B-Instruct`). */
+    /** Model ref: an `inference.aliases` key (e.g. `fast`) or a provider-specific model id (e.g. `meta-llama/Meta-Llama-3.1-8B-Instruct`). */
     readonly model?: string;
     /** Sampling temperature passed to the model. */
     readonly temperature?: number;

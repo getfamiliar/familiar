@@ -7,7 +7,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createXai } from "@ai-sdk/xai";
 import type { LanguageModel } from "ai";
-import { requireConfig } from "../utils/PassedConfig.js";
+import { PassedConfig, requireConfig } from "../utils/PassedConfig.js";
 
 /**
  * Placeholder API key sent by every provider client. The real upstream
@@ -77,12 +77,22 @@ const NPM_MODEL_BUILDERS: Readonly<
 };
 
 /** Resolved provider catalogue read once at module load. */
-interface ProviderCatalogue {
+export interface ProviderCatalogue {
     readonly bastionUrl: string;
     readonly defaultProvider: string;
     readonly defaultModel: string;
     /** Provider key → its npm package (passed config `inference.providers`). */
     readonly npmPackages: Readonly<Record<string, string>>;
+    /** Alias name → model ref (passed config `inference.aliases`, empty when unset). */
+    readonly aliases: Readonly<Record<string, string>>;
+}
+
+/** Outcome of {@link resolveModelRef}. */
+export interface ResolvedModelRef {
+    readonly provider: string;
+    readonly modelId: string;
+    /** The `inference.aliases` key the ref was resolved through, if any. */
+    readonly alias?: string;
 }
 
 let catalogue: ProviderCatalogue | undefined;
@@ -112,26 +122,69 @@ function getCatalogue(): ProviderCatalogue {
             `inference.defaultProvider="${defaultProvider}" is not present in inference.providers.`,
         );
     }
-    catalogue = { bastionUrl, defaultProvider, defaultModel, npmPackages };
+    const aliases = readAliases();
+    catalogue = { bastionUrl, defaultProvider, defaultModel, npmPackages, aliases };
     return catalogue;
 }
 
-/** Resolve a handler-declared `model` ref into `(provider, modelId)`. */
-function resolveModelRef(
+/**
+ * Read and type-check the optional `inference.aliases` passed config.
+ *
+ * @returns Alias name → model ref; empty when the key is absent.
+ * @throws If the value is not a mapping or an entry is not a non-empty string.
+ */
+function readAliases(): Record<string, string> {
+    const raw = PassedConfig.get<unknown>("inference.aliases");
+    if (raw === undefined || raw === null) {
+        return {};
+    }
+    if (typeof raw !== "object" || Array.isArray(raw)) {
+        throw new Error("inference.aliases must be a mapping of alias name → model ref.");
+    }
+    const aliases: Record<string, string> = {};
+    for (const [name, value] of Object.entries(raw)) {
+        if (typeof value !== "string" || value.length === 0) {
+            throw new Error(
+                `inference.aliases.${name}: must be a non-empty model ref string (got ${String(value)}).`,
+            );
+        }
+        aliases[name] = value;
+    }
+    return aliases;
+}
+
+/**
+ * Resolve a handler-declared `model` ref into `(provider, modelId)`.
+ *
+ * An empty ref falls back to `defaultModel`. The (possibly defaulted)
+ * ref is then looked up once in `aliases` — exact match, single level —
+ * and the result goes through the provider-prefix logic: a `/`-head that
+ * names an enabled provider selects it, anything else is a bare id under
+ * the default provider.
+ *
+ * @param modelRef Handler-declared ref: alias, bare id, or `<provider>/<id>`.
+ * @param cat The provider catalogue to resolve against.
+ * @returns The resolved provider / model id, plus the alias used, if any.
+ */
+export function resolveModelRef(
     modelRef: string | undefined,
     cat: ProviderCatalogue,
-): { provider: string; modelId: string } {
-    if (modelRef === undefined || modelRef.length === 0) {
-        return { provider: cat.defaultProvider, modelId: cat.defaultModel };
-    }
-    const slashIdx = modelRef.indexOf("/");
+): ResolvedModelRef {
+    const requestedRef =
+        modelRef === undefined || modelRef.length === 0 ? cat.defaultModel : modelRef;
+    const aliasTarget = Object.hasOwn(cat.aliases, requestedRef)
+        ? cat.aliases[requestedRef]
+        : undefined;
+    const alias = aliasTarget === undefined ? undefined : requestedRef;
+    const ref = aliasTarget ?? requestedRef;
+    const slashIdx = ref.indexOf("/");
     if (slashIdx > 0) {
-        const head = modelRef.slice(0, slashIdx);
+        const head = ref.slice(0, slashIdx);
         if (cat.npmPackages[head] !== undefined) {
-            return { provider: head, modelId: modelRef.slice(slashIdx + 1) };
+            return { provider: head, modelId: ref.slice(slashIdx + 1), alias };
         }
     }
-    return { provider: cat.defaultProvider, modelId: modelRef };
+    return { provider: cat.defaultProvider, modelId: ref, alias };
 }
 
 /** Lazily fetch (and cache) the SDK builder for a provider id. */
@@ -165,7 +218,8 @@ function builderFor(provider: string, cat: ProviderCatalogue): LanguageModelBuil
  * to the Vercel AI SDK's tool-loop agent.
  *
  * Resolves the handler-declared `model` ref against the host-supplied
- * provider catalogue (the `inference.*` passed config). Bare ids like
+ * provider catalogue (the `inference.*` passed config). Names listed in
+ * `inference.aliases` are first swapped for their model ref. Bare ids like
  * `zai-org/GLM-5.1` map to the default provider; prefixed ids like
  * `openai/gpt-4o-mini` switch providers when the prefix matches an
  * enabled id. The provider's npm package (carried in
@@ -176,15 +230,16 @@ export class ModelFactory {
     /**
      * Build a chat language-model object for the requested model ref.
      * Returns the constructed `LanguageModel`, a `label` of the form
-     * `<provider>/<modelId>`, and the resolved `provider` / `modelId`
+     * `<provider>/<modelId>`, the `alias` name when the ref was an
+     * `inference.aliases` key, and the resolved `provider` / `modelId`
      * pair separately — the provider prefix is filled in even when the
      * handler declared it bare. Callers persist the label on
      * `agentruns.model` for traceability, and use the resolved pair to
      * look the model's metadata up (see {@link
      * import("./ModelMetadataClient.js").fetchModelMetaData}).
      *
-     * @param modelRef Handler-declared model identifier — bare or
-     *   `<provider>/<modelId>`. Falls back to the passed config
+     * @param modelRef Handler-declared model identifier — an
+     *   `inference.aliases` key, bare, or `<provider>/<modelId>`. Falls back to the passed config
      *   `inference.defaultProvider` / `inference.defaultModel` when undefined.
      * @throws If the passed config is misconfigured, the provider in the
      *   prefix isn't enabled in `inference.providers`, or its npm package is
@@ -195,14 +250,16 @@ export class ModelFactory {
         label: string;
         provider: string;
         modelId: string;
+        alias?: string;
     } {
         const cat = getCatalogue();
-        const { provider, modelId } = resolveModelRef(modelRef, cat);
+        const { provider, modelId, alias } = resolveModelRef(modelRef, cat);
         return {
             model: builderFor(provider, cat)(modelId),
             label: `${provider}/${modelId}`,
             provider,
             modelId,
+            alias,
         };
     }
 }

@@ -300,7 +300,7 @@ All components log using a centralized logging service. Fields include plugin id
 
 ## Concurrency and model usage
 
-Each handler's markdown file declares which model the agent runs under. The heavy model (V4 Pro) is the bottleneck: Featherless's premium tier exposes one concurrent slot for 70B+ models.
+Each handler's markdown file declares which model the agent runs under. Instead of a concrete model ref, a handler may name a key from `inference.aliases` in `config.yml` (e.g. `model: fast`); `ModelFactory` resolves it (single level, `defaultModel` may be an alias too) and `agentruns.model` records the resolved `<provider>/<modelId>`. The heavy model (V4 Pro) is the bottleneck: Featherless's premium tier exposes one concurrent slot for 70B+ models.
 
 To keep things simple for now:
 

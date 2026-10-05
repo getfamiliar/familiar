@@ -73,6 +73,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
     const defaultProvider = requireString(config, "inference.defaultProvider", errors);
     requireString(config, "inference.defaultModel", errors);
     lintInferenceProviders(config, defaultProvider, errors);
+    lintInferenceAliases(config, errors);
 
     optionalPositiveInt(config, "core.logRetentionDays", warnings);
     optionalPositiveInt(config, "core.agentStepTimeout", warnings);
@@ -146,6 +147,48 @@ function lintInferenceProviders(
         errors.push(
             `inference.defaultProvider "${defaultProvider}" must match an inference.apiKeys.* entry (with a key set).`,
         );
+    }
+}
+
+/** Allowed shape of an `inference.aliases` key — no `/`, so an alias can never shadow a provider-prefixed ref. */
+const ALIAS_NAME_PATTERN = /^[\w-]+$/;
+
+/**
+ * Validate the optional `inference.aliases` map (alias name → model ref).
+ * Each key must match {@link ALIAS_NAME_PATTERN}, each value must be a
+ * non-empty string, and a value must not name another alias — aliases
+ * resolve exactly one level deep, so a chain would silently be treated
+ * as a bare model id.
+ *
+ * @param root The parsed config root.
+ * @param errors Collector for error messages.
+ */
+function lintInferenceAliases(root: Record<string, unknown>, errors: string[]): void {
+    const aliases = readPath(root, "inference.aliases");
+    if (aliases === undefined || aliases === null) {
+        return;
+    }
+    if (!isPlainObject(aliases)) {
+        errors.push(`inference.aliases must be a mapping (got ${describe(aliases)}).`);
+        return;
+    }
+    for (const [name, value] of Object.entries(aliases)) {
+        if (!ALIAS_NAME_PATTERN.test(name)) {
+            errors.push(
+                `inference.aliases.${name}: alias names may only contain letters, digits, "_" and "-" (no "/").`,
+            );
+        }
+        if (typeof value !== "string" || value.length === 0) {
+            errors.push(
+                `inference.aliases.${name}: must be a non-empty model ref string (got ${describe(value)}).`,
+            );
+            continue;
+        }
+        if (Object.hasOwn(aliases, value)) {
+            errors.push(
+                `inference.aliases.${name}: value "${value}" is itself an alias; aliases cannot point to other aliases.`,
+            );
+        }
     }
 }
 

@@ -341,7 +341,14 @@ export class AgentRunner {
             label: modelLabel,
             provider,
             modelId,
+            alias: modelAlias,
         } = ModelFactory.build(handler.header.model);
+        if (modelAlias !== undefined) {
+            ctx.log.debug(
+                { modelAlias, model: modelLabel },
+                `model alias "${modelAlias}" → ${modelLabel}`,
+            );
+        }
 
         // Look the resolved model's capabilities up through the bastion
         // before building tools — the tool-result offload threshold is
