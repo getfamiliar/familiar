@@ -123,16 +123,18 @@ inference:
   #   fast: deepseek/deepseek-v4-flash
   #   workhorse: zai-org/GLM-5.1
 
-  # Maximum number of retry attempts on retryable inference errors
-  # (`APICallError.isRetryable === true` — typically 408/429/5xx,
-  # including Featherless's 503 "Model is over capacity"). Retries
-  # don't block the agentrun watcher: the row is set back to
-  # `pending` with a future `not_before`, freeing the slot for other
-  # agentruns until the retry window opens. Default 3 when omitted.
-  # Per-handler override available via `maxRetries` in YAML
-  # frontmatter (set to 0 there to disable retries for one handler
-  # without changing the global default).
-  # maxRetries: 3
+  # Maximum number of retries after the first attempt on retryable
+  # inference errors (`APICallError.isRetryable === true` — typically
+  # 408/429/5xx, including Featherless's 503 "Model is over capacity"
+  # and 504 gateway timeouts). Retries don't block the agentrun
+  # watcher: the row is set back to `pending` with a future
+  # `not_before`, freeing the slot for other agentruns until the retry
+  # window opens. Backoff is 2s, 4s, 8s, … capped at 15 min per wait,
+  # so the default of 10 spans roughly half an hour; each extra retry
+  # adds another 15 min. Per-handler override available via
+  # `maxRetries` in YAML frontmatter (set to 0 there to disable
+  # retries for one handler without changing the global default).
+  # maxRetries: 10
 
   # Fraction (0–1) of a model's context window used as the per-step
   # output-token ceiling, applied ONLY when the model's metadata

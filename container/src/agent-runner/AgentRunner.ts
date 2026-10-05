@@ -493,7 +493,7 @@ export class AgentRunner {
             maxOutputTokens: effectiveMaxOutputTokens,
             // The Scheduler owns retry policy via the RetryableModelException
             // throw + postpone/settle decision. Disable the SDK's own
-            // retry loop so a 5-minute backoff doesn't park us.
+            // retry loop so a multi-minute backoff doesn't park us.
             maxRetries: 0,
             stopWhen: stepCountIs(MAX_STEPS_PER_RUN),
             prepareStep: ({ stepNumber, messages }) => {

@@ -123,11 +123,11 @@ export interface AgentRunRow {
      */
     readonly calltype: AgentRunCallType | null;
     /**
-     * Number of retry attempts already made. Bumped each time
-     * `AgentRunner` postpones the row due to a retryable inference
-     * error. Compared against the per-handler `maxRetries` cap on
-     * each subsequent attempt; once `retry_count >= cap` the run
-     * settles `failed` instead of being postponed again.
+     * Number of retries already made. Bumped each time `AgentRunner`
+     * postpones the row due to a retryable inference error. Compared
+     * against the `maxRetries` cap (retries after the first attempt)
+     * whenever an attempt fails retryably; once `retry_count >= cap`
+     * the run settles `failed` instead of being postponed again.
      */
     readonly retryCount: number;
     /**

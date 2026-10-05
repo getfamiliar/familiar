@@ -114,7 +114,7 @@ async function main(): Promise<void> {
     const timezone = resolveTimezone();
 
     const stepTimeoutMs = (PassedConfig.get<number>("core.agentStepTimeout") ?? 150) * 1000;
-    const retryCap = PassedConfig.get<number>("inference.maxRetries") ?? 3;
+    const retryCap = PassedConfig.get<number>("inference.maxRetries") ?? 10;
 
     const scheduler = new AgentrunScheduler({
         agentRunBus,

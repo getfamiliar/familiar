@@ -448,32 +448,61 @@ describe("AgentrunScheduler — retries", () => {
         }
     });
 
-    it("cap exhaustion fails the agentrun with the inference error text", async () => {
+    /**
+     * Run a root agentrun whose handler always throws a retryable error
+     * under the given retry cap, and report how many attempts were made
+     * before it settled.
+     *
+     * @param retryCap - Retries allowed after the first attempt.
+     * @returns The settled row plus the number of handler attempts.
+     */
+    async function runAlwaysRetryable(retryCap: number) {
+        let attempts = 0;
         const harness = buildHarness({
             behaviors: {
                 index: async () => {
+                    attempts++;
                     throw new RetryableModelException(10, "still over capacity", undefined);
                 },
             },
-            retryCap: 2,
+            retryCap,
         });
         try {
             const { root } = await seedRootAgentrun(harness.eventBus, harness.agentRunBus, "index");
-
-            // Need 2 cycles: attempt 0 → postpone, advance, attempt 1 →
-            // postpone, advance, attempt 2 → cap reached, fail.
-            for (let i = 0; i < 5; i++) {
+            for (let i = 0; i < retryCap + 5; i++) {
                 await flush();
                 harness.clock.advance(20);
                 await flush();
             }
-
             const settled = await waitForTerminal(harness.agentRunBus, harness.store, root.id);
-            assert.equal(settled.state, "failed");
-            assert.match(settled.error ?? "", /over capacity/);
+            return { settled, attempts };
         } finally {
             await harness.stop();
         }
+    }
+
+    it("cap exhaustion fails the agentrun with the inference error text", async () => {
+        // Cap 2 = two retries: attempt 1 → postpone, attempt 2 →
+        // postpone, attempt 3 → cap reached, fail.
+        const { settled, attempts } = await runAlwaysRetryable(2);
+        assert.equal(settled.state, "failed");
+        assert.match(settled.error ?? "", /over capacity/);
+        assert.equal(attempts, 3);
+        assert.equal(settled.retryCount, 2);
+    });
+
+    it("cap 0 fails on the first retryable error without postponing", async () => {
+        const { settled, attempts } = await runAlwaysRetryable(0);
+        assert.equal(settled.state, "failed");
+        assert.equal(attempts, 1);
+        assert.equal(settled.retryCount, 0);
+    });
+
+    it("cap 1 retries exactly once", async () => {
+        const { settled, attempts } = await runAlwaysRetryable(1);
+        assert.equal(settled.state, "failed");
+        assert.equal(attempts, 2);
+        assert.equal(settled.retryCount, 1);
     });
 });
 

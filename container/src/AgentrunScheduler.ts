@@ -488,22 +488,28 @@ export class AgentrunScheduler {
                     break;
                 case "retryable": {
                     const cap = outcome.error.handlerMaxRetriesOverride ?? this.deps.retryCap;
-                    if (row.retryCount + 1 < cap) {
+                    // `cap` counts retries after the first attempt, so
+                    // `retryCount` (retries made so far) may reach it.
+                    if (row.retryCount < cap) {
+                        const retryNumber = row.retryCount + 1;
                         const runAfter = new Date(this.deps.clock.now() + outcome.error.delayMs);
                         await agentRunBus.postpone(id, runAfter, outcome.error.errorText);
                         log.warn(
                             {
                                 agentrunId: id,
                                 retryAfterMs: outcome.error.delayMs,
-                                attempt: row.retryCount + 1,
+                                attempt: retryNumber,
                                 cap,
                             },
-                            "agentrun postponed, retryable inference error",
+                            `agentrun ${id} postponed after retryable inference error, retry ${retryNumber}/${cap} in ${Math.round(outcome.error.delayMs / 1000)}s`,
                         );
                         // Schedule a wake when the not_before window opens.
                         this.deps.clock.setTimeout(() => this.tick(), outcome.error.delayMs);
                     } else {
-                        log.warn({ agentrunId: id, cap }, "agentrun retry cap reached, failing");
+                        log.warn(
+                            { agentrunId: id, cap },
+                            `agentrun ${id} failed: retry cap of ${cap} exhausted`,
+                        );
                         await agentRunBus.settle(id, "failed", {
                             error: outcome.error.errorText,
                         });

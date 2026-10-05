@@ -5,12 +5,12 @@
  * The runner carries no DB knowledge: instead of writing the postpone
  * itself, it bubbles this exception up to the {@link AgentrunScheduler},
  * which decides — based on the row's `retry_count` and the configured
- * `inference.maxRetries` cap — whether to postpone the row or settle
+ * `inference.maxRetries` cap (retries after the first attempt) — whether to postpone the row or settle
  * it as `failed`.
  *
  * - `delayMs` comes from `computeRetryDelay` — either the provider's
  *   `retry-after[-ms]` header when present and reasonable, else
- *   exponential backoff capped at 5 minutes.
+ *   exponential backoff capped at 15 minutes.
  * - `errorText` is `formatInferenceError(originalError)` so the
  *   Scheduler can write it verbatim onto `agentruns.error` for the
  *   in-flight attempt without having to re-format.

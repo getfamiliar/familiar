@@ -54,12 +54,13 @@ export interface HandlerFileHeader {
      */
     readonly maxOutputTokens?: number;
     /**
-     * Maximum number of retry attempts on retryable inference errors
-     * (`APICallError.isRetryable === true` — typically 408/429/5xx).
+     * Maximum number of retries after the first attempt on retryable
+     * inference errors (`APICallError.isRetryable === true` — typically
+     * 408/429/5xx, including 504 gateway timeouts). `0` disables retries.
      * Each retry postpones the agentrun by setting a future
      * `not_before` so the watcher can serve other rows in the
      * meantime. When omitted, falls back to the passed config
-     * `inference.maxRetries` and finally to the hardcoded default of 3.
+     * `inference.maxRetries` and finally to the hardcoded default of 10.
      */
     readonly maxRetries?: number;
     /**

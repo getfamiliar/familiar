@@ -24,12 +24,23 @@ describe("computeRetryDelay — exponential fallback", () => {
         assert.equal(computeRetryDelay(err, 0), 2000);
     });
 
-    it("doubles each attempt up to the 5-minute cap", () => {
+    it("doubles each attempt up to the 15-minute cap", () => {
         const err = withHeaders({});
         assert.equal(computeRetryDelay(err, 0), 2000);
         assert.equal(computeRetryDelay(err, 1), 4000);
         assert.equal(computeRetryDelay(err, 2), 8000);
-        assert.equal(computeRetryDelay(err, 10), 5 * 60 * 1000); // capped
+        assert.equal(computeRetryDelay(err, 8), 512_000);
+        assert.equal(computeRetryDelay(err, 9), 15 * 60 * 1000); // first capped wait
+        assert.equal(computeRetryDelay(err, 10), 15 * 60 * 1000); // capped
+    });
+
+    it("spans about half an hour over the default 10 retries", () => {
+        const err = withHeaders({});
+        let totalMs = 0;
+        for (let attempt = 0; attempt < 10; attempt++) {
+            totalMs += computeRetryDelay(err, attempt);
+        }
+        assert.equal(totalMs, 1_922_000); // 2+4+…+512 s + 900 s ≈ 32 min
     });
 
     it("treats negative attempts defensively as 0", () => {
@@ -46,7 +57,7 @@ describe("computeRetryDelay — retry-after-ms header", () => {
         assert.equal(computeRetryDelay(withHeaders({ "retry-after-ms": "soon" }), 0), 2000);
     });
 
-    it("clamps absurdly long header delays at the 5-minute cap", () => {
+    it("prefers the exponential fallback over absurdly long header delays", () => {
         // 10 minutes > 60s and > current exponential (2s), so clamp prefers the fallback.
         const out = computeRetryDelay(withHeaders({ "retry-after-ms": "600000" }), 0);
         assert.equal(out, 2000);

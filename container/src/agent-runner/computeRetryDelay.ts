@@ -6,8 +6,13 @@ const INITIAL_DELAY_MS = 2000;
 /** Each subsequent attempt multiplies the previous delay by this factor. */
 const BACKOFF_FACTOR = 2;
 
-/** Hard cap — no single wait exceeds this (5 minutes). */
-const MAX_DELAY_MS = 5 * 60 * 1000;
+/**
+ * Hard cap — no single wait exceeds this (15 minutes). Together with
+ * the default `inference.maxRetries` of 10 the backoff schedule
+ * (2s, 4s, … 512s, 900s) spans roughly half an hour, enough to ride
+ * out a provider outage instead of losing e.g. a morning cron run.
+ */
+const MAX_DELAY_MS = 15 * 60 * 1000;
 
 /**
  * Decide how long to wait before re-running a postponed agentrun
