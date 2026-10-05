@@ -601,7 +601,8 @@ export class AgentRunner {
         const runStartedAt = Date.now();
         ctx.log.debug(
             {
-                model: handler.header.model,
+                model: modelLabel,
+                modelAlias: modelAlias ?? null,
                 temperature: handler.header.temperature,
                 maxOutputTokens: effectiveMaxOutputTokens,
                 declaredMaxOutputTokens: handler.header.maxOutputTokens ?? null,

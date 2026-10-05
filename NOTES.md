@@ -100,6 +100,8 @@ plugins:
   - npm run build --workspaces --if-present (attention: does not resolve the order of dependencies, trying to build telegram before whisper etc. - AST based dependency resolution would be nice)
   - Use node-linux or node-mac packages to create a native service!
 
+- Define default model aliases (fast, default, smart, vision) and add them to the config.yml.
+
 Important: many services need a restart after login (whatsapp, o365, ...). Request that?
 
 ## Marketing Speak
