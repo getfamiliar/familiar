@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import type { Logger } from "@getfamiliar/shared";
 import { SHARED_NETWORK_NAME } from "../../utils/DockerTools.js";
 import { createMcpFileSink, type McpFileSink } from "../../utils/LogRetentionTools.js";
@@ -8,6 +8,7 @@ import { mcpMountDirFor, NPM_RUNTIME_IMAGE } from "../RuntimeImages.js";
 import type { McpTransport } from "../transports/McpTransport.js";
 import { StdioMcpTransport } from "../transports/StdioMcpTransport.js";
 import type { DockerArgsOptions, RuntimeContainerConfig } from "./DockerArgsOptions.js";
+import { prepareOfflineMount } from "./OfflinePrepStamp.js";
 
 /** Configuration for {@link NpmFactory}. */
 export interface NpmFactoryConfig extends RuntimeContainerConfig {
@@ -17,6 +18,13 @@ export interface NpmFactoryConfig extends RuntimeContainerConfig {
     readonly mcpLogsDir: string;
     /** Days of rotated log retention. */
     readonly logRetentionDays: number;
+    /**
+     * Id of the runtime image, resolved once the gateway ensured it.
+     * Recorded in the prep stamp of offline entries so a rebuilt image
+     * (e.g. a package-manager bump with a new cache layout) forces a
+     * re-prep.
+     */
+    readonly resolveRuntimeImageId: () => string;
 }
 
 /**
@@ -190,30 +198,42 @@ export class NpmFactory implements McpServerFactory {
     }
 
     create(entry: McpEntry): McpTransport {
-        // Prep runs once per mount-dir lifetime: a populated dir means
-        // the package was already fetched on a prior boot, and rerunning
-        // npx with full network would let the package's install hooks
-        // exfiltrate anything the offline phase-2 run had stashed in
-        // /work. Wipe the dir to force a re-prep (e.g. version bump).
+        // Offline entries get their package cache prepped with full
+        // network before the first phase-2 spawn — once per cache
+        // lifetime. A cache whose prep stamp no longer matches the
+        // entry or runtime image is wiped first, never re-prepped in
+        // place: rerunning npx with full network would let the
+        // package's install hooks exfiltrate anything the offline phase-2 run
+        // had stashed in /work. Online entries resolve packages
+        // themselves; their mount dir (which may hold login state) is
+        // never wiped.
         const mountDir = mcpMountDirFor(this.config.tmpDir, entry.id);
-        const isFreshMount = !existsSync(mountDir);
-        if (isFreshMount) {
+        const offlineMount = entry.network.disable
+            ? prepareOfflineMount(
+                  entry,
+                  this.config.tmpDir,
+                  this.config.resolveRuntimeImageId(),
+                  this.config.log,
+              )
+            : undefined;
+        if (offlineMount === undefined) {
             mkdirSync(mountDir, { recursive: true });
         }
+        const isPrepNeeded = offlineMount?.isPrepNeeded === true;
 
         const { mcpLogsDir, logRetentionDays } = this.config;
         const openFileSink = (): Promise<McpFileSink> =>
             createMcpFileSink(mcpLogsDir, entry.id, logRetentionDays);
-        const prepDockerArgs =
-            isFreshMount && entry.network.disable
-                ? buildNpmPrepDockerArgs(entry, this.config)
-                : undefined;
+        const prepDockerArgs = isPrepNeeded
+            ? buildNpmPrepDockerArgs(entry, this.config)
+            : undefined;
         return new StdioMcpTransport({
             id: entry.id,
             title: entry.title,
             description: entry.description,
             dockerArgs: buildNpmDockerArgs(entry, this.config),
             prepDockerArgs,
+            onPrepSuccess: isPrepNeeded ? offlineMount?.writeStamp : undefined,
             mountDir,
             idleTimeoutSeconds: entry.idleTimeoutSeconds,
             log: this.config.log.child({ mcp: entry.id }),

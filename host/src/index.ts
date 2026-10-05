@@ -36,6 +36,18 @@ const cliLogger = createLogger({
 });
 
 /**
+ * `true` when the CLI runs with uid 0. Postgres and every container run
+ * with the operator's uid, so familiar never needs root — and a root run
+ * leaves root-owned files in `data/` that break the next normal start.
+ *
+ * @returns Whether the current process is root (always `false` on
+ *   platforms without uids).
+ */
+function isRunningAsRoot(): boolean {
+    return process.getuid?.() === 0;
+}
+
+/**
  * Async entry point. Plugins are discovered and imported at runtime
  * (`await loadPlugins`), so the whole startup is async — the plugin list
  * has to exist before `PluginHost.buildSubCommands()` can fold plugin CLI
@@ -44,6 +56,14 @@ const cliLogger = createLogger({
  * that gate runs first with a clear message.
  */
 async function main(): Promise<void> {
+    if (isRunningAsRoot()) {
+        cliLogger.error(
+            "familiar must not run as root (e.g. via sudo): files it writes under data/ would end up " +
+                "owned by root and become unreadable for the normal daemon. Run it as your own user. " +
+                'If a previous root run already left such files, fix them with: sudo chown -R "$(id -u):$(id -g)" data/',
+        );
+        process.exit(1);
+    }
     const boot = bootstrap();
     const sub = process.argv[2];
     const needsHome = sub !== undefined && sub !== "init" && !sub.startsWith("-");

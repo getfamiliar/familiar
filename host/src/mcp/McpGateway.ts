@@ -10,7 +10,7 @@ import { PypiFactory } from "./factories/PypiFactory.js";
 import type { McpEntry, McpSource } from "./McpEntry.js";
 import type { McpRegistry } from "./McpRegistry.js";
 import type { McpServerFactory } from "./McpServerFactory.js";
-import { ensureRuntimeImage } from "./RuntimeImages.js";
+import { ensureRuntimeImage, inspectRuntimeImageId } from "./RuntimeImages.js";
 import type { McpTransport } from "./transports/McpTransport.js";
 
 /** Configuration for the {@link McpGateway} bastion module. */
@@ -73,10 +73,16 @@ export class McpGateway implements BastionModule {
     private readonly config: McpGatewayConfig;
     private readonly factories: ReadonlyMap<McpSource, McpServerFactory>;
     private transports: Map<string, McpTransport> = new Map();
+    /**
+     * Runtime image ids, filled by {@link start} right after
+     * `ensureRuntimeImage` and before any transport is built. The
+     * npm/pypi factories stamp offline caches with them.
+     */
+    private readonly runtimeImageIds = new Map<"npm" | "pypi", string>();
 
     constructor(config: McpGatewayConfig) {
         this.config = config;
-        const sharedNpmPypiConfig = {
+        const sharedRuntimeConfig = {
             log: config.log,
             mcpLogsDir: config.mcpLogsDir,
             logRetentionDays: config.logRetentionDays,
@@ -95,10 +101,40 @@ export class McpGateway implements BastionModule {
                     scratchDir: config.scratchDir,
                 }),
             ],
-            ["npm", new NpmFactory(sharedNpmPypiConfig)],
-            ["pypi", new PypiFactory(sharedNpmPypiConfig)],
+            [
+                "npm",
+                new NpmFactory({
+                    ...sharedRuntimeConfig,
+                    resolveRuntimeImageId: () => this.runtimeImageIdFor("npm"),
+                }),
+            ],
+            [
+                "pypi",
+                new PypiFactory({
+                    ...sharedRuntimeConfig,
+                    resolveRuntimeImageId: () => this.runtimeImageIdFor("pypi"),
+                }),
+            ],
             ["external", new ExternalFactory(config.log)],
         ]);
+    }
+
+    /**
+     * The runtime image id recorded by {@link start}.
+     *
+     * @param source The MCP runtime flavor.
+     * @returns The image id.
+     * @throws When called before {@link start} ensured that image —
+     *   i.e. a transport for a source no `mcp.yml` entry referenced.
+     */
+    private runtimeImageIdFor(source: "npm" | "pypi"): string {
+        const id = this.runtimeImageIds.get(source);
+        if (id === undefined) {
+            throw new Error(
+                `mcp runtime image for "${source}" was not ensured before building a transport`,
+            );
+        }
+        return id;
     }
 
     async start(bastion: Bastion): Promise<void> {
@@ -113,11 +149,12 @@ export class McpGateway implements BastionModule {
         if (sources.has("npm") || sources.has("pypi")) {
             mkdirSync(this.config.tmpDir, { recursive: true });
         }
-        if (sources.has("npm")) {
-            await ensureRuntimeImage("npm", this.config.boot, this.config.log);
-        }
-        if (sources.has("pypi")) {
-            await ensureRuntimeImage("pypi", this.config.boot, this.config.log);
+        for (const source of ["npm", "pypi"] as const) {
+            if (!sources.has(source)) {
+                continue;
+            }
+            await ensureRuntimeImage(source, this.config.boot, this.config.log);
+            this.runtimeImageIds.set(source, await inspectRuntimeImageId(source));
         }
 
         for (const entry of entries) {

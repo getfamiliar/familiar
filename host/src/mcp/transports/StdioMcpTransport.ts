@@ -42,17 +42,23 @@ export interface StdioMcpTransportConfig {
     readonly dockerArgs: readonly string[];
     /**
      * Optional pre-spawn install argv. Run once per mount-dir
-     * lifetime: the factory only sets this when the bind-mount dir
-     * doesn't yet exist on disk, so a daemon restart with a populated
-     * mount dir does **not** re-run prep. Used by npm/pypi sources
-     * whose entry has restricted network — phase-2 `dockerArgs` can't
-     * reach the registry, so phase-1 fetches with full network and no
-     * env vars. To force a re-prep (e.g. after a package version bump
-     * or to recover from a poisoned cache), delete the mount dir and
+     * lifetime: the factory only sets this when the bind-mount dir is
+     * empty — fresh, or just wiped because its prep stamp no longer
+     * matches the entry / runtime image (see `OfflinePrepStamp.ts`).
+     * Used by npm/pypi sources whose entry has restricted network —
+     * phase-2 `dockerArgs` can't reach the registry, so phase-1 fetches
+     * with full network and no env vars. To force a re-prep anyway
+     * (e.g. to recover from a poisoned cache), delete the mount dir and
      * restart the daemon. When omitted, the transport single-phases
      * as before.
      */
     readonly prepDockerArgs?: readonly string[];
+    /**
+     * Called once after {@link prepDockerArgs} exited 0. The factory
+     * uses it to record the prep stamp, so the cache is only marked
+     * reusable once it was actually populated.
+     */
+    readonly onPrepSuccess?: () => void;
     /**
      * Per-MCP bind-mount directory on the host. Used by `runPrep` to
      * `rm -rf` the dir on prep failure, so the next start sees a
@@ -102,6 +108,7 @@ export class StdioMcpTransport implements McpTransport {
     readonly description: string;
     private readonly dockerArgs: readonly string[];
     private readonly prepDockerArgs: readonly string[] | null;
+    private readonly onPrepSuccess: (() => void) | null;
     private readonly mountDir: string | null;
     private readonly idleTimeoutMs: number;
     private readonly log: Logger;
@@ -154,6 +161,7 @@ export class StdioMcpTransport implements McpTransport {
         this.description = config.description;
         this.dockerArgs = config.dockerArgs;
         this.prepDockerArgs = config.prepDockerArgs ?? null;
+        this.onPrepSuccess = config.onPrepSuccess ?? null;
         this.mountDir = config.mountDir ?? null;
         this.idleTimeoutMs = config.idleTimeoutSeconds * 1000;
         this.log = config.log;
@@ -477,6 +485,7 @@ export class StdioMcpTransport implements McpTransport {
             proc.on("close", (code) => {
                 if (code === 0) {
                     this.log.info(`prep complete for '${this.id}'`);
+                    this.recordPrepSuccess();
                     resolve();
                     return;
                 }
@@ -492,6 +501,25 @@ export class StdioMcpTransport implements McpTransport {
         });
         this.prepPromise = promise;
         return promise;
+    }
+
+    /**
+     * Invoke {@link onPrepSuccess}. A failure there (e.g. the stamp file
+     * can't be written) is logged, not thrown: the populated cache works
+     * for this run, and a missing stamp only costs a re-prep next start.
+     */
+    private recordPrepSuccess(): void {
+        if (this.onPrepSuccess === null) {
+            return;
+        }
+        try {
+            this.onPrepSuccess();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.log.error(
+                `stdio mcp '${this.id}' prep succeeded but recording it failed (next start re-preps): ${message}`,
+            );
+        }
     }
 
     /**

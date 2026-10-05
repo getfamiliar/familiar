@@ -139,12 +139,7 @@ only.
 > warm cache lets `npx`/`uvx` skip the fetch. Prep needs network even when the running MCP
 > doesn't — fully air-gapped installs aren't supported.
 >
-> Prep runs **only when the per-MCP mount dir is absent** (`tmp/mcp-mount-<id>/`). Once the
-> package is cached, daemon restarts skip prep entirely — otherwise the package's install hooks
-> would run with full network on every restart and could exfiltrate anything the offline phase-2
-> run had stashed in `/work`. To re-run prep (after a package version bump or to recover from a
-> poisoned cache), delete `tmp/mcp-mount-<id>/` and restart the daemon. If prep fails, the mount
-> dir is wiped so the next start retries.
+> Prep runs **only when the per-MCP mount dir is empty** (`tmp/mcp-mount-<id>/`). Once the package is cached, daemon restarts skip prep entirely — otherwise the package's install hooks would run with full network on every restart and could exfiltrate anything the offline phase-2 run had stashed in `/work`. A successful prep records a stamp next to the mount dir (`tmp/mcp-mount-<id>.prep.json`, outside `/work` so the MCP can't forge it) with the package, version, `command` and runtime image id. When any of them changes — a version bump in `mcp.yml`, or a rebuilt runtime image whose package manager uses a new cache layout (uv 0.12 reads `simple-v25/`, older caches only have `simple-v21/`) — the next start wipes the mount dir and preps afresh; it never re-preps in place. This applies only to `network.disable: true` entries, which can't hold login state anyway; online MCPs' mount dirs (e.g. totem's tokens) are never wiped. To force a re-prep (e.g. a poisoned cache), delete `tmp/mcp-mount-<id>/` and restart the daemon. If prep fails, the mount dir is wiped so the next start retries.
 
 ## How handlers use MCP tools
 
@@ -342,7 +337,7 @@ namespaced `atlassian_jira_create_issue` key. They apply **in this order**:
    a tool matching both `approval` and `privileged` ends up `privileged`.
 
 Glob semantics match the `tools:` matcher: a bare name is an exact match; `*` matches any sequence
-(including `_`), fully anchored (`comment_*` matches `comment_reply` but not `commentary`).
+(including `_`), fully anchored (`comment_*` matches `comment_reply` but not `commentary`). Some servers prefix their own tool names (totem reports `whoop_profile_update`), so check the bare names with `familiar tools list --mcp` — `familiar tools lint-mcps` warns about patterns that match no tool while the daemon is running.
 
 The config lives host-side in `mcp.yml`; the `/mcp/` catalog ships the four lists verbatim and the
 container resolves them (read once at boot — a change needs a daemon restart). `familiar tools list`
@@ -373,7 +368,13 @@ atlassian:
   markdown. Requires the daemon: built-ins come from the catalog the agent container reports to the
   bastion on startup, plugin tools from the plugin-tools gateway, and MCP tools from the live bastion.
 - **Lint.** `familiar tools lint-mcps` validates `config/mcp.yml` and lists the configured MCPs (id,
-  source, package). A missing file is treated as "no MCPs" and is not an error.
+  source, package). A missing file is treated as "no MCPs" and is not an error. When the daemon is
+  running, it also lists each gated MCP's tools through the bastion and warns about every
+  `allowlist` / `denylist` / `approval` / `privileged` pattern that matches no tool — such a pattern
+  is a silent no-op at runtime. The warning suggests tool names that end with the pattern, which
+  catches the common miss of a server prefixing its own tool names (totem reports
+  `whoop_profile_update`, so `profile_update` matches nothing). Without the daemon the check is
+  skipped with a note. `--raw` emits unstyled markdown.
 - **List declared MCPs.** `familiar tools list-mcps` prints every entry in `mcp.yml`, its source, and
   whether the per-id container is `live` or `idle` right now (one `docker ps` shot at the start).
   For `npm`/`pypi` entries a `(cached)` annotation appears next to the package name when

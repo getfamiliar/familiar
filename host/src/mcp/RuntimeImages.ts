@@ -1,7 +1,7 @@
 import type { Logger } from "@getfamiliar/shared";
 import type { Bootstrap } from "../Bootstrap.js";
 import { pullImageIfNeeded } from "../container-bridge/Images.js";
-import { dockerExec } from "../utils/DockerTools.js";
+import { dockerCapture, dockerExec } from "../utils/DockerTools.js";
 
 /**
  * Tag for the generic node runtime image used by `source: npm`
@@ -51,6 +51,28 @@ export async function ensureRuntimeImage(
     const dir = runtimeDockerfileDir(boot.homeDir, source);
     log.info(`building ${tag} from ${dir}`);
     await dockerExec(["build", "-t", tag, dir]);
+}
+
+/**
+ * Id of the local runtime image for a source, as `docker image inspect`
+ * reports it. Changes whenever the image is rebuilt or re-pulled with
+ * different content, which is what invalidates offline package caches.
+ *
+ * @param source The MCP runtime flavor (`npm` or `pypi`).
+ * @returns The image id (`sha256:…`).
+ * @throws When the image is not present locally (call
+ *   {@link ensureRuntimeImage} first).
+ */
+export async function inspectRuntimeImageId(source: "npm" | "pypi"): Promise<string> {
+    const tag = source === "npm" ? NPM_RUNTIME_IMAGE : PYPI_RUNTIME_IMAGE;
+    const result = await dockerCapture(["image", "inspect", "--format", "{{.Id}}", tag]);
+    const id = result.stdout.trim();
+    if (result.code !== 0 || id.length === 0) {
+        throw new Error(
+            `could not inspect runtime image ${tag} (docker exited with ${result.code})`,
+        );
+    }
+    return id;
 }
 
 /**

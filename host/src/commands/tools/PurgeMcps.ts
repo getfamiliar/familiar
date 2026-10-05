@@ -48,6 +48,18 @@ export const purgeMcpsCommand = defineCommand({
             return;
         }
 
+        // Offline prep stamps (`mcp-mount-<id>.prep.json`) describe the
+        // caches just removed; drop them too so no orphan stamp lingers.
+        for (const entry of readdirSync(boot.tmpDir, { withFileTypes: true })) {
+            if (
+                entry.isFile() &&
+                entry.name.startsWith(MOUNT_DIR_PREFIX) &&
+                entry.name.endsWith(".prep.json")
+            ) {
+                rmSync(path.join(boot.tmpDir, entry.name), { force: true });
+            }
+        }
+
         let totalBytes = 0;
         for (const dir of targets) {
             totalBytes += dirSize(dir);

@@ -4,6 +4,12 @@ import type { PluginMcpService } from "../../mcp/PluginMcpService.js";
 import { isProcessAlive } from "../pidfile.js";
 
 /**
+ * Loopback URL of the running daemon's bastion. Matches
+ * `Bastion.DEFAULT_PORT` (8788); the daemon never overrides it.
+ */
+export const DAEMON_BASTION_LOOPBACK_URL = "http://127.0.0.1:8788";
+
+/**
  * Verbosity level for `tools list`, derived from the count of `-v` /
  * `--verbose` flags:
  *

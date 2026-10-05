@@ -17,6 +17,7 @@ import {
     type CatalogTool,
     coerceSchema,
     columnBudgets,
+    DAEMON_BASTION_LOOPBACK_URL,
     filterTools,
     isDaemonRunning,
     listToolsFor,
@@ -24,12 +25,6 @@ import {
     renderRawMarkdownTable,
 } from "./render.js";
 import { verbosityFrom } from "./verbosity.js";
-
-/**
- * Loopback URL of the running daemon's bastion. Matches
- * `Bastion.DEFAULT_PORT` (8788); the daemon never overrides it.
- */
-const DAEMON_BASTION_LOOPBACK_URL = "http://127.0.0.1:8788";
 
 /** Curated/built-in groups shown first, in this fixed order. */
 const CURATED_GROUP_ORDER = ["core", "fs", "bash", "reflection"];

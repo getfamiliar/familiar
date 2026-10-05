@@ -291,6 +291,8 @@ Handler prompts are kept short. They tell the agent how to find more context (e.
 - **Cronjobs** — stateless, idempotent. On exception: log and continue at next schedule. Use `node-cron` or `bullmq`.
 - **Daemons** (long-running processes like IMAP IDLE, Telegram bot) — exponential backoff on restart (1s → 2s → 4s → ... up to 5min cap).
 - **Graceful shutdown** — SIGTERM with 10s grace period; plugins should drain in-flight operations and persist any pending state.
+- **Failure isolation** — a plugin whose `prepare`, `start` or `tools` hook throws is logged and disabled instead of taking the daemon down (`PluginHost.failedPlugins`); a summary line lists every disabled plugin at boot. Its tools stay registered but every call fails with the original error, and its own CLI commands rethrow a `prepare` failure. Restart the daemon after fixing the cause — there is no automatic retry.
+- **Never as root** — the CLI refuses to run with uid 0: a root run leaves root-owned files under `data/` that the next normal start can't read.
 
 ### Logging
 

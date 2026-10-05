@@ -141,9 +141,13 @@ export class PluginToolsRegistry {
 
         const pluginLog = this.log.child({ plugin: pluginId });
 
+        // Validate every tool before committing any, so a throw leaves the
+        // registry untouched (the host isolates a failing plugin and keeps
+        // running — half its tools must not linger).
+        const staged = new Map<string, RegisteredPluginTool>();
         for (const tool of tools) {
             const key = isCore ? tool.name : `${pluginId}_${tool.name}`;
-            if (this.tools.has(key)) {
+            if (this.tools.has(key) || staged.has(key)) {
                 throw new Error(
                     `plugin "${pluginId}" tool "${tool.name}" maps to key "${key}" which ` +
                         `is already registered.`,
@@ -161,7 +165,7 @@ export class PluginToolsRegistry {
                 }
                 groups.add(name);
             }
-            this.tools.set(key, {
+            staged.set(key, {
                 pluginId,
                 toolName: tool.name,
                 key,
@@ -173,6 +177,9 @@ export class PluginToolsRegistry {
                 groups,
                 level: tool.level ?? DEFAULT_TOOL_LEVEL,
             });
+        }
+        for (const [key, registered] of staged) {
+            this.tools.set(key, registered);
         }
         this.pluginIds.add(pluginId);
     }

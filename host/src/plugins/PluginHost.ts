@@ -7,6 +7,7 @@ import type {
     ModelMetaData,
     ModelProviderDescriptor,
     PluginManifest,
+    PluginTool,
     PostgresConnection,
 } from "@getfamiliar/shared";
 import { EventBus, ModelNotSupported } from "@getfamiliar/shared";
@@ -59,6 +60,15 @@ const DAEMON_PIDFILE_POLL_MS = 500;
  */
 const DEFAULT_BASTION_BASE_URL = "http://127.0.0.1:8788";
 
+/** Lifecycle hook a plugin failed in; see {@link PluginHost.failedPlugins}. */
+type PluginFailurePhase = "prepare" | "start" | "tools";
+
+/** Why a plugin was disabled: the hook that threw and what it threw. */
+interface PluginFailure {
+    readonly phase: PluginFailurePhase;
+    readonly error: Error;
+}
+
 /**
  * Loader and lifecycle owner for plugins inside the host process.
  *
@@ -95,6 +105,14 @@ export class PluginHost {
     private bastionBaseUrl: string = DEFAULT_BASTION_BASE_URL;
     private connection: PostgresConnection | undefined;
     private prepared = false;
+    /**
+     * Plugins disabled because a lifecycle hook threw, keyed by plugin id.
+     * A failing plugin must never take the host down: it is logged,
+     * recorded here and skipped by the later lifecycle steps, while every
+     * other plugin keeps running. Its tools stay registered but fail on
+     * call with the recorded error (see {@link registerPluginTools}).
+     */
+    private readonly failedPlugins = new Map<string, PluginFailure>();
     /**
      * One controller shared by every plugin {@link HostContext} built
      * by this PluginHost. {@link wrapForExit} arms it from the pidfile
@@ -414,8 +432,9 @@ export class PluginHost {
                 continue;
             }
             const ctx = this.context(plugin.id);
-            const subCmds = host.commands?.(ctx).map((cmd) => this.wrapForExit(cmd)) ?? [];
-            const main = host.main ? this.wrapForExit(host.main(ctx)) : undefined;
+            const subCmds =
+                host.commands?.(ctx).map((cmd) => this.wrapForExit(plugin.id, cmd)) ?? [];
+            const main = host.main ? this.wrapForExit(plugin.id, host.main(ctx)) : undefined;
             map[plugin.id] = pluginRoot(plugin.id, subCmds, main);
         }
         return map;
@@ -471,9 +490,12 @@ export class PluginHost {
      * introspective paths (`--help`, `config lint`) so a broken
      * config still lets the user inspect / lint.
      *
-     * Plugin failures here propagate — `prepare` is supposed to be
-     * trivial setup, so a throw means the plugin is misconfigured
-     * and refusing to proceed is the right behavior.
+     * A plugin whose `prepare` throws is logged and disabled (see
+     * {@link failedPlugins}); the remaining plugins still prepare, so one
+     * misconfigured plugin can't block the daemon or another plugin's
+     * CLI commands. That plugin's own commands rethrow the error (see
+     * {@link wrapForExit}). Known gap: providers the plugin registered
+     * before throwing (storage, mail, calendar) stay registered.
      */
     prepareAll(): void {
         if (this.prepared) {
@@ -483,9 +505,31 @@ export class PluginHost {
             if (!plugin.host?.prepare) {
                 continue;
             }
-            plugin.host.prepare(this.context(plugin.id));
+            try {
+                plugin.host.prepare(this.context(plugin.id));
+            } catch (err) {
+                this.disablePlugin(plugin.id, "prepare", err);
+            }
         }
         this.prepared = true;
+    }
+
+    /**
+     * Record a plugin as disabled and log why. The log line is
+     * self-contained (plugin id, hook, error message) because the
+     * structured context isn't shown to humans tailing the daemon.
+     *
+     * @param pluginId The plugin whose hook threw.
+     * @param phase The lifecycle hook that threw.
+     * @param err Whatever the hook threw.
+     */
+    private disablePlugin(pluginId: string, phase: PluginFailurePhase, err: unknown): void {
+        const error = err instanceof Error ? err : new Error(String(err));
+        this.failedPlugins.set(pluginId, { phase, error });
+        this.log.error(
+            { plugin: pluginId, phase, err: error.message },
+            `plugin "${pluginId}" failed in ${phase}: ${error.message} — plugin disabled`,
+        );
     }
 
     /**
@@ -507,9 +551,12 @@ export class PluginHost {
     }
 
     /**
-     * Await each plugin's `start(ctx)` hook in registration order.
-     * Used during daemon boot. Failures bubble up — the daemon
-     * refuses to start if any plugin daemon fails to initialize.
+     * Await each plugin's `start(ctx)` hook in registration order, then
+     * register its tools. Used during daemon boot. A plugin whose
+     * `prepare` or `start` threw is disabled but the daemon keeps
+     * booting: its tools are still registered so the agent sees them,
+     * and every call fails with the original error. A summary of all
+     * disabled plugins is logged at the end.
      *
      * Callers must invoke {@link prepareAll} first; daemon `start`
      * does this explicitly so cross-plugin module state populated in
@@ -524,16 +571,16 @@ export class PluginHost {
                 continue;
             }
             const ctx = this.context(plugin.id);
-            if (host?.start) {
-                await host.start(ctx);
+            if (host?.start && !this.failedPlugins.has(plugin.id)) {
+                try {
+                    await host.start(ctx);
+                } catch (err) {
+                    this.disablePlugin(plugin.id, "start", err);
+                }
             }
             // `tools(ctx)` runs after `start()` resolves so closures
-            // over start-time state are safe. Skipped when no
-            // registry is wired (one-shot CLI paths).
-            if (host?.tools && this.toolsRegistry) {
-                const tools = host.tools(ctx);
-                this.toolsRegistry.register(plugin.id, ctx, tools);
-            }
+            // over start-time state are safe.
+            this.registerPluginTools(plugin, ctx);
         }
         // Core tools (`cal_*`, `mail_*`, future approval-gate prompts)
         // land after every plugin's `start` so any provider that
@@ -572,6 +619,52 @@ export class PluginHost {
                 );
             }
         }
+        if (this.failedPlugins.size > 0) {
+            const summary = [...this.failedPlugins]
+                .map(([id, failure]) => `${id} (${failure.phase}: ${failure.error.message})`)
+                .join(", ");
+            this.log.warn(
+                `${this.failedPlugins.size} plugin${this.failedPlugins.size === 1 ? "" : "s"} disabled: ${summary}`,
+            );
+        }
+    }
+
+    /**
+     * Register a plugin's `tools(ctx)` with the tools registry. Skipped
+     * when the plugin declares no tools or no registry is wired (one-shot
+     * CLI paths). For a disabled plugin every tool's `execute` is
+     * replaced by one that throws the recorded failure, so the agent gets
+     * an explicit error instead of an unknown tool. A throw from
+     * `tools(ctx)` or from registration is logged; for a healthy plugin it
+     * marks the plugin failed in phase `tools` (its daemon keeps running).
+     *
+     * @param plugin The plugin whose tools to register.
+     * @param ctx The plugin's host context.
+     */
+    private registerPluginTools(plugin: PluginManifest, ctx: HostContext): void {
+        const host = plugin.host;
+        if (!host?.tools || !this.toolsRegistry) {
+            return;
+        }
+        const failure = this.failedPlugins.get(plugin.id);
+        try {
+            const tools = host.tools(ctx);
+            const registered =
+                failure === undefined
+                    ? tools
+                    : tools.map((tool) => disabledPluginTool(plugin.id, tool, failure));
+            this.toolsRegistry.register(plugin.id, ctx, registered);
+        } catch (err) {
+            if (failure === undefined) {
+                this.disablePlugin(plugin.id, "tools", err);
+                return;
+            }
+            const message = err instanceof Error ? err.message : String(err);
+            this.log.error(
+                { plugin: plugin.id, err: message },
+                `plugin "${plugin.id}" (already disabled in ${failure.phase}) could not register its tools either: ${message}`,
+            );
+        }
     }
 
     /**
@@ -591,6 +684,13 @@ export class PluginHost {
             const plugin = this.plugins[i];
             const stop = plugin?.host?.stop;
             if (!stop) {
+                continue;
+            }
+            // A plugin whose prepare/start threw never initialized, so
+            // there is nothing to drain. A `tools` failure leaves the
+            // started daemon running — that one still gets stopped.
+            const failurePhase = this.failedPlugins.get(plugin.id)?.phase;
+            if (failurePhase === "prepare" || failurePhase === "start") {
                 continue;
             }
             try {
@@ -670,11 +770,18 @@ export class PluginHost {
      *    body runs (matches the daemon-start invariant: any plugin
      *    can call into any other plugin's library without depending
      *    on `start` order);
+     *  - the command fails with the recorded error when its own
+     *    plugin's `prepare` threw (other plugins' failures don't
+     *    affect it);
      *  - the host's postgres connection is closed after the command
      *    returns. Without the close, the pool keeps the event loop
      *    alive and the CLI process hangs.
+     *
+     * @param pluginId The plugin that contributes the command.
+     * @param cmd The plugin's citty command.
+     * @returns The wrapped command (or `cmd` itself when it has no `run`).
      */
-    private wrapForExit(cmd: AnyCommandDef): AnyCommandDef {
+    private wrapForExit(pluginId: string, cmd: AnyCommandDef): AnyCommandDef {
         const original = cmd.run;
         if (!original) {
             return cmd;
@@ -683,6 +790,13 @@ export class PluginHost {
             ...cmd,
             run: async (ctx) => {
                 this.prepareAll();
+                // prepareAll() isolates plugin failures; this plugin's own
+                // commands must still fail loudly when its prepare threw.
+                const failure = this.failedPlugins.get(pluginId);
+                if (failure !== undefined) {
+                    await this.close();
+                    throw failure.error;
+                }
                 const stopWatcher = this.startDaemonPidfileWatcher();
                 try {
                     return await (original as (c: typeof ctx) => unknown)(ctx);
@@ -764,4 +878,34 @@ function pluginRoot(
         run: main?.run,
         subCommands,
     });
+}
+
+/**
+ * Wrap a disabled plugin's tool so it stays visible to the agent but
+ * every call fails with the reason the plugin was disabled.
+ *
+ * @param pluginId The disabled plugin's id (named in the error).
+ * @param tool The tool as the plugin declared it.
+ * @param failure The recorded lifecycle failure.
+ * @returns A tool with the same name, schema, groups and level whose
+ *   `execute` always rejects.
+ */
+function disabledPluginTool(
+    pluginId: string,
+    tool: PluginTool,
+    failure: PluginFailure,
+): PluginTool {
+    return {
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        groups: tool.groups,
+        level: tool.level,
+        execute: async () => {
+            throw new Error(
+                `plugin "${pluginId}" failed in ${failure.phase} (${failure.error.message}); ` +
+                    "fix the cause and restart the daemon",
+            );
+        },
+    };
 }

@@ -55,16 +55,28 @@ export class TokenStore {
      * Read the stored tokens.
      *
      * @returns The tokens, or `null` when no login is cached or the
-     *   file is unreadable / malformed (treated as "not logged in" so a
-     *   corrupted file is recoverable by re-running `tesla login`).
+     *   file is malformed (treated as "not logged in" so a corrupted
+     *   file is recoverable by re-running `tesla login`).
+     * @throws When the file exists but this process may not read it
+     *   (`EACCES` / `EPERM`) — with a message naming the `chown` fix —
+     *   or on any other I/O error.
      */
     async read(): Promise<TeslaTokens | null> {
         let raw: string;
         try {
             raw = await fs.readFile(this.file, "utf8");
         } catch (err) {
-            if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+            const code = (err as NodeJS.ErrnoException).code;
+            if (code === "ENOENT") {
                 return null;
+            }
+            if (code === "EACCES" || code === "EPERM") {
+                throw new Error(
+                    `Tesla token file ${this.file} is not readable (${code}). It was most likely ` +
+                        `written by a process running as another user (typically \`sudo familiar …\`). ` +
+                        `Fix the ownership with: sudo chown "$(id -u):$(id -g)" ${this.file}`,
+                    { cause: err },
+                );
             }
             throw err;
         }
