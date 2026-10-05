@@ -7,8 +7,8 @@
 # inside the bind-mounted `/work` (host: `tmp/mcp-mount-<id>`), so a
 # warm restart skips the fetch.
 # Base pinned by digest so the build cache key is stable. Bump deliberately via
-# `docker buildx imagetools inspect node:22-alpine`.
-FROM node:22-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f
+# `docker buildx imagetools inspect node:24-alpine`.
+FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
 ENV HOME=/work
 WORKDIR /work
 ENTRYPOINT ["npx", "-y"]
