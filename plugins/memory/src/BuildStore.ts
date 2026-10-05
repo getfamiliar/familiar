@@ -80,6 +80,7 @@ export async function buildMemoryStore(
         minVectorSimilarity: cfg.minVectorSimilarity,
         persistToDiskDelay: cfg.persistToDiskDelay,
         excludeGlobs: cfg.excludeGlobs,
+        maxChunkChars: cfg.maxChunkChars,
         log,
     });
 

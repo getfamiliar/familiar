@@ -50,7 +50,9 @@ const HEADING_RE = /^(#{1,3})[ \t]+(.+?)[ \t]*$/gm;
 const FENCE_RE = /^(?:```|~~~)[^\n]*$/gm;
 
 /**
- * Cut a markdown document into {@link Chunk}s, one per h1/h2/h3.
+ * Cut a markdown document into {@link Chunk}s, one per h1/h2/h3 —
+ * further split when a section would exceed `maxChunkChars` (see
+ * {@link splitOversizedChunk}).
  *
  * Pure function — no I/O, no logging. The caller is the indexer
  * (`MemoryStore.updateFile`) and the unit tests.
@@ -72,8 +74,34 @@ const FENCE_RE = /^(?:```|~~~)[^\n]*$/gm;
  *    `mail/rules/adam@weeklyfoo.com.md` — typically just a paragraph
  *    of prose — would silently produce zero chunks and never surface
  *    in search.
+ *  - **Oversized sections** are split into `(part i/n)` chunks so every
+ *    embedding input stays under the provider's token limit.
+ *
+ * @param source The markdown document.
+ * @param relativePath Workspace-relative path of the document.
+ * @param maxChunkChars Upper bound for headlines + context + content of
+ *   one chunk (the embedding input), in characters.
+ * @returns The chunks in document order.
  */
-export function chunkMarkdown(source: string, relativePath: string): Chunk[] {
+export function chunkMarkdown(
+    source: string,
+    relativePath: string,
+    maxChunkChars: number,
+): Chunk[] {
+    return chunkBySections(source, relativePath).flatMap((chunk) =>
+        splitOversizedChunk(chunk, maxChunkChars),
+    );
+}
+
+/**
+ * Section-level cut behind {@link chunkMarkdown}: one chunk per h1–h3
+ * (or one for a headerless file), regardless of size.
+ *
+ * @param source The markdown document.
+ * @param relativePath Workspace-relative path (headline for headerless files).
+ * @returns One chunk per non-empty section.
+ */
+function chunkBySections(source: string, relativePath: string): Chunk[] {
     const masked = maskFencedCode(source);
 
     interface RawHeading {
@@ -244,4 +272,143 @@ function chunkHeaderless(source: string, relativePath: string): Chunk[] {
             content: body,
         },
     ];
+}
+
+/**
+ * Characters reserved for the ` (part i/n)` headline suffix and the two
+ * `\n\n` separators `MemoryStore.buildEmbeddingInput` puts between
+ * headlines, context and content.
+ */
+const SPLIT_OVERHEAD_CHARS = 24;
+
+/**
+ * Floor for the content budget of one part. A pathological headline or
+ * context longer than `maxChunkChars` must not drive the budget to zero
+ * (endless one-character parts); such parts may then exceed the limit.
+ */
+const MIN_CONTENT_BUDGET_CHARS = 500;
+
+/** A list item at the start of a line (`- `, `* `, `+ `, `1. `, `1) `). */
+const LIST_ITEM_RE = /^(?:[-*+]|\d+[.)])[ \t]/;
+
+/** Opening or closing code fence line. */
+const FENCE_LINE_RE = /^(?:```|~~~)/;
+
+/**
+ * Split a chunk whose embedding input would exceed `maxChunkChars` into
+ * several chunks. Cuts at block boundaries — blank lines and top-level
+ * list items, never inside a fenced code block — and packs consecutive
+ * blocks greedily. A single block that is still too large is cut at
+ * sentence ends, then at whitespace. Each part keeps the headline trail
+ * (suffixed ` (part i/n)`) and the document context.
+ *
+ * @param chunk The section chunk.
+ * @param maxChunkChars Upper bound for headlines + context + content.
+ * @returns `[chunk]` unchanged when it fits, else the parts in order.
+ */
+export function splitOversizedChunk(chunk: Chunk, maxChunkChars: number): Chunk[] {
+    const fixedChars = chunk.headlines.length + chunk.context.length + SPLIT_OVERHEAD_CHARS;
+    if (fixedChars + chunk.content.length <= maxChunkChars) {
+        return [chunk];
+    }
+    const budget = Math.max(maxChunkChars - fixedChars, MIN_CONTENT_BUDGET_CHARS);
+    const parts: string[] = [];
+    let current = "";
+    for (const block of splitIntoBlocks(chunk.content)) {
+        if (block.length > budget) {
+            if (current.length > 0) {
+                parts.push(current);
+                current = "";
+            }
+            parts.push(...hardSplit(block, budget));
+            continue;
+        }
+        const candidate = current.length === 0 ? block : `${current}\n\n${block}`;
+        if (candidate.length > budget) {
+            parts.push(current);
+            current = block;
+        } else {
+            current = candidate;
+        }
+    }
+    if (current.length > 0) {
+        parts.push(current);
+    }
+    if (parts.length <= 1) {
+        return [chunk];
+    }
+    return parts.map((content, i) => ({
+        headlines: `${chunk.headlines} (part ${i + 1}/${parts.length})`,
+        context: chunk.context,
+        content,
+    }));
+}
+
+/**
+ * Split markdown into blocks: a new block starts after a blank line and
+ * at every top-level list item. Fenced code stays one block.
+ *
+ * @param content Section body.
+ * @returns Trimmed, non-empty blocks in order.
+ */
+function splitIntoBlocks(content: string): string[] {
+    const blocks: string[] = [];
+    let lines: string[] = [];
+    let isInFence = false;
+    const flush = (): void => {
+        const block = lines.join("\n").trim();
+        if (block.length > 0) {
+            blocks.push(block);
+        }
+        lines = [];
+    };
+    for (const line of content.split("\n")) {
+        if (FENCE_LINE_RE.test(line)) {
+            if (!isInFence) {
+                flush();
+            }
+            isInFence = !isInFence;
+            lines.push(line);
+            continue;
+        }
+        if (!isInFence && (line.trim().length === 0 || LIST_ITEM_RE.test(line))) {
+            flush();
+        }
+        lines.push(line);
+    }
+    flush();
+    return blocks;
+}
+
+/**
+ * Cut one oversized block into pieces of at most `budget` characters,
+ * preferring sentence ends (`. `, `! `, `? `) in the back half of the
+ * window, then whitespace, then a hard cut.
+ *
+ * @param block The block text.
+ * @param budget Maximum piece length.
+ * @returns Trimmed pieces in order.
+ */
+function hardSplit(block: string, budget: number): string[] {
+    const pieces: string[] = [];
+    let rest = block;
+    while (rest.length > budget) {
+        const window = rest.slice(0, budget);
+        const minCut = Math.floor(budget / 2);
+        let cut = Math.max(
+            window.lastIndexOf(". "),
+            window.lastIndexOf("! "),
+            window.lastIndexOf("? "),
+        );
+        if (cut < minCut) {
+            cut = window.search(/\s\S*$/);
+        }
+        const end = cut >= minCut ? cut + 1 : budget;
+        pieces.push(rest.slice(0, end).trim());
+        rest = rest.slice(end).trim();
+    }
+    if (rest.length > 0) {
+        pieces.push(rest);
+    }
+    return pieces;
 }

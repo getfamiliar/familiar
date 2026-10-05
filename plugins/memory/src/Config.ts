@@ -94,6 +94,14 @@ export interface MemoryConfig {
      * every index mutation; explicit final flush on plugin `stop()`.
      */
     readonly persistToDiskDelay: number;
+    /**
+     * Upper bound in characters for one chunk's embedding input
+     * (headlines + context + content). Larger markdown sections are split
+     * into `(part i/n)` chunks. The default of 6000 assumes ~3 characters
+     * per token and stays under the smallest supported provider limit
+     * (Google, 2048 tokens); OpenAI / Mistral allow 8192.
+     */
+    readonly maxChunkChars: number;
 }
 
 /**
@@ -127,6 +135,7 @@ export function readMemoryConfig(config: ConfigService): MemoryConfig {
     };
     const minVectorSimilarity = config.getNumber("memory.minVectorSimilarity", 0.3);
     const persistToDiskDelay = config.getNumber("memory.persistToDiskDelay", 30);
+    const maxChunkChars = config.getNumber("memory.maxChunkChars", 6000);
     return {
         minScoreToMention,
         maxSystemPromptMemoryResults,
@@ -138,5 +147,6 @@ export function readMemoryConfig(config: ConfigService): MemoryConfig {
         hybridWeights,
         minVectorSimilarity,
         persistToDiskDelay,
+        maxChunkChars,
     };
 }

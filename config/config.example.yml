@@ -257,6 +257,7 @@ inference:
 #   # file's description source: writable-path files are described by their first
 #   # paragraph, other files by their `description:` frontmatter. No separate key.
 #   language: english                   # stemmer + stopwords language; unknown values fall back to english
+#   maxChunkChars: 6000                 # max characters per embedded chunk; larger sections are split into "(part i/n)" chunks
 #   hybridWeights:
 #     vector: 0.5                       # weight of vector similarity in the hybrid score
 #     text: 0.5                         # weight of BM25 lexical match in the hybrid score

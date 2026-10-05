@@ -102,6 +102,11 @@ export interface MemoryStoreOptions {
     readonly persistToDiskDelay: number;
     /** Glob patterns excluded from indexing. */
     readonly excludeGlobs: readonly string[];
+    /**
+     * Upper bound (characters) for one chunk's embedding input; larger
+     * sections are split. See `memory.maxChunkChars`.
+     */
+    readonly maxChunkChars: number;
     /** Pino-style logger scoped to the memory plugin. */
     readonly log: Logger;
 }
@@ -518,7 +523,7 @@ export class MemoryStore {
             throw err;
         }
 
-        const chunks = chunkMarkdown(source, relativePath);
+        const chunks = chunkMarkdown(source, relativePath, this.opts.maxChunkChars);
         const existing = this.dumpRaw(relativePath);
 
         const desiredByHash = new Map<string, Chunk>();
