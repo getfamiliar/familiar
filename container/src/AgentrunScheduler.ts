@@ -18,12 +18,12 @@ import { formatInferenceError } from "./agent-runner/formatInferenceError.js";
 import { RetryableModelException } from "./agent-runner/RetryableModelException.js";
 import { StepLimitReachedError } from "./agent-runner/StepLimitReachedError.js";
 import type { ChatManager } from "./chat/ChatManager.js";
+import type { HostToolsClient } from "./host-tools/HostToolsClient.js";
 import type { McpClientPool } from "./mcp/McpClientPool.js";
-import type { PluginToolsClient } from "./plugins/ToolsClient.js";
-import type { AgentrunRecovery } from "./recovery/AgentrunRecovery.js";
 import type { Clock, TimerHandle } from "./testing/MockClock.js";
 import { buildContainerToolRunContext } from "./tools/ContainerToolRunContext.js";
 import { ToolsFactory } from "./tools/ToolsFactory.js";
+import type { AgentrunRecovery } from "./utils/AgentrunRecovery.js";
 
 /**
  * Deps the {@link AgentrunScheduler} takes from the outside. Production
@@ -72,8 +72,8 @@ export interface SchedulerDeps {
     readonly runnerFactory: (row: AgentRunRow) => AgentRunner;
     /** Pool used to assemble MCP tools per runner. */
     readonly mcpPool: Pick<McpClientPool, "tools" | "mcpKeysById" | "mcpLevelsByKey">;
-    /** Bastion client used to fetch plugin tools per runner. */
-    readonly pluginToolsClient: Pick<PluginToolsClient, "tools">;
+    /** Bastion client used to fetch host-side tools (plugin and core) per runner. */
+    readonly hostToolsClient: Pick<HostToolsClient, "tools">;
     /** Shared chat manager — methods take `eventId` per call. */
     readonly chat: Pick<ChatManager, "fetchHistory" | "appendAssistantMessage">;
     /** Startup recovery helper. Implementations expose `recover()` only. */
@@ -659,7 +659,7 @@ export class AgentrunScheduler {
             scheduledSubagentBus,
             timezone,
             mcpPool,
-            pluginToolsClient,
+            hostToolsClient,
             chat,
             log,
             maxToolDescriptionChars,
@@ -684,7 +684,7 @@ export class AgentrunScheduler {
                     row.eventId,
                     offloadTokenThreshold,
                 );
-                const pluginToolset = await pluginToolsClient.tools(
+                const hostToolset = await hostToolsClient.tools(
                     row.eventId,
                     row.id,
                     offloadTokenThreshold,
@@ -701,10 +701,10 @@ export class AgentrunScheduler {
                     mcpTools: mcpPool.tools(),
                     mcpKeysById: mcpPool.mcpKeysById(),
                     mcpLevelsByKey: mcpPool.mcpLevelsByKey(),
-                    pluginTools: pluginToolset.tools,
-                    pluginKeysById: pluginToolset.keysById,
-                    pluginGroupKeys: pluginToolset.groupKeys,
-                    pluginLevelsByKey: pluginToolset.levelsByKey,
+                    pluginTools: hostToolset.tools,
+                    pluginKeysById: hostToolset.keysById,
+                    pluginGroupKeys: hostToolset.groupKeys,
+                    pluginLevelsByKey: hostToolset.levelsByKey,
                     toolRunContext,
                     log,
                     toolCallBus,

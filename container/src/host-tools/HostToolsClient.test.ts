@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { afterEach, describe, it } from "node:test";
 import type { Logger } from "@getfamiliar/shared";
-import { PluginToolsClient } from "./ToolsClient.js";
+import { HostToolsClient } from "./HostToolsClient.js";
 
 /**
  * A minimal catalog entry as the bastion's `GET /plugin-tools/`
@@ -46,7 +46,7 @@ const NOOP_LOG: Logger = {
     debug: () => {},
 } as unknown as Logger;
 
-describe("PluginToolsClient — core sentinel is not an addressable auto-group", () => {
+describe("HostToolsClient — core sentinel is not an addressable auto-group", () => {
     const realFetch = globalThis.fetch;
     afterEach(() => {
         globalThis.fetch = realFetch;
@@ -59,7 +59,7 @@ describe("PluginToolsClient — core sentinel is not an addressable auto-group",
                 headers: { "content-type": "application/json" },
             })) as typeof fetch;
 
-        const client = new PluginToolsClient({ bastionUrl: "http://bastion", log: NOOP_LOG });
+        const client = new HostToolsClient({ bastionUrl: "http://bastion", log: NOOP_LOG });
         const { tools, keysById, groupKeys } = await client.tools("evt-1", "run-1", 10_000);
 
         // Every catalog tool still surfaces in the tool set.

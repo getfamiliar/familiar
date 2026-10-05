@@ -8,16 +8,18 @@ import {
 import { jsonSchema, type ToolSet, tool } from "ai";
 
 /**
- * Configuration for {@link PluginToolsClient}. Mirrors the
+ * Configuration for {@link HostToolsClient}. Mirrors the
  * {@link import("../mcp/McpClientPool").McpClientPool} surface — the
  * agent dials the bastion at the passed config `bastionUrl` and the client logs
  * lifecycle and per-call errors to a daemon-supplied logger.
  */
-export interface PluginToolsClientConfig {
+export interface HostToolsClientConfig {
     /**
      * Bastion base URL. The client GETs `${bastionUrl}/plugin-tools/`
      * for the catalog and POSTs invocations to
-     * `${bastionUrl}/plugin-tools/<key>`.
+     * `${bastionUrl}/plugin-tools/<key>`. The wire path keeps its
+     * historical `plugin-tools` name although it serves every host-side
+     * tool, plugin-contributed and core alike.
      */
     readonly bastionUrl: string;
     /** Logger child for fetch / dispatch lines. */
@@ -25,7 +27,7 @@ export interface PluginToolsClientConfig {
 }
 
 /**
- * One catalog entry as the host gateway exposes it on
+ * One host-side tool as the host gateway exposes it on
  * `GET /plugin-tools/`. Mirrors the registered-tool shape the host
  * registry stores; the client trusts the host's own lint and only
  * needs the three fields to build an AI SDK `tool()`.
@@ -65,43 +67,64 @@ interface CatalogEntry {
 }
 
 /**
- * Container-side discoverer for plugin-contributed tools. Unlike
- * {@link import("../mcp/McpClientPool").McpClientPool}, this client
+ * Container-side discoverer for host-side tools — tools that execute in
+ * the host process rather than in the container. They come from two
+ * sources: plugins (registered under their plugin id, e.g.
+ * `whatsapp_mark_read`) and the core itself (registered under the
+ * reserved {@link CORE_PLUGIN_ID} sentinel, e.g. the `cal_*`, `mail_*`
+ * and reflection tools). Both reach the container through the same
+ * bastion gateway, so this client treats them uniformly and only
+ * distinguishes them when building plugin-id auto-groups.
+ *
+ * Unlike {@link import("../mcp/McpClientPool").McpClientPool}, this client
  * is **fully lazy**: the catalog is fetched per-agentrun (see
  * {@link tools}) and every call closes over the originating event +
  * agentrun ids so the host gateway can resolve the full rows for
- * the plugin's `execute()`.
+ * the tool's `execute()`.
  *
  * Per-agentrun fetch trades a single sub-millisecond loopback HTTP
  * request for boot-order independence: the container can start
- * before plugins finish their `start(ctx)` hooks (which is the
- * current daemon order — see `host/src/commands/Start.ts`) and
+ * before the host finishes registering its tools — plugins do so in
+ * their `start(ctx)` hooks, which is the current daemon order (see
+ * `host/src/commands/Start.ts`) — and
  * still see tools the moment the first real agentrun fires. No
  * cache, no TTL, no invalidation knob to forget.
  *
  * Tool key namespacing matches MCP: the host already publishes
  * `${pluginId}_${name}` after sanitization, so the client passes
  * keys through verbatim and a handler's `tools:` treats each plugin
- * id as a group via the supplied {@link pluginKeysById} map.
+ * id as a group via the returned `keysById` map.
  */
-export class PluginToolsClient {
-    private readonly config: PluginToolsClientConfig;
+export class HostToolsClient {
+    private readonly config: HostToolsClientConfig;
 
-    constructor(config: PluginToolsClientConfig) {
+    /**
+     * @param config Bastion URL and logger for catalog fetches and calls.
+     */
+    constructor(config: HostToolsClientConfig) {
         this.config = config;
     }
 
     /**
-     * Fetch the live catalog and return a tool set whose `execute`
+     * Fetch the live host-side tool catalog and return a tool set whose `execute`
      * callbacks POST back to the gateway with `eventId`,
      * `agentrunId`, and the resolved offloading limit already bound.
      * Empty catalog → empty set.
      *
-     * The second return value maps plugin id → set of that plugin's
-     * sanitized tool keys, threaded into {@link
-     * import("../tools/ToolsFactory").ToolsFactory}'s `builtins` so a
-     * handler's `tools:` can reference a plugin id as a group
-     * (`tools: core, mail`).
+     * `keysById` maps plugin id → set of that plugin's sanitized tool
+     * keys (core tools are left out, see {@link CORE_PLUGIN_ID}),
+     * threaded into {@link import("../tools/ToolsFactory").ToolsFactory}'s
+     * `builtins` so a handler's `tools:` can reference a plugin id as a
+     * group (`tools: core, whatsapp`). `groupKeys` carries the curated
+     * groups every host-side tool declares, and `levelsByKey` each
+     * tool's security level.
+     *
+     * @param eventId Originating event id, bound into every call.
+     * @param agentrunId Calling agentrun id, bound into every call.
+     * @param toolCallOffloadingLimit Token threshold above which the
+     *   host offloads a tool result to a scratch file.
+     * @returns The tool set plus the per-plugin, per-group and per-level maps.
+     * @throws Error when the catalog fetch fails or returns a non-array body.
      */
     async tools(
         eventId: string,
@@ -151,9 +174,12 @@ export class PluginToolsClient {
     }
 
     /**
-     * GET the bastion's plugin-tools catalog. Trailing slash is
+     * GET the bastion's host-side tool catalog. Trailing slash is
      * required for the bastion's prefix router (same convention as
      * `/mcp/`).
+     *
+     * @returns The well-formed catalog entries; malformed items are skipped.
+     * @throws Error when the request fails or the body is not an array.
      */
     private async fetchCatalog(): Promise<CatalogEntry[]> {
         const url = `${this.config.bastionUrl.replace(/\/$/, "")}/plugin-tools/`;
@@ -213,6 +239,14 @@ export class PluginToolsClient {
      * Transport faults (5xx, parse errors) throw a synthesised
      * `ToolError("Transport", …)` for the same reason: every failure
      * mode becomes a `tool-error` block in the agent's transcript.
+     *
+     * @param key Sanitized tool key.
+     * @param args Tool arguments as produced by the model.
+     * @param eventId Originating event id.
+     * @param agentrunId Calling agentrun id.
+     * @param toolCallOffloadingLimit Result offloading threshold in tokens.
+     * @returns The tool's success value, verbatim.
+     * @throws ToolError on transport faults or a failure body.
      */
     private async invoke(
         key: string,
@@ -232,14 +266,14 @@ export class PluginToolsClient {
         } catch (err) {
             throw new ToolError(
                 "Transport",
-                `plugin tool ${key} fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+                `host tool ${key} fetch failed: ${err instanceof Error ? err.message : String(err)}`,
             );
         }
         if (!res.ok) {
             const text = await res.text().catch(() => "");
             throw new ToolError(
                 "Transport",
-                `plugin tool ${key} HTTP ${res.status} ${res.statusText}${text ? `: ${text}` : ""}`,
+                `host tool ${key} HTTP ${res.status} ${res.statusText}${text ? `: ${text}` : ""}`,
                 res.status,
             );
         }
@@ -249,13 +283,13 @@ export class PluginToolsClient {
         } catch (err) {
             throw new ToolError(
                 "Transport",
-                `plugin tool ${key} returned non-JSON body: ${err instanceof Error ? err.message : String(err)}`,
+                `host tool ${key} returned non-JSON body: ${err instanceof Error ? err.message : String(err)}`,
             );
         }
         if (isFailureBody(body)) {
             this.config.log.warn(
                 { tool: key, code: body.code, status: body.status, message: body.message },
-                "plugin tool error",
+                `host tool ${key} failed with ${body.code}: ${body.message}`,
             );
             throw new ToolError(body.code, body.message, body.status);
         }

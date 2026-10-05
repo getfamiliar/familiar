@@ -85,7 +85,7 @@ function buildHarness(opts: HarnessOptions): Harness {
         tools: () => ({}),
         mcpKeysById: () => new Map<string, ReadonlySet<string>>(),
     };
-    const pluginToolsClient = {
+    const hostToolsClient = {
         tools: async () => ({
             tools: {},
             keysById: new Map<string, ReadonlySet<string>>(),
@@ -128,7 +128,7 @@ function buildHarness(opts: HarnessOptions): Harness {
         clock,
         runnerFactory: buildRunnerFactory(opts.behaviors),
         mcpPool,
-        pluginToolsClient,
+        hostToolsClient,
         chat,
         recovery,
         stepTimeoutMs: opts.stepTimeoutMs ?? 60_000,
@@ -853,7 +853,7 @@ describe("AgentrunScheduler — disaster recovery", () => {
                 tools: () => ({}),
                 mcpKeysById: () => new Map(),
             },
-            pluginToolsClient: {
+            hostToolsClient: {
                 tools: async () => ({
                     tools: {},
                     keysById: new Map<string, ReadonlySet<string>>(),

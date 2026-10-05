@@ -56,7 +56,7 @@ export function mergeToolErrorsIntoResults(toolResults: unknown, content: unknow
 /**
  * Flatten the SDK's `error: unknown` field on a `tool-error` block into
  * a single human-readable string. The common case is a {@link ToolError}
- * reconstructed by `ToolsClient` from the gateway's `{ok:false, code,
+ * reconstructed by `HostToolsClient` from the gateway's `{ok:false, code,
  * message, status?}` envelope — we render those as `<code>: <message>`
  * (plus status when present) so the report shows the machine-readable
  * code alongside the human text. Other throws fall back to the

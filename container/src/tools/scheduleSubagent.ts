@@ -11,7 +11,7 @@ import {
 } from "@getfamiliar/shared";
 import { jsonSchema, type Tool, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
-import { normalizeHandlerSpec } from "./HandlerSpec.js";
+import { parseHandlerSpec } from "../utils/HandlerSpecParser.js";
 
 interface ScheduleSubagentInput {
     readonly handler: string;
@@ -121,7 +121,7 @@ export function buildScheduleSubagentTool(
         }),
         execute: ({ handler, topic, prompt, payload, when, key }) =>
             runJsonTool(async () => {
-                const { topic: resolvedTopic, handler: resolvedHandler } = normalizeHandlerSpec(
+                const { topic: resolvedTopic, handler: resolvedHandler } = parseHandlerSpec(
                     topic,
                     handler,
                     parent.topic,

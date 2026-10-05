@@ -9,7 +9,7 @@ import type { ContainerToolInfo, Logger } from "@getfamiliar/shared";
  * Best-effort: a failed report only means the host's built-in listing is
  * stale until the next container start, so a transport error is logged
  * and swallowed rather than crashing the container. The URL construction
- * mirrors {@link import("../plugins/ToolsClient.js").PluginToolsClient}
+ * mirrors {@link import("./HostToolsClient.js").HostToolsClient}
  * (strip a trailing slash, append the prefix with its own trailing slash).
  *
  * @param bastionUrl Base URL of the host bastion (passed config `bastionUrl`).

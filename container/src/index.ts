@@ -20,12 +20,12 @@ import { AgentRunner } from "./agent-runner/AgentRunner.js";
 import { ChatManager } from "./chat/ChatManager.js";
 import { EventWatcher } from "./EventWatcher.js";
 import { HandlerFile } from "./HandlerFile.js";
+import { HostToolsClient } from "./host-tools/HostToolsClient.js";
+import { reportContainerToolCatalog } from "./host-tools/ToolCatalogClient.js";
 import { McpClientPool } from "./mcp/McpClientPool.js";
-import { PluginToolsClient } from "./plugins/ToolsClient.js";
-import { AgentrunRecovery } from "./recovery/AgentrunRecovery.js";
 import { RealClock } from "./testing/MockClock.js";
-import { reportContainerToolCatalog } from "./tools/ToolCatalogClient.js";
 import { ToolsFactory } from "./tools/ToolsFactory.js";
+import { AgentrunRecovery } from "./utils/AgentrunRecovery.js";
 import { PassedConfig, resolveTimezone } from "./utils/PassedConfig.js";
 
 /**
@@ -93,9 +93,9 @@ async function main(): Promise<void> {
         log.child({ component: "tool-catalog-report" }),
     );
 
-    const pluginToolsClient = new PluginToolsClient({
+    const hostToolsClient = new HostToolsClient({
         bastionUrl,
-        log: log.child({ component: "plugin-tools-client" }),
+        log: log.child({ component: "host-tools-client" }),
     });
 
     const eventWatcher = new EventWatcher(connection, log);
@@ -128,7 +128,7 @@ async function main(): Promise<void> {
         clock: RealClock,
         runnerFactory: () => new AgentRunner(),
         mcpPool,
-        pluginToolsClient,
+        hostToolsClient,
         chat,
         recovery,
         stepTimeoutMs,

@@ -226,12 +226,12 @@ export interface AgentRunnerContext {
     /**
      * Build the tool set for this run from the handler's `tools:`
      * entries. The Scheduler-provided closure threads in `bus`,
-     * `parent`, `mcpPool`, `pluginToolsClient`, and the per-row
+     * `parent`, `mcpPool`, `hostToolsClient`, and the per-row
      * `waitForSubagent` callback so `start_subagent` is wired with
      * the right Scheduler hooks. The runner reads `handler.header.tools`,
      * computes the offload token threshold from model metadata, and
      * calls this once. The threshold flows into both the container-side
-     * tool-run context and (over the gateway) the host-side plugin tools.
+     * tool-run context and (over the gateway) the host-side tools.
      */
     readonly buildTools: (
         tools: readonly string[] | undefined,

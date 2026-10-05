@@ -8,7 +8,7 @@ import {
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
-import { normalizeHandlerSpec } from "./HandlerSpec.js";
+import { parseHandlerSpec } from "../utils/HandlerSpecParser.js";
 
 interface StartSubagentInput {
     readonly topic?: string;
@@ -105,7 +105,7 @@ export function buildStartSubagentTool(
         }),
         execute: ({ topic, handler, prompt, payload }) =>
             runTextTool(async () => {
-                const { topic: resolvedTopic, handler: resolvedHandler } = normalizeHandlerSpec(
+                const { topic: resolvedTopic, handler: resolvedHandler } = parseHandlerSpec(
                     topic,
                     handler,
                     parent.topic,
