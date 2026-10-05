@@ -16,6 +16,11 @@ import { defineCommand } from "citty";
 import type { Bootstrap } from "../Bootstrap.js";
 import { bootstrap, isDevMode } from "../Bootstrap.js";
 import { Bastion } from "../bastion/Bastion.js";
+import {
+    removeBastionTokenFile,
+    resolveBastionToken,
+    writeBastionTokenFile,
+} from "../bastion/BastionToken.js";
 import { EventContextGateway } from "../bastion/EventContextGateway.js";
 import { ModelMetadataGateway } from "../bastion/ModelMetadataGateway.js";
 import { buildProviders, ReverseProxy } from "../bastion/ReverseProxy.js";
@@ -265,8 +270,14 @@ export const startCommand = defineCommand({
             service: pluginHost.modelMetadata,
             log: log.child({ component: "model-metadata-gateway" }),
         });
+        // Shared secret every bastion caller must present. Written to
+        // `tmp/.bastion-token` so host-side CLI commands can reach the
+        // live bastion; the agent receives it via its passed config.
+        const bastionToken = resolveBastionToken(config);
+        writeBastionTokenFile(boot, bastionToken);
         const bastion = new Bastion({
             log: log.child({ component: "bastion" }),
+            token: bastionToken,
             modules: [
                 reverseProxy,
                 mcpGateway,
@@ -310,7 +321,7 @@ export const startCommand = defineCommand({
         // loopback URL. Calling before `bastion.start()` would throw
         // (the port isn't bound yet); calling after — but before any
         // plugin daemon runs — guarantees first-call connects succeed.
-        pluginHost.setBastionBaseUrl(bastion.loopbackUrl);
+        pluginHost.setBastionEndpoint(bastion.loopbackUrl, bastion.token);
 
         // The locked-down agent has no route to the host, so it can't
         // dial the bastion at `host.docker.internal` directly. Start the
@@ -357,6 +368,7 @@ export const startCommand = defineCommand({
         containerConfig.addConfigKey("inference.contextManagement.slidingWindowPercentage");
         // Computed / resolved values (host-side defaults or non-config).
         containerConfig.addValue("bastionUrl", agentBastionUrl);
+        containerConfig.addValue("bastionToken", bastionToken);
         containerConfig.addValue("inference.providers", providerNpmPackages);
         containerConfig.addValue("core.logLevel", debugLogging ? "debug" : "info");
         containerConfig.addValue("core.logSystemPrompt", logSystemPromptMode);
@@ -522,6 +534,7 @@ export const startCommand = defineCommand({
                 await safeStop(log, "agent container", () => container.stop());
                 await safeStop(log, "bastion bridge", () => bridge.stop());
                 await safeStop(log, "bastion", () => bastion.stop());
+                removeBastionTokenFile(boot);
                 await safeStop(log, "postgres", () => postgres.stop());
                 stopContainerLogStream(containerLogStream);
                 return "done";

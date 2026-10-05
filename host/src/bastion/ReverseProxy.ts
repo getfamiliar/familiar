@@ -5,7 +5,7 @@ import { request as httpsRequest } from "node:https";
 import { join } from "node:path";
 import { PassThrough, type Transform } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
-import type { Logger } from "@getfamiliar/shared";
+import { BASTION_TOKEN_HEADER, type Logger } from "@getfamiliar/shared";
 import type { ResolvedProvider } from "../models/ProviderResolution.js";
 import type { Bastion, BastionModule } from "./Bastion.js";
 import { NPM_PROVIDER_PROFILES, resolveUpstreamBase } from "./NpmProviderProfiles.js";
@@ -52,10 +52,12 @@ export interface ReverseProxyConfig {
  * *only* component that holds the real API key. We strip every form
  * we know about (`authorization`, `x-api-key`, `x-goog-api-key`) so
  * a misconfigured agent can't accidentally pass through whatever it
- * had on hand. Hop-by-hop headers are dropped so node sets them itself
- * for the outbound request.
+ * had on hand. The bastion's own shared token is stripped for the same
+ * reason. Hop-by-hop headers are dropped so node sets them itself for
+ * the outbound request.
  */
 const HEADERS_TO_STRIP = new Set([
+    BASTION_TOKEN_HEADER,
     "authorization",
     "x-api-key",
     "x-goog-api-key",
@@ -580,8 +582,15 @@ export function buildProviders(
     return providers;
 }
 
-/** Copy non-stripped inbound headers, lower-casing names. */
-function sanitizeHeaders(input: NodeJS.Dict<string | string[]>): Record<string, string | string[]> {
+/**
+ * Copy non-stripped inbound headers, lower-casing names. Exported for tests.
+ *
+ * @param input The inbound request headers.
+ * @returns The headers safe to forward upstream.
+ */
+export function sanitizeHeaders(
+    input: NodeJS.Dict<string | string[]>,
+): Record<string, string | string[]> {
     const out: Record<string, string | string[]> = {};
     for (const [name, value] of Object.entries(input)) {
         if (value === undefined) {

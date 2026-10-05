@@ -1,10 +1,11 @@
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import { type Logger, matchesAnyToolPattern, type ToolLevel } from "@getfamiliar/shared";
 import type { ToolSet } from "ai";
+import { bastionAuthHeaders } from "../utils/BastionAuth.js";
 
 /**
  * Configuration for {@link McpClientPool}. Built from the passed config
- * (`bastionUrl`) plus the daemon-supplied logger.
+ * (`bastionUrl`, `bastionToken`) plus the daemon-supplied logger.
  */
 export interface McpClientPoolConfig {
     /**
@@ -13,6 +14,8 @@ export interface McpClientPoolConfig {
      * connects each client to `${bastionUrl}/mcp/<id>/`.
      */
     readonly bastionUrl: string;
+    /** Shared bastion token (passed config `bastionToken`), sent on every request. */
+    readonly bastionToken: string;
     /** Logger child the pool writes lifecycle events to. */
     readonly log: Logger;
 }
@@ -210,7 +213,10 @@ export class McpClientPool {
      */
     private async fetchCatalog(): Promise<CatalogEntry[]> {
         const url = `${this.config.bastionUrl.replace(/\/$/, "")}/mcp/`;
-        const res = await fetch(url, { method: "GET" });
+        const res = await fetch(url, {
+            method: "GET",
+            headers: bastionAuthHeaders(this.config.bastionToken),
+        });
         if (!res.ok) {
             throw new Error(`fetch ${url} → ${res.status} ${res.statusText}`);
         }
@@ -251,7 +257,7 @@ export class McpClientPool {
     private async connectOne(entry: CatalogEntry): Promise<PooledClient> {
         const url = `${this.config.bastionUrl.replace(/\/$/, "")}/mcp/${entry.id}/`;
         const client = await createMCPClient({
-            transport: { type: "http", url },
+            transport: { type: "http", url, headers: bastionAuthHeaders(this.config.bastionToken) },
             clientName: "familiar",
         });
         const tools = await client.tools();

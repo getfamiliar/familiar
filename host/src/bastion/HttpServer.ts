@@ -1,5 +1,6 @@
+import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { Logger } from "@getfamiliar/shared";
+import { BASTION_TOKEN_HEADER, type Logger } from "@getfamiliar/shared";
 
 /**
  * Handler for a request whose URL path matched a registered prefix.
@@ -21,6 +22,12 @@ export interface HttpServerConfig {
     readonly port: number;
     /** Logger used for accept/dispatch/error lines. */
     readonly log: Logger;
+    /**
+     * Shared secret every request must carry in the
+     * {@link BASTION_TOKEN_HEADER} header. Requests without a matching
+     * token get `401` before any route is consulted.
+     */
+    readonly token: string;
 }
 
 /**
@@ -32,14 +39,25 @@ export interface HttpServerConfig {
  * Modules call {@link registerPrefix} during their own `start()` to
  * claim a path prefix (e.g. `/llm/`, `/mcp/`) and a handler. Requests
  * that don't match any registered prefix get a clean 404.
+ *
+ * Every request is authenticated first: it must carry the configured
+ * shared token in the {@link BASTION_TOKEN_HEADER} header, otherwise it
+ * is answered with `401` regardless of path (so unauthenticated callers
+ * learn nothing about which routes exist).
  */
 export class HttpServer {
     private readonly config: HttpServerConfig;
     private readonly routes: Array<{ prefix: string; handler: PrefixHandler }> = [];
     private server: Server | null = null;
 
+    private readonly expectedToken: Buffer;
+
     constructor(config: HttpServerConfig) {
+        if (config.token === "") {
+            throw new Error("HttpServer requires a non-empty bastion token");
+        }
         this.config = config;
+        this.expectedToken = Buffer.from(config.token, "utf-8");
     }
 
     /**
@@ -110,6 +128,15 @@ export class HttpServer {
         const url = req.url ?? "/";
         const pathEnd = url.indexOf("?");
         const path = pathEnd === -1 ? url : url.slice(0, pathEnd);
+        if (!this.isAuthorized(req)) {
+            const remote = `${req.socket.remoteAddress ?? "unknown"}:${req.socket.remotePort ?? "?"}`;
+            this.config.log.warn(
+                `bastion rejected unauthenticated ${req.method ?? "?"} ${path} from ${remote}: missing or wrong ${BASTION_TOKEN_HEADER} header`,
+            );
+            res.writeHead(401, { "content-type": "text/plain" });
+            res.end("unauthorized");
+            return;
+        }
         for (const route of this.routes) {
             if (path.startsWith(route.prefix)) {
                 const rest = path.slice(route.prefix.length - 1); // keep leading `/`
@@ -130,5 +157,24 @@ export class HttpServer {
         }
         res.writeHead(404, { "content-type": "text/plain" });
         res.end("not found");
+    }
+
+    /**
+     * Check the request's {@link BASTION_TOKEN_HEADER} against the
+     * configured token in constant time.
+     *
+     * @param req The incoming request.
+     * @returns True when the header is present and matches exactly.
+     */
+    private isAuthorized(req: IncomingMessage): boolean {
+        const presented = req.headers[BASTION_TOKEN_HEADER];
+        if (typeof presented !== "string") {
+            return false;
+        }
+        const presentedBuffer = Buffer.from(presented, "utf-8");
+        if (presentedBuffer.length !== this.expectedToken.length) {
+            return false;
+        }
+        return timingSafeEqual(presentedBuffer, this.expectedToken);
     }
 }

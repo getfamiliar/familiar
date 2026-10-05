@@ -81,6 +81,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
     optionalLogSystemPromptMode(config, "core.logSystemPrompt", warnings);
     optionalIanaTimezone(config, "core.timezone", warnings);
     optionalString(config, "core.defaultCalendar", warnings);
+    optionalBastionToken(config, "core.bastionToken", errors);
     optionalStringOrStringList(config, "core.writablePaths", warnings);
     optionalPipRequirements(config, "python.packages", errors);
     optionalNonNegativeInt(config, "inference.maxRetries", warnings);
@@ -314,6 +315,32 @@ function optionalString(root: Record<string, unknown>, path: string, warnings: s
     }
     if (typeof value !== "string" || value.length === 0) {
         warnings.push(`${path} should be a non-empty string (got ${describe(value)}).`);
+    }
+}
+
+/** Minimum length of an operator-pinned `core.bastionToken`. */
+const MIN_BASTION_TOKEN_LENGTH = 32;
+
+/**
+ * Validate an optional operator-pinned bastion token. When present it
+ * must be a string of at least {@link MIN_BASTION_TOKEN_LENGTH}
+ * characters — it is the only thing standing between the LAN and the
+ * bastion's credential-injecting routes, so a weak value is an error,
+ * not a warning. Absent means the daemon generates a random one.
+ *
+ * @param root Parsed config root.
+ * @param path Dotted path of the token.
+ * @param errors Error sink.
+ */
+function optionalBastionToken(root: Record<string, unknown>, path: string, errors: string[]): void {
+    const value = readPath(root, path);
+    if (value === undefined) {
+        return;
+    }
+    if (typeof value !== "string" || value.length < MIN_BASTION_TOKEN_LENGTH) {
+        errors.push(
+            `${path} must be a string of at least ${MIN_BASTION_TOKEN_LENGTH} characters, or omitted to generate a random token on each start (got ${typeof value === "string" ? `${value.length} characters` : describe(value)}).`,
+        );
     }
 }
 

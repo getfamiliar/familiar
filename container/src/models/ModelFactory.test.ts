@@ -4,6 +4,7 @@ import { type ProviderCatalogue, resolveModelRef } from "./ModelFactory.js";
 
 const catalogue: ProviderCatalogue = {
     bastionUrl: "http://bastion",
+    bastionToken: "tok",
     defaultProvider: "featherless",
     defaultModel: "workhorse",
     npmPackages: {

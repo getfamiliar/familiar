@@ -6,6 +6,7 @@ export type {
     NewAgentRun,
 } from "./AgentRun.js";
 export { AgentRunBus, type AgentRunUnsubscribe } from "./AgentRunBus.js";
+export { BASTION_TOKEN_HEADER } from "./BastionAuth.js";
 export {
     buildCalendarEventId,
     type CalendarApi,

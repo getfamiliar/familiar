@@ -1,4 +1,4 @@
-import type { Logger, McpInfo } from "@getfamiliar/shared";
+import { BASTION_TOKEN_HEADER, type Logger, type McpInfo } from "@getfamiliar/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { McpEntry } from "./McpEntry.js";
@@ -15,6 +15,12 @@ export interface PluginMcpServiceDeps {
      * via the loopback DNS instead of `host.docker.internal`.
      */
     readonly bastionBaseUrl: string;
+    /**
+     * Shared bastion token sent as {@link BASTION_TOKEN_HEADER} on every
+     * request. `null` when unknown (e.g. a CLI command run without a
+     * daemon) — connects then fail at the bastion, the correct outcome.
+     */
+    readonly bastionToken: string | null;
     /** Logger used for connect / close lifecycle lines. */
     readonly log: Logger;
 }
@@ -38,22 +44,28 @@ export class PluginMcpService {
     private readonly registry: McpRegistry;
     private readonly log: Logger;
     private bastionBaseUrl: string;
+    private bastionToken: string | null;
     private readonly clients = new Map<string, Promise<Client>>();
 
     constructor(deps: PluginMcpServiceDeps) {
         this.registry = deps.registry;
         this.log = deps.log;
         this.bastionBaseUrl = deps.bastionBaseUrl;
+        this.bastionToken = deps.bastionToken;
     }
 
     /**
-     * Replace the bastion base URL. Has no effect on already-cached
-     * connections (none are open until first call); the next
-     * `connect` uses the new URL. Daemon mode calls this once the
-     * bastion's actual listen port is known.
+     * Replace the bastion base URL and token. Has no effect on
+     * already-cached connections (none are open until first call); the
+     * next `connect` uses the new values. Daemon mode calls this once
+     * the bastion's actual listen port and token are known.
+     *
+     * @param url Loopback base URL of the bastion.
+     * @param token Shared bastion token.
      */
-    setBastionBaseUrl(url: string): void {
+    setBastionEndpoint(url: string, token: string): void {
         this.bastionBaseUrl = url;
+        this.bastionToken = token;
     }
 
     /** Metadata view of every declared MCP. Opens no connections. */
@@ -149,7 +161,9 @@ export class PluginMcpService {
             { name: "@getfamiliar/host", version: "0.1.0" },
             { capabilities: {} },
         );
-        await client.connect(new StreamableHTTPClientTransport(url));
+        const headers: Record<string, string> =
+            this.bastionToken === null ? {} : { [BASTION_TOKEN_HEADER]: this.bastionToken };
+        await client.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers } }));
         return client;
     }
 

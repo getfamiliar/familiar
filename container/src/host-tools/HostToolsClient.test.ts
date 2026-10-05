@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { afterEach, describe, it } from "node:test";
-import type { Logger } from "@getfamiliar/shared";
+import { BASTION_TOKEN_HEADER, type Logger } from "@getfamiliar/shared";
 import { HostToolsClient } from "./HostToolsClient.js";
 
 /**
@@ -53,14 +53,22 @@ describe("HostToolsClient — core sentinel is not an addressable auto-group", (
     });
 
     it("omits a `core` auto-group but keeps real plugin ids and declared groups", async () => {
-        globalThis.fetch = (async () =>
-            new Response(JSON.stringify(CATALOG), {
+        let sentToken: string | null = null;
+        globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+            sentToken = new Headers(init?.headers).get(BASTION_TOKEN_HEADER);
+            return new Response(JSON.stringify(CATALOG), {
                 status: 200,
                 headers: { "content-type": "application/json" },
-            })) as typeof fetch;
+            });
+        }) as typeof fetch;
 
-        const client = new HostToolsClient({ bastionUrl: "http://bastion", log: NOOP_LOG });
+        const client = new HostToolsClient({
+            bastionUrl: "http://bastion",
+            bastionToken: "tok",
+            log: NOOP_LOG,
+        });
         const { tools, keysById, groupKeys } = await client.tools("evt-1", "run-1", 10_000);
+        assert.equal(sentToken, "tok", "catalog fetch carries the bastion token");
 
         // Every catalog tool still surfaces in the tool set.
         assert.deepEqual(Object.keys(tools).sort(), [

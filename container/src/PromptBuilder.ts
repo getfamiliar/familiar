@@ -7,6 +7,7 @@ import {
     type PromptContributor,
     type PromptContributorContext,
 } from "./prompt-contributors.js";
+import { bastionAuthHeaders } from "./utils/BastionAuth.js";
 import { resolveTimezone } from "./utils/PassedConfig.js";
 
 /**
@@ -280,6 +281,8 @@ function framingFileSection(heading: string, fileName: string, body: string): Sy
 export interface EventContextFetchInput {
     /** Bastion base URL (passed config `bastionUrl`). */
     readonly bastionUrl: string;
+    /** Shared bastion token (passed config `bastionToken`). */
+    readonly bastionToken: string;
     /** Event id this agentrun is processing. */
     readonly eventId: string;
     /** Agentrun id about to start running. */
@@ -331,7 +334,10 @@ async function fetchEventContextSections(
     try {
         const res = await fetch(url, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: {
+                ...bastionAuthHeaders(input.bastionToken),
+                "content-type": "application/json",
+            },
             body: JSON.stringify({ eventId: input.eventId, agentrunId: input.agentrunId }),
             signal: controller.signal,
         });

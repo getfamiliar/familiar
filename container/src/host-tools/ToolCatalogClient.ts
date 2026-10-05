@@ -1,4 +1,5 @@
 import type { ContainerToolInfo, Logger } from "@getfamiliar/shared";
+import { bastionAuthHeaders } from "../utils/BastionAuth.js";
 
 /**
  * POST the container's built-in tool catalog to the host bastion's
@@ -13,11 +14,13 @@ import type { ContainerToolInfo, Logger } from "@getfamiliar/shared";
  * (strip a trailing slash, append the prefix with its own trailing slash).
  *
  * @param bastionUrl Base URL of the host bastion (passed config `bastionUrl`).
+ * @param bastionToken Shared bastion token (passed config `bastionToken`).
  * @param catalog The built-in tool catalog from `ToolsFactory.catalog()`.
  * @param log Logger child for the report line.
  */
 export async function reportContainerToolCatalog(
     bastionUrl: string,
+    bastionToken: string,
     catalog: readonly ContainerToolInfo[],
     log: Logger,
 ): Promise<void> {
@@ -25,7 +28,7 @@ export async function reportContainerToolCatalog(
     try {
         const res = await fetch(url, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: { ...bastionAuthHeaders(bastionToken), "content-type": "application/json" },
             body: JSON.stringify(catalog),
         });
         if (!res.ok) {

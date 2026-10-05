@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { escapeTableCell, type ToolLevel } from "@getfamiliar/shared";
+import { BASTION_TOKEN_HEADER, escapeTableCell, type ToolLevel } from "@getfamiliar/shared";
 import type { PluginMcpService } from "../../mcp/PluginMcpService.js";
 import { isProcessAlive } from "../pidfile.js";
 
@@ -8,6 +8,17 @@ import { isProcessAlive } from "../pidfile.js";
  * `Bastion.DEFAULT_PORT` (8788); the daemon never overrides it.
  */
 export const DAEMON_BASTION_LOOPBACK_URL = "http://127.0.0.1:8788";
+
+/**
+ * Request headers authenticating a CLI `fetch` against the running
+ * daemon's bastion.
+ *
+ * @param bastionToken Token from `tmp/.bastion-token`, or `null` when absent.
+ * @returns The header map (empty without a token; the bastion then answers 401).
+ */
+export function daemonBastionHeaders(bastionToken: string | null): Record<string, string> {
+    return bastionToken === null ? {} : { [BASTION_TOKEN_HEADER]: bastionToken };
+}
 
 /**
  * Verbosity level for `tools list`, derived from the count of `-v` /

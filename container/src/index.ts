@@ -68,6 +68,14 @@ async function main(): Promise<void> {
         );
     }
 
+    const bastionToken = PassedConfig.get<string>("bastionToken");
+    if (!bastionToken) {
+        throw new Error(
+            "bastionToken is not set in the passed container config. " +
+                "The host daemon should have included it in FAMILIAR_CONTAINER_CONFIG.",
+        );
+    }
+
     HandlerFile.setHeaderDefaults(HEADER_DEFAULTS);
 
     const connection = new PostgresConnection({
@@ -80,6 +88,7 @@ async function main(): Promise<void> {
 
     const mcpPool = new McpClientPool({
         bastionUrl,
+        bastionToken,
         log: log.child({ component: "mcp-client-pool" }),
     });
     await mcpPool.start();
@@ -89,12 +98,14 @@ async function main(): Promise<void> {
     // the host's built-in listing stale.
     await reportContainerToolCatalog(
         bastionUrl,
+        bastionToken,
         await ToolsFactory.catalog(),
         log.child({ component: "tool-catalog-report" }),
     );
 
     const hostToolsClient = new HostToolsClient({
         bastionUrl,
+        bastionToken,
         log: log.child({ component: "host-tools-client" }),
     });
 

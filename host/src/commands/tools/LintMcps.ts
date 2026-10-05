@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { createLogger, type Logger, prettyStdoutStream, writeMarkdown } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../../Bootstrap.js";
+import { readBastionTokenFile } from "../../bastion/BastionToken.js";
 import { lintMcpConfigFile } from "../../mcp/McpConfigLoader.js";
 import type { McpEntry } from "../../mcp/McpEntry.js";
 import { McpRegistry } from "../../mcp/McpRegistry.js";
@@ -81,7 +82,14 @@ export const lintMcpsCommand = defineCommand({
         if (gatedEntries.length > 0) {
             lines.push("");
             if (isDaemonRunning(boot.pidFile)) {
-                lines.push(...(await lintToolGatingPatterns(registry, gatedEntries, log)));
+                lines.push(
+                    ...(await lintToolGatingPatterns(
+                        registry,
+                        gatedEntries,
+                        readBastionTokenFile(boot),
+                        log,
+                    )),
+                );
             } else {
                 lines.push(
                     "Tool gating patterns not checked: the daemon is not running (`familiar start`), so the MCPs' tool names can't be listed.",
@@ -110,6 +118,7 @@ function hasToolGatingPatterns(entry: McpEntry): boolean {
  *
  * @param registry The registry the entries came from (for the bastion key).
  * @param entries The entries with at least one gating glob.
+ * @param bastionToken The running daemon's bastion token (`null` if unknown).
  * @param log Logger for the MCP service.
  * @returns Markdown lines: a heading plus one bullet per finding, or a
  *   single "all patterns match" line.
@@ -117,11 +126,13 @@ function hasToolGatingPatterns(entry: McpEntry): boolean {
 async function lintToolGatingPatterns(
     registry: McpRegistry,
     entries: readonly McpEntry[],
+    bastionToken: string | null,
     log: Logger,
 ): Promise<string[]> {
     const mcpService = new PluginMcpService({
         registry,
         bastionBaseUrl: DAEMON_BASTION_LOOPBACK_URL,
+        bastionToken,
         log: log.child({ component: "mcp-service" }),
     });
     const findings: string[] = [];

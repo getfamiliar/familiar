@@ -63,6 +63,7 @@ The system splits into two trust zones: a **host** that holds credentials and or
 - **Event ingestion.** Host-side plugin code produces events (incoming mails, Slack via socket, Jira via webhook, scheduled triggers, etc.) and writes them to the bus state database with idempotency checks.
 - **Credential management.** OAuth tokens, API keys, and similar secrets live in the host. They are never passed to the container. The host refreshes tokens via cronjobs and injects them at call time through the MCP gateway.
 - **MCP gateway.** All MCP servers are aggregated behind the Docker MCP Toolkit gateway. The container sees a single endpoint. Per-call authentication is injected by the gateway based on the calling agentrun's permissions.
+- **Bastion authentication.** The host bastion (LLM reverse proxy, MCP gateway, plugin-tools and other gateways) binds on `0.0.0.0:8788`, so it is reachable from the LAN and from every container on `familiar-net`. To keep those callers out, `HttpServer` rejects any request without the shared `x-familiar-bastion-token` header with `401`, before any route runs. The agent receives the token through its passed config (`bastionToken`). The reverse proxy strips the header before forwarding upstream, and MCP containers never get it.
 - **Approval gate.** When a handler proposes a write that requires user confirmation, it writes a pending action to the database. The host watches for these (LISTEN/NOTIFY), pushes a notification (Telegram, web UI, etc.), and writes the user's response back to the database.
 - **Logging service.** Centralized structured logging endpoint. Container watchers, individual agentruns, and host plugins all log here with event + agentrun lineage for correlation.
 - **Container lifecycle.** The host starts the container, mounts plugin container-side directories and sets up the containers network including the MCP gateway.
@@ -374,6 +375,7 @@ Ephemeral runtime scratch lives in `tmp/` instead (gitignored, safe to wipe):
 
 - `tmp/.daemon.pid` — pidfile written by the daemon and consumed by `familiar stop`.
 - `tmp/.postgres-port` — chosen loopback host port that `familiar-postgres` is published on (e.g. `5432`, or the next free port if 5432 was taken at startup). Read by anything host-side that wants to `psql` or use a `pg` client.
+- `tmp/.bastion-token` — shared secret the running daemon's bastion requires on every request (header `x-familiar-bastion-token`, constant `BASTION_TOKEN_HEADER` in `shared/`). It comes from `core.bastionToken` in `config.yml` if that is set, otherwise it is random per start. The file is written with mode `0600`, so host-side CLI commands (`tools list`, `tools lint-mcps`, plugin CLIs using `ctx.mcp`) can authenticate. It is removed on shutdown.
 - `tmp/llm-debug/` — model HTTP request/response captures written by the reverse proxy when `inference.captureModelHttpRequestBodies` is on.
 - `tmp/scratch/` — per-event auxiliary files, bind-mounted into the agent and MCP containers as `/scratch/`.
 - `tmp/mcp-mount-<id>/` — per-MCP bind-mount roots that double as `/work` for npx/uv caches.

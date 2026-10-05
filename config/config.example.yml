@@ -16,6 +16,16 @@ core:
   # terminal without any plugin configured.
   defaultChatChannel: cli
 
+  # Shared secret every request to the host bastion (LLM proxy, MCP
+  # gateway, plugin tools) must carry in the `x-familiar-bastion-token`
+  # header. The bastion listens on 0.0.0.0, so without it anything on
+  # the LAN or any local container could use your API keys and tools.
+  # Optional; when omitted the daemon generates a random token on every
+  # start. Either way it is written to `tmp/.bastion-token` (mode 0600)
+  # for the CLI. Pin it only if you need a stable value, e.g. for
+  # debugging with curl. Must be at least 32 characters.
+  # bastionToken: <output of `openssl rand -base64 32`>
+
   # Number of rolled-over log files kept beyond the active one.
   # Optional; falls back to 7 when omitted.
   logRetentionDays: 7

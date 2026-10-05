@@ -56,9 +56,9 @@ export interface PluginToolsGatewayConfig {
  *   verbatim (success body = bare result) or `{ ok: false, code,
  *   message, status? }` on a thrown `ToolError`. HTTP 200 throughout;
  *   reserve 5xx for transport faults.
- * - The bastion isn't authenticated; same trust model as `/mcp/` and
- *   `/llm/` — the agent container is the only client expected to dial
- *   `host.docker.internal:<port>`.
+ * - Authentication is the bastion's shared-token check (in
+ *   `HttpServer`), same as `/mcp/` and `/llm/`; past it, the agent
+ *   container and host-side CLI commands are the expected clients.
  */
 export class PluginToolsGateway implements BastionModule {
     readonly name = "plugin-tools-gateway";

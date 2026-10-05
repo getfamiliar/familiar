@@ -1,4 +1,5 @@
 import type { ModelMetaData } from "@getfamiliar/shared";
+import { bastionAuthHeaders } from "../utils/BastionAuth.js";
 
 /**
  * Overall fetch timeout. The host-side lookup is a cheap in-memory map
@@ -29,6 +30,7 @@ interface ModelMetadataResponse {
  * resilience of `PromptBuilder.fetchEventContextSections`.
  *
  * @param bastionUrl The bastion base URL from the passed config (`bastionUrl`).
+ * @param bastionToken Shared bastion token from the passed config (`bastionToken`).
  * @param provider Resolved provider id (e.g. `featherless`).
  * @param model Resolved model id.
  * @param log Logger child for the non-fatal warning path.
@@ -37,6 +39,7 @@ interface ModelMetadataResponse {
  */
 export async function fetchModelMetaData(
     bastionUrl: string,
+    bastionToken: string,
     provider: string,
     model: string,
     log: WarnLogger,
@@ -47,7 +50,7 @@ export async function fetchModelMetaData(
     try {
         const res = await fetch(url, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: { ...bastionAuthHeaders(bastionToken), "content-type": "application/json" },
             body: JSON.stringify({ provider, model }),
             signal: controller.signal,
         });

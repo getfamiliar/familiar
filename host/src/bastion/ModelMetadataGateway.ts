@@ -38,8 +38,8 @@ export interface ModelMetadataResponse {
  * - A lookup that throws degrades to `{ meta: null }` (best-effort) — the
  *   container treats missing metadata as non-fatal, so a gateway error
  *   must not block agentrun start.
- * - The bastion isn't authenticated; same trust model as `/mcp/`,
- *   `/plugin-tools/`, and `/event-context/`.
+ * - Authentication is the bastion's shared-token check (in
+ *   `HttpServer`), same as `/mcp/`, `/plugin-tools/`, and `/event-context/`.
  */
 export class ModelMetadataGateway implements BastionModule {
     readonly name = "model-metadata-gateway";

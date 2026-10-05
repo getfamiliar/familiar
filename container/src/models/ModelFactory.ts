@@ -7,6 +7,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createXai } from "@ai-sdk/xai";
 import type { LanguageModel } from "ai";
+import { bastionAuthHeaders } from "../utils/BastionAuth.js";
 import { PassedConfig, requireConfig } from "../utils/PassedConfig.js";
 
 /**
@@ -33,44 +34,52 @@ type LanguageModelBuilder = (modelId: string) => LanguageModel;
  * (`NpmProviderProfiles.ts`); **the set of supported npm packages must
  * stay in sync between the two.** `@ai-sdk/openai-compatible` needs the
  * provider id as its `name`, so every factory takes `(providerId,
- * baseURL)`.
+ * baseURL, headers)`; `headers` carries the shared bastion token.
  */
 const NPM_MODEL_BUILDERS: Readonly<
-    Record<string, (providerId: string, baseURL: string) => LanguageModelBuilder>
+    Record<
+        string,
+        (
+            providerId: string,
+            baseURL: string,
+            headers: Record<string, string>,
+        ) => LanguageModelBuilder
+    >
 > = {
-    "@ai-sdk/openai": (_id, baseURL) => {
-        const client = createOpenAI({ apiKey: PLACEHOLDER_API_KEY, baseURL });
+    "@ai-sdk/openai": (_id, baseURL, headers) => {
+        const client = createOpenAI({ apiKey: PLACEHOLDER_API_KEY, baseURL, headers });
         return (id) => client.languageModel(id);
     },
-    "@ai-sdk/anthropic": (_id, baseURL) => {
-        const client = createAnthropic({ apiKey: PLACEHOLDER_API_KEY, baseURL });
+    "@ai-sdk/anthropic": (_id, baseURL, headers) => {
+        const client = createAnthropic({ apiKey: PLACEHOLDER_API_KEY, baseURL, headers });
         return (id) => client.languageModel(id);
     },
-    "@ai-sdk/google": (_id, baseURL) => {
-        const client = createGoogleGenerativeAI({ apiKey: PLACEHOLDER_API_KEY, baseURL });
+    "@ai-sdk/google": (_id, baseURL, headers) => {
+        const client = createGoogleGenerativeAI({ apiKey: PLACEHOLDER_API_KEY, baseURL, headers });
         return (id) => client.languageModel(id);
     },
-    "@ai-sdk/groq": (_id, baseURL) => {
-        const client = createGroq({ apiKey: PLACEHOLDER_API_KEY, baseURL });
+    "@ai-sdk/groq": (_id, baseURL, headers) => {
+        const client = createGroq({ apiKey: PLACEHOLDER_API_KEY, baseURL, headers });
         return (id) => client.languageModel(id);
     },
-    "@ai-sdk/mistral": (_id, baseURL) => {
-        const client = createMistral({ apiKey: PLACEHOLDER_API_KEY, baseURL });
+    "@ai-sdk/mistral": (_id, baseURL, headers) => {
+        const client = createMistral({ apiKey: PLACEHOLDER_API_KEY, baseURL, headers });
         return (id) => client.languageModel(id);
     },
-    "@ai-sdk/xai": (_id, baseURL) => {
-        const client = createXai({ apiKey: PLACEHOLDER_API_KEY, baseURL });
+    "@ai-sdk/xai": (_id, baseURL, headers) => {
+        const client = createXai({ apiKey: PLACEHOLDER_API_KEY, baseURL, headers });
         return (id) => client.languageModel(id);
     },
-    "@ai-sdk/deepseek": (_id, baseURL) => {
-        const client = createDeepSeek({ apiKey: PLACEHOLDER_API_KEY, baseURL });
+    "@ai-sdk/deepseek": (_id, baseURL, headers) => {
+        const client = createDeepSeek({ apiKey: PLACEHOLDER_API_KEY, baseURL, headers });
         return (id) => client.languageModel(id);
     },
-    "@ai-sdk/openai-compatible": (providerId, baseURL) => {
+    "@ai-sdk/openai-compatible": (providerId, baseURL, headers) => {
         const client = createOpenAICompatible({
             name: providerId,
             apiKey: PLACEHOLDER_API_KEY,
             baseURL,
+            headers,
         });
         return (id) => client.languageModel(id);
     },
@@ -79,6 +88,8 @@ const NPM_MODEL_BUILDERS: Readonly<
 /** Resolved provider catalogue read once at module load. */
 export interface ProviderCatalogue {
     readonly bastionUrl: string;
+    /** Shared bastion token (passed config `bastionToken`). */
+    readonly bastionToken: string;
     readonly defaultProvider: string;
     readonly defaultModel: string;
     /** Provider key → its npm package (passed config `inference.providers`). */
@@ -104,6 +115,7 @@ function getCatalogue(): ProviderCatalogue {
         return catalogue;
     }
     const bastionUrl = requireConfig<string>("bastionUrl").replace(/\/$/, "");
+    const bastionToken = requireConfig<string>("bastionToken");
     const defaultProvider = requireConfig<string>("inference.defaultProvider");
     const defaultModel = requireConfig<string>("inference.defaultModel");
     const providers = requireConfig<Record<string, unknown>>("inference.providers");
@@ -123,7 +135,7 @@ function getCatalogue(): ProviderCatalogue {
         );
     }
     const aliases = readAliases();
-    catalogue = { bastionUrl, defaultProvider, defaultModel, npmPackages, aliases };
+    catalogue = { bastionUrl, bastionToken, defaultProvider, defaultModel, npmPackages, aliases };
     return catalogue;
 }
 
@@ -208,7 +220,7 @@ function builderFor(provider: string, cat: ProviderCatalogue): LanguageModelBuil
         );
     }
     const baseURL = `${cat.bastionUrl}/llm/${provider}`;
-    const built = factory(provider, baseURL);
+    const built = factory(provider, baseURL, bastionAuthHeaders(cat.bastionToken));
     builders.set(provider, built);
     return built;
 }

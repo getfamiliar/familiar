@@ -6,6 +6,7 @@ import {
     type ToolLevel,
 } from "@getfamiliar/shared";
 import { jsonSchema, type ToolSet, tool } from "ai";
+import { bastionAuthHeaders } from "../utils/BastionAuth.js";
 
 /**
  * Configuration for {@link HostToolsClient}. Mirrors the
@@ -22,6 +23,8 @@ export interface HostToolsClientConfig {
      * tool, plugin-contributed and core alike.
      */
     readonly bastionUrl: string;
+    /** Shared bastion token (passed config `bastionToken`), sent on every request. */
+    readonly bastionToken: string;
     /** Logger child for fetch / dispatch lines. */
     readonly log: Logger;
 }
@@ -183,7 +186,10 @@ export class HostToolsClient {
      */
     private async fetchCatalog(): Promise<CatalogEntry[]> {
         const url = `${this.config.bastionUrl.replace(/\/$/, "")}/plugin-tools/`;
-        const res = await fetch(url, { method: "GET" });
+        const res = await fetch(url, {
+            method: "GET",
+            headers: bastionAuthHeaders(this.config.bastionToken),
+        });
         if (!res.ok) {
             throw new Error(`fetch ${url} → ${res.status} ${res.statusText}`);
         }
@@ -260,7 +266,10 @@ export class HostToolsClient {
         try {
             res = await fetch(url, {
                 method: "POST",
-                headers: { "content-type": "application/json" },
+                headers: {
+                    ...bastionAuthHeaders(this.config.bastionToken),
+                    "content-type": "application/json",
+                },
                 body: JSON.stringify({ args, eventId, agentrunId, toolCallOffloadingLimit }),
             });
         } catch (err) {

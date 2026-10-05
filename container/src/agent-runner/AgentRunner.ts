@@ -358,6 +358,7 @@ export class AgentRunner {
         // window becomes a no-op. Also consumed below for the output cap.
         const modelMetaData = await fetchModelMetaData(
             requireConfig<string>("bastionUrl"),
+            requireConfig<string>("bastionToken"),
             provider,
             modelId,
             ctx.log,
@@ -410,6 +411,7 @@ export class AgentRunner {
             toolNames,
             {
                 bastionUrl: requireConfig<string>("bastionUrl"),
+                bastionToken: requireConfig<string>("bastionToken"),
                 eventId: ctx.row.eventId,
                 agentrunId: ctx.row.id,
                 log: ctx.log,

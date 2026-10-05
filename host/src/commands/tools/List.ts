@@ -10,6 +10,7 @@ import {
 } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../../Bootstrap.js";
+import { readBastionTokenFile } from "../../bastion/BastionToken.js";
 import { lintMcpConfigFile } from "../../mcp/McpConfigLoader.js";
 import { McpRegistry } from "../../mcp/McpRegistry.js";
 import { PluginMcpService } from "../../mcp/PluginMcpService.js";
@@ -18,6 +19,7 @@ import {
     coerceSchema,
     columnBudgets,
     DAEMON_BASTION_LOOPBACK_URL,
+    daemonBastionHeaders,
     filterTools,
     isDaemonRunning,
     listToolsFor,
@@ -110,6 +112,8 @@ export const listCommand = defineCommand({
             process.exit(1);
         }
 
+        const bastionToken = readBastionTokenFile(boot);
+
         const log = createLogger({
             component: "tools-list",
             level: "warn",
@@ -118,11 +122,11 @@ export const listCommand = defineCommand({
 
         const tools: CatalogTool[] = [];
         if (!onlyMcp) {
-            tools.push(...(await fetchContainerBuiltins()));
-            tools.push(...(await fetchPluginTools()));
+            tools.push(...(await fetchContainerBuiltins(bastionToken)));
+            tools.push(...(await fetchPluginTools(bastionToken)));
         }
         if (!onlyNative) {
-            tools.push(...(await fetchMcpTools(boot.mcpConfigFile, log)));
+            tools.push(...(await fetchMcpTools(boot.mcpConfigFile, bastionToken, log)));
         }
 
         const filtered = filterTools(tools, search);
@@ -173,12 +177,15 @@ export const listCommand = defineCommand({
  * `GET /container-tools/`. Returns `[]` (with a stderr note) if the
  * container hasn't reported yet or the fetch fails — the daemon is up
  * (the caller checked), so an empty/failed read is non-fatal.
+ *
+ * @param bastionToken The running daemon's bastion token (`null` if unknown).
+ * @returns The built-in tools.
  */
-async function fetchContainerBuiltins(): Promise<CatalogTool[]> {
+async function fetchContainerBuiltins(bastionToken: string | null): Promise<CatalogTool[]> {
     const url = `${DAEMON_BASTION_LOOPBACK_URL}/container-tools/`;
     let body: unknown;
     try {
-        const res = await fetch(url);
+        const res = await fetch(url, { headers: daemonBastionHeaders(bastionToken) });
         if (!res.ok) {
             process.stderr.write(`warning: ${url} → ${res.status} ${res.statusText}\n`);
             return [];
@@ -208,12 +215,15 @@ async function fetchContainerBuiltins(): Promise<CatalogTool[]> {
  * plugin's tools auto-group under the plugin id; `core` tools group by
  * their declared `groups` only (the `core` sentinel is not an
  * auto-group). Returns `[]` on a failed fetch (non-fatal).
+ *
+ * @param bastionToken The running daemon's bastion token (`null` if unknown).
+ * @returns The plugin and host-core tools.
  */
-async function fetchPluginTools(): Promise<CatalogTool[]> {
+async function fetchPluginTools(bastionToken: string | null): Promise<CatalogTool[]> {
     const url = `${DAEMON_BASTION_LOOPBACK_URL}/plugin-tools/`;
     let body: unknown;
     try {
-        const res = await fetch(url);
+        const res = await fetch(url, { headers: daemonBastionHeaders(bastionToken) });
         if (!res.ok) {
             process.stderr.write(`warning: ${url} → ${res.status} ${res.statusText}\n`);
             return [];
@@ -251,6 +261,7 @@ async function fetchPluginTools(): Promise<CatalogTool[]> {
  */
 async function fetchMcpTools(
     mcpConfigFile: string,
+    bastionToken: string | null,
     log: ReturnType<typeof createLogger>,
 ): Promise<CatalogTool[]> {
     if (!existsSync(mcpConfigFile)) {
@@ -275,6 +286,7 @@ async function fetchMcpTools(
     const mcpService = new PluginMcpService({
         registry,
         bastionBaseUrl: DAEMON_BASTION_LOOPBACK_URL,
+        bastionToken,
         log: log.child({ component: "mcp-service" }),
     });
     const out: CatalogTool[] = [];

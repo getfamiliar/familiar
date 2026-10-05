@@ -1,6 +1,11 @@
 NEXT:
 
-* Aliase für Modelle
+* Implement aliases!
+
+* Memory enhancements:
+  - List of questions.md in the wiki that can be used to ask the user for more information about uncertainties in the memories.
+  - Summarize memory files and segments that get too long, over the 6000 char limit
+  - add more stuff here, this memory grows like weed
 
 * Telegram Group Summaries
 
@@ -20,7 +25,6 @@ NEXT:
 
 Features:
 
-* File Storages like Onedrive, Dropbox, Google Drive, ... - read & write access, search. Done like calendar + mail, a default set of tools for all providers and provider-specific implementations in plugins.
 * Host-side LLM chat with access to console tools for selections, prompts etc. as a service - used for setup and plugin CLI tools.
 * Diff Tool for the workspace vs default workspace
 * Git repo for the workspace files?
@@ -31,24 +35,18 @@ Features:
 Neues CLI Tool: `logs`
 * `logs tail` tails the current data/logs/ log file but pretty prints the JSON objects in it.
 
-
 ## Refactoring
-
-### For production deployments:
-
-* cli.sh replacen mit `npx familiar`, die prechecks über den npm hook prepublishOnly laufen lassen. Gleichheit zwischen dev und prod sicherstellen.
 
 ## For later
 
+- Additional storage providers: Google Drive, Dropbox, ...
+- Additional calendar providers: Google Calendar, ...
 - MS365: Enable / Disable Out of Office Notes
-- Protect the bastion port on the host? Maybe a simple basic auth?
-- Spotify MCP based on https://github.com/aome510/spotify-player
 - Alternativen Modellprovider testen: Synthetic.new - wie Featherless, 30€ / Monat, scheinbar zuverlässiger
 - User-based extra PIP packages need a new method - the baked-in packages from the image cannot / should not be directly extended by endusers as this requires a full checkout of the project source to be able to build. Seems overkill, we need a better feature here that allows adding PIP packages with a short-timed online agent container.
 
 - Plugin-specific config linters as extension point. Special Cases:
   - ms365.calendar.refreshCron: check if it's a valid cron expression. If not, thats a problem because the delta will never be updated and the calendar will never be refreshed / keep the same from/to dates forever.
-
 
 ### Later features with external deps
 
@@ -57,6 +55,7 @@ Neues CLI Tool: `logs`
   - Use Picovoice.ai components:
     - Porcupine for local wakeword detection
     - Eagle for speaker recognition
+- Spotify MCP based on https://github.com/aome510/spotify-player
 
 ### Browser Automatisation
 

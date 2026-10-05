@@ -31,8 +31,8 @@ export interface ContainerToolsGatewayConfig {
  * Unlike the plugin-tools gateway the data flows container→host: the
  * container is the authority on its own built-ins, so the host merely
  * caches the latest report. Same trust model as `/plugin-tools/` and
- * `/mcp/` — the bastion is unauthenticated and the agent container is
- * the only expected client.
+ * `/mcp/` — the bastion's shared-token check (in `HttpServer`) has
+ * already run, and the agent container is the only expected client.
  */
 export class ContainerToolsGateway implements BastionModule {
     readonly name = "container-tools-gateway";

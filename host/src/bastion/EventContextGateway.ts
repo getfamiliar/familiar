@@ -76,8 +76,8 @@ export interface EventContextResponse {
  *   registered, or every provider was empty / errored).
  * - 4xx for malformed requests, 5xx for transport faults (DB
  *   unavailable). Provider-side errors never surface as a non-200.
- * - The bastion isn't authenticated; same trust model as `/mcp/` and
- *   `/plugin-tools/`.
+ * - Authentication is the bastion's shared-token check (in
+ *   `HttpServer`), same as `/mcp/` and `/plugin-tools/`.
  */
 export class EventContextGateway implements BastionModule {
     readonly name = "event-context-gateway";

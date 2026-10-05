@@ -59,6 +59,13 @@ export interface Bootstrap {
      */
     readonly postgresPortFile: string;
     /**
+     * File holding the shared secret the running daemon's bastion
+     * requires on every request (header `x-familiar-bastion-token`).
+     * Written mode `0600` on each `familiar start` so host-side CLI
+     * commands can talk to the live bastion; removed on shutdown.
+     */
+    readonly bastionTokenFile: string;
+    /**
      * LLM debug-capture directory written by `ReverseProxy` when
      * `inference.captureModelHttpRequestBodies` is on. Ephemeral,
      * gitignored, safe to wipe.
@@ -237,6 +244,7 @@ export function bootstrap(): Bootstrap {
         dataDir,
         pidFile: `${tmpDir}/.daemon.pid`,
         postgresPortFile: `${tmpDir}/.postgres-port`,
+        bastionTokenFile: `${tmpDir}/.bastion-token`,
         llmDebugDir: `${tmpDir}/llm-debug`,
         workspaceDir: `${dataDir}/workspace`,
         workspaceTemplateDir: `${dataDir}/workspace-template`,

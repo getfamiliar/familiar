@@ -13,6 +13,7 @@ import type {
 import { EventBus, ModelNotSupported } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { type Bootstrap, isDevMode } from "../Bootstrap.js";
+import { readBastionTokenFile } from "../bastion/BastionToken.js";
 import { CalendarRegistry } from "../calendar/CalendarRegistry.js";
 import { CalendarSafety } from "../calendar/CalendarSafety.js";
 import { CalendarService } from "../calendar/CalendarService.js";
@@ -56,7 +57,7 @@ const DAEMON_PIDFILE_POLL_MS = 500;
  * running daemon — connections still fail with `ECONNREFUSED` in
  * that case, which is the right behavior). Matches the bastion's
  * own default port; daemon mode overrides via
- * {@link PluginHost.setBastionBaseUrl}.
+ * {@link PluginHost.setBastionEndpoint}.
  */
 const DEFAULT_BASTION_BASE_URL = "http://127.0.0.1:8788";
 
@@ -137,6 +138,10 @@ export class PluginHost {
         this.mcpService = new PluginMcpService({
             registry: this.mcpRegistry,
             bastionBaseUrl: this.bastionBaseUrl,
+            // One-shot CLI commands talk to a running daemon's bastion
+            // with the token it left in `tmp/.bastion-token`; daemon mode
+            // overrides via {@link setBastionEndpoint}.
+            bastionToken: readBastionTokenFile(boot),
             log: log.child({ component: "plugin-mcp" }),
         });
         const calendarStore = new CalendarStore(() => this.ensureConnection());
@@ -334,19 +339,22 @@ export class PluginHost {
     }
 
     /**
-     * Override the loopback URL plugin MCP calls dial. Daemon mode
-     * calls this after {@link Bastion.start} resolves so plugin MCP
-     * calls hit the live port, even if the operator configured a
-     * non-default bastion port. Calling before any client connects
-     * keeps the indirection cost at zero.
+     * Override the loopback URL and token plugin MCP calls use. Daemon
+     * mode calls this after {@link Bastion.start} resolves so plugin MCP
+     * calls hit the live port with this run's token, even if the
+     * operator configured a non-default bastion port. Calling before
+     * any client connects keeps the indirection cost at zero.
      *
      * One-shot CLI commands that never touch `ctx.mcp` simply use
-     * the default; if they do touch it without a running daemon,
+     * the defaults; if they do touch it without a running daemon,
      * the connect fails with `ECONNREFUSED` — the correct outcome.
+     *
+     * @param url Loopback base URL of the bastion.
+     * @param token Shared bastion token.
      */
-    setBastionBaseUrl(url: string): void {
+    setBastionEndpoint(url: string, token: string): void {
         this.bastionBaseUrl = url;
-        this.mcpService.setBastionBaseUrl(url);
+        this.mcpService.setBastionEndpoint(url, token);
     }
 
     /**

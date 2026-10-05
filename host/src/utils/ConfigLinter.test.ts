@@ -323,3 +323,33 @@ ${extra}
         assert.ok(result.errors.some((e) => e.includes("is itself an alias")));
     });
 });
+
+describe("ConfigLinter — core.bastionToken", () => {
+    function withToken(token: string): string {
+        return write(`
+core:
+  postgresPassword: secret
+  defaultChatChannel: cli
+  bastionToken: ${JSON.stringify(token)}
+inference:
+  defaultProvider: openai
+  defaultModel: gpt-5
+  apiKeys:
+    openai: REAL_KEY
+`);
+    }
+
+    it("accepts a token of at least 32 characters", () => {
+        const result = lintConfigFile(withToken("a".repeat(32)));
+        assert.equal(result.ok, true, `unexpected errors: ${JSON.stringify(result.errors)}`);
+    });
+
+    it("errors on a token that is too short", () => {
+        const result = lintConfigFile(withToken("short"));
+        assert.equal(result.ok, false);
+        assert.equal(
+            result.errors.some((e) => e.includes("core.bastionToken")),
+            true,
+        );
+    });
+});

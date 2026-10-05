@@ -1,7 +1,20 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
+import { BASTION_TOKEN_HEADER } from "@getfamiliar/shared";
 import type { ResolvedProvider } from "../models/ProviderResolution.js";
-import { buildProviders } from "./ReverseProxy.js";
+import { buildProviders, sanitizeHeaders } from "./ReverseProxy.js";
+
+describe("sanitizeHeaders", () => {
+    it("never forwards the bastion token or inbound auth upstream", () => {
+        const out = sanitizeHeaders({
+            [BASTION_TOKEN_HEADER]: "secret",
+            Authorization: "Bearer via-proxy",
+            "x-api-key": "via-proxy",
+            "Content-Type": "application/json",
+        });
+        assert.deepEqual(out, { "content-type": "application/json" });
+    });
+});
 
 describe("buildProviders", () => {
     it("maps providers to upstream URLs + auth from their npm package", () => {

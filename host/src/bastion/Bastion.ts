@@ -34,6 +34,11 @@ export interface BastionConfig {
     readonly log: Logger;
     /** Modules wired in by the daemon, in the order they should start. */
     readonly modules: readonly BastionModule[];
+    /**
+     * Shared secret every caller must send in the
+     * `x-familiar-bastion-token` header (see `BASTION_TOKEN_HEADER`).
+     */
+    readonly token: string;
 }
 
 /**
@@ -42,8 +47,10 @@ export interface BastionConfig {
  * directly bindable from the host process). The agent reaches the
  * bastion via `host.docker.internal` — the {@link AgentContainer}
  * already adds `--add-host=host.docker.internal:host-gateway` on
- * Linux so the name resolves to the host. Operators concerned about
- * LAN exposure should firewall this port externally.
+ * Linux so the name resolves to the host. Because the port is
+ * reachable from the LAN, from every container on `familiar-net` and
+ * from any local process, every request must carry the shared bastion
+ * token (enforced in {@link HttpServer}).
  */
 const BIND_HOST = "0.0.0.0";
 
@@ -65,7 +72,8 @@ const ADVERTISED_HOST = "host.docker.internal";
  * Binds on `0.0.0.0` for portability (the docker bridge IP isn't
  * bindable on WSL2/Docker Desktop). The agent reaches it as
  * `http://host.docker.internal:<port>`; that URL is exposed as
- * `BASTION_URL`.
+ * `BASTION_URL`. Every request must present the shared token (see
+ * {@link BastionConfig.token}).
  */
 export class Bastion {
     private readonly config: BastionConfig;
@@ -84,6 +92,11 @@ export class Bastion {
      */
     get listenPort(): number {
         return this.port;
+    }
+
+    /** Shared secret callers must present; see {@link BastionConfig.token}. */
+    get token(): string {
+        return this.config.token;
     }
 
     /**
@@ -121,6 +134,7 @@ export class Bastion {
             bindHost: BIND_HOST,
             port: this.port,
             log: this.config.log,
+            token: this.config.token,
         });
         await this.httpServer.start();
 
