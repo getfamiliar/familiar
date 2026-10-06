@@ -138,7 +138,8 @@ export interface Bootstrap {
      * absolute path. Plugins place per-event auxiliary files via
      * `ctx.events.emit({ files: [...] })`; the host writes them under
      * `<scratchDir>/<eventId>/` atomically with the event INSERT.
-     * Subdirectories older than 24 h are swept by an hourly Croner job.
+     * Entries (event subdirectories and stray loose files) older than
+     * 24 h are swept by an hourly Croner job.
      */
     readonly scratchDir: string;
     /**

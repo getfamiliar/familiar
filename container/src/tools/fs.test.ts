@@ -280,3 +280,47 @@ describe("fs_write — privilege gate (writablePaths + scratch only)", () => {
         assert.equal(mode, 0o640, `expected protected mode 0o640, got 0o${mode.toString(8)}`);
     });
 });
+
+describe("scratch writes — confined to the run's own event dir", () => {
+    const nonPrivileged = { id: "np", eventId: "42", privileged: false } as unknown as AgentRunRow;
+    const privileged = { id: "p", eventId: "42", privileged: true } as unknown as AgentRunRow;
+
+    // The gate fires before any filesystem access, so no real /scratch is needed.
+    for (const parent of [nonPrivileged, privileged]) {
+        const label = parent.privileged ? "privileged" : "non-privileged";
+
+        it(`refuses a loose file directly in /scratch (${label})`, async () => {
+            const ctx = buildTestCtx(10_000, { calls: [] });
+            await assert.rejects(
+                () => callFsWrite(ctx, parent, { path: "/scratch/report.md", content: "x" }),
+                /\/scratch\/42\//,
+            );
+        });
+
+        it(`refuses another event's scratch dir (${label})`, async () => {
+            const ctx = buildTestCtx(10_000, { calls: [] });
+            await assert.rejects(
+                () => callFsWrite(ctx, parent, { path: "/scratch/43/report.md", content: "x" }),
+                /\/scratch\/42\//,
+            );
+            // A sibling whose name merely starts with the event id is foreign too.
+            await assert.rejects(
+                () => callFsWrite(ctx, parent, { path: "/scratch/420/report.md", content: "x" }),
+                /\/scratch\/42\//,
+            );
+        });
+    }
+
+    it("fs_remove refuses another event's scratch file", async () => {
+        const ctx = buildTestCtx(10_000, { calls: [] });
+        const exec = buildFsTools(nonPrivileged, ctx).fs_remove?.execute;
+        if (!exec) {
+            throw new Error("fs_remove tool not found");
+        }
+        await assert.rejects(
+            // biome-ignore lint/suspicious/noExplicitAny: SDK options type isn't needed here.
+            () => (exec as any)({ path: "/scratch/43/old.txt" }, {} as any),
+            /\/scratch\/42\//,
+        );
+    });
+});

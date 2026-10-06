@@ -47,7 +47,7 @@ These are preloaded for convenience — not the limit of what you can do. …
 
 ## The bash tool
 
-… write access to `/scratch` and these workspace paths: {WRITABLE_PATH_LIST}.
+… write access to the per-event scratch dirs and these workspace paths: {WRITABLE_PATH_LIST}. …
 … The following packages are installed: {PYTHON_PACKAGE_LIST}. …
 
 {CACHE_MARKER}
@@ -107,10 +107,10 @@ Run `familiar prompt placeholders` for the authoritative list including placehol
 | `{TOOL_LIST}` | static¹ | One bullet per tool preloaded for this run. |
 | `{PYTHON_PACKAGE_LIST}` | static | Comma-separated python packages available to the `bash` tool (`python.packages` in `config.yml`). |
 | `{WRITABLE_PATH_LIST}` | static | Comma-separated `core.writablePaths` globs a non-privileged run may write to. |
-| `{RUNTIME_LIST}` | dynamic | Bullets: current time, event topic, handler file, inheritance, `outputChat`, `privileged`. |
+| `{RUNTIME_LIST}` | dynamic | Bullets: current time, event topic, handler file, inheritance, scratch dir (`/scratch/<event-id>/`), `outputChat`, `privileged`. |
 | `{CURRENT_TIME}` | dynamic | e.g. `Tuesday, 2026-05-19T18:43:12 in timezone Europe/Berlin`. |
 | `{EVENT_TOPIC}` | dynamic | The event topic, e.g. `chat:telegram`. |
-| `{PRIVILEGED}` | dynamic | `yes` if the run stems from you (terminal, your Telegram), else `no`. Non-privileged runs can't write outside `/scratch` and the writable paths. |
+| `{PRIVILEGED}` | dynamic | `yes` if the run stems from you (terminal, your Telegram), else `no`. Non-privileged runs can't write outside their `/scratch/<event-id>/` and the writable paths. |
 | `{STAGED_FILE_LIST}` | dynamic | Bullets of files staged in `/scratch/<event-id>/` (e.g. mail attachments) with their sizes. |
 | `{some/file.md}` | static | Content of that workspace file. |
 

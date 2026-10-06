@@ -35,8 +35,8 @@ if [ -n "${gname}" ] && [ "${gname}" != "familiar" ]; then
 fi
 
 # Shared group both users belong to. Group membership + the group-write bit is
-# what lets `unpriv` write group-writable (writablePaths/scratch) paths while
-# being denied protected ones.
+# what lets `unpriv` write group-writable (writablePaths, /scratch/<event-id>/)
+# paths while being denied protected ones (including the /scratch root itself).
 groupadd -g "${HOST_GID}" familiar
 # Privileged user: uid = host operator, primary group familiar. Main process
 # runs as this; everything it writes is host-owned.

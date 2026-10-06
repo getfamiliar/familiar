@@ -91,8 +91,9 @@ describe("normalizeAll", () => {
         assert.equal(statSync(path.join(workspaceDir, "files", "data.txt")).mode & 0o7777, 0o660);
     });
 
-    it("treats the whole scratch tree as writable", () => {
-        assert.equal(statSync(scratchDir).mode & 0o7777, 0o2770);
+    it("protects the scratch root but keeps event dirs writable", () => {
+        assert.equal(statSync(scratchDir).mode & 0o7777, 0o2750);
+        assert.equal(statSync(path.join(scratchDir, "evt1")).mode & 0o7777, 0o2770);
         assert.equal(statSync(path.join(scratchDir, "evt1", "tmp.json")).mode & 0o7777, 0o660);
     });
 

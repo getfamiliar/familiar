@@ -26,7 +26,7 @@ These are preloaded for convenience — not the limit of what you can do. Many m
 
 ## The bash tool
 
-You can call the tool `bash` to execute arbitrary bash commands. In a privileged run (see `privileged` under Runtime) the command runs as the `priv` user with write access to `/workspace` and `/scratch`. Otherwise it runs as the `unpriv` user with write access to `/scratch` and these workspace paths: {WRITABLE_PATH_LIST}.
+You can call the tool `bash` to execute arbitrary bash commands. In a privileged run (see `privileged` under Runtime) the command runs as the `priv` user with write access to `/workspace` and `/scratch`. Otherwise it runs as the `unpriv` user with write access to the per-event scratch dirs and these workspace paths: {WRITABLE_PATH_LIST}. Put temporary and intermediate files in this run's scratch dir (see `Scratch dir` under Runtime), never directly into `/scratch/`; it is also the default working directory.
 
 You can use `python3` (on PATH) to solve your tasks. The following packages are installed: {PYTHON_PACKAGE_LIST}. The user may install more packages via the config file.
 

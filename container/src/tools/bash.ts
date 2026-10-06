@@ -19,9 +19,11 @@ import { PassedConfig } from "../utils/PassedConfig.js";
  * credentials, and (b) Linux access rights. A privileged agentrun runs the
  * command as the `priv` user (= the host operator's uid, full workspace
  * write); a non-privileged run drops to `unpriv` via `sudo`, which the OS
- * confines to `core.writablePaths` + `/scratch` by directory group
- * permissions. After every command a root pass re-pins ownership/modes so
- * whatever the command created ends up host-owned (see PermissionNormalizer).
+ * confines to `core.writablePaths` + the per-event `/scratch/<event-id>/`
+ * dirs by directory group permissions (the `/scratch` root itself is
+ * protected, so no loose files land there). After every command a root
+ * pass re-pins ownership/modes so whatever the command created ends up
+ * host-owned (see PermissionNormalizer).
  */
 
 interface BashInput {

@@ -4,8 +4,9 @@ import type { Logger } from "@getfamiliar/shared";
 import { Cron } from "croner";
 
 /**
- * 24 hours, in milliseconds. Subdirectories of `scratchDir` whose
- * directory mtime is older than this are removed by each sweep. Picked
+ * 24 hours, in milliseconds. Entries of `scratchDir` (per-event
+ * subdirectories and stray loose files) whose mtime is older than this
+ * are removed by each sweep. Picked
  * to give the operator a comfortable window to inspect post-mortem
  * scratch contents (e.g. an email attachment that produced a confusing
  * handler outcome) without manual cleanup later.
@@ -18,13 +19,15 @@ const SCRATCH_GC_SCHEDULE = "0 * * * *";
 export interface ScratchGcConfig {
     /** Absolute host path of `tmp/scratch/`. */
     readonly scratchDir: string;
-    /** Logger; one line per removed dir at `info`. */
+    /** Logger; one line per removed entry at `info`. */
     readonly log: Logger;
 }
 
 /**
  * Hourly Croner job that sweeps `scratchDir`, removing per-event
- * scratch directories whose mtime is older than 24 hours.
+ * scratch directories — and loose files that ended up directly in the
+ * scratch root (e.g. written there by an MCP) — whose mtime is older
+ * than 24 hours.
  *
  * The retention window is intentionally generous — scratch files (mail
  * attachments, intermediate artifacts) are useful for post-mortem
@@ -68,8 +71,9 @@ export class ScratchGc {
     }
 
     /**
-     * One pass through `scratchDir`: stat every immediate child, remove
-     * those whose mtime is older than the retention threshold. Exposed
+     * One pass through `scratchDir`: lstat every immediate child (dirs,
+     * files and symlinks alike — a symlink is removed, never followed),
+     * remove those whose mtime is older than the retention threshold. Exposed
      * for direct testing — a test can backdate a dir's mtime and call
      * `sweep()` instead of waiting for the next hour boundary.
      */
@@ -92,25 +96,34 @@ export class ScratchGc {
         const cutoff = Date.now() - SCRATCH_RETENTION_MS;
         for (const name of entries) {
             const full = path.join(this.scratchDir, name);
-            let stat: Awaited<ReturnType<typeof fs.stat>>;
+            let stat: Awaited<ReturnType<typeof fs.lstat>>;
             try {
-                stat = await fs.stat(full);
-            } catch {
-                continue;
-            }
-            if (!stat.isDirectory()) {
+                stat = await fs.lstat(full);
+            } catch (err) {
+                // Vanished between readdir and lstat — nothing left to sweep.
+                if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+                    continue;
+                }
+                this.log.error(
+                    { path: full, err: err instanceof Error ? err.message : String(err) },
+                    `scratch GC lstat failed for ${full}`,
+                );
                 continue;
             }
             if (stat.mtimeMs > cutoff) {
                 continue;
             }
+            const kind = stat.isDirectory() ? "dir" : "file";
             try {
                 await fs.rm(full, { recursive: true, force: true });
-                this.log.info({ dir: full, mtime: stat.mtime }, "scratch GC removed dir");
+                this.log.info(
+                    { path: full, mtime: stat.mtime },
+                    `scratch GC removed ${kind} ${full}`,
+                );
             } catch (err) {
                 this.log.error(
-                    { dir: full, err: err instanceof Error ? err.message : String(err) },
-                    "scratch GC rm failed",
+                    { path: full, err: err instanceof Error ? err.message : String(err) },
+                    `scratch GC rm failed for ${full}`,
                 );
             }
         }

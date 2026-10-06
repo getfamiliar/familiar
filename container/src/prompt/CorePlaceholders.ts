@@ -142,9 +142,9 @@ function formatInheritance(handler: HandlerFile): string {
 
 /**
  * Build the bullet list of per-run facts: wall-clock time, event topic,
- * handler file (with the parents it inherits from, when merged), whether
- * the final reply is mirrored into the chat (`outputChat`), and the
- * privilege flag.
+ * handler file (with the parents it inherits from, when merged), the
+ * per-event scratch dir, whether the final reply is mirrored into the
+ * chat (`outputChat`), and the privilege flag.
  *
  * @param ctx The run context.
  * @returns The bullet list.
@@ -155,6 +155,11 @@ function formatRuntimeList(ctx: CorePlaceholderContext): string {
         `- Event topic: \`${ctx.topic}\``,
         `- Handler file: \`${ctx.handler.relativePath}\``,
     ];
+    // The per-event scratch dir is the only place under /scratch the fs
+    // tools let this run write; naming it keeps the model from guessing.
+    if (ctx.eventId.length > 0) {
+        lines.push(`- Scratch dir: \`${path.join(SCRATCH_ROOT, ctx.eventId)}/\``);
+    }
     if (ctx.handler.inheritsFrom.length > 0) {
         lines.push(`- Inheriting from: ${formatInheritance(ctx.handler)}`);
     }

@@ -137,8 +137,8 @@ function requiresPrivilegedWrite(absolute: string): boolean {
 /** Standardised refusal text used by writing tools when the run is non-privileged. */
 const PRIVILEGE_REFUSAL_MESSAGE =
     "This run is non-privileged: it may only write under core.writablePaths " +
-    "(the assistant's curated memory, e.g. wiki/** and files/**) and " +
-    "/scratch/<event-id>/. Everything else in the workspace — handlers, " +
+    "(the assistant's curated memory, e.g. wiki/** and files/**) and its own " +
+    "scratch dir /scratch/<event-id>/. Everything else in the workspace — handlers, " +
     "SOUL.md, people/*, and any other file — is " +
     "writable only by privileged runs (those descending from trusted user " +
     "input, e.g. the cli-chat REPL or the operator on Telegram). Reads are " +
@@ -146,6 +146,41 @@ const PRIVILEGE_REFUSAL_MESSAGE =
 
 function refusePrivilege(): never {
     throw new ToolError("PrivilegeDenied", PRIVILEGE_REFUSAL_MESSAGE);
+}
+
+/**
+ * True when an absolute path lies inside the run's own scratch dir
+ * (`/scratch/<eventId>` itself or anything below it).
+ *
+ * @param absolute Normalized absolute path.
+ * @param eventId The agentrun's event id.
+ * @returns Whether the path is inside `/scratch/<eventId>`.
+ */
+function isInOwnScratchDir(absolute: string, eventId: string): boolean {
+    const own = path.join(SCRATCH_ROOT, eventId);
+    return absolute === own || absolute.startsWith(`${own}/`);
+}
+
+/**
+ * Refuse a scratch write outside the run's own event dir. Applies to
+ * privileged and non-privileged runs alike — it is a tidiness rule, not
+ * a privilege: without it the model regularly drops files directly into
+ * `/scratch/` (where the scratch GC's per-event sweep never finds them)
+ * or into another event's dir. Non-scratch paths pass through untouched.
+ *
+ * @param absolute Normalized absolute path about to be written/removed.
+ * @param eventId The agentrun's event id.
+ * @throws {ToolError} `BadPath` naming the correct scratch dir.
+ */
+function assertWritableScratchPath(absolute: string, eventId: string): void {
+    const isScratch = absolute === SCRATCH_ROOT || absolute.startsWith(`${SCRATCH_ROOT}/`);
+    if (!isScratch || isInOwnScratchDir(absolute, eventId)) {
+        return;
+    }
+    throw new ToolError(
+        "BadPath",
+        `scratch writes must go to this run's scratch directory ${SCRATCH_ROOT}/${eventId}/ (got ${absolute})`,
+    );
 }
 
 /**
@@ -352,14 +387,15 @@ interface FileWriteInput {
 /**
  * Build the `fs_write` tool. Overwrites the file at `path` with
  * `content`. Creates missing parent directories. Non-privileged runs may
- * only write under `core.writablePaths` and `/scratch`.
+ * only write under `core.writablePaths` and `/scratch/<event-id>/`; every run may only
+ * write scratch files inside its own event dir.
  */
 function buildFsWriteTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FileWriteInput, object> {
     return tool<FileWriteInput, object>({
         description:
             "Write or overwrite a file with the given content. Creates missing " +
             "parent directories. Non-privileged runs may only write under " +
-            "core.writablePaths (e.g. wiki/**, files/**) and /scratch.",
+            "core.writablePaths (e.g. wiki/**, files/**) and /scratch/<event-id>/. Scratch writes must stay inside this run's own /scratch/<event-id>/.",
         inputSchema: jsonSchema<FileWriteInput>({
             type: "object",
             additionalProperties: false,
@@ -378,6 +414,7 @@ function buildFsWriteTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FileWr
         execute: ({ path: p, content }) =>
             runJsonTool(async () => {
                 const absolute = resolveWorkspacePath(p);
+                assertWritableScratchPath(absolute, parent.eventId);
                 if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
                     refusePrivilege();
                 }
@@ -400,7 +437,8 @@ interface FileStrReplaceInput {
  * of `old_string` with `new_string`. Errors if `old_string` is not
  * found, or appears more than once (in which case the model is told
  * to add surrounding context to disambiguate). Non-privileged runs may
- * only write under `core.writablePaths` and `/scratch`.
+ * only write under `core.writablePaths` and `/scratch/<event-id>/`; every run may only
+ * write scratch files inside its own event dir.
  */
 function buildFsStrReplaceTool(
     parent: AgentRunRow,
@@ -412,7 +450,7 @@ function buildFsStrReplaceTool(
             "in the file. Errors if `old_string` is missing or appears more " +
             "than once — in the multi-match case, add surrounding context to " +
             "make the match unique. Non-privileged runs may only write under " +
-            "core.writablePaths (e.g. wiki/**, files/**) and /scratch.",
+            "core.writablePaths (e.g. wiki/**, files/**) and /scratch/<event-id>/. Scratch writes must stay inside this run's own /scratch/<event-id>/.",
         inputSchema: jsonSchema<FileStrReplaceInput>({
             type: "object",
             additionalProperties: false,
@@ -435,6 +473,7 @@ function buildFsStrReplaceTool(
         execute: ({ path: p, old_string, new_string }) =>
             runJsonTool(async () => {
                 const absolute = resolveWorkspacePath(p);
+                assertWritableScratchPath(absolute, parent.eventId);
                 if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
                     refusePrivilege();
                 }
@@ -491,7 +530,8 @@ interface FileAppendInput {
  * avoids accidentally gluing two records onto the same line. Files
  * that already end with `\n` are left alone (no double newlines).
  *
- * Non-privileged runs may only write under `core.writablePaths` and `/scratch`.
+ * Non-privileged runs may only write under `core.writablePaths` and `/scratch/<event-id>/`; every run may only
+ * write scratch files inside its own event dir.
  */
 function buildFsAppendTool(
     parent: AgentRunRow,
@@ -504,7 +544,7 @@ function buildFsAppendTool(
             "file is non-empty and doesn't already end with a newline, one is " +
             "inserted before your content — so each call adds a new line. " +
             "Non-privileged runs may only write under core.writablePaths " +
-            "(e.g. wiki/**, files/**) and /scratch.",
+            "(e.g. wiki/**, files/**) and /scratch/<event-id>/. Scratch writes must stay inside this run's own /scratch/<event-id>/.",
         inputSchema: jsonSchema<FileAppendInput>({
             type: "object",
             additionalProperties: false,
@@ -526,6 +566,7 @@ function buildFsAppendTool(
         execute: ({ path: p, content }) =>
             runJsonTool(async () => {
                 const absolute = resolveWorkspacePath(p);
+                assertWritableScratchPath(absolute, parent.eventId);
                 if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
                     refusePrivilege();
                 }
@@ -891,7 +932,7 @@ function classifyRemovePattern(
  * - No recursion. `**` is rejected outright and dirname segments may
  *   not contain glob meta, so an expansion can only touch files in one
  *   literal directory.
- * - Privilege gate. Anything outside `core.writablePaths` and `/scratch`
+ * - Privilege gate. Anything outside `core.writablePaths` and `/scratch/<event-id>/`
  *   requires a privileged run, exactly matching `fs_write` / `fs_append`.
  *   In the wildcard branch, gated matches are skipped (so a cleanup over
  *   a mixed directory still removes what it's allowed to); in the literal
@@ -908,8 +949,8 @@ function buildFsRemoveTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FsRem
             "is rejected. Never deletes directories — a directory match is " +
             "skipped (wildcard branch) or rejected (literal branch). Non-privileged " +
             "runs may only delete under core.writablePaths (e.g. wiki/**, files/**) " +
-            "and /scratch, same as `fs_write`. Scratch paths " +
-            "(`/scratch/<event-id>/...`) are accepted for per-event cleanup.",
+            "and /scratch/<event-id>/, same as `fs_write`. Scratch paths " +
+            "(`/scratch/<event-id>/...`) of this run's own event are accepted for cleanup.",
         inputSchema: jsonSchema<FsRemoveInput>({
             type: "object",
             additionalProperties: false,
@@ -932,6 +973,7 @@ function buildFsRemoveTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FsRem
                 }
 
                 const absolute = resolveWorkspacePath(p);
+                assertWritableScratchPath(absolute, parent.eventId);
 
                 if (classification.kind === "literal") {
                     if (requiresPrivilegedWrite(absolute) && !parent.privileged) {
@@ -977,6 +1019,12 @@ function buildFsRemoveTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FsRem
                     }
                     if (requiresPrivilegedWrite(matchAbs) && !parent.privileged) {
                         skipped.push({ path: matchRel, reason: PRIVILEGE_REFUSAL_MESSAGE });
+                        continue;
+                    }
+                    try {
+                        assertWritableScratchPath(matchAbs, parent.eventId);
+                    } catch (err) {
+                        skipped.push({ path: matchRel, reason: (err as Error).message });
                         continue;
                     }
                     try {

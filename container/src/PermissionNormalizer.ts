@@ -146,7 +146,7 @@ function applyDefaultAcl(dir: string, writable: boolean): void {
  * @param absolute Absolute path of the entry.
  * @param rel Workspace-relative POSIX path (`""` for a root).
  * @param params Target ownership and writable globs.
- * @param allWritable When true, every entry is treated as writable (scratch).
+ * @param allWritable When true, every entry is treated as writable (scratch event dirs).
  */
 function normalizeEntry(
     absolute: string,
@@ -185,8 +185,28 @@ function normalizeEntry(
 }
 
 /**
+ * Normalize the scratch tree: the root itself is protected, so the `unpriv`
+ * bash user cannot drop loose files directly into `/scratch/`, while every
+ * entry below it (the per-event dirs and their contents) is writable. Event
+ * dirs are created by owner-uid processes (the `priv` agent, the host, MCP
+ * containers running as the host uid), which the group bit doesn't affect.
+ *
+ * @param scratchRoot Absolute path of the scratch root.
+ * @param params Target ownership and writable globs.
+ */
+function normalizeScratch(scratchRoot: string, params: NormalizeParams): void {
+    chownSync(scratchRoot, params.ownerUid, params.ownerGid);
+    chmodSync(scratchRoot, canonicalMode(false, true));
+    applyDefaultAcl(scratchRoot, false);
+    for (const name of readdirSync(scratchRoot)) {
+        normalizeEntry(path.join(scratchRoot, name), name, params, true);
+    }
+}
+
+/**
  * Run a full normalization pass over the workspace (path-scoped writability)
- * and scratch (entirely writable). Missing roots are skipped.
+ * and scratch (protected root, writable per-event dirs). Missing roots are
+ * skipped.
  *
  * @param params Target ownership and writable globs.
  * @param roots Override mount roots (used by tests).
@@ -201,7 +221,7 @@ export function normalizeAll(
         normalizeEntry(workspaceRoot, "", params, false);
     }
     if (existsSync(scratchRoot)) {
-        normalizeEntry(scratchRoot, "", params, true);
+        normalizeScratch(scratchRoot, params);
     }
 }
 
