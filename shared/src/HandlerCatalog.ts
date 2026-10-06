@@ -24,14 +24,6 @@ export interface HandlerPath {
 }
 
 /**
- * Workspace files at the very top level that are not handlers and
- * must be filtered out of {@link HandlerCatalog.list}. These are the
- * documents read by `buildSystemPrompt` rather than executed as
- * handlers (see `CLAUDE.md` — markdown layers / global context).
- */
-const RESERVED_ROOT_FILES = new Set(["SOUL.md", "CONTEXT.md"]);
-
-/**
  * Top-level workspace folder holding shared recipes
  * (`skills/<name>/SKILL.md`). Skills are pure context loaded via
  * `fs_read`, never agent entry points — so nothing under this folder
@@ -85,9 +77,9 @@ export class HandlerCatalog {
 
     /**
      * Walk `workspace/` and return one {@link HandlerPath} per
-     * candidate handler file. Excludes the global-context files at
-     * the workspace root (`SOUL.md`, `CONTEXT.md`)
-     * and the `skills/` subtree. Every other `.md` file under a topic
+     * candidate handler file. Excludes every file at the workspace root
+     * (`PROMPT.md`, `SOUL.md`, … — root files have no topic, so they are
+     * never handlers) and the `skills/` subtree. Every other `.md` file under a topic
      * directory is included, even if it's a knowledge file (e.g.
      * `people/anna.md`) — `HandlerCatalog` does not police what is or
      * isn't a "proper" handler; that's a handler-loading concern.
@@ -154,8 +146,8 @@ export class HandlerCatalog {
 /**
  * Recursively walk `dir`, accumulating one {@link HandlerPath} per
  * `.md` file. `segments` tracks the topic path from the workspace
- * root; an empty array means we're at the root, where reserved files
- * are skipped.
+ * root; an empty array means we're at the root, whose files are
+ * skipped (no topic, never a handler).
  */
 async function walkMarkdown(
     dir: string,
@@ -187,13 +179,10 @@ async function walkMarkdown(
         if (!entry.isFile() || !entry.name.endsWith(".md")) {
             continue;
         }
-        if (segments.length === 0 && RESERVED_ROOT_FILES.has(entry.name)) {
-            continue;
-        }
         if (segments.length === 0) {
-            // Stray `.md` at the workspace root with no topic folder —
-            // not a handler. Skip silently rather than reporting an
-            // empty topic.
+            // `.md` at the workspace root (PROMPT.md, SOUL.md, …) has no
+            // topic folder — never a handler. Skip silently rather than
+            // reporting an empty topic.
             continue;
         }
         const handlerBase = entry.name.slice(0, -".md".length);

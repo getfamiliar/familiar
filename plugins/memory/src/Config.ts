@@ -42,7 +42,7 @@ export interface MemoryConfig {
      * reasonably relevant files are listed. Range 0–1.
      */
     readonly minScoreToMention: number;
-    /** How many hits the contextProvider asks the backend for. */
+    /** How many hits the prompt appender asks the backend for. */
     readonly maxSystemPromptMemoryResults: number;
     /** Default `limit` for the `memory_search` tool when the agent omits it. */
     readonly maxToolMemoryResults: number;

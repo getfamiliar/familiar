@@ -1,22 +1,15 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
-import { parse as parseYaml } from "yaml";
+import { CACHE_MARKER_PLACEHOLDER, PROMPT_TEMPLATE_FILE } from "@getfamiliar/shared";
 import { HandlerFile } from "./HandlerFile.js";
 import {
-    CONTAINER_PROMPT_CONTRIBUTORS,
-    type PromptContributor,
-    type PromptContributorContext,
-} from "./prompt-contributors.js";
+    CORE_PLACEHOLDER_RESOLVERS,
+    type CorePlaceholderContext,
+    isContainerCorePlaceholder,
+    isDynamicCorePlaceholder,
+} from "./prompt/CorePlaceholders.js";
+import { type PlaceholderUse, parseTemplate, renderTemplate } from "./prompt/PromptTemplate.js";
 import { bastionAuthHeaders } from "./utils/BastionAuth.js";
-import { resolveTimezone } from "./utils/PassedConfig.js";
-
-/**
- * Absolute path of the per-container scratch root. Bind-mounted to the
- * host's `tmp/scratch/` and to every MCP container at the same
- * absolute path, so `/scratch/<event-id>/<name>` is the one path string
- * the agent uses for both `fs_read` and MCP tool arguments.
- */
-const SCRATCH_ROOT = "/scratch";
 
 /**
  * Hard cap on the character length of each individually-included
@@ -35,13 +28,6 @@ const MAX_SYSTEM_CHARS = 32000;
 
 /** Hard cap on the assembled user prompt. */
 const MAX_PROMPT_CHARS = 16000;
-
-/**
- * Maximum characters preserved on a skill description when rendering
- * the `# Available skills` section. Anything beyond is cut and marked
- * with a single `…` so the agent sees the value was clipped.
- */
-const MAX_SKILL_DESCRIPTION_CHARS = 256;
 
 /**
  * Maximum characters preserved on a single key in a payload object.
@@ -69,328 +55,349 @@ const MAX_VALUE_CHARS = 4000;
 const MAX_PAYLOAD_CHARS = 5000;
 
 /**
- * Compose the system prompt the {@link AgentRunner} hands to its
- * {@link import("ai").ToolLoopAgent}.
- *
- * SOUL.md and CONTEXT.md are read from the workspace root (using
- * {@link HandlerFile.getWorkspaceRoot}); missing files are skipped
- * without erroring. Per-section truncation is enforced as content is
- * gathered; an overall cap is applied after assembly as a safety net.
- * Truncated values get a `…[truncated, original N chars]` marker so the
- * model knows the value is incomplete.
- *
- * The handler's `systemPrompt` frontmatter chooses which of those
- * framing files are included:
- *
- * - `full` (default) — SOUL + CONTEXT.
- * - `only-soul` — SOUL only.
- * - `none` — none of them.
- *
- * The handler body and the tool list are always included regardless of
- * mode.
- *
- * The prompt is intentionally **static per handler**: the per-run
- * dynamic sections (`# Runtime`, plugin-contributed event context) live
- * in the current-run user message instead — see
- * {@link buildRuntimeContextBlock}. Keeping the system prompt stable is
- * what makes it a cacheable prefix for providers like Anthropic.
- *
- * Returns both the verbatim prompt (`full`, what inference sees) and a
- * `redacted` variant where the framing-file sections have their file
- * body swapped for a `<content of file …>` placeholder. The
- * caller chooses which one to persist onto `agentruns.system_prompt`
- * based on `core.logSystemPrompt`; the variant fed to the model is
- * always `full`. When the handler's mode excludes the framing files,
- * `full === redacted`.
- *
- * @param handler The resolved handler file. Body becomes the `# Handler`
- *   section. `header.systemPrompt` selects the framing mode.
- * @param toolNames Ids of tools the agent is permitted to call for
- *   this run. Listed under "Available tools"; an empty array produces
- *   "(none)".
+ * Template rendered for handlers with `systemPrompt: none`: the handler
+ * body alone, no workspace framing and no runtime facts.
  */
-export function buildSystemPrompt(
-    handler: HandlerFile,
-    toolNames: readonly string[],
-): BuiltSystemPrompt {
-    const sections: SystemPromptSection[] = [];
-    const mode = handler.header.systemPrompt ?? "full";
+const NONE_TEMPLATE = "{HANDLER_CONTENT}";
 
-    if (mode === "full" || mode === "only-soul") {
-        const soul = readWorkspaceFile("SOUL.md");
-        if (soul !== null) {
-            sections.push(framingFileSection("Identity", "SOUL.md", soul));
-        }
-    }
+/** `systemPrompt` value selecting the workspace-root `PROMPT.md`. */
+const DEFAULT_TEMPLATE_MODE = "default";
 
-    if (mode === "full") {
-        const context = readWorkspaceFile("CONTEXT.md");
-        if (context !== null) {
-            sections.push(framingFileSection("Context", "CONTEXT.md", context));
-        }
-    }
+/** `systemPrompt` value selecting {@link NONE_TEMPLATE}. */
+const NONE_TEMPLATE_MODE = "none";
 
-    if (handler.body.trim().length > 0) {
-        sections.push(verbatim(`# Handler\n\n${truncate(handler.body, MAX_FILE_CHARS)}`));
-    }
+/** Default timeout for the bastion round-trips fetching plugin prompt content. */
+const PLUGIN_FETCH_TIMEOUT_MS = 10_000;
 
-    const skillsSection = buildAvailableSkillsSection();
-    if (skillsSection !== null) {
-        sections.push(verbatim(skillsSection));
-    }
-
-    const toolList =
-        toolNames.length > 0 ? toolNames.map((name) => `- ${name}`).join("\n") : "(none)";
-    const discoveryNote =
-        "\n\nThese are preloaded for convenience — not the limit of what you can do. Many more " +
-        "tools are available: call `tool_list` (optionally with a search term) to discover them, " +
-        "then invoke any of them by name with `tool_call`.";
-    sections.push(verbatim(`# Available tools\n\n${toolList}${discoveryNote}`));
-
-    return {
-        full: truncate(sections.map((s) => s.full).join("\n\n"), MAX_SYSTEM_CHARS),
-        redacted: truncate(sections.map((s) => s.redacted).join("\n\n"), MAX_SYSTEM_CHARS),
-    };
-}
-
-/**
- * Compose the per-run **dynamic** context block that prepends to the
- * current-run user message. Sections, in order:
- *
- * 1. `# Runtime` — wall-clock time, topic, handler path, `privileged`.
- * 2. Container-core contributor sections (e.g. the `## The bash tool`
- *    help) — these see the resolved `toolNames` and `privileged`, which
- *    the host can't supply to its own providers.
- * 3. Host-plugin event-context sections fetched from the bastion (e.g.
- *    injected memories).
- *
- * This content used to live at the tail of the system prompt. It moved
- * out so the system prompt can stay byte-stable per handler (a cacheable
- * prefix); the dynamic, per-run bits ride in the user turn instead,
- * where they don't invalidate the cached prefix. For a single-shot
- * non-chat handler this block leads the first and only user message; in
- * multi-turn chat it leads the trailing user turn, after the cacheable
- * prior history.
- *
- * @param handler The resolved handler file; path / inheritance /
- *   `outputChat` feed the `# Runtime` section.
- * @param topic The event topic this agentrun is processing (e.g.
- *   `chat:telegram`). Surfaced in `# Runtime` so the agent can reason
- *   about which channel/source produced the event.
- * @param privileged Whether the agentrun descends from a trusted
- *   user-input source. Surfaced in `# Runtime` so the agent knows which
- *   trust-gated tools are available to it.
- * @param toolNames Ids of the tools the agent may call for this run
- *   (post-filter). Passed to the container-core contributors so a tool
- *   can contribute help only when it is actually available.
- * @param eventContext Identifiers needed to fetch plugin-contributed
- *   event-context sections from the bastion's `/event-context/`
- *   gateway. Pass `null` to skip the fetch entirely — used by tests and
- *   one-off harnesses that don't have a live bastion.
- * @param contributors The container-core contributors to run. Defaults
- *   to {@link CONTAINER_PROMPT_CONTRIBUTORS}; injectable so tests can
- *   pass stubs or an empty list.
- * @returns The assembled dynamic block. Always contains at least the
- *   `# Runtime` section, so it is never empty.
- */
-export async function buildRuntimeContextBlock(
-    handler: HandlerFile,
-    topic: string,
-    privileged: boolean,
-    toolNames: readonly string[],
-    eventContext: EventContextFetchInput | null,
-    contributors: readonly PromptContributor[] = CONTAINER_PROMPT_CONTRIBUTORS,
-): Promise<string> {
-    const sections: string[] = [`# Runtime\n\n${buildRuntimeSection(handler, topic, privileged)}`];
-
-    // Container-core contributors run after `# Runtime`: they see the
-    // resolved toolNames + privileged, which host plugins can't.
-    const contributorCtx: PromptContributorContext = { handler, topic, toolNames, privileged };
-    for (const contribute of contributors) {
-        const text = contribute(contributorCtx);
-        if (text !== null && text.trim().length > 0) {
-            sections.push(text.trim());
-        }
-    }
-
-    // Host-plugin event-context sections last.
-    if (eventContext !== null) {
-        const eventContextSections = await fetchEventContextSections(eventContext);
-        for (const section of eventContextSections) {
-            sections.push(section.text.trim());
-        }
-    }
-
-    return sections.join("\n\n");
-}
-
-/**
- * One assembled section of the system prompt, in two parallel
- * variants:
- *
- * - `full` is what the agent receives at inference time (the same
- *   string that used to be the only output of {@link buildSystemPrompt}).
- * - `redacted` is what gets persisted onto `agentruns.system_prompt`
- *   when the operator has selected `core.logSystemPrompt: "non-static"`.
- *   For the workspace-root framing files (SOUL.md / CONTEXT.md) the file
- *   body is replaced with a single-line `<content of file …>`
- *   placeholder; for every other section the two variants are identical.
- */
-interface SystemPromptSection {
-    readonly full: string;
-    readonly redacted: string;
-}
-
-/** Both variants of the assembled prompt; see {@link SystemPromptSection}. */
-export interface BuiltSystemPrompt {
-    /** The verbatim prompt fed to inference. */
-    readonly full: string;
+/** Thrown when the prompt template a handler selects does not exist. */
+export class PromptTemplateMissingError extends Error {
     /**
-     * The prompt with the workspace-root framing files replaced by
-     * `<content of file …>` placeholders. Equal to {@link full} when the
-     * handler's `systemPrompt` mode excludes those files (no placeholders
-     * to substitute).
+     * @param templatePath Workspace-relative template path.
+     * @param handlerPath Workspace-relative handler path that selected it.
      */
-    readonly redacted: string;
-}
-
-/** A section that is identical between the inference and audit-log views. */
-function verbatim(text: string): SystemPromptSection {
-    return { full: text, redacted: text };
-}
-
-/**
- * A framing-file section (`# Identity` / `# Context`).
- * The full variant carries the file body verbatim; the redacted variant
- * replaces the body with a `<content of file …>` placeholder so the
- * audit log keeps per-run signal without the bulky framing-file noise.
- */
-function framingFileSection(heading: string, fileName: string, body: string): SystemPromptSection {
-    return {
-        full: `# ${heading}\n\n${body}`,
-        redacted: `# ${heading}\n\n<content of file ${fileName}>`,
-    };
+    constructor(templatePath: string, handlerPath: string) {
+        super(
+            `prompt template ${templatePath} (selected by handler ${handlerPath}) does not exist in the workspace — ` +
+                `create it, or point the handler's \`systemPrompt\` frontmatter at an existing template`,
+        );
+        this.name = "PromptTemplateMissingError";
+    }
 }
 
 /**
- * Inputs the PromptBuilder needs to ask the bastion for plugin-
- * contributed event-context sections. Carried as a single record so
- * test harnesses can pass `null` to skip the fetch without a runtime
- * env shim.
+ * How the PromptBuilder reaches the host for plugin prompt content
+ * (named placeholders and appenders). Pass `null` instead to skip the
+ * round-trips — used by tests and harnesses without a live bastion.
  */
-export interface EventContextFetchInput {
+export interface PluginPromptAccess {
     /** Bastion base URL (passed config `bastionUrl`). */
     readonly bastionUrl: string;
     /** Shared bastion token (passed config `bastionToken`). */
     readonly bastionToken: string;
-    /** Event id this agentrun is processing. */
-    readonly eventId: string;
-    /** Agentrun id about to start running. */
-    readonly agentrunId: string;
     /**
-     * Logger child for warnings about fetch failures. The PromptBuilder
-     * keeps fetch errors non-fatal — event context is best-effort
-     * enrichment, not a hard dependency — but the operator should see
-     * a warning when a gateway is misbehaving.
+     * The run to hand to plugins: real ids, or a synthetic description
+     * for `familiar prompt dry-run`.
+     */
+    readonly run:
+        | { readonly eventId: string; readonly agentrunId: string }
+        | {
+              readonly dryRun: {
+                  readonly topic: string;
+                  readonly handler: string;
+                  readonly prompt: string | null;
+                  readonly privileged: boolean;
+              };
+          };
+    /**
+     * Logger for fetch failures. Plugin content is best-effort
+     * enrichment, so failures are logged and the prompt still assembles.
      */
     readonly log: { warn: (record: object, message: string) => void };
-    /**
-     * Optional override for the overall fetch timeout. Defaults to 10s
-     * — providers are already bounded internally by the gateway, so
-     * this only catches gateway-level hangs.
-     */
+    /** Optional override for the per-request timeout. Defaults to 10s. */
     readonly timeoutMs?: number;
 }
 
-/** One section as returned by the bastion. Mirrors the gateway type. */
-interface EventContextSection {
+/** Inputs to {@link buildPromptParts}. */
+export interface BuildPromptPartsInput {
+    /** The resolved handler file; its `systemPrompt` selects the template. */
+    readonly handler: HandlerFile;
+    /** Event topic the run processes (e.g. `chat:telegram`). */
+    readonly topic: string;
+    /** Whether the run descends from a trusted user-input source. */
+    readonly privileged: boolean;
+    /** Ids of the tools preloaded for this run. */
+    readonly toolNames: readonly string[];
+    /** Event id; locates staged files under `/scratch/<eventId>/`. */
+    readonly eventId: string;
+    /** Host access for plugin content, or `null` to skip it. */
+    readonly plugins: PluginPromptAccess | null;
+    /** Assembly instant; defaults to now. Injectable for tests. */
+    readonly now?: Date;
+    /**
+     * Resolve every core placeholder, not only the ones the template
+     * uses. Used by `familiar prompt dry-run` to show all values.
+     */
+    readonly shouldResolveAllCore?: boolean;
+}
+
+/** One plugin-appended section. */
+export interface PromptAppenderSection {
     readonly pluginId: string;
     readonly text: string;
 }
 
-/** Response shape served by `POST /event-context/`. */
-interface EventContextResponse {
-    readonly sections: readonly EventContextSection[];
+/** Output of {@link buildPromptParts}. */
+export interface PromptParts {
+    /** The system prompt fed to inference (part of the template before `{CACHE_MARKER}`). */
+    readonly system: string;
+    /**
+     * The head of the current-run user message: the template part after
+     * `{CACHE_MARKER}`, followed by plugin-appended sections.
+     */
+    readonly userHead: string;
+    /**
+     * Audit-log variants with every `{path.md}` include replaced by
+     * `<content of file path>`, for `core.logSystemPrompt: non-static`.
+     */
+    readonly redacted: { readonly system: string; readonly userHead: string };
+    /** Workspace-relative template path, or `null` for `systemPrompt: none`. */
+    readonly templatePath: string | null;
+    /** Every placeholder the template (and its includes) references. */
+    readonly uses: readonly PlaceholderUse[];
+    /** Resolved value per placeholder name (core and plugin). */
+    readonly values: ReadonlyMap<string, string>;
+    /** Plugin-appended sections, in registration order. */
+    readonly appenderSections: readonly PromptAppenderSection[];
+    /** Template problems worth a warning, phrased for a log line. */
+    readonly warnings: readonly string[];
 }
 
-const EVENT_CONTEXT_FETCH_TIMEOUT_MS = 10_000;
+/**
+ * Assemble the prompt for one agentrun from the handler's prompt
+ * template (`PROMPT.md` by default).
+ *
+ * The template is plain workspace markdown with `{NAME}` placeholders
+ * and `{path.md}` includes (see `prompt/PromptTemplate.ts`). Core
+ * placeholders are resolved here; any other name is fetched from the
+ * host's plugin placeholder registry. Plugin appenders are fetched in
+ * parallel and appended to the user-message head.
+ *
+ * The split at `{CACHE_MARKER}` keeps the system prompt byte-stable per
+ * handler as long as only static placeholders precede the marker — that
+ * stable prefix is what providers cache, and in multi-turn chat it keeps
+ * the prior history cacheable too. A per-run placeholder before the
+ * marker is reported as a warning.
+ *
+ * @param input Handler, run facts and host access.
+ * @returns The rendered parts plus diagnostics.
+ * @throws {PromptTemplateMissingError} When the selected template file
+ *   does not exist.
+ */
+export async function buildPromptParts(input: BuildPromptPartsInput): Promise<PromptParts> {
+    const { handler } = input;
+    const template = loadTemplate(handler);
+    const parsed = parseTemplate(template.source, {
+        templateName: template.path ?? `${handler.relativePath} (systemPrompt: none)`,
+        readInclude: readWorkspaceFile,
+        templateSources: { HANDLER_CONTENT: truncate(handler.body, MAX_FILE_CHARS) },
+    });
+    const warnings = [...parsed.warnings];
+
+    const usedNames = [...new Set(parsed.uses.map((use) => use.name))];
+    const coreContext: CorePlaceholderContext = {
+        handler,
+        topic: input.topic,
+        privileged: input.privileged,
+        toolNames: input.toolNames,
+        eventId: input.eventId,
+        now: input.now ?? new Date(),
+    };
+    const values = new Map<string, string>();
+    const coreNames =
+        input.shouldResolveAllCore === true
+            ? Object.keys(CORE_PLACEHOLDER_RESOLVERS)
+            : usedNames.filter((name) => CORE_PLACEHOLDER_RESOLVERS[name] !== undefined);
+    for (const name of coreNames) {
+        const resolve = CORE_PLACEHOLDER_RESOLVERS[name];
+        if (resolve !== undefined) {
+            values.set(name, resolve(coreContext));
+        }
+    }
+
+    const pluginNames = usedNames.filter((name) => !isContainerCorePlaceholder(name));
+    const [pluginValues, appenderSections] =
+        input.plugins === null
+            ? [{ values: {}, unknown: pluginNames, errors: {} }, []]
+            : await Promise.all([
+                  pluginNames.length > 0
+                      ? fetchPluginPlaceholders(input.plugins, pluginNames)
+                      : Promise.resolve({ values: {}, unknown: [], errors: {} }),
+                  fetchAppenderSections(input.plugins),
+              ]);
+    for (const [name, value] of Object.entries(pluginValues.values)) {
+        values.set(name, value);
+    }
+    const where = template.path ?? handler.relativePath;
+    for (const name of pluginValues.unknown) {
+        warnings.push(`${where}: unknown placeholder {${name}} kept verbatim`);
+    }
+    for (const [name, message] of Object.entries(pluginValues.errors)) {
+        warnings.push(`${where}: plugin placeholder {${name}} failed: ${message}`);
+    }
+    const pluginProvided = new Set(Object.keys(pluginValues.values));
+    const reportedDynamic = new Set<string>();
+    for (const use of parsed.uses) {
+        const isDynamic = isDynamicCorePlaceholder(use.name) || pluginProvided.has(use.name);
+        if (use.isBeforeMarker && isDynamic && !reportedDynamic.has(use.name)) {
+            reportedDynamic.add(use.name);
+            warnings.push(
+                `${where}: per-run placeholder {${use.name}} before {${CACHE_MARKER_PLACEHOLDER}} breaks prompt caching — move it below the marker`,
+            );
+        }
+    }
+
+    const full = renderTemplate(parsed, values);
+    const redacted = renderTemplate(parsed, values, true);
+    const appended = appenderSections.map((section) => section.text.trim());
+    const withAppended = (head: string): string =>
+        [head, ...appended].filter((part) => part.length > 0).join("\n\n");
+
+    return {
+        system: truncate(full.system, MAX_SYSTEM_CHARS),
+        userHead: withAppended(full.userHead),
+        redacted: {
+            system: truncate(redacted.system, MAX_SYSTEM_CHARS),
+            userHead: withAppended(redacted.userHead),
+        },
+        templatePath: template.path,
+        uses: parsed.uses,
+        values,
+        appenderSections,
+        warnings,
+    };
+}
 
 /**
- * Fetch plugin-contributed sections from the bastion's
- * `/event-context/` gateway. Best-effort: on any fetch failure
- * (network error, timeout, non-200, malformed body) the helper logs a
- * warning and returns an empty list so the system prompt still
- * assembles. The bastion fans out to every registered provider in
- * parallel and isolates per-provider rejections, so this side only
- * has to deal with transport-layer concerns.
+ * Resolve the template a handler selects via its `systemPrompt`
+ * frontmatter: `default` (or absent) → `PROMPT.md`, `none` → the handler
+ * body alone, anything else → that workspace-relative file.
+ *
+ * @param handler The resolved handler.
+ * @returns The template path (`null` for `none`) and its text.
+ * @throws {PromptTemplateMissingError} When the template file is missing.
  */
-async function fetchEventContextSections(
-    input: EventContextFetchInput,
-): Promise<readonly EventContextSection[]> {
-    const url = `${input.bastionUrl.replace(/\/$/, "")}/event-context/`;
-    const timeoutMs = input.timeoutMs ?? EVENT_CONTEXT_FETCH_TIMEOUT_MS;
+function loadTemplate(handler: HandlerFile): { path: string | null; source: string } {
+    const mode = handler.header.systemPrompt ?? DEFAULT_TEMPLATE_MODE;
+    if (mode === NONE_TEMPLATE_MODE) {
+        return { path: null, source: NONE_TEMPLATE };
+    }
+    const templatePath = mode === DEFAULT_TEMPLATE_MODE ? PROMPT_TEMPLATE_FILE : mode;
+    const source = readWorkspaceFile(templatePath);
+    if (source === null) {
+        throw new PromptTemplateMissingError(templatePath, handler.relativePath);
+    }
+    return { path: templatePath, source };
+}
+
+/** Response shape served by `POST /prompt-placeholders/`. */
+interface PluginPlaceholdersResponse {
+    readonly values: Readonly<Record<string, string>>;
+    readonly unknown: readonly string[];
+    readonly errors: Readonly<Record<string, string>>;
+}
+
+/**
+ * Ask the host for the values of plugin-registered placeholders.
+ * Best-effort: on a transport failure every name counts as failed and
+ * stays verbatim in the prompt.
+ *
+ * @param access Bastion access and run description.
+ * @param names Placeholder names the container core does not own.
+ * @returns Values, unknown names and per-name errors.
+ */
+async function fetchPluginPlaceholders(
+    access: PluginPromptAccess,
+    names: readonly string[],
+): Promise<PluginPlaceholdersResponse> {
+    const body = await postToBastion(access, "/prompt-placeholders/", { ...access.run, names });
+    if (body === null || typeof body !== "object" || !("values" in body)) {
+        const errors = Object.fromEntries(
+            names.map((name) => [name, "plugin gateway unavailable"]),
+        );
+        return { values: {}, unknown: [], errors };
+    }
+    const parsed = body as PluginPlaceholdersResponse;
+    return {
+        values: parsed.values ?? {},
+        unknown: Array.isArray(parsed.unknown) ? parsed.unknown : [],
+        errors: parsed.errors ?? {},
+    };
+}
+
+/**
+ * Fetch plugin appender sections. Best-effort: failures yield no sections.
+ *
+ * @param access Bastion access and run description.
+ * @returns The non-empty sections in registration order.
+ */
+async function fetchAppenderSections(
+    access: PluginPromptAccess,
+): Promise<readonly PromptAppenderSection[]> {
+    const body = await postToBastion(access, "/prompt-appenders/", access.run);
+    if (
+        body === null ||
+        typeof body !== "object" ||
+        !Array.isArray((body as { sections?: unknown }).sections)
+    ) {
+        return [];
+    }
+    return (body as { sections: PromptAppenderSection[] }).sections;
+}
+
+/**
+ * POST a JSON body to a bastion route and parse the JSON answer. Any
+ * failure (network error, timeout, non-200, malformed JSON) is logged as
+ * a warning and yields `null`.
+ *
+ * @param access Bastion access, logger and timeout.
+ * @param route Route path, e.g. `/prompt-appenders/`.
+ * @param payload Request body.
+ * @returns The parsed response, or `null` on failure.
+ */
+async function postToBastion(
+    access: PluginPromptAccess,
+    route: string,
+    payload: object,
+): Promise<unknown> {
+    const url = `${access.bastionUrl.replace(/\/$/, "")}${route}`;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), access.timeoutMs ?? PLUGIN_FETCH_TIMEOUT_MS);
     try {
         const res = await fetch(url, {
             method: "POST",
             headers: {
-                ...bastionAuthHeaders(input.bastionToken),
+                ...bastionAuthHeaders(access.bastionToken),
                 "content-type": "application/json",
             },
-            body: JSON.stringify({ eventId: input.eventId, agentrunId: input.agentrunId }),
+            body: JSON.stringify(payload),
             signal: controller.signal,
         });
         if (!res.ok) {
-            const body = await res.text().catch(() => "");
-            input.log.warn(
-                { status: res.status, body: body.slice(0, 200) },
-                "event-context gateway returned non-200",
+            const text = await res.text().catch(() => "");
+            access.log.warn(
+                { status: res.status, body: text.slice(0, 200) },
+                `prompt gateway ${route} returned ${res.status}: ${text.slice(0, 200)}`,
             );
-            return [];
+            return null;
         }
-        const parsed = (await res.json()) as EventContextResponse;
-        if (!parsed || !Array.isArray(parsed.sections)) {
-            input.log.warn({}, "event-context gateway returned malformed body");
-            return [];
-        }
-        return parsed.sections;
+        return await res.json();
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        input.log.warn({ err: message }, "event-context fetch failed");
-        return [];
+        access.log.warn({ err: message }, `prompt gateway ${route} request failed: ${message}`);
+        return null;
     } finally {
         clearTimeout(timer);
     }
-}
-
-/**
- * Build the bullet list of dynamic context that varies per call: the
- * wall-clock time the prompt was assembled, the event topic being
- * processed, the handler file in use (with the parent it inherits
- * from, when merged), and whether the handler will mirror its final
- * text reply into the chat history via `outputChat`.
- */
-function buildRuntimeSection(handler: HandlerFile, topic: string, privileged: boolean): string {
-    const lines = [
-        `- Current time: ${formatRuntimeTime(new Date(), resolveTimezone())}`,
-        `- Event topic: \`${topic}\``,
-        `- Handler file: \`${handler.relativePath}\``,
-    ];
-    if (handler.inheritsFrom.length > 0) {
-        const ancestors = handler.inheritsFrom.map((p) => `\`${p}\``).join(" ← ");
-        lines.push(`- Inheriting from: ${ancestors}`);
-    }
-    lines.push(`- outputChat: ${handler.header.outputChat === true ? "true" : "false"}`);
-    // Privileged runs descend from a trusted user-input source (the
-    // operator at the local terminal or on Telegram). Tools that gate
-    // risky reads / writes on this flag will refuse non-privileged
-    // calls, so the agent should know up front whether they're
-    // available rather than discovering it via a tool error.
-    lines.push(
-        `- privileged: ${privileged ? "yes, the prompt stems from the system owner" : "no"}`,
-    );
-    return lines.join("\n");
 }
 
 /**
@@ -415,11 +422,7 @@ function buildRuntimeSection(handler: HandlerFile, topic: string, privileged: bo
  * @param payload The agentrun's structured payload (the `payload`
  *   jsonb column on the row), an arbitrary JSON value.
  */
-export function buildPrompt(
-    runPrompt: string | null,
-    payload: unknown,
-    scratchListing?: string | null,
-): string {
+export function buildPrompt(runPrompt: string | null, payload: unknown): string {
     const sections: string[] = [];
 
     if (runPrompt && runPrompt.trim().length > 0) {
@@ -431,62 +434,10 @@ export function buildPrompt(
         sections.push(`# Payload\n\n\`\`\`json\n${payloadJson}\n\`\`\``);
     }
 
-    if (scratchListing !== undefined && scratchListing !== null && scratchListing.length > 0) {
-        sections.push(scratchListing);
-    }
-
     if (sections.length === 0) {
         return "";
     }
     return truncate(sections.join("\n\n"), MAX_PROMPT_CHARS);
-}
-
-/**
- * List the files staged at `/scratch/<eventId>/` for the prompt
- * scaffold. Returns a markdown block ready to append to the user
- * prompt, or `null` when the dir is missing or empty (in which case
- * the section is skipped entirely so the model isn't told about a
- * concept that doesn't apply to this run).
- *
- * Sizes are listed in bytes; the model is good at scaling those.
- * Files are listed in name order for stability across runs. Hidden
- * dotfiles are skipped — same convention as `WorkspaceWatcher`.
- */
-export function buildScratchListing(eventId: string): string | null {
-    if (typeof eventId !== "string" || eventId.length === 0) {
-        return null;
-    }
-    const dir = path.join(SCRATCH_ROOT, eventId);
-    let entries: string[];
-    try {
-        entries = readdirSync(dir);
-    } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-            return null;
-        }
-        throw err;
-    }
-    const lines: string[] = [];
-    for (const name of entries.sort()) {
-        if (name.startsWith(".")) {
-            continue;
-        }
-        const full = path.join(dir, name);
-        let stat: ReturnType<typeof statSync>;
-        try {
-            stat = statSync(full);
-        } catch {
-            continue;
-        }
-        if (!stat.isFile()) {
-            continue;
-        }
-        lines.push(`- \`${full}\` (${stat.size} bytes)`);
-    }
-    if (lines.length === 0) {
-        return null;
-    }
-    return `# Files staged for this event\n\nThese files live in this event's shared scratch directory. They are visible to every MCP under the same path, so you can pass these paths verbatim to MCP tools (e.g. a PDF parser):\n\n${lines.join("\n")}`;
 }
 
 /**
@@ -556,132 +507,14 @@ function capString(value: string, max: number): string {
 }
 
 /**
- * Scan `<workspaceRoot>/skills/` for shared-recipe skills and render
- * them as the `# Available skills` system-prompt section.
- *
- * A skill is `skills/<id>/SKILL.md` where the SKILL.md has at least a
- * `description` field in its YAML frontmatter. Entries that don't match
- * this shape (loose files, folders without SKILL.md, malformed YAML,
- * missing description) are silently skipped — the catalog is
- * best-effort, not a validation surface.
- *
- * The `(read)` marker is rendered for skills whose frontmatter does
- * not declare a non-empty `tools` field: with no tools the skill is
- * pure context — `fs_read` it and follow it. A skill that declares
- * `tools` ships its own handler config (its own model / tool set); you
- * can run it as a subagent via `start_subagent` to get it in that
- * fresh context, but that is no longer required to reach its tools —
- * every tool is directly callable regardless.
- *
- * @returns The fully-formatted section (heading + preamble + bullets),
- *   or `null` when the `skills/` directory is missing or contains no
- *   valid skills (in which case the section is omitted entirely).
- */
-function buildAvailableSkillsSection(): string | null {
-    const skillsRoot = path.join(HandlerFile.getWorkspaceRoot(), "skills");
-
-    let entries: string[];
-    try {
-        entries = readdirSync(skillsRoot);
-    } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-            return null;
-        }
-        throw err;
-    }
-
-    const bullets: { id: string; line: string }[] = [];
-    for (const id of entries) {
-        const skillDir = path.join(skillsRoot, id);
-        let stat: ReturnType<typeof statSync>;
-        try {
-            stat = statSync(skillDir);
-        } catch {
-            continue;
-        }
-        if (!stat.isDirectory()) {
-            continue;
-        }
-        const skillFile = path.join(skillDir, "SKILL.md");
-        let raw: string;
-        try {
-            raw = readFileSync(skillFile, "utf8");
-        } catch {
-            continue;
-        }
-        const frontmatter = parseSkillFrontmatter(raw);
-        if (frontmatter === null) {
-            continue;
-        }
-        const description = frontmatter.description;
-        if (typeof description !== "string" || description.trim().length === 0) {
-            continue;
-        }
-        const tools = frontmatter.tools;
-        const hasTools = typeof tools === "string" && tools.trim().length > 0;
-        const trimmedDescription = description.trim();
-        const cappedDescription =
-            trimmedDescription.length > MAX_SKILL_DESCRIPTION_CHARS
-                ? `${trimmedDescription.slice(0, MAX_SKILL_DESCRIPTION_CHARS)}…`
-                : trimmedDescription;
-        const marker = hasTools ? "" : " (read)";
-        bullets.push({ id, line: `- \`${id}\`${marker}: ${cappedDescription}` });
-    }
-
-    if (bullets.length === 0) {
-        return null;
-    }
-
-    bullets.sort((a, b) => a.id.localeCompare(b.id));
-
-    const preamble = [
-        "The following skills are available in the `skills/` folder.",
-        'Read one with `fs_read({path: "skills/<id>/SKILL.md"})` and follow it —',
-        "every tool a skill mentions is directly callable, so you don't need a subagent to use them.",
-        "Optionally run a skill in its own fresh context via",
-        '`start_subagent({topic: "skills:<id>", handler: "SKILL", prompt?, payload?})`.',
-        "Skills marked (read) are pure context — just read them.",
-    ].join(" ");
-
-    return `# Available skills\n\n${preamble}\n\n${bullets.map((b) => b.line).join("\n")}`;
-}
-
-/**
- * Parse the YAML frontmatter block out of a SKILL.md source string.
- * Returns the parsed mapping, or `null` if there is no frontmatter,
- * the YAML is malformed, or it doesn't parse to a mapping.
- *
- * This is intentionally separate from {@link HandlerFile}'s
- * `parseHandler` — that function does typed handler-header validation
- * (model, temperature, …) we don't want to inherit here. The regex is
- * the same shape as in `HandlerFile`.
- */
-function parseSkillFrontmatter(source: string): Record<string, unknown> | null {
-    const trimmed = source.trim();
-    const match = trimmed.match(/^---\r?\n([\s\S]*?)\r?\n?---\r?\n?([\s\S]*)$/);
-    if (!match) {
-        return null;
-    }
-    let parsed: unknown;
-    try {
-        parsed = parseYaml(match[1] ?? "");
-    } catch {
-        return null;
-    }
-    if (parsed === null || parsed === undefined) {
-        return null;
-    }
-    if (typeof parsed !== "object" || Array.isArray(parsed)) {
-        return null;
-    }
-    return parsed as Record<string, unknown>;
-}
-
-/**
  * Read a file at `<workspaceRoot>/<relativePath>` synchronously,
  * returning its trimmed contents (per-file-truncated) or `null` if
  * the file does not exist. Other I/O errors propagate so the caller
  * doesn't silently mistake e.g. EACCES for a missing file.
+ *
+ * @param relativePath Workspace-relative path.
+ * @returns The trimmed, truncated text, or `null` when missing.
+ * @throws On I/O errors other than a missing file.
  */
 function readWorkspaceFile(relativePath: string): string | null {
     const absolute = path.join(HandlerFile.getWorkspaceRoot(), relativePath);
@@ -706,42 +539,4 @@ function truncate(value: string, max: number): string {
         return value;
     }
     return `${value.slice(0, max)}\n…[truncated, original ${value.length} chars]`;
-}
-
-/**
- * Format a `Date` for the agent system prompt's "Current time" line:
- * `Friday, 2026-05-19T18:43:12 in timezone Europe/Berlin`.
- *
- * Weekday name + ISO-like local time + the IANA tz label, all
- * relative to `timezone`. Built from `Intl.DateTimeFormat.formatToParts`
- * so we control the separators directly — the locale-default
- * formatter inserts AM/PM and locale punctuation we don't want.
- *
- * Exported so unit tests can pin the format against a fixed date and
- * timezone.
- */
-export function formatRuntimeTime(date: Date, timezone: string): string {
-    const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone: timezone,
-        weekday: "long",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-    }).formatToParts(date);
-    const lookup = new Map(parts.map((p) => [p.type, p.value]));
-    const weekday = lookup.get("weekday") ?? "";
-    const year = lookup.get("year") ?? "";
-    const month = lookup.get("month") ?? "";
-    const day = lookup.get("day") ?? "";
-    // `hour: '2-digit'` with `hour12: false` can yield "24" at midnight
-    // on some implementations; normalise to "00".
-    const rawHour = lookup.get("hour") ?? "";
-    const hour = rawHour === "24" ? "00" : rawHour;
-    const minute = lookup.get("minute") ?? "";
-    const second = lookup.get("second") ?? "";
-    return `${weekday}, ${year}-${month}-${day}T${hour}:${minute}:${second} in timezone ${timezone}`;
 }

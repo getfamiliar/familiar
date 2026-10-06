@@ -197,7 +197,7 @@ export class CronjobScheduler {
 /**
  * Map a workspace-relative handler path to its `(topic, startHandler)`
  * pair. Returns `null` for files at the workspace root, which are not
- * handlers by project convention (root holds SOUL.md, CONTEXT.md, etc.).
+ * handlers by project convention (root holds PROMPT.md, SOUL.md, etc.).
  *
  * Example: `mail/important/digest.md` → `mail:important` / `digest`.
  */

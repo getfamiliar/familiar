@@ -38,8 +38,9 @@ import { buildStorageTools } from "../storage/StorageTools.js";
 import { HostConfigService } from "../utils/ConfigService.js";
 import { type DevEventDomain, isEventEmissionAllowed } from "../utils/DevEventGate.js";
 import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
-import { EventContextRegistry } from "./EventContextRegistry.js";
 import { HostContextImpl } from "./HostContextImpl.js";
+import { PromptAppenderRegistry } from "./PromptAppenderRegistry.js";
+import { PromptPlaceholderRegistry } from "./PromptPlaceholderRegistry.js";
 import type { PluginToolsRegistry } from "./ToolsRegistry.js";
 
 /**
@@ -99,7 +100,8 @@ export class PluginHost {
     private readonly mailStyleStore: MailStyleStore;
     private readonly storageRegistry: StorageRegistry;
     private readonly storageService: StorageService;
-    private readonly eventContextRegistry: EventContextRegistry;
+    private readonly promptAppenderRegistry: PromptAppenderRegistry;
+    private readonly promptPlaceholderRegistry: PromptPlaceholderRegistry;
     private readonly modelMetadataService: ModelMetadataService;
     private toolsRegistry: PluginToolsRegistry | undefined;
     private workspaceWatcher: WorkspaceWatcher | undefined;
@@ -167,7 +169,8 @@ export class PluginHost {
             stagingDir: `${boot.tmpDir}/storage-staging`,
             log: log.child({ component: "storage" }),
         });
-        this.eventContextRegistry = new EventContextRegistry();
+        this.promptAppenderRegistry = new PromptAppenderRegistry();
+        this.promptPlaceholderRegistry = new PromptPlaceholderRegistry();
         this.modelMetadataService = new ModelMetadataService({
             tmpDir: boot.tmpDir,
             lookupPluginMeta: (provider, model) => this.lookupModelMetaData(provider, model),
@@ -253,14 +256,24 @@ export class PluginHost {
     }
 
     /**
-     * The shared event-context registry backing every plugin's
-     * `ctx.events.registerContextProvider`. Exposed so the bastion's
-     * {@link import("../bastion/EventContextGateway.js").EventContextGateway}
-     * can read the live list of registered providers and fan calls
-     * out in parallel.
+     * The shared registry backing every plugin's
+     * `ctx.prompt.registerPromptAppender`. Exposed so the bastion's
+     * {@link import("../bastion/PromptGateway.js").PromptGateway} can
+     * read the live list of registered appenders and fan calls out in
+     * parallel.
      */
-    get eventContext(): EventContextRegistry {
-        return this.eventContextRegistry;
+    get promptAppenders(): PromptAppenderRegistry {
+        return this.promptAppenderRegistry;
+    }
+
+    /**
+     * The shared registry backing every plugin's
+     * `ctx.prompt.registerPlaceholder`. Read by the bastion's
+     * {@link import("../bastion/PromptGateway.js").PromptGateway} and the
+     * `familiar prompt placeholders` CLI.
+     */
+    get promptPlaceholders(): PromptPlaceholderRegistry {
+        return this.promptPlaceholderRegistry;
     }
 
     /**
@@ -454,7 +467,7 @@ export class PluginHost {
      *
      *   1. Global template at `data/workspace-template/` — versioned
      *      with the repo, authored by the user. Authoritative for
-     *      anything it ships (e.g. `SOUL.md`, `CONTEXT.md`).
+     *      anything it ships (e.g. `PROMPT.md`, `SOUL.md`, `CONTEXT.md`).
      *   2. Plugin templates contributed via `plugin.workspaceTemplate`
      *      — fill in topic-specific defaults the global template
      *      didn't already cover.
@@ -743,7 +756,8 @@ export class PluginHost {
             storage: this.storageRegistry,
             devMode: isDevMode(),
             mailStyleStore: this.mailStyleStore,
-            eventContextRegistry: this.eventContextRegistry,
+            promptAppenderRegistry: this.promptAppenderRegistry,
+            promptPlaceholderRegistry: this.promptPlaceholderRegistry,
             resolveProvider: (key) => this.resolveProvider(key),
             workspaceWatcher: this.workspaceWatcher,
             daemonDownSignal: this.daemonDownController.signal,

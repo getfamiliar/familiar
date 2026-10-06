@@ -24,7 +24,7 @@ export interface ModelMetadataResponse {
 /**
  * Bastion module the container calls when an agentrun starts to learn
  * its model's capabilities. Mirrors
- * {@link import("./EventContextGateway.js").EventContextGateway} in
+ * {@link import("./PromptGateway.js").PromptGateway} in
  * shape: claims a single prefix, accepts JSON POSTs, returns a clean
  * payload on the wire.
  *
@@ -39,7 +39,7 @@ export interface ModelMetadataResponse {
  *   container treats missing metadata as non-fatal, so a gateway error
  *   must not block agentrun start.
  * - Authentication is the bastion's shared-token check (in
- *   `HttpServer`), same as `/mcp/`, `/plugin-tools/`, and `/event-context/`.
+ *   `HttpServer`), same as `/mcp/`, `/plugin-tools/`, and `/prompt-appenders/`.
  */
 export class ModelMetadataGateway implements BastionModule {
     readonly name = "model-metadata-gateway";

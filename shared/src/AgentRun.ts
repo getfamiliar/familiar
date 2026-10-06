@@ -75,8 +75,8 @@ export interface AgentRunRow {
     /** Optional prompt seed supplied by the queueing caller. */
     readonly prompt: string | null;
     /**
-     * Resolved system prompt the agent ran under (SOUL.md +
-     * CONTEXT.md + handler body + tool list). Populated by
+     * Resolved prompt the agent ran under: the rendered prompt
+     * template (system prompt, then the user-message head). Populated by
      * AgentRunner only when `core.logSystemPrompt` is enabled;
      * otherwise `null`. Read by the report layer's
      * `renderAgentrunStart` when `withDetails` is on.

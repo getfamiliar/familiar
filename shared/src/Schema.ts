@@ -174,8 +174,8 @@ ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS not_before timestamptz;
 -- NULL for any agentrun that never reached generate() (failed at
 -- handler-load time, etc.).
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS model text;
--- Resolved system prompt (SOUL.md + CONTEXT.md + handler body +
--- tool list) used for this agentrun. Populated by AgentRunner
+-- Resolved prompt (rendered prompt template: system prompt, then
+-- user-message head) used for this agentrun. Populated by AgentRunner
 -- only when core.logSystemPrompt is true; otherwise NULL. Surfaced
 -- by the report layer's Agentrun Start section when the consumer
 -- opts into withDetails.

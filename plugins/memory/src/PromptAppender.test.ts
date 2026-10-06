@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { formatMemoryTable, sanitizeDescription } from "./ContextProvider.js";
+import { formatMemoryTable, sanitizeDescription } from "./PromptAppender.js";
 
 describe("formatMemoryTable", () => {
     it("renders the header, preamble, and a row per file", () => {

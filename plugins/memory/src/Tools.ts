@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { EVENT_PRIORITY, type PluginTool } from "@getfamiliar/shared";
 import type { MemoryConfig } from "./Config.js";
-import { formatHitsFlat } from "./ContextProvider.js";
 import type { MemoryStore } from "./MemoryStore.js";
+import { formatHitsFlat } from "./PromptAppender.js";
 
 /**
  * The save handler's event topic. Chosen to resolve under

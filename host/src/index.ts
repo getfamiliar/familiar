@@ -6,6 +6,7 @@ import { cronCommand } from "./commands/Cron.js";
 import { eventsCommand } from "./commands/Events.js";
 import { initCommand } from "./commands/Init.js";
 import { pluginCommand } from "./commands/Plugin.js";
+import { buildPromptCommand } from "./commands/Prompt.js";
 import { psqlCommand } from "./commands/Psql.js";
 import { startCommand } from "./commands/Start.js";
 import { stopCommand } from "./commands/Stop.js";
@@ -88,6 +89,7 @@ async function main(): Promise<void> {
                 cron: cronCommand,
                 tools: toolsCommand,
                 plugin: pluginCommand,
+                prompt: buildPromptCommand(pluginHost),
                 storage: buildStorageCommand(pluginHost),
                 ...pluginHost.buildSubCommands(),
             },

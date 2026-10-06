@@ -26,7 +26,7 @@ export type LogFn = (message: string) => void;
 
 /**
  * One search hit as the rest of the plugin consumes it. Kept here so
- * the contextProvider, the `memory_search` tool, and the CLI smoke
+ * the prompt appender, the `memory_search` tool, and the CLI smoke
  * test all speak the same shape.
  */
 export interface MemoryHit {
@@ -135,7 +135,7 @@ export function memoryDataDir(hostDataDir: string): string {
  * `enqueue`, `close`); everything else is implementation detail.
  *
  * The class is built so the backend can be swapped under it without
- * touching `index.ts` or `ContextProvider.ts` — the public surface
+ * touching `index.ts` or `PromptAppender.ts` — the public surface
  * is deliberately shaped around what those consumers need, not around
  * what Orama happens to expose.
  */
@@ -268,7 +268,7 @@ export class MemoryStore {
         })();
     }
 
-    /** Public for the contextProvider's `if (!store.isReady())` gate. */
+    /** Public for the prompt appender's `if (!store.isReady())` gate. */
     isReady(): boolean {
         return this.ready;
     }

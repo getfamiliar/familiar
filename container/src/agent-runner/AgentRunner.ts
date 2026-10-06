@@ -14,13 +14,7 @@ import type { ChatManager } from "../chat/ChatManager.js";
 import { HandlerFile } from "../HandlerFile.js";
 import { ModelFactory } from "../models/ModelFactory.js";
 import { fetchModelMetaData } from "../models/ModelMetadataClient.js";
-import {
-    type BuiltSystemPrompt,
-    buildPrompt,
-    buildRuntimeContextBlock,
-    buildScratchListing,
-    buildSystemPrompt,
-} from "../PromptBuilder.js";
+import { buildPrompt, buildPromptParts, type PromptParts } from "../PromptBuilder.js";
 import { buildContainerToolRunContext } from "../tools/ContainerToolRunContext.js";
 import { PassedConfig, requireConfig } from "../utils/PassedConfig.js";
 import { fetchAncestorChain } from "./AgentRunLineage.js";
@@ -148,23 +142,25 @@ function computeOffloadTokenThreshold(contextLimit: number | undefined, cap: num
  *
  *   "off" / unset / unknown → `null` (no stamping).
  *   "full"                  → the verbatim prompt.
- *   "non-static"            → the variant with SOUL.md / CONTEXT.md
- *                             replaced by `<content of file …>`
- *                             placeholders.
+ *   "non-static"            → the variant with every `{path.md}`
+ *                             include replaced by a
+ *                             `<content of file …>` placeholder.
+ *
+ * The user-message head (template part after `{CACHE_MARKER}` plus
+ * plugin appenders) is appended so the audit record reflects everything
+ * that was actually sent to the model on top of the history.
  *
  * Unknown values fall back to `null` (no stamping) rather than throwing
  * — the lint pass has already flagged anything malformed, and the
  * audit-log knob shouldn't be able to fail an agentrun.
  */
-function selectLoggedSystemPrompt(built: BuiltSystemPrompt): string | null {
+function selectLoggedSystemPrompt(parts: PromptParts): string | null {
     const mode = PassedConfig.get<string>("core.logSystemPrompt");
-    if (mode === "full") {
-        return built.full;
+    const variant = mode === "full" ? parts : mode === "non-static" ? parts.redacted : null;
+    if (variant === null) {
+        return null;
     }
-    if (mode === "non-static") {
-        return built.redacted;
-    }
-    return null;
+    return [variant.system, variant.userHead].filter((s) => s.length > 0).join("\n\n");
 }
 
 /**
@@ -393,48 +389,34 @@ export class AgentRunner {
                 : `${toolNames.length} tools — ${toolNames.join(", ")}`;
         ctx.log.info(`agentrun toolset resolved: ${toolList}`);
 
-        const systemPrompt = buildSystemPrompt(handler, toolNames);
-
-        // The per-run dynamic context (`# Runtime` + plugin-contributed
-        // event context such as memories) no longer lives in the system
-        // prompt — keeping the system prompt byte-stable per handler is
-        // what makes it a cacheable prefix. This block instead leads the
+        // The prompt template splits at `{CACHE_MARKER}`: the part before
+        // it is the system prompt (byte-stable per handler, a cacheable
+        // prefix), the part after it plus plugin appenders leads the
         // current-run user message (see message assembly below).
-        const dynamicContextBlock = await buildRuntimeContextBlock(
+        const promptParts = await buildPromptParts({
             handler,
-            ctx.row.topic,
-            ctx.row.privileged,
+            topic: ctx.row.topic,
+            privileged: ctx.row.privileged,
             toolNames,
-            {
+            eventId: ctx.row.eventId,
+            plugins: {
                 bastionUrl: requireConfig<string>("bastionUrl"),
                 bastionToken: requireConfig<string>("bastionToken"),
-                eventId: ctx.row.eventId,
-                agentrunId: ctx.row.id,
+                run: { eventId: ctx.row.eventId, agentrunId: ctx.row.id },
                 log: ctx.log,
             },
-        );
+        });
+        for (const warning of promptParts.warnings) {
+            ctx.log.warn(`prompt template: ${warning}`);
+        }
+        const systemPrompt = promptParts.system;
+        const dynamicContextBlock = promptParts.userHead;
 
         // Stamp the resolved model — and, when the operator opted in
-        // via core.logSystemPrompt, the resolved system prompt — on
-        // the row before invoking the agent. Done through the Scheduler-
-        // owned callback so the runner stays bus-free.
-        //
-        // Three log modes (passed config `core.logSystemPrompt`):
-        //   "off"        → don't stamp.
-        //   "full"       → stamp the verbatim prompt.
-        //   "non-static" → stamp the variant with SOUL.md / CONTEXT.md
-        //                  replaced by `<content of file …>`
-        //                  placeholders so the audit log keeps the per-
-        //                  run signal without the framing-file noise.
-        //
-        // The `# Runtime` / event-context block now rides in the user
-        // message rather than the system prompt, so append it to the
-        // stamped value when stamping is on — the audit record then still
-        // reflects everything that was actually sent to the model.
-        const loggedSystemPrompt = selectLoggedSystemPrompt(systemPrompt);
-        const promptToLog =
-            loggedSystemPrompt === null ? null : `${loggedSystemPrompt}\n\n${dynamicContextBlock}`;
-        await ctx.stampModel(modelLabel, promptToLog);
+        // via core.logSystemPrompt, the resolved prompt — on the row
+        // before invoking the agent. Done through the Scheduler-owned
+        // callback so the runner stays bus-free.
+        await ctx.stampModel(modelLabel, selectLoggedSystemPrompt(promptParts));
 
         // Derive the per-step output cap. A handler that declares no
         // `maxOutputTokens` inherits the model's true output ceiling
@@ -480,7 +462,7 @@ export class AgentRunner {
             contextLimit: modelMetaData?.contextLimit,
             fallbackContextLimit: FALLBACK_CONTEXT_LIMIT,
             thresholdPercentage: CONTEXT_THRESHOLD_PERCENTAGE,
-            systemPromptTokens: estimateTokens(systemPrompt.full),
+            systemPromptTokens: estimateTokens(systemPrompt),
             spill: buildContainerToolRunContext(ctx.row.eventId, offloadTokenThreshold).spill,
             log: ctx.log,
         });
@@ -488,7 +470,7 @@ export class AgentRunner {
         const agent = new ToolLoopAgent<never, ToolSet>({
             model,
             tools,
-            instructions: systemPrompt.full,
+            instructions: systemPrompt,
             temperature: handler.header.temperature,
             maxOutputTokens: effectiveMaxOutputTokens,
             // The Scheduler owns retry policy via the RetryableModelException
@@ -540,7 +522,6 @@ export class AgentRunner {
         // same call recursively.
         const event = await ctx.eventsView.getById(ctx.row.eventId);
         const isChat = event?.isChat === true && ctx.row.parentAgentrunId === null;
-        const scratchListing = buildScratchListing(ctx.row.eventId);
 
         let messages: ModelMessage[];
         let historyMessages = 0;
@@ -557,7 +538,7 @@ export class AgentRunner {
             // that case; payload rendering still goes through either
             // way.
             const seedPrompt = history.length > 0 ? null : ctx.row.prompt;
-            const userBody = buildPrompt(seedPrompt, ctx.row.payload, scratchListing);
+            const userBody = buildPrompt(seedPrompt, ctx.row.payload);
             // The dynamic context block leads the trailing user turn, after
             // the cacheable prior history.
             prompt = [dynamicContextBlock, userBody].filter((s) => s.length > 0).join("\n\n");
@@ -588,7 +569,7 @@ export class AgentRunner {
             // it too is host- or parent-assistant-generated: the
             // conversational protocol expects a user turn last to cue
             // the model to respond. The dynamic context block leads it.
-            const userBody = buildPrompt(ctx.row.prompt, ctx.row.payload, scratchListing);
+            const userBody = buildPrompt(ctx.row.prompt, ctx.row.payload);
             prompt = [dynamicContextBlock, userBody].filter((s) => s.length > 0).join("\n\n");
             if (prompt.length > 0) {
                 messages.push({ role: "user", content: prompt });
@@ -612,7 +593,7 @@ export class AgentRunner {
                 temperature: handler.header.temperature,
                 maxOutputTokens: effectiveMaxOutputTokens,
                 declaredMaxOutputTokens: handler.header.maxOutputTokens ?? null,
-                systemPrompt: systemPrompt.full,
+                systemPrompt,
                 prompt,
                 runPrompt: ctx.row.prompt,
                 tools: toolNames,

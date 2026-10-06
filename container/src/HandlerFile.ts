@@ -100,25 +100,17 @@ export interface HandlerFileHeader {
      */
     readonly mergeMode?: "merge" | "replace";
     /**
-     * Controls how much framing the system prompt carries beyond the
-     * handler body itself.
+     * Selects the prompt template the run is rendered from.
      *
-     * - `full` (default) — include `SOUL.md` and `CONTEXT.md` ahead of
-     *   the handler. Right default for handlers that reason like an
-     *   assistant across the user's world.
-     * - `only-soul` — include `SOUL.md` only. Drops the situational
-     *   context layer for handlers that still want identity grounding
-     *   but no world framing.
-     * - `none` — drop `SOUL.md` and `CONTEXT.md` entirely. Use for very
-     *   fixed tasks where the handler body
-     *   fully specifies the work and the "you are an agent" framing
-     *   would only bias the model.
-     *
-     * The handler body, the tool list, and the runtime section are
-     * always included regardless — they are operational scaffolding,
-     * not personality.
+     * - `default` (also when absent) — the workspace-root `PROMPT.md`.
+     * - `none` — the handler body alone: no workspace framing, no runtime
+     *   facts. Use for very fixed tasks where the handler body fully
+     *   specifies the work and the "you are an assistant" framing would
+     *   only bias the model.
+     * - `<path.md>` — a workspace-relative template file, e.g.
+     *   `prompts/minimal.md`.
      */
-    readonly systemPrompt?: "full" | "only-soul" | "none";
+    readonly systemPrompt?: string;
     /**
      * Token cap for inline tool-call results before the runner spills the
      * full result to a scratch file. Used as the upper bound in the
@@ -339,9 +331,9 @@ export class HandlerFile {
 
     /**
      * Read the currently configured workspace root. Other workspace-
-     * aware modules (e.g. `buildSystemPrompt` reading `SOUL.md` /
-     * `CONTEXT.md`) use this so the workspace location has a single
-     * source of truth.
+     * aware modules (e.g. `buildPromptParts` reading `PROMPT.md` and its
+     * includes) use this so the workspace location has a single source
+     * of truth.
      */
     static getWorkspaceRoot(): string {
         return HandlerFile.workspaceRoot;
@@ -476,7 +468,7 @@ function parseHandler(filePath: string, source: string): DeclaredFile {
         outputChat: optionalBoolean(filePath, raw, "outputChat"),
         cron: optionalString(filePath, raw, "cron"),
         mergeMode: optionalEnum(filePath, raw, "mergeMode", ["merge", "replace"]),
-        systemPrompt: optionalEnum(filePath, raw, "systemPrompt", ["full", "only-soul", "none"]),
+        systemPrompt: optionalSystemPrompt(filePath, raw),
         toolCallOffloadingLimit: optionalPositiveInteger(filePath, raw, "toolCallOffloadingLimit"),
     };
 
@@ -618,6 +610,32 @@ function optionalNonNegativeInteger(
     const value = raw[field];
     if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
         throw new Error(`${filePath}: header field "${field}" must be a non-negative integer`);
+    }
+    return value;
+}
+
+/**
+ * Validate the `systemPrompt` header field: `default`, `none`, or a
+ * workspace-relative `.md` path without `..` segments.
+ *
+ * @param filePath Handler path, for error messages.
+ * @param raw Parsed YAML frontmatter.
+ * @returns The declared value, or `undefined` when absent.
+ * @throws When the value is not one of the accepted forms.
+ */
+function optionalSystemPrompt(filePath: string, raw: Record<string, unknown>): string | undefined {
+    const value = optionalString(filePath, raw, "systemPrompt");
+    if (value === undefined || value === "default" || value === "none") {
+        return value;
+    }
+    const isSafePath =
+        value.endsWith(".md") &&
+        !value.startsWith("/") &&
+        value.split("/").every((segment) => segment !== ".." && segment.length > 0);
+    if (!isSafePath) {
+        throw new Error(
+            `${filePath}: header field "systemPrompt" must be "default", "none", or a workspace-relative .md template path (got "${value}")`,
+        );
     }
     return value;
 }

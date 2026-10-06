@@ -21,8 +21,8 @@ import {
     resolveBastionToken,
     writeBastionTokenFile,
 } from "../bastion/BastionToken.js";
-import { EventContextGateway } from "../bastion/EventContextGateway.js";
 import { ModelMetadataGateway } from "../bastion/ModelMetadataGateway.js";
+import { PromptGateway } from "../bastion/PromptGateway.js";
 import { buildProviders, ReverseProxy } from "../bastion/ReverseProxy.js";
 import { ChatCompactor } from "../chat/ChatCompactor.js";
 import {
@@ -261,10 +261,11 @@ export const startCommand = defineCommand({
             registry: containerToolsRegistry,
             log: log.child({ component: "container-tools-gateway" }),
         });
-        const eventContextGateway = new EventContextGateway({
-            registry: pluginHost.eventContext,
+        const promptGateway = new PromptGateway({
+            appenders: pluginHost.promptAppenders,
+            placeholders: pluginHost.promptPlaceholders,
             ensureConnection: () => pluginHost.ensureConnection(),
-            log: log.child({ component: "event-context-gateway" }),
+            log: log.child({ component: "prompt-gateway" }),
         });
         const modelMetadataGateway = new ModelMetadataGateway({
             service: pluginHost.modelMetadata,
@@ -283,7 +284,7 @@ export const startCommand = defineCommand({
                 mcpGateway,
                 pluginToolsGateway,
                 containerToolsGateway,
-                eventContextGateway,
+                promptGateway,
                 modelMetadataGateway,
             ],
         });
@@ -438,7 +439,8 @@ export const startCommand = defineCommand({
             storage: pluginHost.storageProviders,
             devMode: dev,
             mailStyleStore: pluginHost.mailStyle,
-            eventContextRegistry: pluginHost.eventContext,
+            promptAppenderRegistry: pluginHost.promptAppenders,
+            promptPlaceholderRegistry: pluginHost.promptPlaceholders,
             resolveProvider: (key) => pluginHost.resolveProvider(key),
             workspaceWatcher,
             // Daemon-internal context: the daemon owns its own shutdown,

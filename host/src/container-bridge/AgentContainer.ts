@@ -9,15 +9,16 @@ import {
 import { pullImageIfNeeded } from "./Images.js";
 import { isSafePipRequirement } from "./PythonPackages.js";
 
-const CONTAINER_NAME = "familiar-agent";
+/** Docker container name of the long-running agent runtime. */
+export const AGENT_CONTAINER_NAME = "familiar-agent";
 
 /**
  * Tri-state mode for `core.logSystemPrompt`:
  *
  * - `"off"` — don't stamp `agentruns.system_prompt`.
  * - `"full"` — stamp the prompt verbatim.
- * - `"non-static"` — stamp the prompt with SOUL.md / CONTEXT.md
- *   replaced by `<content of file …>` placeholders so the audit log
+ * - `"non-static"` — stamp the prompt with every `{path.md}` include
+ *   (SOUL.md, CONTEXT.md, …) replaced by `<content of file …>` placeholders so the audit log
  *   keeps per-run signal without the framing-file noise.
  *
  * Forwarded to the container as the string env var
@@ -237,7 +238,7 @@ export class AgentContainer {
      * with the same name first so this is safe to call after a crash.
      */
     async start(): Promise<void> {
-        await removeContainer(CONTAINER_NAME);
+        await removeContainer(AGENT_CONTAINER_NAME);
         await dockerExec(buildAgentRunArgs(this.config));
         this.running = true;
     }
@@ -252,8 +253,8 @@ export class AgentContainer {
             return;
         }
 
-        await stopContainer(CONTAINER_NAME);
-        await removeContainer(CONTAINER_NAME);
+        await stopContainer(AGENT_CONTAINER_NAME);
+        await removeContainer(AGENT_CONTAINER_NAME);
 
         this.running = false;
     }
@@ -280,7 +281,7 @@ export function buildAgentRunArgs(config: AgentContainerConfig): string[] {
         "run",
         "-d",
         "--name",
-        CONTAINER_NAME,
+        AGENT_CONTAINER_NAME,
         "--network",
         ISOLATED_NETWORK_NAME,
         // Everything the container's Node code reads rides in this one JSON

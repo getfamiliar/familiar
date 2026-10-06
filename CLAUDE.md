@@ -132,8 +132,9 @@ Mounted directory, the assistant's process handbook, memory and personality. Str
 
 ```
 workspace/
-  SOUL.md                   # the assistant's core identity and values, injected into every full-mode handler prompt
-  CONTEXT.md                # system-environment notes so the agent knows where and what it is
+  PROMPT.md                 # the prompt template every handler renders (see "Prompt template")
+  SOUL.md                   # the assistant's core identity and values, included by the default PROMPT.md as {SOUL.md}
+  CONTEXT.md                # system-environment notes so the agent knows where and what it is, included as {CONTEXT.md}
   <topic>/                  # one folder per top-level topic (e.g. mail/, chat/, calendar/) - the user can invent new ones as needed, some are shipped by plugins
     index.md                # default entry-point handler for events of this topic
     analyze.md              # additional handler, queued by name from another handler
@@ -277,13 +278,31 @@ When the user asks for it in the chat, the agent can edit the handler markdown f
 Handler behavior is shaped by markdown files in layers, each with distinct ownership and purpose:
 
 - **Code-level capability** — what plugins make possible (in TypeScript/MCPs)
-- **Global context** — `SOUL.md` and `CONTEXT.md`, written by the user to define the assistant's identity and situational context, injected by default into full-mode handler prompts
+- **Prompt template** — `PROMPT.md`, the single file defining how a handler's prompt is assembled; it pulls in `SOUL.md` and `CONTEXT.md` (identity and situational context, written by the user) via `{SOUL.md}` / `{CONTEXT.md}` includes
 - **Handler layer** — per-topic handler files (`<topic>/index.md`, `<topic>/analyze.md`, …) and sub-topic overrides (`<topic>/<subtopic>/…`). Plugin-shipped defaults, user-editable.
 - **Knowledge layer** — facts about people, projects, etc. (`people/`, plugin-specific), built up over time by handlers themselves, correctable by the user
 
 Handler prompts are kept short. They tell the agent how to find more context (e.g. "always read `people/<sender>.md` before drafting a reply"). The agent pulls additional files into context as needed. This avoids loading large amounts of context into every prompt and lets the assistant build its own knowledge structure over time, guided by user conventions.
 
-**System prompt vs. user message split.** The system prompt (SOUL → CONTEXT → handler body → skills → tools) is intentionally *static per handler* so it forms a cacheable prefix for providers like Anthropic. The per-run dynamic context — the `# Runtime` block (current time, topic, handler path, `privileged`, …) and any plugin-contributed event context such as injected memories — rides at the head of the current-run **user message** instead (`buildRuntimeContextBlock` in `container/src/PromptBuilder.ts`), not in the system prompt. In multi-turn chat this keeps the prior history a stable, cacheable prefix while the fresh runtime info attaches to the trailing turn.
+### Prompt template
+
+All prompt prose lives in the workspace, not in code (user-facing reference: `docs/prompting.md` — keep it in sync when placeholders or frontmatter fields change). `buildPromptParts` (`container/src/PromptBuilder.ts`) renders the template a handler selects via its `systemPrompt` frontmatter: `default` (or absent) → workspace-root `PROMPT.md`, `none` → the handler body alone, `<path.md>` → that workspace-relative template. A missing template fails the run with a clear error; there is no built-in fallback.
+
+Template syntax (`container/src/prompt/PromptTemplate.ts`):
+
+- `{NAME}` (`[A-Z][A-Z0-9_]*`) is a placeholder; `{path.md}` includes a workspace-relative markdown file (no `..`). Other braces — JSON examples, `{lowercase}` — stay untouched.
+- Only workspace markdown is template: `PROMPT.md`, files it includes, and `{HANDLER_CONTENT}` (the handler body) are expanded recursively (depth ≤ 3, cycles stopped). Values produced by code or plugins are inserted verbatim and never rescanned, so event content containing `{SOUL.md}` cannot pull files into the prompt.
+- Problems never fail the run: unknown placeholders stay verbatim, missing includes render empty, bad paths/cycles keep the token — each with a `prompt template: …` warning in the agentrun log.
+- List placeholders render `(none)` when empty; templates have no conditionals.
+
+**Cache split.** The first `{CACHE_MARKER}` in the template splits it: everything before it is the system prompt — *static per handler*, so it forms a cacheable prefix (provider caches are prefix caches: DeepSeek/OpenAI automatically, Anthropic via breakpoints). Everything after it leads the current-run **user message**, followed by plugin appender sections. In multi-turn chat this keeps the prior history a stable, cacheable prefix while the fresh runtime info attaches to the trailing turn. Placeholders are `static` or `dynamic` (per run); a dynamic one before the marker produces a warning.
+
+Core placeholders are defined (name, description, kind) in `CORE_PROMPT_PLACEHOLDERS` (`shared/src/PromptPlaceholders.ts`) and resolved by `CORE_PLACEHOLDER_RESOLVERS` (`container/src/prompt/CorePlaceholders.ts`). Plugins extend the prompt two ways, both served to the container by the bastion's `PromptGateway`:
+
+- `ctx.prompt.registerPlaceholder({name, description, provide})` — a named, per-run placeholder (`/prompt-placeholders/`, only names a template uses are resolved). Register in `prepare()` so the CLI sees it; colliding or malformed names throw `PromptPlaceholderConflictError`.
+- `ctx.prompt.registerPromptAppender(fn)` — free text appended to the user-message head (`/prompt-appenders/`), e.g. the memory plugin's `# Memories` table.
+
+CLI: `familiar prompt placeholders` lists every placeholder (works without the daemon). `familiar prompt dry-run <topic> [--handler] [--privileged] [--prompt] [--full]` renders a handler's prompt inside the running agent container (`docker exec` → `container/src/prompt/PromptDryRun.ts`) with the real tool set and plugin values, without inserting an agentrun or calling a model.
 
 ## Lifecycle and operations
 
@@ -368,7 +387,7 @@ When in doubt during implementation:
 
 The `data/` folder is the persistent host-side storage. Layout:
 
-- `data/workspace/` — mounted into the agent container as `/workspace`. The assistant's memory and personality live here (SOUL.md, CONTEXT.md, topic folders, people/, etc.).
+- `data/workspace/` — mounted into the agent container as `/workspace`. The assistant's memory and personality live here (PROMPT.md, SOUL.md, CONTEXT.md, topic folders, people/, etc.).
 - `data/postgres/` — bind-mounted into `familiar-postgres` as `/var/lib/postgresql/data`. Cluster state for the bus-state DB. The container runs with `--user <hostUid>:<hostGid>` so cluster files are owned by the operator and `rm -rf data/postgres` works from the host without `sudo`. A daemon upgraded from the old uid-70 layout needs a one-time `sudo chown -R "$(id -u):$(id -g)" data/postgres`.
 
 Ephemeral runtime scratch lives in `tmp/` instead (gitignored, safe to wipe):
@@ -396,7 +415,7 @@ Ephemeral runtime scratch lives in `tmp/` instead (gitignored, safe to wipe):
 
 All **human-facing** CLI (and plugin) output is produced as markdown and emitted through `writeMarkdown` from `@getfamiliar/shared` (`shared/src/markdownOutput.ts`). It renders ANSI-styled via `renderMarkdown` (`shared/src/markdownTerminal.ts`) when stdout is a TTY, and emits the raw markdown verbatim when piped or redirected. The TTY check lives *inside* `writeMarkdown` — call sites never read `process.stdout.isTTY` themselves; they only optionally pass `{ raw: true }` (wired to a `--raw` flag) to force raw output on a TTY. So a command can never accidentally render box-drawing tables and ANSI escapes into a pipe. Build tables with `markdownTable(headers, rows)` (cells escaped via `escapeTableCell`). All three helpers are exported from `shared/` so plugins can use them too.
 
-Every command that lists, tabulates, or reports for a human exposes `--raw` and ends by handing a markdown string to `writeMarkdown` — see `cron list`, `events list`/`events report`, `tools list`/`tools list-mcps`/`tools lint-mcps`, `plugin list`, `config lint`.
+Every command that lists, tabulates, or reports for a human exposes `--raw` and ends by handing a markdown string to `writeMarkdown` — see `cron list`, `events list`/`events report`, `tools list`/`tools list-mcps`/`tools lint-mcps`, `plugin list`, `config lint`, `prompt placeholders`/`prompt dry-run`.
 
 **Exceptions** (and why): the `start` daemon streams through the structured logger (ordering and flush matter); interactive prompts/wizards (`tools add-mcp`) write directly; machine-readable output stays literal (`events emit` prints JSON). The rule of thumb: *if it's a table, list, report, or prose status for a human to read, render it; if it's a stream, a prompt, or data for a machine, don't.*
 

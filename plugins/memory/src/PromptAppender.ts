@@ -1,11 +1,11 @@
-import type { AgentRunRow, EventContextProvider, EventRow, Logger } from "@getfamiliar/shared";
+import type { AgentRunRow, EventRow, Logger, PromptAppender } from "@getfamiliar/shared";
 import type { MemoryConfig } from "./Config.js";
 import type { MemoryHit, MemoryStore } from "./MemoryStore.js";
 import { matchesAnyGlob } from "./PathGlob.js";
 
 /**
- * Hard cap on time the contextProvider spends in `store.search`. The
- * host's `EventContextGateway` enforces a 5s per-provider timeout and
+ * Hard cap on time the prompt appender spends in `store.search`. The
+ * host's `PromptGateway` enforces a 5s per-call timeout and
  * silently drops the section when exceeded; we cap below that so a
  * slow search surfaces its partial results instead of being discarded.
  */
@@ -37,7 +37,7 @@ interface MemoryTableRow {
 }
 
 /**
- * EventContextProvider that searches memory using the agentrun's
+ * PromptAppender that searches memory using the agentrun's
  * prompt as the query and emits the `# Memories` section the agent
  * sees.
  *
@@ -51,11 +51,11 @@ interface MemoryTableRow {
  *    short description. No chunk bodies are inlined; the agent reads
  *    full files on demand via `fs_read`.
  */
-export function buildMemoryContextProvider(
+export function buildMemoryPromptAppender(
     store: MemoryStore,
     cfg: MemoryConfig,
     log: Logger,
-): EventContextProvider {
+): PromptAppender {
     return async (agentrun: AgentRunRow, _event: EventRow): Promise<string | null> => {
         if (!store.isReady()) {
             return null;
@@ -79,7 +79,7 @@ export function buildMemoryContextProvider(
         } catch (err) {
             log.warn(
                 { err: err instanceof Error ? err.message : String(err) },
-                "memory: contextProvider search failed",
+                "memory: prompt appender search failed",
             );
             return null;
         } finally {

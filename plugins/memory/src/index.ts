@@ -3,8 +3,8 @@ import { definePlugin, type HostContext, type PluginTool } from "@getfamiliar/sh
 import { buildMemoryStore } from "./BuildStore.js";
 import { buildMemoryCommands } from "./Commands.js";
 import { type MemoryConfig, readMemoryConfig } from "./Config.js";
-import { buildMemoryContextProvider } from "./ContextProvider.js";
 import type { MemoryStore } from "./MemoryStore.js";
+import { buildMemoryPromptAppender } from "./PromptAppender.js";
 import { buildMemoryTools } from "./Tools.js";
 
 /**
@@ -77,7 +77,7 @@ export default definePlugin({
             await store.init();
             store.kickoffBackgroundSync(ctx.workspace);
 
-            ctx.events.registerContextProvider(buildMemoryContextProvider(store, cfg, ctx.logger));
+            ctx.prompt.registerPromptAppender(buildMemoryPromptAppender(store, cfg, ctx.logger));
         },
         stop: async (): Promise<void> => {
             if (sharedStore) {

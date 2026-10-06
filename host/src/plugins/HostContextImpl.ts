@@ -14,7 +14,6 @@ import {
     type EmitOptions,
     EVENTS_STATE_CHANNEL,
     EventBus,
-    type EventContextProvider,
     type EventFile,
     type EventRow,
     type HostContext,
@@ -26,6 +25,8 @@ import {
     type NewEvent,
     type NotificationHandler,
     type PostgresConnection,
+    type PromptAppender,
+    type PromptPlaceholderRegistration,
     StepResultBus,
     type StepResultUnsubscribe,
     type StorageApi,
@@ -39,7 +40,8 @@ import type { PluginMcpService } from "../mcp/PluginMcpService.js";
 import type { ResolvedProvider } from "../models/ProviderResolution.js";
 import { isEventEmissionAllowed } from "../utils/DevEventGate.js";
 import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
-import type { EventContextRegistry } from "./EventContextRegistry.js";
+import type { PromptAppenderRegistry } from "./PromptAppenderRegistry.js";
+import type { PromptPlaceholderRegistry } from "./PromptPlaceholderRegistry.js";
 
 /**
  * Dependencies a {@link HostContextImpl} needs from its owner. The
@@ -50,7 +52,7 @@ export interface HostContextImplDeps {
     /**
      * Id of the plugin this context belongs to. Captured at construction
      * time so register-style surfaces that don't take an explicit id on
-     * the wire (e.g. `events.registerContextProvider`) can stamp the
+     * the wire (e.g. `prompt.registerPromptAppender`) can stamp the
      * registering plugin onto the registry entry for logging and
      * fan-out attribution. `"core"` is reserved for daemon-internal
      * contexts (cron, future approval gate).
@@ -137,12 +139,18 @@ export interface HostContextImplDeps {
      */
     mailStyleStore: MailStyleStore;
     /**
-     * Shared registry backing `ctx.events.registerContextProvider`. One
+     * Shared registry backing `ctx.prompt.registerPromptAppender`. One
      * instance per host process — owns the per-plugin function list
-     * the bastion's `/event-context/` gateway fans out on every prompt
+     * the bastion's `/prompt-appenders/` route fans out on every prompt
      * assembly.
      */
-    eventContextRegistry: EventContextRegistry;
+    promptAppenderRegistry: PromptAppenderRegistry;
+    /**
+     * Shared registry backing `ctx.prompt.registerPlaceholder`, read by
+     * the bastion's `/prompt-placeholders/` route and the
+     * `familiar prompt` CLI.
+     */
+    promptPlaceholderRegistry: PromptPlaceholderRegistry;
     /**
      * Resolve a configured provider key into `{ apiKey, npmPackage,
      * apiEndpoint }`, backing `ctx.inference.resolveProvider`. Wired to
@@ -189,8 +197,14 @@ export class HostContextImpl implements HostContext {
     readonly events = {
         emit: (event: NewEvent, options?: EmitOptions): Promise<EmitHandle> =>
             this.emitAndAwait(event, options),
-        registerContextProvider: (fn: EventContextProvider): void => {
-            this.deps.eventContextRegistry.register(this.deps.pluginId, fn);
+    };
+
+    readonly prompt = {
+        registerPromptAppender: (fn: PromptAppender): void => {
+            this.deps.promptAppenderRegistry.register(this.deps.pluginId, fn);
+        },
+        registerPlaceholder: (registration: PromptPlaceholderRegistration): void => {
+            this.deps.promptPlaceholderRegistry.register(this.deps.pluginId, registration);
         },
     };
 

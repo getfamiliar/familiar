@@ -1,15 +1,11 @@
 import { strict as assert } from "node:assert";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { HandlerFile } from "./HandlerFile.js";
-import {
-    buildPrompt,
-    buildRuntimeContextBlock,
-    buildSystemPrompt,
-    formatRuntimeTime,
-} from "./PromptBuilder.js";
+import { buildPrompt, buildPromptParts, PromptTemplateMissingError } from "./PromptBuilder.js";
 
 /** Pull the JSON block out of a rendered prompt for shape assertions. */
 function extractPayloadJson(rendered: string): string | null {
@@ -148,38 +144,29 @@ describe("buildPrompt — total payload cap", () => {
     });
 });
 
-describe("formatRuntimeTime", () => {
-    // 2026-05-19T16:43:12 UTC is Tuesday at 18:43:12 in Europe/Berlin
-    // (DST in effect — UTC+2). Pinned UTC instant + explicit tz keeps
-    // the test deterministic regardless of the container's system tz.
-    const fixed = new Date("2026-05-19T16:43:12Z");
+/** The PROMPT.md shipped with the canonical workspace template. */
+const SHIPPED_PROMPT_TEMPLATE = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../data/workspace-template/PROMPT.md",
+);
 
-    it("renders weekday + ISO-shaped local time + IANA tz label", () => {
-        const out = formatRuntimeTime(fixed, "Europe/Berlin");
-        assert.equal(out, "Tuesday, 2026-05-19T18:43:12 in timezone Europe/Berlin");
-    });
-
-    it("respects a different timezone", () => {
-        const out = formatRuntimeTime(fixed, "America/Los_Angeles");
-        // 16:43 UTC → 09:43 PDT (UTC-7 in May).
-        assert.equal(out, "Tuesday, 2026-05-19T09:43:12 in timezone America/Los_Angeles");
-    });
-
-    it("UTC round-trips the underlying instant", () => {
-        const out = formatRuntimeTime(fixed, "UTC");
-        assert.equal(out, "Tuesday, 2026-05-19T16:43:12 in timezone UTC");
-    });
-});
-
-describe("buildSystemPrompt — systemPrompt mode", () => {
+describe("buildPromptParts", () => {
     let workspaceRoot: string;
     let previousWorkspaceRoot: string;
 
     before(() => {
         previousWorkspaceRoot = HandlerFile.getWorkspaceRoot();
         workspaceRoot = mkdtempSync(path.join(tmpdir(), "familiar-prompt-test-"));
+        copyFileSync(SHIPPED_PROMPT_TEMPLATE, path.join(workspaceRoot, "PROMPT.md"));
         writeFileSync(path.join(workspaceRoot, "SOUL.md"), "I am the soul.\n", "utf8");
         writeFileSync(path.join(workspaceRoot, "CONTEXT.md"), "I am the context.\n", "utf8");
+        mkdirSync(path.join(workspaceRoot, "skills", "listfiles"), { recursive: true });
+        writeFileSync(
+            path.join(workspaceRoot, "skills", "listfiles", "SKILL.md"),
+            "---\ndescription: How to keep lists in files.\n---\nbody\n",
+            "utf8",
+        );
+        mkdirSync(path.join(workspaceRoot, "prompts"), { recursive: true });
         HandlerFile.setWorkspaceRoot(workspaceRoot);
     });
 
@@ -194,355 +181,105 @@ describe("buildSystemPrompt — systemPrompt mode", () => {
         return HandlerFile.read(relativePath);
     }
 
-    it("includes Identity / Context by default (full mode)", () => {
-        const handler = loadHandler("handler-full.md", "Do the thing.\n");
-        const { full: prompt } = buildSystemPrompt(handler, ["send_chat"]);
-        assert.match(prompt, /^# Identity\n\nI am the soul\./m);
-        assert.match(prompt, /^# Context\n\nI am the context\./m);
-        assert.match(prompt, /^# Handler\n\nDo the thing\./m);
-        assert.match(prompt, /^# Available tools$/m);
-        // The dynamic `# Runtime` block lives in the user message now, not
-        // the (cacheable) system prompt.
-        assert.doesNotMatch(prompt, /^# Runtime$/m);
+    /** Build parts for `handler` with fixed run facts and no plugin access. */
+    function build(handler: HandlerFile, privileged = false) {
+        return buildPromptParts({
+            handler,
+            topic: "chat:telegram",
+            privileged,
+            toolNames: ["send_chat", "bash"],
+            eventId: "event-without-scratch",
+            plugins: null,
+        });
+    }
+
+    it("renders the shipped PROMPT.md into the familiar sections", async () => {
+        const parts = await build(loadHandler("handler-full.md", "Do the thing.\n"));
+        assert.match(parts.system, /^# Identity\n\nI am the soul\./m);
+        assert.match(parts.system, /^# Context\n\nI am the context\./m);
+        assert.match(parts.system, /^# Handler\n\nDo the thing\./m);
+        assert.match(parts.system, /^- `listfiles`: How to keep lists in files\.$/m);
+        assert.match(parts.system, /^# Available tools\n\n- send_chat\n- bash$/m);
+        assert.match(parts.system, /^## The bash tool$/m);
+        assert.doesNotMatch(parts.system, /^# Runtime$/m);
+        assert.match(parts.userHead, /^# Runtime$/m);
+        assert.match(parts.userHead, /^- Event topic: `chat:telegram`$/m);
+        assert.match(parts.userHead, /^- privileged: no$/m);
+        assert.equal(parts.templatePath, "PROMPT.md");
+        assert.deepEqual(parts.warnings, []);
     });
 
-    it("is byte-identical across repeated builds (a cacheable, static prefix)", () => {
+    it("keeps the system prompt byte-identical across runs (cacheable prefix)", async () => {
         const handler = loadHandler("handler-stable.md", "Do the thing.\n");
-        // No `new Date()` or other per-run input feeds the system prompt
-        // anymore, so two builds of the same handler must match exactly —
-        // the property that makes it cacheable.
-        const first = buildSystemPrompt(handler, ["send_chat"]);
-        const second = buildSystemPrompt(handler, ["send_chat"]);
-        assert.equal(first.full, second.full);
-        assert.equal(first.redacted, second.redacted);
+        const first = await build(handler, false);
+        const second = await build(handler, true);
+        assert.equal(first.system, second.system);
+        assert.notEqual(first.userHead, second.userHead);
     });
 
-    it("includes Identity but skips Environment / Context for only-soul", () => {
+    it("redacts includes in the audit variant only", async () => {
+        const parts = await build(loadHandler("handler-redacted.md", "Do the thing.\n"));
+        assert.match(parts.redacted.system, /^# Identity\n\n<content of file SOUL\.md>$/m);
+        assert.equal(parts.redacted.system.includes("I am the soul."), false);
+        assert.match(parts.redacted.system, /^# Handler\n\nDo the thing\./m);
+    });
+
+    it("renders only the handler body for systemPrompt: none", async () => {
+        const parts = await build(
+            loadHandler("handler-none.md", "---\nsystemPrompt: none\n---\nDo the thing.\n"),
+        );
+        assert.equal(parts.system, "Do the thing.");
+        assert.equal(parts.userHead, "");
+        assert.equal(parts.templatePath, null);
+    });
+
+    it("uses a custom template path", async () => {
+        writeFileSync(
+            path.join(workspaceRoot, "prompts", "minimal.md"),
+            "{HANDLER_CONTENT}\n\n{CACHE_MARKER}\n\nTopic: {EVENT_TOPIC}",
+            "utf8",
+        );
+        const parts = await build(
+            loadHandler(
+                "handler-custom.md",
+                "---\nsystemPrompt: prompts/minimal.md\n---\nDo the thing.\n",
+            ),
+        );
+        assert.equal(parts.system, "Do the thing.");
+        assert.equal(parts.userHead, "Topic: chat:telegram");
+    });
+
+    it("throws when the selected template is missing", async () => {
         const handler = loadHandler(
-            "handler-only-soul.md",
-            "---\nsystemPrompt: only-soul\n---\nDo the thing.\n",
+            "handler-missing.md",
+            "---\nsystemPrompt: prompts/nope.md\n---\nDo the thing.\n",
         );
-        const { full: prompt } = buildSystemPrompt(handler, ["send_chat"]);
-        assert.match(prompt, /^# Identity\n\nI am the soul\./m);
-        assert.doesNotMatch(prompt, /^# Environment$/m);
-        assert.doesNotMatch(prompt, /^# Context$/m);
-        assert.match(prompt, /^# Handler\n\nDo the thing\./m);
-        assert.doesNotMatch(prompt, /^# Runtime$/m);
+        await assert.rejects(build(handler), PromptTemplateMissingError);
     });
 
-    it("skips Identity / Environment / Context for none", () => {
-        const handler = loadHandler(
-            "handler-none.md",
-            "---\nsystemPrompt: none\n---\nDo the thing.\n",
+    it("warns about unknown and misplaced per-run placeholders", async () => {
+        writeFileSync(
+            path.join(workspaceRoot, "prompts", "bad.md"),
+            "{CURRENT_TIME} {MYSTERY}\n{CACHE_MARKER}\n",
+            "utf8",
         );
-        const { full: prompt } = buildSystemPrompt(handler, ["send_chat"]);
-        assert.doesNotMatch(prompt, /^# Identity$/m);
-        assert.doesNotMatch(prompt, /^# Environment$/m);
-        assert.doesNotMatch(prompt, /^# Context$/m);
-        assert.match(prompt, /^# Handler\n\nDo the thing\./m);
-        assert.match(prompt, /^# Available tools$/m);
-        assert.doesNotMatch(prompt, /^# Runtime$/m);
-    });
-});
-
-describe("buildSystemPrompt — skills section", () => {
-    let workspaceRoot: string;
-    let previousWorkspaceRoot: string;
-
-    before(() => {
-        previousWorkspaceRoot = HandlerFile.getWorkspaceRoot();
-        workspaceRoot = mkdtempSync(path.join(tmpdir(), "familiar-skills-test-"));
-        HandlerFile.setWorkspaceRoot(workspaceRoot);
-    });
-
-    after(() => {
-        HandlerFile.setWorkspaceRoot(previousWorkspaceRoot);
-        rmSync(workspaceRoot, { recursive: true, force: true });
-    });
-
-    /** Write a skill at `skills/<id>/SKILL.md` with the given source. */
-    function writeSkill(id: string, source: string): void {
-        const dir = path.join(workspaceRoot, "skills", id);
-        mkdirSync(dir, { recursive: true });
-        writeFileSync(path.join(dir, "SKILL.md"), source, "utf8");
-    }
-
-    /** Reset the skills/ directory between cases. */
-    function resetSkills(): void {
-        rmSync(path.join(workspaceRoot, "skills"), { recursive: true, force: true });
-    }
-
-    /** Build a throwaway handler under the temp workspace. */
-    function loadHandler(relativePath: string, contents: string): HandlerFile {
-        writeFileSync(path.join(workspaceRoot, relativePath), contents, "utf8");
-        return HandlerFile.read(relativePath);
-    }
-
-    it("omits the section entirely when skills/ does not exist", async () => {
-        resetSkills();
-        const handler = loadHandler(
-            "no-skills.md",
-            "---\nsystemPrompt: none\n---\nDo the thing.\n",
+        const parts = await build(
+            loadHandler("handler-bad.md", "---\nsystemPrompt: prompts/bad.md\n---\nx\n"),
         );
-        const { full: prompt } = buildSystemPrompt(handler, ["send_chat"]);
-        assert.doesNotMatch(prompt, /^# Available skills$/m);
+        assert.match(parts.system, /\{MYSTERY\}/);
+        assert.ok(parts.warnings.some((w) => /unknown placeholder \{MYSTERY\}/.test(w)));
+        assert.ok(parts.warnings.some((w) => /\{CURRENT_TIME\} before \{CACHE_MARKER\}/.test(w)));
     });
 
-    it("renders (read) for a skill without tools and no marker when tools are set", async () => {
-        resetSkills();
-        writeSkill(
-            "listfiles",
-            "---\nname: listfiles\ndescription: How to keep lists in files.\n---\nbody\n",
-        );
-        writeSkill(
-            "jira_issues",
-            "---\nname: jira_issues\ndescription: Create and update Jira issues.\ntools: jira_create,jira_update\n---\nbody\n",
-        );
-        const handler = loadHandler(
-            "with-skills.md",
-            "---\nsystemPrompt: none\n---\nDo the thing.\n",
-        );
-        const { full: prompt } = buildSystemPrompt(handler, ["send_chat"]);
-        assert.match(prompt, /^# Available skills$/m);
-        assert.match(prompt, /^- `jira_issues`: Create and update Jira issues\.$/m);
-        assert.match(prompt, /^- `listfiles` \(read\): How to keep lists in files\.$/m);
-    });
-
-    it("places the skills section before # Available tools", async () => {
-        resetSkills();
-        writeSkill(
-            "listfiles",
-            "---\nname: listfiles\ndescription: How to keep lists in files.\n---\nbody\n",
-        );
-        const handler = loadHandler(
-            "order-skills.md",
-            "---\nsystemPrompt: none\n---\nDo the thing.\n",
-        );
-        const { full: prompt } = buildSystemPrompt(handler, ["send_chat"]);
-        const skillsIdx = prompt.indexOf("# Available skills");
-        const toolsIdx = prompt.indexOf("# Available tools");
-        assert.ok(skillsIdx >= 0 && toolsIdx >= 0);
-        assert.ok(skillsIdx < toolsIdx, "skills section must appear before tools section");
-    });
-
-    it("skips entries that are malformed or non-compliant", async () => {
-        resetSkills();
-        // Valid one so the section still renders.
-        writeSkill("good", "---\nname: good\ndescription: A real skill.\n---\nbody\n");
-        // Missing SKILL.md.
-        mkdirSync(path.join(workspaceRoot, "skills", "empty-folder"), { recursive: true });
-        // Loose file directly under skills/ (not a folder).
-        writeFileSync(path.join(workspaceRoot, "skills", "notafolder.md"), "loose\n", "utf8");
-        // Malformed YAML frontmatter.
-        writeSkill("malformed", "---\nname: malformed\ndescription: : : :\n  bad\n---\nbody\n");
-        // No frontmatter at all.
-        writeSkill("no-frontmatter", "# just a body, no frontmatter\n");
-        // Frontmatter present but no description.
-        writeSkill("no-desc", "---\nname: no-desc\n---\nbody\n");
-        // Empty description.
-        writeSkill("empty-desc", '---\nname: empty-desc\ndescription: "   "\n---\nbody\n');
-
-        const handler = loadHandler(
-            "robust-skills.md",
-            "---\nsystemPrompt: none\n---\nDo the thing.\n",
-        );
-        const { full: prompt } = buildSystemPrompt(handler, ["send_chat"]);
-        assert.match(prompt, /^- `good` \(read\): A real skill\.$/m);
-        for (const id of [
-            "empty-folder",
-            "notafolder",
-            "malformed",
-            "no-frontmatter",
-            "no-desc",
-            "empty-desc",
-        ]) {
-            assert.doesNotMatch(
-                prompt,
-                new RegExp(`^- \`${id}\``, "m"),
-                `expected skill "${id}" to be skipped`,
-            );
-        }
-    });
-
-    it("truncates descriptions longer than 256 chars with an ellipsis", async () => {
-        resetSkills();
-        const longDescription = "x".repeat(300);
-        writeSkill("long", `---\nname: long\ndescription: ${longDescription}\n---\nbody\n`);
-        const handler = loadHandler(
-            "long-skill.md",
-            "---\nsystemPrompt: none\n---\nDo the thing.\n",
-        );
-        const { full: prompt } = buildSystemPrompt(handler, ["send_chat"]);
-        const bulletMatch = prompt.match(/^- `long` \(read\): (x+…)$/m);
-        assert.ok(bulletMatch, "expected truncated bullet line");
-        const rendered = bulletMatch?.[1] ?? "";
-        assert.equal(rendered.length, 257, "256 x's plus the ellipsis");
-    });
-
-    it("renders skills sorted by id", async () => {
-        resetSkills();
-        writeSkill("zeta", "---\nname: zeta\ndescription: z.\n---\nbody\n");
-        writeSkill("alpha", "---\nname: alpha\ndescription: a.\n---\nbody\n");
-        writeSkill("mu", "---\nname: mu\ndescription: m.\n---\nbody\n");
-        const handler = loadHandler(
-            "sorted-skills.md",
-            "---\nsystemPrompt: none\n---\nDo the thing.\n",
-        );
-        const { full: prompt } = buildSystemPrompt(handler, ["send_chat"]);
-        const alphaIdx = prompt.indexOf("- `alpha`");
-        const muIdx = prompt.indexOf("- `mu`");
-        const zetaIdx = prompt.indexOf("- `zeta`");
-        assert.ok(alphaIdx >= 0 && muIdx >= 0 && zetaIdx >= 0);
-        assert.ok(alphaIdx < muIdx && muIdx < zetaIdx, "skills must be sorted by id");
-    });
-});
-
-describe("buildSystemPrompt — redacted variant", () => {
-    let workspaceRoot: string;
-    let previousWorkspaceRoot: string;
-
-    before(() => {
-        previousWorkspaceRoot = HandlerFile.getWorkspaceRoot();
-        workspaceRoot = mkdtempSync(path.join(tmpdir(), "familiar-redacted-test-"));
-        writeFileSync(path.join(workspaceRoot, "SOUL.md"), "I am the soul.\n", "utf8");
-        writeFileSync(path.join(workspaceRoot, "CONTEXT.md"), "I am the context.\n", "utf8");
-        HandlerFile.setWorkspaceRoot(workspaceRoot);
-    });
-
-    after(() => {
-        HandlerFile.setWorkspaceRoot(previousWorkspaceRoot);
-        rmSync(workspaceRoot, { recursive: true, force: true });
-    });
-
-    function loadHandler(relativePath: string, contents: string): HandlerFile {
-        writeFileSync(path.join(workspaceRoot, relativePath), contents, "utf8");
-        return HandlerFile.read(relativePath);
-    }
-
-    it("swaps SOUL / CONTEXT bodies for placeholders in `redacted`", async () => {
-        const handler = loadHandler("redacted-full.md", "Do the thing.\n");
-        const { full, redacted } = buildSystemPrompt(handler, ["send_chat"]);
-        // `full` keeps the framing-file bodies verbatim.
-        assert.match(full, /^# Identity\n\nI am the soul\./m);
-        assert.match(full, /^# Context\n\nI am the context\./m);
-        // `redacted` swaps them for `<content of file …>` placeholders.
-        assert.match(redacted, /^# Identity\n\n<content of file SOUL\.md>$/m);
-        assert.match(redacted, /^# Context\n\n<content of file CONTEXT\.md>$/m);
-        assert.equal(redacted.includes("I am the soul."), false);
-        assert.equal(redacted.includes("I am the context."), false);
-        // Everything else (handler body, tool list) is unchanged. The
-        // `# Runtime` block no longer lives in the system prompt.
-        assert.match(redacted, /^# Handler\n\nDo the thing\./m);
-        assert.match(redacted, /^# Available tools$/m);
-        assert.doesNotMatch(redacted, /^# Runtime$/m);
-    });
-
-    it("returns `redacted === full` when the handler excludes the framing files", async () => {
-        const handler = loadHandler(
-            "redacted-none.md",
-            "---\nsystemPrompt: none\n---\nDo the thing.\n",
-        );
-        const { full, redacted } = buildSystemPrompt(handler, ["send_chat"]);
-        assert.equal(redacted, full);
-    });
-});
-
-describe("buildRuntimeContextBlock", () => {
-    let workspaceRoot: string;
-    let previousWorkspaceRoot: string;
-
-    before(() => {
-        previousWorkspaceRoot = HandlerFile.getWorkspaceRoot();
-        workspaceRoot = mkdtempSync(path.join(tmpdir(), "familiar-runtime-test-"));
-        writeFileSync(path.join(workspaceRoot, "SOUL.md"), "I am the soul.\n", "utf8");
-        writeFileSync(path.join(workspaceRoot, "CONTEXT.md"), "I am the context.\n", "utf8");
-        HandlerFile.setWorkspaceRoot(workspaceRoot);
-    });
-
-    after(() => {
-        HandlerFile.setWorkspaceRoot(previousWorkspaceRoot);
-        rmSync(workspaceRoot, { recursive: true, force: true });
-    });
-
-    function loadHandler(relativePath: string, contents: string): HandlerFile {
-        writeFileSync(path.join(workspaceRoot, relativePath), contents, "utf8");
-        return HandlerFile.read(relativePath);
-    }
-
-    it("renders the `# Runtime` section with topic and privileged flag", async () => {
-        const handler = loadHandler("rt-full.md", "Do the thing.\n");
-        const block = await buildRuntimeContextBlock(handler, "chat:telegram", true, [], null);
-        assert.match(block, /^# Runtime$/m);
-        assert.match(block, /^- Current time: /m);
-        assert.match(block, /^- Event topic: `chat:telegram`$/m);
-        assert.match(block, /^- privileged: yes, the prompt stems from the system owner$/m);
-    });
-
-    it("renders the non-privileged flag", async () => {
-        const handler = loadHandler("rt-unpriv.md", "Do the thing.\n");
-        const block = await buildRuntimeContextBlock(handler, "mail:new", false, [], null);
-        assert.match(block, /^- privileged: no$/m);
-    });
-
-    it("always includes Runtime regardless of the handler's systemPrompt mode", async () => {
-        const handler = loadHandler("rt-none.md", "---\nsystemPrompt: none\n---\nDo the thing.\n");
-        const block = await buildRuntimeContextBlock(handler, "test", false, [], null);
-        assert.match(block, /^# Runtime$/m);
-    });
-
-    it("contains only the dynamic block — no system-prompt sections", async () => {
-        const handler = loadHandler("rt-isolation.md", "Do the thing.\n");
-        const block = await buildRuntimeContextBlock(handler, "test", false, [], null);
-        // These belong to the (static) system prompt, never the runtime block.
-        assert.doesNotMatch(block, /^# Identity$/m);
-        assert.doesNotMatch(block, /^# Context$/m);
-        assert.doesNotMatch(block, /^# Handler$/m);
-        assert.doesNotMatch(block, /^# Available tools$/m);
-    });
-
-    it("skips the plugin event-context fetch when eventContext is null", async () => {
-        // A null eventContext must not attempt any network fetch — the
-        // block is exactly the Runtime section, nothing appended.
-        const handler = loadHandler("rt-nofetch.md", "Do the thing.\n");
-        const block = await buildRuntimeContextBlock(handler, "test", false, [], null);
-        assert.ok(block.startsWith("# Runtime\n\n"));
-    });
-
-    it("inserts container-core contributor sections after Runtime, before plugin sections", async () => {
-        const handler = loadHandler("rt-contrib.md", "Do the thing.\n");
-        const contributors = [() => "## Core section\n\ncore body", () => null];
-        const block = await buildRuntimeContextBlock(
-            handler,
-            "test",
-            false,
-            [],
-            null,
-            contributors,
-        );
-        const runtimeIndex = block.indexOf("# Runtime");
-        const coreIndex = block.indexOf("## Core section");
-        assert.ok(runtimeIndex >= 0 && coreIndex > runtimeIndex);
-        // A contributor returning null contributes nothing (no blank section).
-        assert.doesNotMatch(block, /\n\n\n/);
-    });
-
-    it("passes toolNames and privileged through to contributors", async () => {
-        const handler = loadHandler("rt-contrib-ctx.md", "Do the thing.\n");
-        const seen: { toolNames: readonly string[]; privileged: boolean }[] = [];
-        const contributors = [
-            (ctx: { toolNames: readonly string[]; privileged: boolean }) => {
-                seen.push({ toolNames: ctx.toolNames, privileged: ctx.privileged });
-                return null;
-            },
-        ];
-        await buildRuntimeContextBlock(
-            handler,
-            "test",
-            true,
-            ["bash", "fs_read"],
-            null,
-            contributors,
-        );
-        assert.deepEqual(seen, [{ toolNames: ["bash", "fs_read"], privileged: true }]);
+    it("does not expand placeholders smuggled in through the handler's tools", async () => {
+        const parts = await buildPromptParts({
+            handler: loadHandler("handler-inject.md", "Do the thing.\n"),
+            topic: "chat:telegram",
+            privileged: false,
+            toolNames: ["{SOUL.md}"],
+            eventId: "event-without-scratch",
+            plugins: null,
+        });
+        assert.match(parts.system, /^- \{SOUL\.md\}$/m);
     });
 });

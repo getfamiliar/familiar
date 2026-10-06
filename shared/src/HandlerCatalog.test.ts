@@ -41,7 +41,8 @@ test("list emits handler paths grouped by topic", async () => {
     assert.equal(tg?.relativePath, "chat/telegram/index.md");
 });
 
-test("list skips workspace-root reserved files and the skills subtree", async () => {
+test("list skips every workspace-root file and the skills subtree", async () => {
+    await touch("PROMPT.md");
     await touch("SOUL.md");
     await touch("CONTEXT.md");
     await touch("stray.md");

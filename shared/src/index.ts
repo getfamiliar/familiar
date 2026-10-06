@@ -95,7 +95,6 @@ export type {
     AnyCommandDef,
     EmitHandle,
     EmitOptions,
-    EventContextProvider,
     HostContext,
     McpClient,
     McpInfo,
@@ -103,6 +102,8 @@ export type {
     PluginManifest,
     PluginTool,
     PluginToolCallContext,
+    PromptAppender,
+    PromptPlaceholderRegistration,
 } from "./Plugin.js";
 export { DaemonStoppedError, definePlugin } from "./Plugin.js";
 export {
@@ -114,6 +115,16 @@ export {
     PostgresConnection,
     type PostgresConnectionConfig,
 } from "./PostgresConnection.js";
+export {
+    CACHE_MARKER_PLACEHOLDER,
+    CORE_PROMPT_PLACEHOLDERS,
+    isCorePromptPlaceholder,
+    PROMPT_PLACEHOLDER_NAME_PATTERN,
+    PROMPT_TEMPLATE_FILE,
+    PromptPlaceholderConflictError,
+    type PromptPlaceholderDefinition,
+    type PromptPlaceholderKind,
+} from "./PromptPlaceholders.js";
 export type { NewScheduledSubagent, ScheduledSubagentRow } from "./ScheduledSubagent.js";
 export {
     ScheduledSubagentBus,

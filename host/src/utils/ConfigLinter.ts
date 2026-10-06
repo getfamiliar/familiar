@@ -277,8 +277,8 @@ function optionalBool(root: Record<string, unknown>, path: string, warnings: str
  * Validate `core.logSystemPrompt`. Accepts `false`, `true`, `"full"`,
  * or `"non-static"`. `true` is an alias for `"full"`; both stamp the
  * resolved system prompt verbatim onto `agentruns.system_prompt`.
- * `"non-static"` stamps it with the workspace-root framing files
- * (SOUL.md, CONTEXT.md) replaced by placeholders. `false` disables
+ * `"non-static"` stamps it with every `{path.md}` include of the
+ * prompt template (e.g. SOUL.md, CONTEXT.md) replaced by placeholders. `false` disables
  * stamping. Anything else warns;
  * `Start.ts` falls back to its dev/prod default in that case.
  */

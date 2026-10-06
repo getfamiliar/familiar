@@ -65,3 +65,19 @@ test("load refuses a skill file as a handler", () => {
 
     assert.throws(() => HandlerFile.load("skills:jira-issue", "SKILL"), /skills\//);
 });
+
+test("systemPrompt accepts default, none and a workspace .md path", () => {
+    delete process.env[CONFIG_VAR];
+    for (const value of ["default", "none", "prompts/minimal.md"]) {
+        touch("mail/index.md", `---\nsystemPrompt: ${value}\n---\nbody\n`);
+        assert.equal(HandlerFile.load("mail", "index").header.systemPrompt, value);
+    }
+});
+
+test("systemPrompt rejects the retired modes and unsafe paths", () => {
+    delete process.env[CONFIG_VAR];
+    for (const value of ["full", "only-soul", "../outside.md", "/abs.md", "prompts/x.txt"]) {
+        touch("mail/index.md", `---\nsystemPrompt: ${value}\n---\nbody\n`);
+        assert.throws(() => HandlerFile.load("mail", "index"), /systemPrompt/);
+    }
+});

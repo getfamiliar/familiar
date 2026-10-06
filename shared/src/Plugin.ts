@@ -48,28 +48,51 @@ export type AnyCommandDef = CommandDef<any>;
  */
 /**
  * Async function a plugin registers via
- * `ctx.events.registerContextProvider(fn)` to contribute per-event
- * situational knowledge to the handler that is about to run. Receives
- * the agentrun about to execute and its parent event; returns the
- * markdown body injected into the current-run user message, right after
- * the `# Runtime` block (see `buildRuntimeContextBlock`). The system
- * prompt itself stays static so it remains a cacheable prefix.
- * Returning `null`, `undefined`, or an empty/whitespace string
+ * `ctx.prompt.registerPromptAppender(fn)` to append per-event
+ * situational knowledge to the prompt of the handler that is about to
+ * run. Receives the agentrun about to execute and its parent event;
+ * the returned markdown is appended to the current-run user message,
+ * after the part of the prompt template that follows `{CACHE_MARKER}`.
+ * The system prompt itself stays static so it remains a cacheable
+ * prefix. Returning `null`, `undefined`, or an empty/whitespace string
  * contributes nothing — useful for "only speak up when relevant"
- * providers.
+ * appenders.
  *
- * The function is called once per `buildRuntimeContextBlock` (i.e. once
- * per agentrun start). It runs in the host process — providers may close
- * over plugin-local services (DB handles, caches) without going through
- * the bastion. The PromptBuilder reaches the registry through the
- * bastion's `/event-context/` gateway, which fans out to every
- * registered provider in parallel; one bad provider must not poison
- * the prompt, so the gateway isolates rejections and per-call timeouts.
+ * Called once per agentrun start. It runs in the host process —
+ * appenders may close over plugin-local services (DB handles, caches)
+ * without going through the bastion. The PromptBuilder reaches the
+ * registry through the bastion's `/prompt-appenders/` gateway, which
+ * fans out to every registered appender in parallel; one bad appender
+ * must not poison the prompt, so the gateway isolates rejections and
+ * per-call timeouts.
  */
-export type EventContextProvider = (
+export type PromptAppender = (
     agentrun: AgentRunRow,
     event: EventRow,
 ) => Promise<string | null | undefined>;
+
+/**
+ * A plugin-provided prompt placeholder, registered via
+ * `ctx.prompt.registerPlaceholder`. Its value replaces `{name}` wherever
+ * a prompt template uses it. Plugin placeholders are always per-run
+ * (`dynamic`): they receive the agentrun and event, so templates should
+ * place them after `{CACHE_MARKER}`.
+ */
+export interface PromptPlaceholderRegistration {
+    /** Upper-case name, e.g. `OPEN_TICKETS` (used as `{OPEN_TICKETS}`). */
+    readonly name: string;
+    /** One-line description shown by `familiar prompt placeholders`. */
+    readonly description: string;
+    /**
+     * Produce the value for one agentrun. `null` / `undefined` renders as
+     * an empty string. Values are inserted verbatim — placeholders inside
+     * them are never expanded.
+     */
+    readonly provide: (
+        agentrun: AgentRunRow,
+        event: EventRow,
+    ) => Promise<string | null | undefined>;
+}
 
 /**
  * Optional callbacks passed alongside `ctx.events.emit`. Bundled into
@@ -159,29 +182,37 @@ export interface HostContext {
      */
     readonly events: {
         emit(event: NewEvent, options?: EmitOptions): Promise<EmitHandle>;
+    };
+    /**
+     * Prompt-assembly hooks.
+     */
+    readonly prompt: {
         /**
          * Register an async function called once per agentrun start with
          * the agentrun row and its parent event. Its returned string is
-         * injected below the `# Available tools` section in the system
-         * prompt the handler runs against. Use this to teach the agent
-         * situational facts a plugin knows — e.g. "the sender of this
-         * mail is currently in a meeting", "this chat thread has 14
-         * unread mails attached to it".
+         * appended to the current-run user message (see
+         * {@link PromptAppender}). Use this to teach the agent situational
+         * facts a plugin knows — e.g. "the sender of this mail is
+         * currently in a meeting".
          *
-         * Providers must be cheap to run: the PromptBuilder fans out to
-         * every registered provider in parallel via the bastion's
-         * `/event-context/` gateway and waits on them before assembling
-         * the prompt. Slow providers delay the start of every agentrun.
-         *
-         * A provider that returns `null`, `undefined`, or whitespace
-         * contributes nothing — typical for "only speak up when
-         * relevant" cases. Exceptions thrown inside the provider are
-         * isolated by the gateway and logged with the plugin id; the
-         * prompt still assembles with the remaining providers' output.
+         * Appenders must be cheap to run: the PromptBuilder fans out to
+         * every registered appender in parallel via the bastion's
+         * `/prompt-appenders/` gateway and waits on them before assembling
+         * the prompt. Slow appenders delay the start of every agentrun.
          *
          * Plugins typically call this from their `start(ctx)` hook.
          */
-        registerContextProvider(fn: EventContextProvider): void;
+        registerPromptAppender(fn: PromptAppender): void;
+        /**
+         * Register a named placeholder that prompt templates can use as
+         * `{NAME}`. Call it from **`prepare()`** so the `familiar prompt`
+         * CLI lists it without the daemon.
+         *
+         * @throws {PromptPlaceholderConflictError} When the name is not
+         *   `[A-Z][A-Z0-9_]*` or is already taken by the core or another
+         *   plugin.
+         */
+        registerPlaceholder(registration: PromptPlaceholderRegistration): void;
     };
     /**
      * Chat capabilities.

@@ -27,7 +27,7 @@ interface ModelMetadataResponse {
  * hard dependency, so any failure (network error, timeout, non-200,
  * malformed body, or simply an unknown model) resolves to `undefined`
  * after logging a warning — it never blocks agentrun start. Mirrors the
- * resilience of `PromptBuilder.fetchEventContextSections`.
+ * resilience of `PromptBuilder.fetchAppenderSections`.
  *
  * @param bastionUrl The bastion base URL from the passed config (`bastionUrl`).
  * @param bastionToken Shared bastion token from the passed config (`bastionToken`).

@@ -3,8 +3,8 @@ import { renderMarkdown } from "@getfamiliar/shared";
 import { type CommandDef, defineCommand } from "citty";
 import { buildMemoryStore } from "./BuildStore.js";
 import { readMemoryConfig } from "./Config.js";
-import { formatHitsFlat } from "./ContextProvider.js";
 import type { FileSummary, MemoryStore, StoredChunk } from "./MemoryStore.js";
+import { formatHitsFlat } from "./PromptAppender.js";
 
 /**
  * CLI subcommands the memory plugin contributes. Both commands load
