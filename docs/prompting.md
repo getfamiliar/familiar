@@ -31,6 +31,8 @@ The template pulls in the handler and other files through **placeholders** like 
 
 {HANDLER_CONTENT}
 
+{PRELOADED_SKILLS}
+
 # Available skills
 
 The following skills are available in the `skills/` folder. Read one with …
@@ -98,6 +100,7 @@ Run `familiar prompt placeholders` for the authoritative list including placehol
 | --- | --- | --- |
 | `{CACHE_MARKER}` | static | Not a value: the split point between system prompt and user message (see above). Only the first one in `PROMPT.md` counts. |
 | `{HANDLER_CONTENT}` | static | The body of the resolved handler (merged with its parent handlers, see "Inheritance"). Placeholders inside it are expanded. |
+| `{PRELOADED_SKILLS}` | static | The full content of every skill listed in the handler's `skills` frontmatter (frontmatter stripped), each under its own `# Skill \`id\` (preloaded)` heading with a note that it is already loaded. Empty when the handler preloads nothing. Not cut at the per-file size limit. Placeholders inside are expanded. |
 | `{HANDLER_PATH}` | static | Workspace-relative path of the handler, e.g. `chat/telegram/index.md`. |
 | `{HANDLER_INHERITS}` | static | The parent handlers it was merged with, as `` `chat/index.md` ``, or `(none)`. |
 | `{SKILL_LIST}` | static | One bullet per skill in `skills/`: `` - `id`: description ``. |
@@ -165,6 +168,7 @@ All fields are optional. Unknown fields are ignored (so `description:` for your 
 | `model` | string | `inference.defaultModel` | Model to run under: an alias from `inference.aliases` in `config.yml` (e.g. `fast`, `smart`) or a provider model id. Use a light model for routing and triage, a heavy one for drafting and reasoning. |
 | `temperature` | number | provider default | Sampling temperature. `0` for deterministic extraction tasks, higher for creative writing. |
 | `tools` | list or comma string | `core` | Tools preloaded into the run. Entries are tool names (`send_chat`), globs (`mail_*`, quote them in a YAML list: `"mail_*"`), or groups: `core`, `fs`, `bash`, `reflection`, `mcp`, `all`, `none`, plus one group per MCP id and per plugin id. Entries are combined. Tools not listed stay reachable through `tool_call`; preloading just saves the model a discovery step. |
+| `skills` | list or comma string | — | Skill ids (folder names under `skills/`) whose `SKILL.md` is rendered straight into the prompt via `{PRELOADED_SKILLS}`, e.g. `skills: jira, reflection`. The `tools` a preloaded skill declares are added to this handler's preloaded tools. A missing skill fails the run with an error naming it. Like every field, a deeper handler's `skills` replaces its parent's. |
 | `maxOutputTokens` | positive integer | from model metadata | Cap on tokens the model may produce per step. Never exceeds what the model supports. Useful against runaway monologues. |
 | `maxRetries` | integer ≥ 0 | `inference.maxRetries` (10) | Retries on temporary provider errors (429, 5xx, timeouts) with exponential backoff. `0` disables retries for this handler. |
 | `outputChat` | boolean | `false` | Also post the run's final text answer into the chat. For models that answer in text instead of calling `send_chat`. Don't combine with a handler that calls `send_chat`, or you'll get every answer twice. |
@@ -186,9 +190,20 @@ description: How to create a Jira issue (default project, due-date conventions, 
 …
 ```
 
-Skills with a `description` appear in `{SKILL_LIST}`, and the shipped template tells the model to `fs_read` a skill when it fits. You can also reference a skill explicitly in a handler — either as an instruction ("Before creating a Jira issue, read `skills/jira-issue/SKILL.md`") or by including it right away with `{skills/jira-issue/SKILL.md}`. The include costs prompt space on every run; the instruction costs only when needed.
+Skills with a `description` appear in `{SKILL_LIST}`, and the shipped template tells the model to `fs_read` a skill when it fits. Models don't always do that, so a handler can also **preload** skills with `skills: jira-issue, reflection` in its frontmatter: their content lands in `{PRELOADED_SKILLS}`, marked as already loaded. Preloading costs prompt space on every run; leaving it to the model costs only when needed. (A plain instruction like "Before creating a Jira issue, read `skills/jira-issue/SKILL.md`" works too.)
 
-Skills are pure context: they are never run as handlers or subagents, carry no tools and grant no permissions — the handler reading a skill needs the tools the skill talks about (every tool is reachable via `tool_call`).
+A skill may declare the tools it is about in its own frontmatter:
+
+```markdown
+---
+description: The Tesla tools — what each one does and when to reach for it.
+tools: tesla
+---
+```
+
+`tools` uses the same entries as a handler's `tools` (names, globs, groups). It only matters when the skill is preloaded: those entries are then added to the handler's preloaded tools (on top of `core` if the handler declares no `tools` of its own).
+
+Skills are never run as handlers or subagents and grant no permissions — preloading tools only saves the model a discovery step, since every tool is reachable via `tool_call` anyway and privilege checks happen per call.
 
 ## Recipes
 

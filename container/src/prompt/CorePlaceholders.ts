@@ -26,12 +26,13 @@ const EMPTY_LIST = "(none)";
 /**
  * Core placeholders the template engine expands structurally instead
  * of through a resolver: the marker splits the template, and
- * `HANDLER_CONTENT` is workspace markdown that is itself parsed as
- * template.
+ * `HANDLER_CONTENT` / `PRELOADED_SKILLS` are workspace markdown that is
+ * itself parsed as template.
  */
 export const STRUCTURAL_PLACEHOLDERS: ReadonlySet<string> = new Set([
     CACHE_MARKER_PLACEHOLDER,
     "HANDLER_CONTENT",
+    "PRELOADED_SKILLS",
 ]);
 
 /**

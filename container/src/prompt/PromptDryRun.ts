@@ -18,6 +18,7 @@ import { HandlerFile } from "../HandlerFile.js";
 import { HostToolsClient } from "../host-tools/HostToolsClient.js";
 import { McpClientPool } from "../mcp/McpClientPool.js";
 import { buildPromptParts } from "../PromptBuilder.js";
+import { combineToolEntries, loadPreloadedSkills } from "../SkillFile.js";
 import { ToolsFactory } from "../tools/ToolsFactory.js";
 import { requireConfig, resolveTimezone } from "../utils/PassedConfig.js";
 
@@ -141,6 +142,7 @@ async function main(): Promise<void> {
     const bastionToken = requireConfig<string>("bastionToken");
 
     const handler = HandlerFile.load(input.topic, input.handler);
+    const preloadedSkills = loadPreloadedSkills(handler);
     const row = buildSyntheticRow(input);
 
     const connection = new PostgresConnection({
@@ -161,7 +163,7 @@ async function main(): Promise<void> {
         const tools = await ToolsFactory.build({
             chat: new ChatManager(new ChatMessageBus(connection)),
             eventId: DRY_RUN_EVENT_ID,
-            tools: handler.header.tools,
+            tools: combineToolEntries(handler.header.tools, preloadedSkills),
             bus: new AgentRunBus(connection, log),
             scheduledSubagentBus: new ScheduledSubagentBus(connection, log),
             timezone: resolveTimezone(),
@@ -185,6 +187,7 @@ async function main(): Promise<void> {
             topic: input.topic,
             privileged: input.privileged,
             toolNames,
+            preloadedSkills,
             eventId: DRY_RUN_EVENT_ID,
             plugins: {
                 bastionUrl,

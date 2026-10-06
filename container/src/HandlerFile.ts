@@ -124,6 +124,16 @@ export interface HandlerFileHeader {
      * noisy handler.
      */
     readonly toolCallOffloadingLimit?: number;
+    /**
+     * Skills preloaded into the prompt, as a list of skill ids (a
+     * comma-separated string or a YAML list). Each id names
+     * `skills/<id>/SKILL.md`; its body is rendered into the
+     * `{PRELOADED_SKILLS}` placeholder and the `tools` declared in its
+     * frontmatter are added to this handler's preloaded toolset (see
+     * `SkillFile.ts`). Like every other field, a deeper file's
+     * declaration replaces its parent's.
+     */
+    readonly skills?: readonly string[];
 }
 
 /** Pair returned by the parser before defaults are applied. */
@@ -406,6 +416,7 @@ function mergeDeclared(parent: HandlerFileHeader, child: HandlerFileHeader): Han
         mergeMode: child.mergeMode ?? parent.mergeMode,
         systemPrompt: child.systemPrompt ?? parent.systemPrompt,
         toolCallOffloadingLimit: child.toolCallOffloadingLimit ?? parent.toolCallOffloadingLimit,
+        skills: child.skills ?? parent.skills,
     };
 }
 
@@ -425,19 +436,22 @@ function concatBodies(parentBody: string, childBody: string): string {
 }
 
 /**
- * Split a handler file into YAML frontmatter (optional) and markdown
- * body, validating the header into a {@link HandlerFileHeader}. The
- * returned header reflects only what the YAML declared; defaults are
- * applied by the caller.
+ * Split a markdown file into its YAML frontmatter mapping (optional) and
+ * the trimmed body. Shared by handler files and skill files.
  *
- * @throws If the YAML block is present but malformed, or any declared
- *   field has the wrong type.
+ * @param filePath File path, for error messages.
+ * @param source The file text.
+ * @returns The parsed frontmatter (`null` when absent or empty) and the body.
+ * @throws If the YAML block is present but malformed or not a mapping.
  */
-function parseHandler(filePath: string, source: string): DeclaredFile {
+export function splitFrontmatter(
+    filePath: string,
+    source: string,
+): { readonly frontmatter: Record<string, unknown> | null; readonly body: string } {
     const trimmed = source.trim();
     const match = trimmed.match(/^---\r?\n([\s\S]*?)\r?\n?---\r?\n?([\s\S]*)$/);
     if (!match) {
-        return { header: {}, body: trimmed };
+        return { frontmatter: null, body: trimmed };
     }
 
     let parsed: unknown;
@@ -450,15 +464,29 @@ function parseHandler(filePath: string, source: string): DeclaredFile {
     }
 
     const body = (match[2] ?? "").trim();
-
     if (parsed === null || parsed === undefined) {
-        return { header: {}, body };
+        return { frontmatter: null, body };
     }
     if (typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error(`${filePath}: YAML frontmatter must be a mapping`);
     }
+    return { frontmatter: parsed as Record<string, unknown>, body };
+}
 
-    const raw = parsed as Record<string, unknown>;
+/**
+ * Split a handler file into YAML frontmatter (optional) and markdown
+ * body, validating the header into a {@link HandlerFileHeader}. The
+ * returned header reflects only what the YAML declared; defaults are
+ * applied by the caller.
+ *
+ * @throws If the YAML block is present but malformed, or any declared
+ *   field has the wrong type.
+ */
+function parseHandler(filePath: string, source: string): DeclaredFile {
+    const { frontmatter: raw, body } = splitFrontmatter(filePath, source);
+    if (raw === null) {
+        return { header: {}, body };
+    }
     const header: HandlerFileHeader = {
         model: optionalString(filePath, raw, "model"),
         temperature: optionalNumber(filePath, raw, "temperature"),
@@ -470,6 +498,7 @@ function parseHandler(filePath: string, source: string): DeclaredFile {
         mergeMode: optionalEnum(filePath, raw, "mergeMode", ["merge", "replace"]),
         systemPrompt: optionalSystemPrompt(filePath, raw),
         toolCallOffloadingLimit: optionalPositiveInteger(filePath, raw, "toolCallOffloadingLimit"),
+        skills: optionalSkillIds(filePath, raw),
     };
 
     return { header, body };
@@ -496,10 +525,11 @@ function mergeDefaults(
         systemPrompt: declared.systemPrompt ?? defaults.systemPrompt,
         toolCallOffloadingLimit:
             declared.toolCallOffloadingLimit ?? defaults.toolCallOffloadingLimit,
+        skills: declared.skills ?? defaults.skills,
     };
 }
 
-function optionalString(
+export function optionalString(
     filePath: string,
     raw: Record<string, unknown>,
     field: string,
@@ -524,7 +554,7 @@ function optionalString(
  *   absent (so `??`-based merge / defaults keep working).
  * @throws If the value is neither a string nor an array of strings.
  */
-function optionalStringList(
+export function optionalStringList(
     filePath: string,
     raw: Record<string, unknown>,
     field: string,
@@ -552,6 +582,33 @@ function optionalStringList(
             .filter((entry) => entry.length > 0);
     }
     throw new Error(`${filePath}: header field "${field}" must be a string or a list of strings`);
+}
+
+/** Valid skill id: the folder name under `skills/` — word characters and dashes. */
+const SKILL_ID_PATTERN = /^[\w-]+$/;
+
+/**
+ * Validate the `skills` header field: a string list whose entries are
+ * plain skill ids (no path separators, no `..`).
+ *
+ * @param filePath Handler path, for error messages.
+ * @param raw Parsed YAML frontmatter.
+ * @returns The declared ids, or `undefined` when absent.
+ * @throws When the value is not a string list or an id is malformed.
+ */
+function optionalSkillIds(
+    filePath: string,
+    raw: Record<string, unknown>,
+): readonly string[] | undefined {
+    const ids = optionalStringList(filePath, raw, "skills");
+    for (const id of ids ?? []) {
+        if (!SKILL_ID_PATTERN.test(id)) {
+            throw new Error(
+                `${filePath}: header field "skills" contains "${id}" — entries must be skill ids (the folder name under skills/), not paths`,
+            );
+        }
+    }
+    return ids;
 }
 
 function optionalNumber(

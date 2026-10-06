@@ -54,6 +54,12 @@ export const CORE_PROMPT_PLACEHOLDERS: readonly PromptPlaceholderDefinition[] = 
         kind: "static",
     },
     {
+        name: "PRELOADED_SKILLS",
+        description:
+            "Full content of the skills the handler lists in its `skills` frontmatter, one `# Skill` section each, or empty. Placeholders inside are expanded too.",
+        kind: "static",
+    },
+    {
         name: "HANDLER_PATH",
         description: "Workspace-relative path of the handler file, e.g. `chat/telegram/index.md`.",
         kind: "static",

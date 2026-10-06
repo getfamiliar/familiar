@@ -1,6 +1,7 @@
 ---
 name: tesla
 description: The Tesla tools — what each one does, when to reach for it, and how to collect the monthly charging and connectivity invoices.
+tools: tesla
 ---
 
 # Tesla

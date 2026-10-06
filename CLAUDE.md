@@ -167,9 +167,11 @@ description: How to create a Jira issue (default project, due-date conventions, 
 ...
 ```
 
-Handlers reference skills by path in prose — there is no `load_skill` tool and no automatic injection. Example: a handler can include *"Before creating a Jira issue, read `skills/jira-issue/SKILL.md` and follow it."* The agent reads it on demand with the existing `fs_read` tool, the same way handlers already pull in `people/<sender>.md` or topic-specific rule files.
+Handlers reference skills by path in prose — there is no `load_skill` tool. Example: a handler can include *"Before creating a Jira issue, read `skills/jira-issue/SKILL.md` and follow it."* The agent reads it on demand with the existing `fs_read` tool, the same way handlers already pull in `people/<sender>.md` or topic-specific rule files.
 
-Skills carry no tools and no privileges — they are pure context. They cannot grant capabilities the calling handler does not already have via its `tools` frontmatter. Nothing under `skills/` is ever a handler: a `cron:` field there is skipped with a warning (`CronjobScheduler`, shown as `skill` in `familiar cron list`), and `HandlerFile.load` / `HandlerCatalog.resolve` refuse to resolve it (shared predicate `isUnderSkillsFolder`).
+Because models often skip that read, a handler can **preload** skills via its `skills:` frontmatter (`skills: jira, reflection, tesla`): `container/src/SkillFile.ts` loads each `skills/<id>/SKILL.md` (missing → `SkillNotFoundError`, the run fails) and `PromptBuilder` renders the bodies into the structural `{PRELOADED_SKILLS}` placeholder, one `# Skill \`<id>\` (preloaded)` section each, exempt from the per-file and (by their length) the system-prompt size caps. A skill's own `tools:` frontmatter is added to the handler's tool entries when it is preloaded (`combineToolEntries`; an omitted handler `tools` keeps its implicit `core`).
+
+Skills grant no privileges — preloaded tools only save a discovery step, every tool is reachable via `tool_call` anyway and privilege is checked per call. Nothing under `skills/` is ever a handler: a `cron:` field there is skipped with a warning (`CronjobScheduler`, shown as `skill` in `familiar cron list`), and `HandlerFile.load` / `HandlerCatalog.resolve` refuse to resolve it (shared predicate `isUnderSkillsFolder`).
 
 ### 3. Configuration and secrets (host, YAML)
 

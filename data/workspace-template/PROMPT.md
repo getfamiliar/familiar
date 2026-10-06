@@ -10,6 +10,8 @@
 
 {HANDLER_CONTENT}
 
+{PRELOADED_SKILLS}
+
 # Available skills
 
 The following skills are available in the `skills/` folder. Read one with `fs_read({path: "skills/<id>/SKILL.md"})` and follow it — every tool a skill mentions is directly callable, so you don't need a subagent to use them.

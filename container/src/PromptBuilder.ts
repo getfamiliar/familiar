@@ -9,6 +9,7 @@ import {
     isDynamicCorePlaceholder,
 } from "./prompt/CorePlaceholders.js";
 import { type PlaceholderUse, parseTemplate, renderTemplate } from "./prompt/PromptTemplate.js";
+import { formatPreloadedSkills, type SkillFile } from "./SkillFile.js";
 import { bastionAuthHeaders } from "./utils/BastionAuth.js";
 
 /**
@@ -22,7 +23,8 @@ const MAX_FILE_CHARS = 8000;
  * Hard cap on the assembled system prompt. Functions as a safety net
  * after per-section truncation; if the assembled total still exceeds
  * this, the trailing portion is cut off. With several ~8000-char
- * sections the cap leaves headroom for section framing.
+ * sections the cap leaves headroom for section framing. Preloaded
+ * skills are an explicit opt-in, so the cap grows by their length.
  */
 const MAX_SYSTEM_CHARS = 32000;
 
@@ -127,6 +129,11 @@ export interface BuildPromptPartsInput {
     readonly privileged: boolean;
     /** Ids of the tools preloaded for this run. */
     readonly toolNames: readonly string[];
+    /**
+     * Skills the handler preloads (see `loadPreloadedSkills`), rendered
+     * untruncated into `{PRELOADED_SKILLS}`.
+     */
+    readonly preloadedSkills: readonly SkillFile[];
     /** Event id; locates staged files under `/scratch/<eventId>/`. */
     readonly eventId: string;
     /** Host access for plugin content, or `null` to skip it. */
@@ -196,10 +203,15 @@ export interface PromptParts {
 export async function buildPromptParts(input: BuildPromptPartsInput): Promise<PromptParts> {
     const { handler } = input;
     const template = loadTemplate(handler);
+    const preloadedSkills = formatPreloadedSkills(input.preloadedSkills);
+    const maxSystemChars = MAX_SYSTEM_CHARS + preloadedSkills.length;
     const parsed = parseTemplate(template.source, {
         templateName: template.path ?? `${handler.relativePath} (systemPrompt: none)`,
         readInclude: readWorkspaceFile,
-        templateSources: { HANDLER_CONTENT: truncate(handler.body, MAX_FILE_CHARS) },
+        templateSources: {
+            HANDLER_CONTENT: truncate(handler.body, MAX_FILE_CHARS),
+            PRELOADED_SKILLS: preloadedSkills,
+        },
     });
     const warnings = [...parsed.warnings];
 
@@ -263,10 +275,10 @@ export async function buildPromptParts(input: BuildPromptPartsInput): Promise<Pr
         [head, ...appended].filter((part) => part.length > 0).join("\n\n");
 
     return {
-        system: truncate(full.system, MAX_SYSTEM_CHARS),
+        system: truncate(full.system, maxSystemChars),
         userHead: withAppended(full.userHead),
         redacted: {
-            system: truncate(redacted.system, MAX_SYSTEM_CHARS),
+            system: truncate(redacted.system, maxSystemChars),
             userHead: withAppended(redacted.userHead),
         },
         templatePath: template.path,

@@ -15,6 +15,7 @@ import { HandlerFile } from "../HandlerFile.js";
 import { ModelFactory } from "../models/ModelFactory.js";
 import { fetchModelMetaData } from "../models/ModelMetadataClient.js";
 import { buildPrompt, buildPromptParts, type PromptParts } from "../PromptBuilder.js";
+import { combineToolEntries, loadPreloadedSkills } from "../SkillFile.js";
 import { buildContainerToolRunContext } from "../tools/ContainerToolRunContext.js";
 import { PassedConfig, requireConfig } from "../utils/PassedConfig.js";
 import { fetchAncestorChain } from "./AgentRunLineage.js";
@@ -376,8 +377,14 @@ export class AgentRunner {
             modelMetaData?.contextLimit,
             offloadTokenCap,
         );
+        const preloadedSkills = loadPreloadedSkills(handler);
+        if (preloadedSkills.length > 0) {
+            ctx.log.info(
+                `agentrun preloads skills: ${preloadedSkills.map((skill) => skill.id).join(", ")}`,
+            );
+        }
         const tools = await ctx.buildTools(
-            handler.header.tools,
+            combineToolEntries(handler.header.tools, preloadedSkills),
             offloadTokenThreshold,
             handler.relativePath,
             modelMetaData?.contextLimit,
@@ -398,6 +405,7 @@ export class AgentRunner {
             topic: ctx.row.topic,
             privileged: ctx.row.privileged,
             toolNames,
+            preloadedSkills,
             eventId: ctx.row.eventId,
             plugins: {
                 bastionUrl: requireConfig<string>("bastionUrl"),

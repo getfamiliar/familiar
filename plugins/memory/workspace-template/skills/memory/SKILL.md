@@ -1,6 +1,7 @@
 ---
 name: memory
 description: How the agent's long-term memory is organized.
+tools: memory
 ---
 
 # The wiki

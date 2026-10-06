@@ -81,3 +81,26 @@ test("systemPrompt rejects the retired modes and unsafe paths", () => {
         assert.throws(() => HandlerFile.load("mail", "index"), /systemPrompt/);
     }
 });
+
+test("skills parses from a comma string and a YAML list", () => {
+    touch("mail/index.md", "---\nskills: jira, tesla\n---\nbody\n");
+    touch("chat/index.md", "---\nskills:\n  - reflection\n  - whoop\n---\nbody\n");
+
+    assert.deepEqual(HandlerFile.load("mail", "index").header.skills, ["jira", "tesla"]);
+    assert.deepEqual(HandlerFile.load("chat", "index").header.skills, ["reflection", "whoop"]);
+});
+
+test("skills rejects path-like entries", () => {
+    touch("mail/index.md", "---\nskills: ../secret\n---\nbody\n");
+
+    assert.throws(() => HandlerFile.load("mail", "index"), /header field "skills"/);
+});
+
+test("a child handler's skills replace its parent's", () => {
+    touch("chat/index.md", "---\nskills: memory\n---\nparent\n");
+    touch("chat/telegram/index.md", "---\nskills: reflection\n---\nchild\n");
+    touch("chat/whatsapp/index.md", "child without skills\n");
+
+    assert.deepEqual(HandlerFile.load("chat:telegram", "index").header.skills, ["reflection"]);
+    assert.deepEqual(HandlerFile.load("chat:whatsapp", "index").header.skills, ["memory"]);
+});

@@ -6,6 +6,7 @@ import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { HandlerFile } from "./HandlerFile.js";
 import { buildPrompt, buildPromptParts, PromptTemplateMissingError } from "./PromptBuilder.js";
+import { loadPreloadedSkills } from "./SkillFile.js";
 
 /** Pull the JSON block out of a rendered prompt for shape assertions. */
 function extractPayloadJson(rendered: string): string | null {
@@ -188,6 +189,7 @@ describe("buildPromptParts", () => {
             topic: "chat:telegram",
             privileged,
             toolNames: ["send_chat", "bash"],
+            preloadedSkills: loadPreloadedSkills(handler),
             eventId: "event-without-scratch",
             plugins: null,
         });
@@ -277,9 +279,37 @@ describe("buildPromptParts", () => {
             topic: "chat:telegram",
             privileged: false,
             toolNames: ["{SOUL.md}"],
+            preloadedSkills: [],
             eventId: "event-without-scratch",
             plugins: null,
         });
         assert.match(parts.system, /^- \{SOUL\.md\}$/m);
+    });
+
+    it("renders preloaded skills untruncated after the handler", async () => {
+        const longBody = "x".repeat(40_000);
+        writeFileSync(
+            path.join(workspaceRoot, "skills", "listfiles", "SKILL.md"),
+            `---\ndescription: How to keep lists in files.\ntools: fs_*\n---\nList skill body.\n${longBody}\n`,
+            "utf8",
+        );
+        const parts = await build(
+            loadHandler("handler-skills.md", "---\nskills: listfiles\n---\nDo the thing.\n"),
+        );
+        assert.match(
+            parts.system,
+            /^# Handler\n\nDo the thing\.\n\n# Skill `listfiles` \(preloaded\)\n\nThis is the complete content of `skills\/listfiles\/SKILL\.md`\./m,
+        );
+        assert.match(parts.system, /^List skill body\.$/m);
+        assert.equal(parts.system.includes("tools: fs_*"), false);
+        assert.equal(parts.system.includes(longBody), true);
+        assert.match(parts.system, /^## The bash tool$/m);
+        assert.equal(parts.system.includes("…[truncated"), false);
+    });
+
+    it("renders nothing for a handler without preloaded skills", async () => {
+        const parts = await build(loadHandler("handler-noskills.md", "Do the thing.\n"));
+        assert.equal(parts.system.includes("(preloaded)"), false);
+        assert.equal(parts.system.includes("{PRELOADED_SKILLS}"), false);
     });
 });
