@@ -4,7 +4,7 @@ import type { ModelMetadataService } from "../models/ModelMetadataService.js";
 
 /**
  * Daily, a few minutes past 04:00 — off the top-of-hour boundary the
- * other core jobs use (e.g. {@link import("./ScratchGc.js").ScratchGc}),
+ * other core jobs use (e.g. {@link import("./DirectoryGc.js").DirectoryGc}),
  * so the morning refetch doesn't pile onto an hourly sweep.
  */
 const REFRESH_SCHEDULE = "5 4 * * *";
@@ -18,7 +18,7 @@ export interface ModelMetadataRefresherConfig {
 
 /**
  * Daily Croner job that refetches the models.dev catalogue into the
- * service's on-disk cache. Symmetric with {@link ScratchGc}: a thin
+ * service's on-disk cache. Symmetric with `DirectoryGc`: a thin
  * wrapper that owns the `Cron` handle and a `start`/`stop` pair, keeping
  * the refresh cadence out of {@link ModelMetadataService} (which only
  * knows how to fetch) and out of the daemon bootstrap.

@@ -42,9 +42,9 @@ import { ContainerConfig } from "../container-bridge/ContainerConfig.js";
 import { ContainerToolsGateway } from "../container-bridge/ContainerToolsGateway.js";
 import { ContainerToolsRegistry } from "../container-bridge/ContainerToolsRegistry.js";
 import { CronjobScheduler } from "../cron/CronjobScheduler.js";
+import { DirectoryGc } from "../cron/DirectoryGc.js";
 import { ModelMetadataRefresher } from "../cron/ModelMetadataRefresher.js";
 import { ScheduledSubagentScheduler } from "../cron/ScheduledSubagentScheduler.js";
-import { ScratchGc } from "../cron/ScratchGc.js";
 import { ToolCallsGc } from "../cron/ToolCallsGc.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { McpGateway } from "../mcp/McpGateway.js";
@@ -78,6 +78,16 @@ const DRAINING_DEADLINE_MS = 15_000;
 
 /** 24 hours in milliseconds — staleness window for the models.dev cache. */
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Retention of `tmp/scratch/` entries. Generous enough to inspect
+ * post-mortem scratch contents (e.g. an email attachment that produced a
+ * confusing handler outcome) without manual cleanup later.
+ */
+const SCRATCH_RETENTION_MS = ONE_DAY_MS;
+
+/** Default for `inference.llmDebugRetentionDays` — days of `tmp/llm-debug/` captures kept. */
+const LLM_DEBUG_RETENTION_DAYS = 10;
 
 /**
  * `familiar start` — bring up the daemon: postgres, schema, agent container,
@@ -484,11 +494,25 @@ export const startCommand = defineCommand({
         });
         await scheduledSubagentScheduler.start();
 
-        const scratchGc = new ScratchGc({
-            scratchDir: boot.scratchDir,
+        const scratchGc = new DirectoryGc({
+            dir: boot.scratchDir,
+            retentionMs: SCRATCH_RETENTION_MS,
+            name: "scratch",
             log: log.child({ component: "scratch-gc" }),
         });
         scratchGc.start();
+
+        // Runs whether or not capture is currently on, so dumps left over
+        // from an earlier debug session age out too.
+        const llmDebugGc = new DirectoryGc({
+            dir: boot.llmDebugDir,
+            retentionMs:
+                config.getNumber("inference.llmDebugRetentionDays", LLM_DEBUG_RETENTION_DAYS) *
+                ONE_DAY_MS,
+            name: "llm-debug",
+            log: log.child({ component: "llm-debug-gc" }),
+        });
+        llmDebugGc.start();
 
         const toolCallsGc = new ToolCallsGc({
             toolCallBus: new ToolCallBus(await pluginHost.ensureConnection()),
@@ -523,6 +547,7 @@ export const startCommand = defineCommand({
                 // postgres container disappears underneath it.
                 removePidFile(boot.pidFile);
                 scratchGc.stop();
+                llmDebugGc.stop();
                 toolCallsGc.stop();
                 modelMetadataRefresher.stop();
                 await safeStop(log, "scheduled-subagent scheduler", () =>

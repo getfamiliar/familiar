@@ -64,8 +64,8 @@ export async function replayOne(
 
 /**
  * Return the basenames of every regular file directly under `dir`.
- * Returns `[]` when `dir` is absent (the common case once `ScratchGc`
- * has swept it) and ignores sub-directories — emit-time staging only
+ * Returns `[]` when `dir` is absent (the common case once the scratch
+ * `DirectoryGc` has swept it) and ignores sub-directories — emit-time staging only
  * ever writes flat files, so a nested dir would be operator-created
  * state we shouldn't silently duplicate.
  *

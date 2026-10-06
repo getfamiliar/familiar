@@ -113,6 +113,26 @@ inference:
         );
     });
 
+    it("warns (not errors) when llmDebugRetentionDays is malformed", () => {
+        const file = write(`
+core:
+  postgresPassword: secret
+  defaultChatChannel: cli
+inference:
+  defaultProvider: openai
+  defaultModel: gpt-5
+  llmDebugRetentionDays: -1
+  apiKeys:
+    openai: REAL_KEY
+`);
+        const result = lintConfigFile(file);
+        assert.equal(result.ok, true, `unexpected errors: ${JSON.stringify(result.errors)}`);
+        assert.equal(
+            result.warnings.some((w) => w.includes("llmDebugRetentionDays")),
+            true,
+        );
+    });
+
     it("warns (not errors) when logRetentionDays is malformed", () => {
         const file = write(`
 core:

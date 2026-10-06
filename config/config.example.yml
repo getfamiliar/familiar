@@ -185,13 +185,17 @@ inference:
     # featherless: REPLACE_ME
 
   # When true, raw HTTP request/response bodies for every
-  # `/llm/<provider>/*` call are written to `data/llm-debug/`
+  # `/llm/<provider>/*` call are written to `tmp/llm-debug/`
   # alongside a small header (status, sanitized request headers).
   # Off by default; turn on temporarily to debug tool-call parsing
   # or other model-behavior issues, then turn off again. The
   # auth headers (`Authorization`, `x-api-key`, `x-goog-api-key`)
   # are redacted in the dumps.
   # captureModelHttpRequestBodies: false
+
+  # Days of `tmp/llm-debug/` captures kept; older dumps are removed by
+  # an hourly sweep. Optional; falls back to 10 when omitted.
+  # llmDebugRetentionDays: 10
 
   # When true, every step's full SDK result object is JSON-encoded
   # into stepresults.raw_result for diagnosis (Anthropic cache

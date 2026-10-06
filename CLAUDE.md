@@ -397,7 +397,7 @@ Ephemeral runtime scratch lives in `tmp/` instead (gitignored, safe to wipe):
 - `tmp/.daemon.pid` — pidfile written by the daemon and consumed by `familiar stop`.
 - `tmp/.postgres-port` — chosen loopback host port that `familiar-postgres` is published on (e.g. `5432`, or the next free port if 5432 was taken at startup). Read by anything host-side that wants to `psql` or use a `pg` client.
 - `tmp/.bastion-token` — shared secret the running daemon's bastion requires on every request (header `x-familiar-bastion-token`, constant `BASTION_TOKEN_HEADER` in `shared/`). It comes from `core.bastionToken` in `config.yml` if that is set, otherwise it is random per start. The file is written with mode `0600`, so host-side CLI commands (`tools list`, `tools lint-mcps`, plugin CLIs using `ctx.mcp`) can authenticate. It is removed on shutdown.
-- `tmp/llm-debug/` — model HTTP request/response captures written by the reverse proxy when `inference.captureModelHttpRequestBodies` is on.
+- `tmp/llm-debug/` — model HTTP request/response captures written by the reverse proxy when `inference.captureModelHttpRequestBodies` is on. Pruned hourly to the last `inference.llmDebugRetentionDays` days (default 10).
 - `tmp/scratch/` — per-event auxiliary files, bind-mounted into the agent and MCP containers as `/scratch/`.
 - `tmp/mcp-mount-<id>/` — per-MCP bind-mount roots that double as `/work` for npx/uv caches.
 

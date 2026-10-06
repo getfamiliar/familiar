@@ -86,6 +86,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
     optionalPipRequirements(config, "python.packages", errors);
     optionalNonNegativeInt(config, "inference.maxRetries", warnings);
     optionalBool(config, "inference.captureModelHttpRequestBodies", warnings);
+    optionalPositiveInt(config, "inference.llmDebugRetentionDays", warnings);
     optionalBool(config, "inference.captureRawStepResultToDatabase", warnings);
     optionalBool(config, "inference.captureInitialMessageHistory", warnings);
     optionalContextThresholdFraction(

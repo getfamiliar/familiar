@@ -183,7 +183,7 @@ const eventsReportCommand = defineCommand({
  * the emit-time staging path so the input-event watcher never observes
  * a row without its files on disk. The source dir is left untouched
  * (the original event keeps its scratch state). When the source dir is
- * absent — common, since `ScratchGc` sweeps anything older than 24 h —
+ * absent — common, since the scratch `DirectoryGc` sweeps anything older than 24 h —
  * nothing is copied and the replay still runs.
  *
  * Original ids that don't exist are reported on stderr and skipped; the
