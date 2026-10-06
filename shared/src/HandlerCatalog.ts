@@ -24,25 +24,14 @@ export interface HandlerPath {
 }
 
 /**
- * Top-level workspace folder holding shared recipes
- * (`skills/<name>/SKILL.md`). Skills are pure context loaded via
- * `fs_read`, never agent entry points — so nothing under this folder
- * is ever listed, resolved, loaded or cron-scheduled as a handler.
+ * Workspace subtrees excluded from {@link HandlerCatalog.list} (cli-chat
+ * tab-completion), so `SKILL.md` recipes don't clutter the proposals.
+ * This is a listing concern only: handlers that live next to a skill
+ * (e.g. `skills/memory/save.md`, or a `skills/memory/dream.md` with a
+ * `cron:` field) are deliberately loadable, resolvable and
+ * cron-scheduled like any other handler.
  */
-const SKILLS_FOLDER = "skills";
-
-/**
- * Whether a workspace-relative path lies inside the top-level `skills/`
- * folder. Shared by host (catalog, cron scheduler, `cron list`) and
- * container (`HandlerFile.load`) so every side agrees that skills are
- * never handlers.
- *
- * @param relativePath Workspace-relative posix path, e.g. `skills/jira-issue/SKILL.md`.
- * @returns `true` when the first path segment is `skills`.
- */
-export function isUnderSkillsFolder(relativePath: string): boolean {
-    return relativePath.split("/")[0] === SKILLS_FOLDER;
-}
+const RESERVED_TOP_DIRS = new Set(["skills"]);
 
 /**
  * Read-only view over the `workspace/` directory's handler files.
@@ -125,11 +114,6 @@ export class HandlerCatalog {
             const relPosix = rel.split(path.sep).join("/");
             const absolute = path.join(this.workspaceDir, rel);
             if (await fileExists(absolute)) {
-                // Skills are shared recipes, never handlers — mirror the
-                // container's `HandlerFile.load` guard.
-                if (isUnderSkillsFolder(relPosix)) {
-                    return null;
-                }
                 // A file under `core.writablePaths` is never a handler, even
                 // when it exists — mirror the container's `HandlerFile.load`
                 // guard so host-side callers agree it does not resolve.
@@ -164,7 +148,7 @@ async function walkMarkdown(
     }
     for (const entry of entries) {
         if (entry.isDirectory()) {
-            if (segments.length === 0 && entry.name === SKILLS_FOLDER) {
+            if (segments.length === 0 && RESERVED_TOP_DIRS.has(entry.name)) {
                 continue;
             }
             await walkMarkdown(

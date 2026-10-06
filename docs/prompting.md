@@ -147,7 +147,7 @@ Triage the incoming mail. Before replying, read `people/<sender>.md` if it exist
 
 Keep handlers short. Tell the agent *where to find* context (`people/…`, `wiki/…`, a skill) instead of pasting it in — it reads files on demand with `fs_read`.
 
-Files directly in the workspace root (`PROMPT.md`, `SOUL.md`, …) are never handlers, and neither is anything under `skills/` or under `core.writablePaths`.
+Files directly in the workspace root (`PROMPT.md`, `SOUL.md`, …) are never handlers, and neither is anything under `core.writablePaths`. Handlers *may* live in a skill folder (see [Skills](#skills)).
 
 ### Resolution and inheritance
 
@@ -203,7 +203,9 @@ tools: tesla
 
 `tools` uses the same entries as a handler's `tools` (names, globs, groups). It only matters when the skill is preloaded: those entries are then added to the handler's preloaded tools (on top of `core` if the handler declares no `tools` of its own).
 
-Skills are never run as handlers or subagents and grant no permissions — preloading tools only saves the model a discovery step, since every tool is reachable via `tool_call` anyway and privilege checks happen per call.
+Skills grant no permissions — preloading tools only saves the model a discovery step, since every tool is reachable via `tool_call` anyway and privilege checks happen per call.
+
+A skill folder may also contain **handlers** next to its `SKILL.md`, and that is intended: the skill then ships both the know-how and the workers that apply it. The memory plugin, for example, has `skills/memory/save.md`, started as a subagent with topic `skills:memory` and handler `save`. A `skills/memory/dream.md` with a `cron:` field would run on its schedule like any other cronjob. `SKILL.md` itself is a recipe, not a handler — don't start it as one.
 
 ## Recipes
 

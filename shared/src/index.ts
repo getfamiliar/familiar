@@ -45,7 +45,7 @@ export type {
 export { EVENT_PRIORITY } from "./Event.js";
 export { DuplicateIdempotencyKeyError, EventBus } from "./EventBus.js";
 export { estimateTokens } from "./estimateTokens.js";
-export { HandlerCatalog, type HandlerPath, isUnderSkillsFolder } from "./HandlerCatalog.js";
+export { HandlerCatalog, type HandlerPath } from "./HandlerCatalog.js";
 export type {
     InferenceEventRow,
     InferenceOutcome,

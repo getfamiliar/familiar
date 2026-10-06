@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { HandlerCatalog, isUnderSkillsFolder } from "./HandlerCatalog.js";
+import { HandlerCatalog } from "./HandlerCatalog.js";
 
 let root: string;
 
@@ -111,17 +111,4 @@ test("writable globs do not affect non-writable handlers", async () => {
     const catalog = new HandlerCatalog(root, ["wiki/**"]);
 
     assert.equal(await catalog.resolve("mail", "index"), path.join(root, "mail/index.md"));
-});
-
-test("resolve refuses a skill file even when it exists", async () => {
-    await touch("skills/jira-issue/SKILL.md");
-    const catalog = new HandlerCatalog(root);
-
-    assert.equal(await catalog.resolve("skills:jira-issue", "SKILL"), null);
-});
-
-test("isUnderSkillsFolder matches only the top-level skills folder", () => {
-    assert.equal(isUnderSkillsFolder("skills/jira-issue/SKILL.md"), true);
-    assert.equal(isUnderSkillsFolder("mail/skills/index.md"), false);
-    assert.equal(isUnderSkillsFolder("skillset/index.md"), false);
 });

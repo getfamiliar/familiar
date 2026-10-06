@@ -59,11 +59,13 @@ test("load resolves wiki handlers when no writable paths are configured", () => 
     assert.equal(handler.relativePath, "wiki/index.md");
 });
 
-test("load refuses a skill file as a handler", () => {
+test("load resolves handlers living next to a skill (intended, e.g. skills/memory/save.md)", () => {
     delete process.env[CONFIG_VAR];
-    touch("skills/jira-issue/SKILL.md", "---\ncron: every monday at 8\n---\n# skill\n");
+    touch("skills/memory/SKILL.md", "# memory skill\n");
+    touch("skills/memory/save.md", "# save handler\n");
 
-    assert.throws(() => HandlerFile.load("skills:jira-issue", "SKILL"), /skills\//);
+    const handler = HandlerFile.load("skills:memory", "save");
+    assert.equal(handler.relativePath, "skills/memory/save.md");
 });
 
 test("systemPrompt accepts default, none and a workspace .md path", () => {

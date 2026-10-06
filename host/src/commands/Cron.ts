@@ -1,4 +1,4 @@
-import { isUnderSkillsFolder, markdownTable, parseCron, writeMarkdown } from "@getfamiliar/shared";
+import { markdownTable, parseCron, writeMarkdown } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
 import { pathToHandlerTarget, readVerbatimCron } from "../cron/CronjobScheduler.js";
@@ -44,13 +44,7 @@ export const cronCommand = defineCommand({
                         verbatim,
                         expression: parsed?.expression ?? "—",
                         source: parsed?.source ?? "—",
-                        status: isUnderSkillsFolder(file.relativePath)
-                            ? "skill"
-                            : target === null
-                              ? "root"
-                              : parsed === null
-                                ? "invalid"
-                                : "ok",
+                        status: target === null ? "root" : parsed === null ? "invalid" : "ok",
                     });
                 }
                 rows.sort((a, b) => a.path.localeCompare(b.path));
@@ -65,7 +59,7 @@ interface Row {
     readonly verbatim: string;
     readonly expression: string;
     readonly source: string;
-    readonly status: "ok" | "invalid" | "root" | "skill";
+    readonly status: "ok" | "invalid" | "root";
 }
 
 /**
