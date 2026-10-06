@@ -364,8 +364,7 @@ export const startCommand = defineCommand({
         containerConfig.addConfigKey("inference.maxRetries");
         containerConfig.addConfigKey("inference.outputFallbackPercentage");
         containerConfig.addConfigKey("inference.captureInitialMessageHistory");
-        containerConfig.addConfigKey("inference.contextManagement.keptToolResultCount");
-        containerConfig.addConfigKey("inference.contextManagement.slidingWindowPercentage");
+        containerConfig.addConfigKey("inference.contextManagement.thresholdPercentage");
         // Computed / resolved values (host-side defaults or non-config).
         containerConfig.addValue("bastionUrl", agentBastionUrl);
         containerConfig.addValue("bastionToken", bastionToken);

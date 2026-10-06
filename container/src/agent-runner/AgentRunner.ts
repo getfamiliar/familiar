@@ -21,6 +21,7 @@ import {
     buildScratchListing,
     buildSystemPrompt,
 } from "../PromptBuilder.js";
+import { buildContainerToolRunContext } from "../tools/ContainerToolRunContext.js";
 import { PassedConfig, requireConfig } from "../utils/PassedConfig.js";
 import { fetchAncestorChain } from "./AgentRunLineage.js";
 import { AgentRunTimeoutError } from "./AgentRunTimeoutError.js";
@@ -69,46 +70,41 @@ const OUTPUT_FALLBACK_FRACTION =
     PassedConfig.get<number>("inference.outputFallbackPercentage") ??
     DEFAULT_OUTPUT_FALLBACK_FRACTION;
 
-/** Default number of recent steps whose tool results are kept verbatim. */
-const DEFAULT_KEPT_TOOL_RESULT_COUNT = 3;
-
-/** Default sliding-window trigger fraction of the model's context window. */
-const DEFAULT_SLIDING_WINDOW_PERCENTAGE = 0.7;
+/** Default context-management threshold fraction of the model's context window. */
+const DEFAULT_CONTEXT_THRESHOLD_PERCENTAGE = 0.7;
 
 /**
- * Number of recent steps whose tool results survive {@link ContextManager}
- * eviction. Read once at module load from the passed config key
- * `inference.contextManagement.keptToolResultCount`. A daemon restart is
- * required to change it. Defaults to {@link DEFAULT_KEPT_TOOL_RESULT_COUNT}.
+ * Context window (tokens) assumed for tool-result eviction when the
+ * model's metadata is unavailable. Conservative on purpose — at worst a
+ * large tool result lands in scratch a bit early.
  */
-const KEPT_TOOL_RESULT_COUNT =
-    PassedConfig.get<number>("inference.contextManagement.keptToolResultCount") ??
-    DEFAULT_KEPT_TOOL_RESULT_COUNT;
+const FALLBACK_CONTEXT_LIMIT = 64_000;
 
 /**
- * Clamp the configured sliding-window fraction into `(0.3, 1.0)`. Out-of-
- * range or unset values fall back to {@link DEFAULT_SLIDING_WINDOW_PERCENTAGE}
- * — the host's config linter already warns at boot, so this is the runtime
- * safety net rather than the primary signal.
+ * Clamp the configured threshold fraction into `(0.3, 1.0)`. Out-of-range
+ * or unset values fall back to {@link DEFAULT_CONTEXT_THRESHOLD_PERCENTAGE}
+ * — the host's config linter already warns at boot, so this is the
+ * runtime safety net rather than the primary signal.
  *
  * @param raw The passed config value, or `undefined` when unset.
  * @returns A fraction strictly inside `(0.3, 1.0)`.
  */
-function clampSlidingWindow(raw: number | undefined): number {
+function clampContextThreshold(raw: number | undefined): number {
     if (raw !== undefined && raw > 0.3 && raw < 1.0) {
         return raw;
     }
-    return DEFAULT_SLIDING_WINDOW_PERCENTAGE;
+    return DEFAULT_CONTEXT_THRESHOLD_PERCENTAGE;
 }
 
 /**
  * Fraction of the model's context window at which {@link ContextManager}
- * starts dropping the oldest messages. Read once at module load from the
- * passed config key `inference.contextManagement.slidingWindowPercentage`.
- * Clamped to `(0.3, 1.0)`.
+ * starts moving old tool results to scratch (and, failing that, dropping
+ * the oldest messages). Read once at module load from the passed config
+ * key `inference.contextManagement.thresholdPercentage`. Clamped to
+ * `(0.3, 1.0)`.
  */
-const SLIDING_WINDOW_PERCENTAGE = clampSlidingWindow(
-    PassedConfig.get<number>("inference.contextManagement.slidingWindowPercentage"),
+const CONTEXT_THRESHOLD_PERCENTAGE = clampContextThreshold(
+    PassedConfig.get<number>("inference.contextManagement.thresholdPercentage"),
 );
 
 /**
@@ -476,14 +472,16 @@ export class AgentRunner {
             );
         }
 
-        // Active context-window management: evict stale tool results and
-        // slide a window over the history before each step so a long tool
-        // loop doesn't overflow the model's context window.
+        // Active context-window management: once the history nears the
+        // model's context window, move old tool results to scratch (and,
+        // failing that, slide a window over the history) so a long tool
+        // loop doesn't overflow it. Duplicate results always go to scratch.
         const contextManager = new ContextManager({
             contextLimit: modelMetaData?.contextLimit,
-            keptToolResultCount: KEPT_TOOL_RESULT_COUNT,
-            slidingWindowPercentage: SLIDING_WINDOW_PERCENTAGE,
+            fallbackContextLimit: FALLBACK_CONTEXT_LIMIT,
+            thresholdPercentage: CONTEXT_THRESHOLD_PERCENTAGE,
             systemPromptTokens: estimateTokens(systemPrompt.full),
+            spill: buildContainerToolRunContext(ctx.row.eventId, offloadTokenThreshold).spill,
             log: ctx.log,
         });
 
@@ -498,23 +496,29 @@ export class AgentRunner {
             // retry loop so a multi-minute backoff doesn't park us.
             maxRetries: 0,
             stopWhen: stepCountIs(MAX_STEPS_PER_RUN),
-            prepareStep: ({ stepNumber, messages }) => {
-                const managed = contextManager.prepare(messages);
-                // Tell the agent how many steps it has left as it nears
-                // the cap (and force a final answer on the last step).
-                // Appended after context management so the sliding window
-                // can never evict it; ephemeral per step, so the count
-                // stays live and nothing lands in the persisted history.
+            prepareStep: async ({ stepNumber, messages }) => {
+                const managed = await contextManager.prepare(messages);
+                // Tell the agent when it keeps re-issuing the same call, and
+                // how many steps it has left as it nears the cap (forcing a
+                // final answer on the last step). Appended after context
+                // management so the sliding window can never evict them;
+                // ephemeral per step, so they stay live and nothing lands in
+                // the persisted history.
+                const repeatedCallNotice = contextManager.buildRepeatedCallNotice(messages);
                 const budgetNotice = buildStepBudgetNotice(stepNumber, MAX_STEPS_PER_RUN);
-                const stepMessages: ModelMessage[] =
-                    budgetNotice === null
-                        ? managed
-                        : [...managed, { role: "user", content: budgetNotice }];
+                const notices = [repeatedCallNotice, budgetNotice].filter(
+                    (notice): notice is string => notice !== null,
+                );
+                const stepMessages: ModelMessage[] = [
+                    ...managed,
+                    ...notices.map((content): ModelMessage => ({ role: "user", content })),
+                ];
                 ctx.log.debug(
                     {
                         stepNumber,
                         messageCount: messages.length,
                         managedMessageCount: managed.length,
+                        repeatedCallNotice,
                         budgetNotice,
                     },
                     "step starting",

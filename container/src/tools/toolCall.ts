@@ -1,3 +1,4 @@
+import type { JSONValue } from "@ai-sdk/provider";
 import { ToolError } from "@getfamiliar/shared";
 import { jsonSchema, type Tool, type ToolCallOptions, type ToolSet, tool } from "ai";
 
@@ -5,6 +6,9 @@ interface ToolCallInput {
     readonly name: string;
     readonly arguments?: Record<string, unknown>;
 }
+
+/** The model-facing rendering of a tool result (the SDK doesn't export the type by name). */
+type ToolResultOutput = Awaited<ReturnType<NonNullable<Tool["toModelOutput"]>>>;
 
 /** How many near-miss suggestions to offer when a name isn't found. */
 const SUGGESTION_LIMIT = 8;
@@ -20,7 +24,10 @@ const SUGGESTION_LIMIT = 8;
  * a direct call would be — `tool_call` itself adds no separate record
  * and no double count. The SDK-provided call options (abort signal,
  * tool-call id, message history) are forwarded to the delegate so it
- * behaves identically to a direct invocation.
+ * behaves identically to a direct invocation — including how its result
+ * is rendered for the model: the delegate's `toModelOutput` (e.g. the MCP
+ * client's, which sends only `content` and drops a duplicated
+ * `structuredContent`) is applied to the proxied result too.
  *
  * @param pool The wrapped tool pool (built-ins ∪ MCP ∪ plugin tools).
  */
@@ -62,7 +69,32 @@ export function buildToolCallTool(pool: ToolSet): Tool<ToolCallInput, unknown> {
             }
             return target.execute(input.arguments ?? {}, options);
         },
+        toModelOutput: ({ toolCallId, input, output }) => {
+            const target = pool[input.name];
+            if (target?.toModelOutput !== undefined) {
+                return target.toModelOutput({
+                    toolCallId,
+                    input: input.arguments ?? {},
+                    output,
+                });
+            }
+            return defaultModelOutput(output);
+        },
     });
+}
+
+/**
+ * The AI SDK's rendering of a tool result for a tool without its own
+ * `toModelOutput`: strings as text, everything else as JSON.
+ *
+ * @param output The raw tool result.
+ * @returns The model-facing tool result output.
+ */
+function defaultModelOutput(output: unknown): ToolResultOutput {
+    if (typeof output === "string") {
+        return { type: "text", value: output };
+    }
+    return { type: "json", value: (output ?? null) as JSONValue };
 }
 
 /**

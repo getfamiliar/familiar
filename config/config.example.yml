@@ -131,7 +131,9 @@ inference:
   # may only contain letters, digits, `_` and `-`.
   # aliases:
   #   fast: deepseek/deepseek-v4-flash
-  #   workhorse: zai-org/GLM-5.1
+  #   default: deepseek/deepseek-v4-flash
+  #   smart: deepseek/deepseek-v4-pro
+  #   vision: synthetic/hf:moonshotai/Kimi-K3
 
   # Maximum number of retries after the first attempt on retryable
   # inference errors (`APICallError.isRetryable === true` — typically
@@ -205,19 +207,18 @@ inference:
   # captureInitialMessageHistory: false
 
   # Active context-window management. A long tool loop can flood the
-  # model's context with stale tool output; these knobs bound it.
+  # model's context with stale tool output; this knob bounds it.
   # Restart the daemon after changing.
   # contextManagement:
-  #   # Keep verbatim tool results only for the last N steps; older tool
-  #   # results are elided to a short "[<tool> result elided - re-call if
-  #   # needed]" placeholder. Applied every step. Default 3.
-  #   keptToolResultCount: 3
-  #   # When estimated context usage reaches this fraction of the model's
-  #   # context window, drop older messages — keeping the first two and the
-  #   # newest, replacing the dropped span with an "[elided N messages]"
-  #   # marker (assistant tool-call / tool-result pairs are never split).
+  #   # Fraction of the model's context window at which context management
+  #   # kicks in. Below it, the history is passed through untouched. Above
+  #   # it, the oldest large tool results are first moved to a file under
+  #   # /scratch/<event-id>/ (the model sees a placeholder with the path and
+  #   # a preview); if that is not enough, the oldest messages are dropped
+  #   # and replaced with an "[elided N messages]" marker. Repeated identical
+  #   # tool results are always moved to scratch, regardless of size.
   #   # Clamped to (0.3, 1.0); out-of-range warns and falls back to 0.70.
-  #   slidingWindowPercentage: 0.70
+  #   thresholdPercentage: 0.70
 
 # Python environment for the agent's `bash` tool. These packages are pip-installed
 # into a venv at AGENT IMAGE BUILD TIME (the container is offline — nothing can be

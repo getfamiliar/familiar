@@ -88,10 +88,9 @@ export function lintConfigFile(path: string): ConfigLintResult {
     optionalBool(config, "inference.captureModelHttpRequestBodies", warnings);
     optionalBool(config, "inference.captureRawStepResultToDatabase", warnings);
     optionalBool(config, "inference.captureInitialMessageHistory", warnings);
-    optionalPositiveInt(config, "inference.contextManagement.keptToolResultCount", warnings);
-    optionalSlidingWindowFraction(
+    optionalContextThresholdFraction(
         config,
-        "inference.contextManagement.slidingWindowPercentage",
+        "inference.contextManagement.thresholdPercentage",
         warnings,
     );
     // Storage is a core group like `inference`; plugin-aware checks
@@ -467,11 +466,16 @@ function optionalNonNegativeInt(
 }
 
 /**
- * Validate a sliding-window fraction: when present it must be a finite
- * number strictly inside `(0.3, 1.0)`. Out-of-range values are clamped to
- * the default at runtime, so this is a warning rather than an error.
+ * Validate the context-management threshold fraction: when present it
+ * must be a finite number strictly inside `(0.3, 1.0)`. Out-of-range
+ * values are clamped to the default at runtime, so this is a warning
+ * rather than an error.
+ *
+ * @param root The parsed config root.
+ * @param path Dotted path of the key to check.
+ * @param warnings Collector the warning is appended to.
  */
-function optionalSlidingWindowFraction(
+function optionalContextThresholdFraction(
     root: Record<string, unknown>,
     path: string,
     warnings: string[],
