@@ -65,7 +65,6 @@ export type CorePlaceholderResolver = (ctx: CorePlaceholderContext) => string;
  */
 export const CORE_PLACEHOLDER_RESOLVERS: Readonly<Record<string, CorePlaceholderResolver>> = {
     HANDLER_PATH: (ctx) => ctx.handler.relativePath,
-    HANDLER_INHERITS: (ctx) => formatInheritance(ctx.handler),
     SKILL_LIST: () => listSkills() ?? EMPTY_LIST,
     TOOL_LIST: (ctx) => formatBullets(ctx.toolNames),
     PYTHON_PACKAGE_LIST: () =>
@@ -128,22 +127,8 @@ function formatCommaList(items: readonly string[], isCode: boolean): string {
 }
 
 /**
- * Render the handler's parent chain as `` `a` ← `b` ``.
- *
- * @param handler The resolved handler.
- * @returns The chain, or `(none)` for an unmerged handler.
- */
-function formatInheritance(handler: HandlerFile): string {
-    if (handler.inheritsFrom.length === 0) {
-        return EMPTY_LIST;
-    }
-    return handler.inheritsFrom.map((p) => `\`${p}\``).join(" ← ");
-}
-
-/**
  * Build the bullet list of per-run facts: wall-clock time, event topic,
- * handler file (with the parents it inherits from, when merged), the
- * per-event scratch dir, whether the final reply is mirrored into the
+ * handler file, the per-event scratch dir, whether the final reply is mirrored into the
  * chat (`outputChat`), and the privilege flag.
  *
  * @param ctx The run context.
@@ -159,9 +144,6 @@ function formatRuntimeList(ctx: CorePlaceholderContext): string {
     // tools let this run write; naming it keeps the model from guessing.
     if (ctx.eventId.length > 0) {
         lines.push(`- Scratch dir: \`${path.join(SCRATCH_ROOT, ctx.eventId)}/\``);
-    }
-    if (ctx.handler.inheritsFrom.length > 0) {
-        lines.push(`- Inheriting from: ${formatInheritance(ctx.handler)}`);
     }
     lines.push(`- outputChat: ${ctx.handler.header.outputChat === true ? "true" : "false"}`);
     // Privileged runs descend from a trusted user-input source (the

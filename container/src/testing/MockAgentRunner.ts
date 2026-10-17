@@ -44,17 +44,17 @@ export class MockAgentRunner {
 
 /**
  * Convenience: build a runner factory that picks a behavior by the
- * row's `handler` basename. Returns a default behavior (throws) when
- * a row arrives with an unregistered handler so the test fails loud.
+ * row's `topic`. Returns a default behavior (throws) when a row
+ * arrives with an unregistered topic so the test fails loud.
  */
 export function buildRunnerFactory(
     behaviors: Record<string, MockBehavior>,
 ): (row: AgentRunRow) => AgentRunner {
     return (row: AgentRunRow): AgentRunner => {
-        const behavior = behaviors[row.handler];
+        const behavior = behaviors[row.topic];
         if (!behavior) {
             throw new Error(
-                `MockAgentRunner: no behavior registered for handler "${row.handler}" (row ${row.id})`,
+                `MockAgentRunner: no behavior registered for topic "${row.topic}" (row ${row.id})`,
             );
         }
         return new MockAgentRunner(behavior) as unknown as AgentRunner;

@@ -49,8 +49,7 @@ export const CORE_PROMPT_PLACEHOLDERS: readonly PromptPlaceholderDefinition[] = 
     },
     {
         name: "HANDLER_CONTENT",
-        description:
-            "Body of the resolved handler file (merged with its parents). Placeholders inside it are expanded too.",
+        description: "Body of the resolved handler file. Placeholders inside it are expanded too.",
         kind: "static",
     },
     {
@@ -61,12 +60,7 @@ export const CORE_PROMPT_PLACEHOLDERS: readonly PromptPlaceholderDefinition[] = 
     },
     {
         name: "HANDLER_PATH",
-        description: "Workspace-relative path of the handler file, e.g. `chat/telegram/index.md`.",
-        kind: "static",
-    },
-    {
-        name: "HANDLER_INHERITS",
-        description: "Parent handler files this handler is merged with, as `a ← b`, or `(none)`.",
+        description: "Workspace-relative path of the handler file, e.g. `chat/telegram.md`.",
         kind: "static",
     },
     {
@@ -93,7 +87,7 @@ export const CORE_PROMPT_PLACEHOLDERS: readonly PromptPlaceholderDefinition[] = 
     {
         name: "RUNTIME_LIST",
         description:
-            "Bullet list of run facts: current time, event topic, handler file, inheritance, outputChat, privileged.",
+            "Bullet list of run facts: current time, event topic, handler file, outputChat, privileged.",
         kind: "dynamic",
     },
     {

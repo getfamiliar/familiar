@@ -11,11 +11,10 @@ import {
 } from "@getfamiliar/shared";
 import { jsonSchema, type Tool, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
-import { parseHandlerSpec } from "../utils/HandlerSpecParser.js";
+import { parseHandlerTopic } from "../utils/HandlerSpecParser.js";
 
 interface ScheduleSubagentInput {
-    readonly handler: string;
-    readonly topic?: string;
+    readonly topic: string;
     readonly prompt?: string;
     readonly payload?: Record<string, unknown>;
     readonly when?: string;
@@ -47,6 +46,8 @@ const KEY_PATTERN = /^[A-Za-z0-9_:.-]{1,128}$/;
  *
  * `priority` and `privileged` are inherited from the calling agentrun
  * in both modes — same trust-propagation rule as `start_subagent`.
+ * `topic` names the target handler exactly in both modes — there is no
+ * fallback up the topic chain, neither now nor when the wake-up fires.
  *
  * Failure modes (bad key, malformed `when`, unknown handler,
  * non-serializable payload) throw a {@link ToolError} so the agent
@@ -68,27 +69,21 @@ export function buildScheduleSubagentTool(
             "rescheduling idempotent (reusing a key overwrites the previous schedule). Omit `when` " +
             "to run it immediately as a fire-and-forget child of this agentrun under the same event " +
             "(you do NOT see its result). A `when` in the past is silently treated as immediate. " +
-            "Topic defaults to the current agentrun's topic, but can also be embedded in `handler` " +
-            'with `/` as the separator (e.g. `handler: "mail/whatsapp/send"` is the same as ' +
-            '`topic: "mail:whatsapp", handler: "send"`); a trailing `.md` is silently stripped. ' +
+            "`topic` is the target handler's address and must match a handler file exactly: " +
+            '`topic: "mail:whatsapp:send"` runs `mail/whatsapp/send.md` (or ' +
+            "`mail/whatsapp/send/index.md`); the path form `mail/whatsapp/send.md` is accepted too. " +
             "Inherits priority and trust level from this run. Use `unschedule_subagent` to cancel a " +
             "scheduled wake-up.",
         inputSchema: jsonSchema<ScheduleSubagentInput>({
             type: "object",
             additionalProperties: false,
-            required: ["handler"],
+            required: ["topic"],
             properties: {
-                handler: {
-                    type: "string",
-                    description:
-                        "Handler basename without `.md`, resolved against `topic` (or the " +
-                        "current topic when omitted).",
-                },
                 topic: {
                     type: "string",
                     description:
-                        "Optional topic for the spawned run. Defaults to the current " +
-                        "agentrun's topic.",
+                        "Topic of the handler to run, e.g. `mail:digest` for `mail/digest.md`. " +
+                        "Must match a handler file exactly.",
                 },
                 prompt: {
                     type: "string",
@@ -119,13 +114,9 @@ export function buildScheduleSubagentTool(
                 },
             },
         }),
-        execute: ({ handler, topic, prompt, payload, when, key }) =>
+        execute: ({ topic, prompt, payload, when, key }) =>
             runJsonTool(async () => {
-                const { topic: resolvedTopic, handler: resolvedHandler } = parseHandlerSpec(
-                    topic,
-                    handler,
-                    parent.topic,
-                );
+                const resolvedTopic = parseHandlerTopic(topic);
 
                 if (payload !== undefined) {
                     let serialized: string | undefined;
@@ -146,7 +137,7 @@ export function buildScheduleSubagentTool(
                 }
 
                 try {
-                    HandlerFile.load(resolvedTopic, resolvedHandler);
+                    HandlerFile.load(resolvedTopic, { isExactTopic: true });
                 } catch (err) {
                     throw new ToolError(
                         "HandlerNotFound",
@@ -185,7 +176,7 @@ export function buildScheduleSubagentTool(
                         eventId: parent.eventId,
                         parentAgentrunId: parent.id,
                         topic: resolvedTopic,
-                        handler: resolvedHandler,
+                        isExactTopic: true,
                         priority: parent.priority,
                         prompt: prompt ?? null,
                         payload: payload ?? {},
@@ -199,7 +190,6 @@ export function buildScheduleSubagentTool(
                     key: key ?? randomUUID(),
                     fireAt: fireAtUtc,
                     topic: resolvedTopic,
-                    handler: resolvedHandler,
                     prompt: prompt ?? null,
                     payload: payload ?? {},
                     priority: parent.priority,

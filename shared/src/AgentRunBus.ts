@@ -22,7 +22,7 @@ interface RawAgentRunRow {
     event_id: string;
     parent_agentrun_id: string | null;
     topic: string;
-    handler: string;
+    is_exact_topic: boolean;
     priority: number;
     state: string;
     prompt: string | null;
@@ -90,14 +90,14 @@ export class AgentRunBus {
     async add(run: NewAgentRun): Promise<AgentRunRow> {
         const result = await this.connection.getPool().query<RawAgentRunRow>(
             `INSERT INTO agentruns
-                (event_id, parent_agentrun_id, topic, handler, priority, state, prompt, payload, privileged, calltype)
+                (event_id, parent_agentrun_id, topic, is_exact_topic, priority, state, prompt, payload, privileged, calltype)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
              RETURNING *`,
             [
                 run.eventId,
                 run.parentAgentrunId ?? null,
                 run.topic,
-                run.handler,
+                run.isExactTopic ?? true,
                 run.priority ?? 50,
                 run.state ?? "pending",
                 run.prompt ?? null,
@@ -434,7 +434,7 @@ function mapRow(raw: RawAgentRunRow): AgentRunRow {
         eventId: raw.event_id,
         parentAgentrunId: raw.parent_agentrun_id,
         topic: raw.topic,
-        handler: raw.handler,
+        isExactTopic: raw.is_exact_topic,
         priority: raw.priority,
         state: raw.state as AgentRunState,
         prompt: raw.prompt,

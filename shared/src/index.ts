@@ -45,7 +45,15 @@ export type {
 export { EVENT_PRIORITY } from "./Event.js";
 export { DuplicateIdempotencyKeyError, EventBus } from "./EventBus.js";
 export { estimateTokens } from "./estimateTokens.js";
-export { HandlerCatalog, type HandlerPath } from "./HandlerCatalog.js";
+export { HandlerCatalog, type HandlerPath, type ResolvedHandler } from "./HandlerCatalog.js";
+export {
+    type HandlerResolution,
+    type HandlerResolutionOptions,
+    handlerCandidateLevels,
+    resolveHandlerPath,
+    topicFromHandlerPath,
+    twinHandlerPath,
+} from "./HandlerResolution.js";
 export type {
     InferenceEventRow,
     InferenceOutcome,

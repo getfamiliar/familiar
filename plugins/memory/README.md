@@ -57,7 +57,7 @@ collapsed) and truncated to 200 characters.
 | Tool | Effect |
 |------|--------|
 | `memory_search` | Hybrid search against the index. Returns every hit (no threshold filtering) so the agent can judge relevance from snippets and scores. |
-| `memory_save` | Hand a fact to a reasoning agentrun (`skills:memory` event → `save.md` handler) which decides where in the wiki it belongs and writes the file. Returns immediately; the indexer picks the new file up on the next file-watcher tick. |
+| `memory_save` | Hand a fact to a reasoning agentrun (exact-topic `skills:memory:save` event → `skills/memory/save.md` handler) which decides where in the wiki it belongs and writes the file. Returns immediately; the indexer picks the new file up on the next file-watcher tick. |
 
 `memory_save` is intentionally indirect. The agent doesn't write directly to
 the index — every memory ends up as a markdown file the user can read and
@@ -233,13 +233,7 @@ Ships:
 
 ### `skills/memory/save.md` — the save handler
 
-When any agent (or any tool) calls `memory_save("...")`, the plugin
-emits a `skills:memory` event with the snippet as the prompt. The
-container's handler resolver loads `workspace/skills/memory/save.md`
-and runs an agentrun against it. The handler is the policy that turns
-a one-line "remember this" into a markdown file under `wiki/` — the
-plugin itself never decides slugs, folder placement, or whether two
-facts should merge.
+When any agent (or any tool) calls `memory_save("...")`, the plugin emits an exact-topic `skills:memory:save` event with the snippet as the prompt. The topic is the handler's address, so the container's handler resolver loads `workspace/skills/memory/save.md` (or `skills/memory/save/index.md`) and runs an agentrun against it — with no fallback to other files. The handler is the policy that turns a one-line "remember this" into a markdown file under `wiki/` — the plugin itself never decides slugs, folder placement, or whether two facts should merge.
 
 What `save.md` is responsible for:
 

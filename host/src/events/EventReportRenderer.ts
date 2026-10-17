@@ -71,8 +71,7 @@ type StepAttachment =
     | { readonly kind: "child"; readonly child: AgentRunRow }
     | {
           readonly kind: "scheduled";
-          readonly topic: string | undefined;
-          readonly handler: string;
+          readonly topic: string;
           readonly when: string;
       };
 
@@ -100,7 +99,7 @@ export function renderEventReport(
     lines.push("| Field | Value |");
     lines.push("| --- | --- |");
     lines.push(`| Topic | \`${event.topic}\` |`);
-    lines.push(`| Start Handler | ${event.startHandler ?? "<default>"} |`);
+    lines.push(`| Exact Topic | ${event.isExactTopic ? "yes" : "no (falls back up the chain)"} |`);
     lines.push(`| Output is Chat Message | ${event.isChat ? "yes" : "no"} |`);
     lines.push(`| Preferred Chat Channel | ${event.preferredChatChannelId ?? "—"} |`);
     lines.push(`| Privileged | ${event.privileged ? "yes" : "no"} |`);
@@ -193,7 +192,7 @@ function renderAgentrunBlock(run: AgentRunRow, ctx: RenderCtx, role: BlockRole):
     lines.push(`${heading} ${role.label} #${run.id} (started ${formatTs(run.createdAt)})`);
     lines.push("");
     lines.push(
-        `Using handler \`${run.topic}/${run.handler}\` with model ${
+        `Using handler topic \`${run.topic}\` with model ${
             run.model ? `\`${run.model}\`` : "`—`"
         }.`,
     );
@@ -308,8 +307,7 @@ function renderStep(
     for (const att of attachments) {
         lines.push("");
         if (att.kind === "scheduled") {
-            const ref = att.topic ? `${att.topic}/${att.handler}` : att.handler;
-            lines.push(`> ### Scheduled handler \`${ref}\` — wakeup at ${att.when}`);
+            lines.push(`> ### Scheduled handler \`${att.topic}\` — wakeup at ${att.when}`);
         } else {
             for (const cl of prefixBlockquote(
                 renderAgentrunBlock(att.child, ctx, { nested: true, label: "Agentrun" }),
@@ -389,12 +387,10 @@ function correlateChildren(
                     ? (out as { when: string }).when
                     : null;
             if (when !== null) {
-                const input =
-                    (call as { input?: { topic?: string; handler?: string } }).input ?? {};
+                const input = (call as { input?: { topic?: string } }).input ?? {};
                 attach(step.id, {
                     kind: "scheduled",
-                    topic: input.topic,
-                    handler: input.handler ?? "?",
+                    topic: input.topic ?? "?",
                     when,
                 });
                 continue;

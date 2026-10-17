@@ -29,7 +29,8 @@ import { requireConfig, resolveTimezone } from "../utils/PassedConfig.js";
  * pool (MCP gateway, plugin tools, built-ins) and the workspace mount
  * exist.
  *
- * Resolves the handler exactly like a run would, builds its tool set,
+ * Resolves the handler like the root run of an event would (falling
+ * back up the topic chain), builds its tool set,
  * renders the prompt template — without inserting an agentrun or calling
  * a model — and prints one JSON document ({@link DryRunOutput}) to
  * stdout. Logs go to stderr.
@@ -38,7 +39,6 @@ import { requireConfig, resolveTimezone } from "../utils/PassedConfig.js";
 /** Input passed as the single JSON argument. */
 interface DryRunInput {
     readonly topic: string;
-    readonly handler: string;
     readonly prompt: string | null;
     readonly privileged: boolean;
 }
@@ -79,15 +79,14 @@ const DRY_RUN_AGENTRUN_ID = "dry-run-agentrun";
  */
 function parseInput(raw: string | undefined): DryRunInput {
     if (raw === undefined) {
-        throw new Error("usage: PromptDryRun.ts '<json {topic, handler, prompt, privileged}>'");
+        throw new Error("usage: PromptDryRun.ts '<json {topic, prompt, privileged}>'");
     }
     const parsed = JSON.parse(raw) as Partial<DryRunInput>;
-    if (typeof parsed.topic !== "string" || typeof parsed.handler !== "string") {
-        throw new Error("dry-run input needs string fields topic and handler");
+    if (typeof parsed.topic !== "string") {
+        throw new Error("dry-run input needs a string field topic");
     }
     return {
         topic: parsed.topic,
-        handler: parsed.handler,
         prompt: typeof parsed.prompt === "string" ? parsed.prompt : null,
         privileged: parsed.privileged === true,
     };
@@ -106,7 +105,7 @@ function buildSyntheticRow(input: DryRunInput): AgentRunRow {
         eventId: DRY_RUN_EVENT_ID,
         parentAgentrunId: null,
         topic: input.topic,
-        handler: input.handler,
+        isExactTopic: false,
         model: null,
         priority: 0,
         state: "running",
@@ -141,7 +140,7 @@ async function main(): Promise<void> {
     const bastionUrl = requireConfig<string>("bastionUrl");
     const bastionToken = requireConfig<string>("bastionToken");
 
-    const handler = HandlerFile.load(input.topic, input.handler);
+    const handler = HandlerFile.load(input.topic, { isExactTopic: false });
     const preloadedSkills = loadPreloadedSkills(handler);
     const row = buildSyntheticRow(input);
 
@@ -214,7 +213,13 @@ async function main(): Promise<void> {
             toolNames,
             placeholders,
             appenderSections: parts.appenderSections,
-            warnings: parts.warnings,
+            warnings:
+                handler.shadowedPath === null
+                    ? parts.warnings
+                    : [
+                          `handler conflict: both ${handler.relativePath} and ${handler.shadowedPath} exist — using ${handler.relativePath}; delete one of them`,
+                          ...parts.warnings,
+                      ],
             system: parts.system,
             userHead: parts.userHead,
         };

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { matchesAnyGlob } from "@getfamiliar/shared";
+import { matchesAnyGlob, resolveHandlerPath } from "@getfamiliar/shared";
 import { parse as parseYaml } from "yaml";
 import { PassedConfig } from "./utils/PassedConfig.js";
 
@@ -30,8 +30,7 @@ export interface HandlerFileHeader {
      * `tools/ToolsExpressionParser.ts` for resolution details.
      *
      * Omitted, an empty list, or an empty string ⇒ the implicit `core`
-     * default. To expose nothing, use `none` (e.g. a child handler
-     * overriding its parent's `tools:`). The built-in group `all` is
+     * default. To expose nothing, use `none`. The built-in group `all` is
      * the escape hatch for handlers that want every available tool.
      *
      * Globs in a YAML list must be quoted (`"cal_*"`) since a leading
@@ -83,23 +82,6 @@ export interface HandlerFileHeader {
      */
     readonly cron?: string;
     /**
-     * Controls how this file combines with its inheritance chain during
-     * {@link HandlerFile.load}. Topics can nest arbitrarily deep
-     * (`chat:telegram:group:reaction`); each `:`-segment maps to a
-     * folder, and every existing file in the chain layers into the
-     * merge by default.
-     *
-     * - `merge` (default) — every ancestor file in the chain is loaded
-     *   and folded root-first; deeper files override declared header
-     *   fields and append their body. Missing intermediate levels are
-     *   skipped silently.
-     * - `replace` — declared on any file in the chain, this cuts off
-     *   the merge above that file: it becomes the new root, and every
-     *   higher-level ancestor is ignored. Useful for sub-topics that
-     *   want to fully override more general guidance.
-     */
-    readonly mergeMode?: "merge" | "replace";
-    /**
      * Selects the prompt template the run is rendered from.
      *
      * - `default` (also when absent) — the workspace-root `PROMPT.md`.
@@ -130,8 +112,7 @@ export interface HandlerFileHeader {
      * `skills/<id>/SKILL.md`; its body is rendered into the
      * `{PRELOADED_SKILLS}` placeholder and the `tools` declared in its
      * frontmatter are added to this handler's preloaded toolset (see
-     * `SkillFile.ts`). Like every other field, a deeper file's
-     * declaration replaces its parent's.
+     * `SkillFile.ts`).
      */
     readonly skills?: readonly string[];
 }
@@ -148,10 +129,9 @@ interface DeclaredFile {
  * Two ways to construct:
  *
  * - {@link HandlerFile.read} — read and parse one specific file under
- *   the configured workspace root, no merge semantics.
- * - {@link HandlerFile.load} — resolve a topic / basename pair to the
- *   most-specific existing handler file, possibly layering it on top
- *   of a parent-topic file (see {@link HandlerFileHeader.mergeMode}).
+ *   the configured workspace root.
+ * - {@link HandlerFile.load} — resolve a topic to the one handler file
+ *   that runs for it (see `HandlerResolution.ts` in `shared/`).
  *
  * Both paths are synchronous: handler files are small local-disk
  * markdown, so blocking the event loop briefly during construction is
@@ -167,7 +147,7 @@ export class HandlerFile {
     /** Defaults applied per-field at finalize time when the YAML omits a field. */
     private static headerDefaults: HandlerFileHeader = {};
 
-    /** Workspace-relative path the file was loaded from (e.g. `chat/telegram/index.md`). */
+    /** Workspace-relative path the file was loaded from (e.g. `chat/telegram.md`). */
     readonly relativePath: string;
     /** Absolute path on disk: `<workspaceRoot> + relativePath` at construction time. */
     readonly path: string;
@@ -176,31 +156,25 @@ export class HandlerFile {
     /** Markdown body following the frontmatter (or the whole file if no frontmatter). */
     readonly body: string;
     /**
-     * Workspace-relative paths of every ancestor file that contributed
-     * to this {@link HandlerFile}'s merged body and header, ordered
-     * nearest-ancestor first. Empty when no merge happened (only the
-     * leaf file existed, or the leaf opted out via `mergeMode: replace`).
-     *
-     * For topic `chat:telegram:group` with handler `index`, if all four
-     * candidate files exist with no `replace`, this is
-     * `["chat/telegram/index.md", "chat/index.md"]` and `relativePath`
-     * is the leaf `chat/telegram/group/index.md`. Reading the array
-     * directly yields the inheritance chain in human-readable order.
+     * Workspace-relative path of the folder-form twin that lost against
+     * this file (`mail/new/ms365/index.md` when `mail/new/ms365.md` was
+     * loaded), or `null`. Only one of the two forms is allowed; the
+     * runner warns when this is set.
      */
-    readonly inheritsFrom: readonly string[];
+    readonly shadowedPath: string | null;
 
     private constructor(
         relativePath: string,
         absolutePath: string,
         header: HandlerFileHeader,
         body: string,
-        inheritsFrom: readonly string[] = [],
+        shadowedPath: string | null = null,
     ) {
         this.relativePath = relativePath;
         this.path = absolutePath;
         this.header = header;
         this.body = body;
-        this.inheritsFrom = inheritsFrom;
+        this.shadowedPath = shadowedPath;
     }
 
     /**
@@ -228,46 +202,32 @@ export class HandlerFile {
     }
 
     /**
-     * Resolve a handler file for the given topic + basename and
-     * construct it. Resolution rules — for topic `chat:telegram:group`
-     * and basename `index`:
+     * Resolve the handler file for a topic and construct it. The topic
+     * is the handler's whole address; for `chat:telegram:group`:
      *
-     *   1. `<workspaceRoot>/chat/telegram/group/index.md` (deepest)
-     *   2. `<workspaceRoot>/chat/telegram/index.md`
-     *   3. `<workspaceRoot>/chat/index.md` (root fallback)
+     *   1. `chat/telegram/group.md`, then `chat/telegram/group/index.md`
+     *   2. `chat/telegram.md`, then `chat/telegram/index.md`
+     *   3. `chat/index.md`
      *
-     * The deepest existing file is the **leaf** (its path becomes
-     * {@link relativePath}). Every ancestor that exists on disk layers
-     * into the merge — declared header fields override (leaf wins),
-     * bodies concatenate root-first with blank lines between. Missing
-     * intermediate levels are simply skipped.
+     * With `isExactTopic` only level 1 is tried. The first existing
+     * file is the handler — nothing is merged from other levels. When
+     * both forms of the winning level exist, the file form wins and the
+     * loser is recorded in {@link shadowedPath}.
      *
-     * `mergeMode: "replace"` declared on any file in the chain cuts
-     * off everything above it: that file becomes the new root of the
-     * merge. The cutoff is found by walking deepest-first; the first
-     * `replace` encountered terminates the upward walk.
-     *
-     * @throws If no candidate file exists on disk, or if any resolved
-     *   file fails the same parsing checks as {@link read}.
+     * @param topic Colon-separated topic, e.g. `chat:telegram:group`.
+     * @param options `isExactTopic` — `true` forbids falling back up the
+     *   topic chain (subagents, cron, scheduled wake-ups).
+     * @throws If no candidate file exists, the winning file lives under
+     *   `core.writablePaths`, or it fails the parsing checks of
+     *   {@link read}.
      */
-    static load(topic: string, basename: string): HandlerFile {
-        // Deepest path first, root last.
-        const candidatesDeepestFirst = resolveCandidates(topic, basename);
-
-        // Parse every candidate that exists on disk, preserving the
-        // deepest-first order so we can apply the `replace` cutoff
-        // before reversing for the merge fold.
-        const existingDeepestFirst: { rel: string; abs: string; declared: DeclaredFile }[] = [];
-        for (const rel of candidatesDeepestFirst) {
-            const abs = path.join(HandlerFile.workspaceRoot, rel);
-            if (existsSync(abs)) {
-                existingDeepestFirst.push({ rel, abs, declared: parseFile(abs) });
-            }
-        }
-
-        if (existingDeepestFirst.length === 0) {
+    static load(topic: string, options: { readonly isExactTopic: boolean }): HandlerFile {
+        const resolution = resolveHandlerPath(topic, options, (relativePath) =>
+            existsSync(path.join(HandlerFile.workspaceRoot, relativePath)),
+        );
+        if (resolution === null) {
             throw new Error(
-                `Handler not found for topic="${topic}" basename="${basename}". Tried: ${candidatesDeepestFirst.join(", ")}`,
+                `Handler not found for topic="${topic}"${options.isExactTopic ? " (exact match required)" : ""}`,
             );
         }
 
@@ -275,48 +235,25 @@ export class HandlerFile {
         // (e.g. `wiki/**`) must never execute. Those paths are writable by
         // non-privileged runs, so executing one as a handler would let a
         // non-privileged run author its own (potentially privileged) handler.
-        // The leaf is the file whose header (model, tools, privilege) and body
-        // actually run, so it is the one we gate. Re-read the env per call so
-        // the check needs no module-load ordering and stays test-friendly.
-        const leafRel = existingDeepestFirst[0].rel;
-        if (matchesAnyGlob(PassedConfig.get<string[]>("core.writablePaths") ?? [], leafRel)) {
+        // Re-read the env per call so the check needs no module-load ordering
+        // and stays test-friendly.
+        const relativePath = resolution.relativePath;
+        if (matchesAnyGlob(PassedConfig.get<string[]>("core.writablePaths") ?? [], relativePath)) {
             throw new Error(
-                `Refusing to load handler "${leafRel}": it lives under a core.writablePaths ` +
+                `Refusing to load handler "${relativePath}": it lives under a core.writablePaths ` +
                     `location, which non-privileged runs can write. Files in writable paths ` +
                     `(e.g. wiki/**) are never executable as handlers.`,
             );
         }
 
-        // Apply `mergeMode: replace`: walking deepest-first, the first
-        // file that declares `replace` is the new root — it stays in
-        // the chain, everything above it is dropped. (`replace` on the
-        // leaf alone means "use only the leaf".)
-        const replaceAt = existingDeepestFirst.findIndex(
-            (entry) => entry.declared.header.mergeMode === "replace",
-        );
-        const chainDeepestFirst =
-            replaceAt >= 0 ? existingDeepestFirst.slice(0, replaceAt + 1) : existingDeepestFirst;
-
-        // Fold root-first so each subsequent (deeper) file overrides
-        // declared fields and appends body. The leaf is the deepest
-        // entry (chainDeepestFirst[0]); ancestors are everything else.
-        const chainRootFirst = [...chainDeepestFirst].reverse();
-        let mergedHeader: HandlerFileHeader = {};
-        let mergedBody = "";
-        for (const entry of chainRootFirst) {
-            mergedHeader = mergeDeclared(mergedHeader, entry.declared.header);
-            mergedBody = concatBodies(mergedBody, entry.declared.body);
-        }
-
-        const leaf = chainDeepestFirst[0];
-        const ancestorsNearestFirst = chainDeepestFirst.slice(1).map((entry) => entry.rel);
-
+        const absolute = path.join(HandlerFile.workspaceRoot, relativePath);
+        const declared = parseFile(absolute);
         return new HandlerFile(
-            leaf.rel,
-            leaf.abs,
-            mergeDefaults(mergedHeader, HandlerFile.headerDefaults),
-            mergedBody,
-            ancestorsNearestFirst,
+            relativePath,
+            absolute,
+            mergeDefaults(declared.header, HandlerFile.headerDefaults),
+            declared.body,
+            resolution.shadowedPath,
         );
     }
 
@@ -352,32 +289,9 @@ export class HandlerFile {
 }
 
 /**
- * Build the ordered list of candidate workspace-relative paths for a
- * topic / basename pair, deepest first. Each `:`-separated segment of
- * the topic becomes a folder level; the basename gains a `.md` suffix.
- *
- * For topic `chat:telegram:group` and basename `index`:
- *
- *   1. `chat/telegram/group/index.md`  ← deepest (leaf candidate)
- *   2. `chat/telegram/index.md`
- *   3. `chat/index.md`                  ← root
- *
- * The caller treats this as a "from leaf walking up to root" sequence;
- * intermediate levels that don't exist on disk are simply skipped.
- */
-function resolveCandidates(topic: string, basename: string): readonly string[] {
-    const segments = topic.split(":");
-    const candidates: string[] = [];
-    for (let depth = segments.length; depth >= 1; depth--) {
-        candidates.push(path.join(...segments.slice(0, depth), `${basename}.md`));
-    }
-    return candidates;
-}
-
-/**
  * Read and parse a handler file at the given absolute path. Returns
  * the *declared* header (only fields actually present in YAML) plus
- * the body. Process-wide defaults are applied later, after any merge.
+ * the body. Process-wide defaults are applied later.
  *
  * @throws If the file is missing, the YAML is malformed, or any
  *   declared field has the wrong type.
@@ -385,45 +299,6 @@ function resolveCandidates(topic: string, basename: string): readonly string[] {
 function parseFile(absolute: string): DeclaredFile {
     const source = readFileSync(absolute, "utf8");
     return parseHandler(absolute, source);
-}
-
-/**
- * Merge a child's declared header onto a parent's declared header.
- * Each child field overrides the parent's iff the child declared it
- * (i.e. non-undefined). This is the same `??` shape used by
- * {@link mergeDefaults}, but operates on declared (pre-defaults)
- * headers so a child silently omitting `model` doesn't clobber a
- * parent's *declaration*.
- */
-function mergeDeclared(parent: HandlerFileHeader, child: HandlerFileHeader): HandlerFileHeader {
-    return {
-        model: child.model ?? parent.model,
-        temperature: child.temperature ?? parent.temperature,
-        tools: child.tools ?? parent.tools,
-        maxOutputTokens: child.maxOutputTokens ?? parent.maxOutputTokens,
-        maxRetries: child.maxRetries ?? parent.maxRetries,
-        outputChat: child.outputChat ?? parent.outputChat,
-        cron: child.cron ?? parent.cron,
-        mergeMode: child.mergeMode ?? parent.mergeMode,
-        systemPrompt: child.systemPrompt ?? parent.systemPrompt,
-        toolCallOffloadingLimit: child.toolCallOffloadingLimit ?? parent.toolCallOffloadingLimit,
-        skills: child.skills ?? parent.skills,
-    };
-}
-
-/**
- * Concatenate parent and child bodies with a blank line between.
- * Either side being empty short-circuits to the other so the result
- * doesn't lead with whitespace.
- */
-function concatBodies(parentBody: string, childBody: string): string {
-    if (parentBody.length === 0) {
-        return childBody;
-    }
-    if (childBody.length === 0) {
-        return parentBody;
-    }
-    return `${parentBody}\n\n${childBody}`;
 }
 
 /**
@@ -486,7 +361,6 @@ function parseHandler(filePath: string, source: string): DeclaredFile {
         maxRetries: optionalNonNegativeInteger(filePath, raw, "maxRetries"),
         outputChat: optionalBoolean(filePath, raw, "outputChat"),
         cron: optionalString(filePath, raw, "cron"),
-        mergeMode: optionalEnum(filePath, raw, "mergeMode", ["merge", "replace"]),
         systemPrompt: optionalSystemPrompt(filePath, raw),
         toolCallOffloadingLimit: optionalPositiveInteger(filePath, raw, "toolCallOffloadingLimit"),
         skills: optionalSkillIds(filePath, raw),
@@ -512,7 +386,6 @@ function mergeDefaults(
         maxRetries: declared.maxRetries ?? defaults.maxRetries,
         outputChat: declared.outputChat ?? defaults.outputChat,
         cron: declared.cron ?? defaults.cron,
-        mergeMode: declared.mergeMode ?? defaults.mergeMode,
         systemPrompt: declared.systemPrompt ?? defaults.systemPrompt,
         toolCallOffloadingLimit:
             declared.toolCallOffloadingLimit ?? defaults.toolCallOffloadingLimit,
@@ -542,7 +415,7 @@ export function optionalString(
  * doubled comma is harmless and an all-whitespace string yields `[]`.
  *
  * @returns The normalized entries, or `undefined` when the field is
- *   absent (so `??`-based merge / defaults keep working).
+ *   absent (so `??`-based defaults keep working).
  * @throws If the value is neither a string nor an array of strings.
  */
 export function optionalStringList(
@@ -686,22 +559,4 @@ function optionalSystemPrompt(filePath: string, raw: Record<string, unknown>): s
         );
     }
     return value;
-}
-
-function optionalEnum<T extends string>(
-    filePath: string,
-    raw: Record<string, unknown>,
-    field: string,
-    allowed: readonly T[],
-): T | undefined {
-    if (!(field in raw) || raw[field] === undefined) {
-        return undefined;
-    }
-    const value = raw[field];
-    if (typeof value !== "string" || !allowed.includes(value as T)) {
-        throw new Error(
-            `${filePath}: header field "${field}" must be one of ${allowed.map((v) => `"${v}"`).join(", ")}`,
-        );
-    }
-    return value as T;
 }

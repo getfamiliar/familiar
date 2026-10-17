@@ -43,9 +43,9 @@ export interface EventRow {
      */
     readonly id: string;
     /**
-     * Event topic, matching `\w+(:\w+)*` (e.g. `mail`, `chat:whatsapp`,
-     * `chat:telegram:group:reaction`). Each `:`-separated segment maps
-     * to a folder when the container resolves the handler markdown.
+     * Event topic, matching `TOPIC_PATTERN` (e.g. `mail`, `chat:whatsapp`,
+     * `chat:telegram:group:reaction`). The topic is the handler's whole
+     * address: `a:b:c` resolves to `a/b/c.md` (or `a/b/c/index.md`).
      */
     readonly topic: string;
     /**
@@ -96,12 +96,12 @@ export interface EventRow {
      */
     readonly prompt: string;
     /**
-     * Override for the root agentrun's handler. `null` means the
-     * input-event watcher uses `'index'` (i.e. resolves
-     * `<topic>/index.md`). Set by the emitter via
-     * {@link NewEvent.startHandler}; never mutated after insert.
+     * `true` when the topic must name an existing handler file exactly;
+     * `false` when handler resolution may fall back up the topic chain.
+     * Set by the emitter via {@link NewEvent.isExactTopic}; never
+     * mutated after insert.
      */
-    readonly startHandler: string | null;
+    readonly isExactTopic: boolean;
     /**
      * `true` when this event was emitted by a trusted user-input source
      * (the operator at the local terminal via cli-chat, the operator on
@@ -236,24 +236,24 @@ export interface NewEvent {
      *
      * Use this for plugin emitters that want a chatmessage text
      * different from `prompt` (e.g. cli-chat persists the slash-
-     * prefixed `/topic/handler …` line while the handler sees only
+     * prefixed `/topic/sub …` line while the handler sees only
      * the trailing prompt text). When unset and `isChat: true`, the
      * existing path inserts `prompt` itself.
      */
     readonly userChatMessage?: string;
     /**
-     * Override which handler markdown the root agentrun runs. When
-     * omitted, the input-event watcher uses `'index'` (i.e. resolves
-     * `<topic>/index.md`). Useful when an emitter wants to skip the
-     * triage `index.md` and invoke a specific handler directly.
+     * When `true`, the topic addresses one handler file exactly
+     * (`a:b:c` → `a/b/c.md` or `a/b/c/index.md`) and the run fails if
+     * it is missing. Default `false`: world events fall back up the
+     * topic chain (`a:b`, then `a`) to the most specific existing
+     * handler. Set it for emissions that name a handler rather than
+     * report a world change — cron firings, scheduled wake-ups,
+     * memory's `skills:memory:save`, cli-chat slash commands.
      *
-     * Pass the basename without `.md` (e.g. `'analyze'` resolves to
-     * `<topic>/analyze.md`). The agentrun fails loud at handler-load
-     * time if no such file exists — there is no shape validation
-     * here, mirroring how `topic` is only regex-checked, not
-     * existence-checked, at emit time.
+     * Like `topic` itself, existence is not checked at emit time; the
+     * agentrun fails loud at handler-load time.
      */
-    readonly startHandler?: string;
+    readonly isExactTopic?: boolean;
     /**
      * Auxiliary files to stage at `/scratch/<event-id>/<name>` for this
      * event. Visible to the agent and to every MCP container under the

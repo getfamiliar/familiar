@@ -42,18 +42,19 @@ export interface AgentRunRow {
      */
     readonly parentAgentrunId: string | null;
     /**
-     * Topic copied from the originating event at queue time. Combined
-     * with {@link handler} to resolve a workspace markdown file.
+     * The handler's address. Root agentruns copy the event's topic;
+     * spawned children carry the topic the spawning tool named. For
+     * topic `chat:whatsapp` the handler file is
+     * `workspace/chat/whatsapp.md` (or `workspace/chat/whatsapp/index.md`).
      */
     readonly topic: string;
     /**
-     * Basename of the handler file in the workspace (e.g. `index`,
-     * `analyze`). Resolution rules — for topic `chat:whatsapp` and
-     * handler `analyze`:
-     *   1. `workspace/chat/whatsapp/analyze.md`
-     *   2. fallback `workspace/chat/analyze.md`
+     * `true` when the topic must resolve to its own handler file;
+     * `false` when resolution may fall back up the topic chain
+     * (`chat:whatsapp` → `chat`). Root agentruns copy the event's
+     * {@link EventRow.isExactTopic}; spawned children are always exact.
      */
-    readonly handler: string;
+    readonly isExactTopic: boolean;
     /**
      * Resolved model id actually used for this run, of the form
      * `<provider>/<modelId>` (e.g. `featherless/zai-org/GLM-5.1`).
@@ -150,10 +151,14 @@ export interface NewAgentRun {
     readonly eventId: string;
     /** FK to the parent agentrun, or omitted/null for the root agentrun. */
     readonly parentAgentrunId?: string | null;
-    /** Topic copied from the event. Required. */
+    /** Handler address — the event's topic for roots, the named topic for children. Required. */
     readonly topic: string;
-    /** Handler basename (e.g. `index`). Required. */
-    readonly handler: string;
+    /**
+     * Whether handler resolution must match the topic exactly. Default
+     * `true` (the column default) — only the input-event watcher passes
+     * `false`, for events whose topic may fall back up the chain.
+     */
+    readonly isExactTopic?: boolean;
     /** Defaults to 50; usually inherited from the event. */
     readonly priority?: number;
     /** Initial state; default `"pending"`. */

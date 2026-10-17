@@ -42,7 +42,7 @@ function makeRun(overrides: Partial<AgentRunRow> = {}): AgentRunRow {
         eventId: "35",
         parentAgentrunId: null,
         topic: "chat:cli",
-        handler: "index",
+        isExactTopic: false,
         priority: 50,
         state: "pending",
         prompt: null,
@@ -278,15 +278,15 @@ test("child agentrun succeeds the parent spinner and starts a fresh block", () =
             id: "101",
             eventId: "35",
             parentAgentrunId: "100",
-            topic: "chat:cli",
-            handler: "scheduler",
+            topic: "chat:cli:scheduler",
+            isExactTopic: true,
             state: "pending",
         }),
     );
     assert.equal(instances.length, 2, "child agentrun spawns a new spinner");
     assert.match(
         stripAnsi(instances[1].initialText),
-        /agentrun #101 with handler `chat\/cli\/scheduler\.md` queued for event #35/,
+        /agentrun #101 with handler `\/chat\/cli\/scheduler` queued for event #35/,
     );
 });
 

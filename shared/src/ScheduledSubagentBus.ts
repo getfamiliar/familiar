@@ -20,7 +20,6 @@ interface RawRow {
     key: string;
     fire_at: Date;
     topic: string;
-    handler: string;
     prompt: string | null;
     payload: unknown;
     priority: number;
@@ -69,17 +68,16 @@ export class ScheduledSubagentBus {
      * old row is overwritten in one statement so the host scheduler
      * sees exactly one NOTIFY and installs exactly one job.
      *
-     * @throws If `topic` does not match `\w+(:\w+)*` (CHECK constraint).
+     * @throws If `topic` does not match `TOPIC_PATTERN` (CHECK constraint).
      */
     async upsert(row: NewScheduledSubagent): Promise<ScheduledSubagentRow> {
         const result = await this.connection.getPool().query<RawRow>(
             `INSERT INTO scheduled_subagents
-                (key, fire_at, topic, handler, prompt, payload, priority, privileged)
-             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+                (key, fire_at, topic, prompt, payload, priority, privileged)
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
              ON CONFLICT (key) DO UPDATE SET
                 fire_at = EXCLUDED.fire_at,
                 topic = EXCLUDED.topic,
-                handler = EXCLUDED.handler,
                 prompt = EXCLUDED.prompt,
                 payload = EXCLUDED.payload,
                 priority = EXCLUDED.priority,
@@ -89,7 +87,6 @@ export class ScheduledSubagentBus {
                 row.key,
                 row.fireAt,
                 row.topic,
-                row.handler,
                 row.prompt ?? null,
                 JSON.stringify(row.payload ?? {}),
                 row.priority ?? 50,
@@ -241,7 +238,6 @@ function mapRow(raw: RawRow): ScheduledSubagentRow {
         key: raw.key,
         fireAt: raw.fire_at.toISOString(),
         topic: raw.topic,
-        handler: raw.handler,
         prompt: raw.prompt,
         payload: raw.payload,
         priority: raw.priority,

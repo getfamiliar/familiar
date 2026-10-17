@@ -1,5 +1,4 @@
 ---
-mergeMode: replace
 outputChat: false
 model: deepseek/deepseek-v4-flash
 ---

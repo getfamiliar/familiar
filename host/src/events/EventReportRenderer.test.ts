@@ -14,7 +14,7 @@ function fakeEvent(over: Partial<EventRow> = {}): EventRow {
         isChat: true,
         preferredChatChannelId: "cli",
         prompt: "hello there",
-        startHandler: null,
+        isExactTopic: false,
         privileged: true,
         outputChatOnFailure: false,
         createdAt: new Date(0),
@@ -29,7 +29,7 @@ function fakeRun(over: Partial<AgentRunRow>): AgentRunRow {
         eventId: "302",
         parentAgentrunId: null,
         topic: "chat:cli",
-        handler: "index",
+        isExactTopic: false,
         model: "featherless/x",
         priority: 100,
         state: "done",
@@ -102,28 +102,32 @@ function buildTree(): {
     const child = fakeRun({
         id: "3290",
         parentAgentrunId: "3289",
-        handler: "respond",
+        topic: "chat:respond",
+        isExactTopic: true,
         calltype: "started",
         resultText: "respond done",
     });
     const grandchild = fakeRun({
         id: "3293",
         parentAgentrunId: "3290",
-        handler: "summarize",
+        topic: "chat:summarize",
+        isExactTopic: true,
         calltype: "started",
         resultText: "grandchild done",
     });
     const immediate = fakeRun({
         id: "3291",
         parentAgentrunId: "3289",
-        handler: "notify",
+        topic: "chat:notify",
+        isExactTopic: true,
         calltype: "scheduled",
         state: "pending",
     });
     const orphan = fakeRun({
         id: "3294",
         parentAgentrunId: "3289",
-        handler: "stray",
+        topic: "chat:stray",
+        isExactTopic: true,
         calltype: "started",
         resultText: "orphan done",
     });
@@ -146,7 +150,7 @@ function buildTree(): {
             id: "s1",
             stepNumber: 1,
             toolCalls: [
-                { toolCallId: "c2", toolName: "start_subagent", input: { handler: "respond" } },
+                { toolCallId: "c2", toolName: "start_subagent", input: { topic: "chat:respond" } },
             ],
             toolResults: [{ type: "tool-result", toolCallId: "c2", output: "respond done" }],
         }),
@@ -154,8 +158,16 @@ function buildTree(): {
             id: "s2",
             stepNumber: 2,
             toolCalls: [
-                { toolCallId: "c3", toolName: "schedule_subagent", input: { handler: "notify" } },
-                { toolCallId: "c4", toolName: "schedule_subagent", input: { handler: "digest" } },
+                {
+                    toolCallId: "c3",
+                    toolName: "schedule_subagent",
+                    input: { topic: "chat:notify" },
+                },
+                {
+                    toolCallId: "c4",
+                    toolName: "schedule_subagent",
+                    input: { topic: "chat:digest" },
+                },
             ],
             toolResults: [
                 { type: "tool-result", toolCallId: "c3", output: { agentrunId: "3291" } },
@@ -174,7 +186,11 @@ function buildTree(): {
             agentRunId: "3290",
             stepNumber: 0,
             toolCalls: [
-                { toolCallId: "g1", toolName: "start_subagent", input: { handler: "summarize" } },
+                {
+                    toolCallId: "g1",
+                    toolName: "start_subagent",
+                    input: { topic: "chat:summarize" },
+                },
             ],
             toolResults: [{ type: "tool-result", toolCallId: "g1", output: "grandchild done" }],
         }),
@@ -195,7 +211,7 @@ describe("renderEventReport — structure & correlation", () => {
         const md = renderEventReport(event, runs, stepsByRun, { verbosity: 0, truncate: false });
         assert.match(md, /# Event #302 \(created 1970-01-01 \d{2}:\d{2}:\d{2}\)/);
         assert.match(md, /\| Topic \| `chat:cli` \|/);
-        assert.match(md, /\| Start Handler \| <default> \|/);
+        assert.match(md, /\| Exact Topic \| no \(falls back up the chain\) \|/);
         assert.match(md, /\| Output is Chat Message \| yes \|/);
         assert.match(md, /\| Preferred Chat Channel \| cli \|/);
         assert.match(md, /\| Idempotency Key \| — \|/);
@@ -208,7 +224,7 @@ describe("renderEventReport — structure & correlation", () => {
         const { event, runs, stepsByRun } = buildTree();
         const md = renderEventReport(event, runs, stepsByRun, { verbosity: 0, truncate: false });
         assert.match(md, /## Root agentrun #3289 \(started 1970-01-01/);
-        assert.match(md, /Using handler `chat:cli\/index` with model `featherless\/x`\./);
+        assert.match(md, /Using handler topic `chat:cli` with model `featherless\/x`\./);
         assert.match(md, /### Step Protocol/);
         assert.match(md, /01\. Step/);
         assert.match(md, / {4}Thinking: __thinking one__/);
@@ -242,7 +258,7 @@ describe("renderEventReport — structure & correlation", () => {
     it("renders a deferred schedule as an inline placeholder, no child block", () => {
         const { event, runs, stepsByRun } = buildTree();
         const md = renderEventReport(event, runs, stepsByRun, { verbosity: 0, truncate: false });
-        assert.match(md, /> ### Scheduled handler `digest` — wakeup at 2026-05-30 11:30:00/);
+        assert.match(md, /> ### Scheduled handler `chat:digest` — wakeup at 2026-05-30 11:30:00/);
     });
 
     it("renders an uncorrelated child as an orphan after the last step", () => {

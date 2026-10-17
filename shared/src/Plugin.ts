@@ -620,10 +620,12 @@ export interface EmittedEventDescriptor {
     /** One-line, human-readable description of when the event fires. */
     readonly description: string;
     /**
-     * Handler basename the event starts at, when the plugin sets
-     * `startHandler` on emit (e.g. memory's `save`). Omit for `index`.
+     * `true` when the plugin emits this topic with `isExactTopic` (it
+     * addresses one handler file, e.g. memory's `skills:memory:save`),
+     * so `familiar events topics` resolves it without falling back up
+     * the topic chain. Omit for world events.
      */
-    readonly startHandler?: string;
+    readonly isExactTopic?: boolean;
 }
 
 /**

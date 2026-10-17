@@ -1,4 +1,5 @@
 import { cpSync, existsSync } from "node:fs";
+import path from "node:path";
 import type {
     AnyCommandDef,
     ConfigService,
@@ -11,7 +12,7 @@ import type {
     PluginTool,
     PostgresConnection,
 } from "@getfamiliar/shared";
-import { EventBus, ModelNotSupported, TOPIC_PATTERN } from "@getfamiliar/shared";
+import { EventBus, ModelNotSupported, TOPIC_PATTERN, twinHandlerPath } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { type Bootstrap, isDevMode } from "../Bootstrap.js";
 import { readBastionTokenFile } from "../bastion/BastionToken.js";
@@ -524,6 +525,12 @@ export class PluginHost {
      *      — fill in topic-specific defaults the global template
      *      didn't already cover.
      *
+     * A handler exists in two interchangeable forms (`x.md` and
+     * `x/index.md`) and only one may exist, so a template file is also
+     * skipped when its twin is already in the workspace — a freshly
+     * seeded `x.md` would otherwise shadow the user's customized
+     * `x/index.md` (see {@link buildTemplateSeedFilter}).
+     *
      * Idempotent and safe to call on every daemon start. Diff/merge on
      * plugin updates (when a plugin ships a newer default than the
      * user's local copy) is the open question already in CLAUDE.md and
@@ -535,6 +542,10 @@ export class PluginHost {
                 recursive: true,
                 force: false,
                 errorOnExist: false,
+                filter: buildTemplateSeedFilter(
+                    this.boot.workspaceTemplateDir,
+                    this.boot.workspaceDir,
+                ),
             });
         }
         for (const plugin of this.plugins) {
@@ -548,6 +559,7 @@ export class PluginHost {
                 recursive: true,
                 force: false,
                 errorOnExist: false,
+                filter: buildTemplateSeedFilter(plugin.workspaceTemplate, this.boot.workspaceDir),
             });
         }
     }
@@ -982,5 +994,28 @@ function disabledPluginTool(
                     "fix the cause and restart the daemon",
             );
         },
+    };
+}
+
+/**
+ * Build the `cpSync` filter used when seeding the workspace from a
+ * template folder. Everything is copied (subject to `force: false`)
+ * except a handler file whose twin form already exists in the
+ * workspace: a template `x.md` is skipped when `workspace/x/index.md`
+ * exists, and a template `x/index.md` is skipped when `workspace/x.md`
+ * exists. The same-name case is left to `force: false`.
+ *
+ * @param templateDir Absolute root of the template folder being copied.
+ * @param workspaceDir Absolute workspace root.
+ * @returns The filter; `true` means copy.
+ */
+export function buildTemplateSeedFilter(
+    templateDir: string,
+    workspaceDir: string,
+): (source: string) => boolean {
+    return (source) => {
+        const relativePath = path.relative(templateDir, source).split(path.sep).join("/");
+        const twin = twinHandlerPath(relativePath);
+        return twin === null || !existsSync(path.join(workspaceDir, twin));
     };
 }

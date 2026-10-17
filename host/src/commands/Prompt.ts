@@ -113,12 +113,8 @@ function dryRunCommand(pluginHost: PluginHost) {
             topic: {
                 type: "positional",
                 required: true,
-                description: "Event topic, e.g. chat:telegram",
-            },
-            handler: {
-                type: "string",
-                description: "Handler basename (default: index).",
-                default: "index",
+                description:
+                    "Handler topic, e.g. chat:telegram or skills:memory:save. Resolved like an event: falls back up the topic chain.",
             },
             privileged: {
                 type: "boolean",
@@ -144,7 +140,6 @@ function dryRunCommand(pluginHost: PluginHost) {
             }
             const input = {
                 topic: String(args.topic),
-                handler: String(args.handler),
                 prompt: typeof args.prompt === "string" ? args.prompt : null,
                 privileged: args.privileged === true,
             };
@@ -184,7 +179,7 @@ function listPlaceholderRows(pluginHost: PluginHost): PlaceholderRow[] {
 /**
  * Run the container-side dry run via `docker exec` and parse its JSON.
  *
- * @param input Topic, handler, seed prompt and privilege flag.
+ * @param input Topic, seed prompt and privilege flag.
  * @returns The parsed report.
  * @throws When the container script fails or prints malformed JSON.
  */

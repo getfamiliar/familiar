@@ -57,7 +57,7 @@ test("loadPreloadedSkills keeps declared order, drops duplicates", () => {
     touch("skills/a/SKILL.md", "A");
     touch("skills/b/SKILL.md", "B");
     touch("mail/index.md", "---\nskills: b, a, b\n---\nbody\n");
-    const skills = loadPreloadedSkills(HandlerFile.load("mail", "index"));
+    const skills = loadPreloadedSkills(HandlerFile.load("mail", { isExactTopic: true }));
     assert.deepEqual(
         skills.map((skill) => skill.id),
         ["b", "a"],
@@ -67,7 +67,7 @@ test("loadPreloadedSkills keeps declared order, drops duplicates", () => {
 test("loadPreloadedSkills throws SkillNotFoundError for a missing skill", () => {
     touch("mail/index.md", "---\nskills: missing\n---\nbody\n");
     assert.throws(
-        () => loadPreloadedSkills(HandlerFile.load("mail", "index")),
+        () => loadPreloadedSkills(HandlerFile.load("mail", { isExactTopic: true })),
         (err: unknown) =>
             err instanceof SkillNotFoundError &&
             /skills\/missing\/SKILL\.md/.test(err.message) &&

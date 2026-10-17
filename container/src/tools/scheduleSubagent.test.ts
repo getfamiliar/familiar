@@ -36,7 +36,6 @@ class FakeScheduledSubagentBus {
             key: row.key,
             fireAt: row.fireAt,
             topic: row.topic,
-            handler: row.handler,
             prompt: row.prompt ?? null,
             payload: row.payload ?? {},
             priority: row.priority ?? 50,
@@ -63,7 +62,7 @@ function buildParent(eventId: string, partial: Partial<AgentRunRow> = {}): Agent
         eventId,
         parentAgentrunId: null,
         topic: "demo",
-        handler: "index",
+        isExactTopic: false,
         priority: 50,
         state: "running",
         prompt: null,
@@ -132,7 +131,7 @@ describe("schedule_subagent — immediate mode (no `when`)", () => {
         const parent = buildParent("42");
 
         const out = (await callTool(agentruns, scheduled, parent, {
-            handler: "followup",
+            topic: "demo:followup",
         })) as { agentrunId: string };
 
         assert.ok(out.agentrunId);
@@ -144,23 +143,21 @@ describe("schedule_subagent — immediate mode (no `when`)", () => {
         assert.equal(scheduled.rows.size, 0);
     });
 
-    it("slash-shaped handler with no topic resolves to derived topic + basename", async () => {
+    it("a path-shaped topic is normalized to the colon topic", async () => {
         setupWorkspaceWithHandler("mail", "send-digest");
         const store = new MockBusStore();
         const agentruns = new MockAgentRunBus(store);
         const scheduled = new FakeScheduledSubagentBus();
-        // Parent's topic is "demo"; the slash-shaped handler should
-        // override it via the derived topic from leading segments.
         const parent = buildParent("42");
 
         const out = (await callTool(agentruns, scheduled, parent, {
-            handler: "mail/send-digest.md",
+            topic: "mail/send-digest.md",
         })) as { agentrunId: string };
 
         const child = store.agentruns.get(out.agentrunId);
         assert.ok(child);
-        assert.equal(child.topic, "mail");
-        assert.equal(child.handler, "send-digest");
+        assert.equal(child.topic, "mail:send-digest");
+        assert.equal(child.isExactTopic, true);
         assert.equal(child.calltype, "scheduled");
     });
 });
@@ -175,7 +172,7 @@ describe("schedule_subagent — scheduled mode (future `when`)", () => {
 
         const when = futureLocalIso(60);
         const out = (await callTool(agentruns, scheduled, parent, {
-            handler: "followup",
+            topic: "demo:followup",
             when,
             key: "my-key",
         })) as { key: string; when: string };
@@ -193,7 +190,7 @@ describe("schedule_subagent — scheduled mode (future `when`)", () => {
         const parent = buildParent("42");
 
         const out = (await callTool(agentruns, scheduled, parent, {
-            handler: "followup",
+            topic: "demo:followup",
             when: futureLocalIso(60),
         })) as { key: string; when: string };
 
@@ -215,7 +212,7 @@ describe("schedule_subagent — key without when", () => {
         await assert.rejects(
             () =>
                 callTool(agentruns, scheduled, parent, {
-                    handler: "followup",
+                    topic: "demo:followup",
                     key: "lonely-key",
                 }),
             (err: unknown) => {
@@ -240,7 +237,7 @@ describe("schedule_subagent — past `when` silently demotes to immediate", () =
 
         const pastWhen = "2000-01-01T12:00:00";
         const out = (await callTool(agentruns, scheduled, parent, {
-            handler: "followup",
+            topic: "demo:followup",
             when: pastWhen,
         })) as { agentrunId: string };
 
@@ -258,7 +255,7 @@ describe("schedule_subagent — past `when` silently demotes to immediate", () =
         const parent = buildParent("42");
 
         const out = (await callTool(agentruns, scheduled, parent, {
-            handler: "followup",
+            topic: "demo:followup",
             when: "2000-01-01T12:00:00",
             key: "doesntmatter",
         })) as { agentrunId: string };

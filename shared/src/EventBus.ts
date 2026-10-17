@@ -64,7 +64,7 @@ interface RawEventRow {
     is_chat: boolean;
     preferred_chat_channel_id: string | null;
     prompt: string | null;
-    start_handler: string | null;
+    is_exact_topic: boolean;
     privileged: boolean;
     output_chat_on_failure: boolean;
     created_at: Date;
@@ -171,7 +171,7 @@ export class EventBus {
                 `INSERT INTO events
                    (topic, payload, priority, state, idempotency_key,
                     is_chat, preferred_chat_channel_id, prompt, privileged,
-                    start_handler, output_chat_on_failure)
+                    is_exact_topic, output_chat_on_failure)
                  VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                  RETURNING *`,
                 [
@@ -184,7 +184,7 @@ export class EventBus {
                     event.preferredChatChannelId ?? null,
                     prompt,
                     event.privileged ?? false,
-                    event.startHandler ?? null,
+                    event.isExactTopic ?? false,
                     event.outputChatOnFailure ?? false,
                 ],
             );
@@ -289,7 +289,7 @@ export class EventBus {
     }
 
     /**
-     * Fetch the most recently created N event rows whose topic, start_handler,
+     * Fetch the most recently created N event rows whose topic,
      * prompt, or payload (cast to text) case-insensitively contains `needle`.
      * Used by `familiar events list <search>` so the operator can grep the
      * recent bus without piping through `grep`.
@@ -307,7 +307,6 @@ export class EventBus {
         const result = await this.connection.getPool().query<RawEventRow>(
             `SELECT * FROM events
                  WHERE topic                          ILIKE $2
-                    OR coalesce(start_handler, '')    ILIKE $2
                     OR coalesce(prompt, '')           ILIKE $2
                     OR payload::text                  ILIKE $2
                  ORDER BY created_at DESC, id DESC
@@ -325,7 +324,7 @@ export class EventBus {
      * pair can't express. Both of those stay as the CLI's call sites.
      *
      * Substring match (when `search` is set) is the same ILIKE-against-
-     * `(topic, start_handler, prompt, payload::text)` predicate
+     * `(topic, prompt, payload::text)` predicate
      * {@link searchLatest} uses. `dateFrom` is inclusive, `dateTo` is
      * exclusive (`created_at >= $from AND created_at < $to`), so the
      * agent can pass two midnights to get a single local day without
@@ -345,8 +344,7 @@ export class EventBus {
         if (filter.search !== undefined && filter.search.length > 0) {
             const pattern = `%${filter.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
             conditions.push(
-                `(topic ILIKE $${n} OR coalesce(start_handler, '') ILIKE $${n} ` +
-                    `OR coalesce(prompt, '') ILIKE $${n} OR payload::text ILIKE $${n})`,
+                `(topic ILIKE $${n} OR coalesce(prompt, '') ILIKE $${n} OR payload::text ILIKE $${n})`,
             );
             values.push(pattern);
             n++;
@@ -569,7 +567,7 @@ function mapRow(raw: RawEventRow): EventRow {
         isChat: raw.is_chat,
         preferredChatChannelId: raw.preferred_chat_channel_id,
         prompt: raw.prompt ?? "",
-        startHandler: raw.start_handler,
+        isExactTopic: raw.is_exact_topic,
         privileged: raw.privileged,
         outputChatOnFailure: raw.output_chat_on_failure,
         createdAt: raw.created_at,

@@ -8,11 +8,10 @@ import {
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
-import { parseHandlerSpec } from "../utils/HandlerSpecParser.js";
+import { parseHandlerTopic } from "../utils/HandlerSpecParser.js";
 
 interface StartSubagentInput {
-    readonly topic?: string;
-    readonly handler: string;
+    readonly topic: string;
     readonly prompt?: string;
     readonly payload?: Record<string, unknown>;
 }
@@ -46,8 +45,8 @@ export type WaitForSubagent = (childId: string) => Promise<AgentRunRow>;
  * parent's slot for the full duration.
  *
  * The child inherits `event_id`, `priority`, and `privileged` from
- * the parent and is tagged `calltype='started'`. Topic defaults to
- * the parent's topic when omitted.
+ * the parent and is tagged `calltype='started'`. Its `topic` names the
+ * target handler exactly — there is no fallback up the topic chain.
  *
  * Errors during child insertion, handler resolution, or a failed
  * subagent throw a {@link ToolError}; the AI SDK then emits a
@@ -68,27 +67,21 @@ export function buildStartSubagentTool(
             "directly callable. Start one for isolation: an empty context, or a different model / " +
             "tool set (both taken from the target handler's frontmatter). Parallel fan-out is " +
             "planned. Use `schedule_subagent` (without `when`) instead when you don't need the " +
-            "subagent's output. Topic defaults to the current agentrun's topic, but can also be " +
-            'embedded in `handler` with `/` as the separator (e.g. `handler: "mail/whatsapp/send"` ' +
-            'is the same as `topic: "mail:whatsapp", handler: "send"`); a trailing `.md` is ' +
-            "silently stripped. Inherits the event and trust level from this run. If the subagent " +
+            "subagent's output. `topic` is the target handler's address and must match a handler " +
+            'file exactly: `topic: "mail:whatsapp:send"` runs `mail/whatsapp/send.md` (or ' +
+            "`mail/whatsapp/send/index.md`); the path form `mail/whatsapp/send.md` is accepted " +
+            "too. Inherits the event and trust level from this run. If the subagent " +
             "fails, the tool surfaces an error so the calling handler can decide how to react.",
         inputSchema: jsonSchema<StartSubagentInput>({
             type: "object",
             additionalProperties: false,
-            required: ["handler"],
+            required: ["topic"],
             properties: {
                 topic: {
                     type: "string",
                     description:
-                        "Optional topic for the started subagent. Defaults to the current " +
-                        "agentrun's topic.",
-                },
-                handler: {
-                    type: "string",
-                    description:
-                        "Handler basename without `.md`, e.g. `analyze` or `respond`. Resolved " +
-                        "against `topic` (or the current topic when omitted).",
+                        "Topic of the handler to run, e.g. `mail:analyze` for `mail/analyze.md`. " +
+                        "Must match a handler file exactly.",
                 },
                 prompt: {
                     type: "string",
@@ -103,13 +96,9 @@ export function buildStartSubagentTool(
                 },
             },
         }),
-        execute: ({ topic, handler, prompt, payload }) =>
+        execute: ({ topic, prompt, payload }) =>
             runTextTool(async () => {
-                const { topic: resolvedTopic, handler: resolvedHandler } = parseHandlerSpec(
-                    topic,
-                    handler,
-                    parent.topic,
-                );
+                const resolvedTopic = parseHandlerTopic(topic);
 
                 if (payload !== undefined) {
                     let serialized: string | undefined;
@@ -130,7 +119,7 @@ export function buildStartSubagentTool(
                 }
 
                 try {
-                    HandlerFile.load(resolvedTopic, resolvedHandler);
+                    HandlerFile.load(resolvedTopic, { isExactTopic: true });
                 } catch (err) {
                     throw new ToolError(
                         "HandlerNotFound",
@@ -144,7 +133,7 @@ export function buildStartSubagentTool(
                         eventId: parent.eventId,
                         parentAgentrunId: parent.id,
                         topic: resolvedTopic,
-                        handler: resolvedHandler,
+                        isExactTopic: true,
                         priority: parent.priority,
                         prompt: prompt ?? null,
                         payload: payload ?? {},

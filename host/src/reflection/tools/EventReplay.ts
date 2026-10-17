@@ -25,7 +25,7 @@ export function buildEventReplayTool(
             "Re-emit one or more existing events as fresh events. `ids` is a " +
             'comma-separated list of single ids and/or inclusive spans, e.g. `"4711"`, ' +
             '`"123-126"`, or `"123-126,555,560-570"`. Each replay copies the source\'s ' +
-            "topic, prompt, payload, priority, chat flags, start-handler hint, and any " +
+            "topic, prompt, payload, priority, chat flags, exact-topic flag, and any " +
             "scratch files; appends `-replay` to the idempotency key so the copy is not " +
             "rejected by the original's dedup window. Ids that don't exist are reported " +
             "and skipped, the rest still run. Returns one line per id with the new id and " +

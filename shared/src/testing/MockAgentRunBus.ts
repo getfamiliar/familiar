@@ -43,7 +43,7 @@ export class MockAgentRunBus {
             eventId: run.eventId,
             parentAgentrunId: run.parentAgentrunId ?? null,
             topic: run.topic,
-            handler: run.handler,
+            isExactTopic: run.isExactTopic ?? true,
             priority: run.priority ?? 50,
             state: run.state ?? "pending",
             prompt: run.prompt ?? null,

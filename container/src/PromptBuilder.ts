@@ -105,7 +105,6 @@ export interface PluginPromptAccess {
         | {
               readonly dryRun: {
                   readonly topic: string;
-                  readonly handler: string;
                   readonly prompt: string | null;
                   readonly privileged: boolean;
               };

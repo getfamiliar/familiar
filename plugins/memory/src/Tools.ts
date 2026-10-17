@@ -5,15 +5,13 @@ import type { MemoryStore } from "./MemoryStore.js";
 import { formatHitsFlat } from "./PromptAppender.js";
 
 /**
- * The save handler's event topic. Chosen to resolve under
- * `workspace/skills/memory/save.md` via the container's handler
- * resolver (`<topic>` is split on `:` into directory segments). The
+ * The save handler's event topic, emitted as an exact topic so it
+ * resolves to `workspace/skills/memory/save.md` and nothing else (the
+ * topic is the handler's address: `:` segments become folders). The
  * skill explainer at `skills/memory/SKILL.md` lives alongside the
  * handler so both ship together in the plugin's `workspace-template/`.
  */
-export const SAVE_TOPIC = "skills:memory";
-/** Handler basename the save event starts at (`skills/memory/save.md`). */
-export const SAVE_HANDLER = "save";
+export const SAVE_TOPIC = "skills:memory:save";
 
 const NOT_READY_MESSAGE =
     "memory search is temporarily disabled — index still warming up or backend misconfigured";
@@ -98,7 +96,7 @@ export function buildMemoryTools(store: MemoryStore, cfg: MemoryConfig): readonl
                 .slice(0, 16)}`;
             const handle = await toolCtx.host.events.emit({
                 topic: SAVE_TOPIC,
-                startHandler: SAVE_HANDLER,
+                isExactTopic: true,
                 prompt: trimmed,
                 payload: {
                     sourceEventId: toolCtx.event.id,

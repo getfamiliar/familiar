@@ -3,85 +3,44 @@ import { TOPIC_PATTERN, ToolError } from "@getfamiliar/shared";
 const TOPIC_REGEXP = new RegExp(TOPIC_PATTERN);
 
 /**
- * Parse the `topic` / `handler` pair the agent passed to `start_subagent`
- * or `schedule_subagent` into the canonical shape the rest of the stack
- * expects: a colon-separated topic and a bare handler basename.
+ * Parse the `topic` the agent passed to `start_subagent` or
+ * `schedule_subagent` into the canonical colon-separated topic. The
+ * topic is the handler's whole address (`skills:memory:save` →
+ * `skills/memory/save.md`).
  *
- * The agent sometimes packs the whole topic+basename into the `handler`
- * field (e.g. `handler: "mail/send-digest"`) instead of splitting it.
- * Rather than fail with `HandlerNotFound` and leave the agent to retry
- * with reshuffled arguments, we accept both shapes.
+ * Models sometimes pass the handler's path instead of its topic. Rather
+ * than fail and leave the agent to retry with reshuffled arguments, we
+ * accept both shapes:
  *
- * Rules, applied in order:
+ * - `skills:memory:save` — the canonical form, returned as-is.
+ * - `skills/memory/save`, `/skills/memory/save`, `skills/memory/save.md`
+ *   — `/` becomes `:`, a leading `/` and a trailing `.md`
+ *   (case-insensitive) are dropped.
+ * - `chat/telegram/index.md` — a trailing `index` path segment names the
+ *   folder form of `chat:telegram`, so it is dropped too.
  *
- * 1. Strip a trailing `.md` (case-insensitive) from `rawHandler` —
- *    `send-digest.md` → `send-digest`. Applied unconditionally.
- * 2. If the post-strip handler contains `/`: take the last segment as
- *    the basename. Preceding segments form a derived topic when joined
- *    with `:`. The derived topic is used only when `rawTopic` is
- *    undefined; an explicit `rawTopic` always wins, but the slashed
- *    handler is still flattened to its basename so the call succeeds.
- * 3. Otherwise the basename is `rawHandler` (post strip) and the topic
- *    is `rawTopic ?? fallbackTopic`.
- *
- * Empty basenames (`mail/`) or empty topic segments (`/index` with no
- * explicit topic, `mail//send`) throw {@link ToolError}("BadHandler", …).
- * A derived topic that fails the {@link TOPIC_PATTERN} regex throws
- * {@link ToolError}("BadTopic", …).
- *
- * @param rawTopic       The `topic` argument the tool received, or
- *                       `undefined` when omitted.
- * @param rawHandler     The `handler` argument the tool received.
- * @param fallbackTopic  Used when the agent supplied neither `rawTopic`
- *                       nor a slash in `rawHandler` — usually the
- *                       parent agentrun's topic.
+ * @param rawTopic The `topic` argument the tool received.
+ * @returns The canonical topic.
+ * @throws {ToolError} `BadTopic` when the result does not match
+ *   {@link TOPIC_PATTERN} (empty input, empty segments, spaces, …).
  */
-export function parseHandlerSpec(
-    rawTopic: string | undefined,
-    rawHandler: string,
-    fallbackTopic: string,
-): { topic: string; handler: string } {
-    const stripped = stripMdExtension(rawHandler);
-
-    if (!stripped.includes("/")) {
-        if (stripped.length === 0) {
-            throw new ToolError("BadHandler", "`handler` must not be empty");
+export function parseHandlerTopic(rawTopic: string): string {
+    const trimmed = rawTopic.trim();
+    let topic = trimmed;
+    if (trimmed.includes("/")) {
+        const segments = stripMdExtension(trimmed).replace(/^\/+/, "").split("/");
+        if (segments.length > 1 && segments[segments.length - 1] === "index") {
+            segments.pop();
         }
-        const topic = rawTopic ?? fallbackTopic;
-        if (!TOPIC_REGEXP.test(topic)) {
-            throw new ToolError("BadTopic", `topic "${topic}" must match ${TOPIC_PATTERN}`);
-        }
-        return { topic, handler: stripped };
+        topic = segments.join(":");
     }
-
-    const segments = stripped.split("/");
-    const basename = segments[segments.length - 1];
-    if (basename.length === 0) {
+    if (!TOPIC_REGEXP.test(topic)) {
         throw new ToolError(
-            "BadHandler",
-            `\`handler\` "${rawHandler}" ends with a separator — provide a basename after the last \`/\``,
+            "BadTopic",
+            `topic "${rawTopic}" must be a colon-separated handler topic matching ${TOPIC_PATTERN} (e.g. "skills:memory:save")`,
         );
     }
-    const topicSegments = segments.slice(0, -1);
-
-    let topic: string;
-    if (rawTopic !== undefined) {
-        topic = rawTopic;
-    } else {
-        if (topicSegments.length === 0 || topicSegments.some((s) => s.length === 0)) {
-            throw new ToolError(
-                "BadHandler",
-                `\`handler\` "${rawHandler}" cannot be parsed: missing or empty topic segment before the basename`,
-            );
-        }
-        topic = topicSegments.join(":");
-    }
-
-    if (!TOPIC_REGEXP.test(topic)) {
-        throw new ToolError("BadTopic", `topic "${topic}" must match ${TOPIC_PATTERN}`);
-    }
-
-    return { topic, handler: basename };
+    return topic;
 }
 
 /**

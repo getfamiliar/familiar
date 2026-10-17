@@ -252,13 +252,11 @@ async function runTurn(
     currentChatCount: () => number,
     countAtStart: number,
 ): Promise<void> {
-    if (parsed.topic !== undefined && parsed.startHandler !== undefined) {
-        const resolved = await catalog.resolve(parsed.topic, parsed.startHandler);
+    if (parsed.topic !== undefined) {
+        const resolved = await catalog.resolve(parsed.topic, { isExactTopic: true });
         if (!resolved) {
             process.stdout.write(
-                chalk.red(
-                    `[error] no handler found for topic="${parsed.topic}" handler="${parsed.startHandler}"\n`,
-                ),
+                chalk.red(`[error] no handler found for topic="${parsed.topic}"\n`),
             );
             return;
         }
@@ -372,13 +370,13 @@ async function runTurn(
 
 /**
  * Build the {@link NewEvent} for an outgoing turn. Plain prompts
- * default to `topic: chat:cli` and let the input-event watcher pick
- * `index.md`; direct handler calls carry the parsed topic +
- * startHandler verbatim. All cli-chat events run as `privileged`
+ * default to `topic: chat:cli`; direct handler calls carry the parsed
+ * topic as an exact-topic event (the typed path must exist, no
+ * fallback up the chain). All cli-chat events run as `privileged`
  * because the operator at the local terminal is fully trusted.
  */
 function buildNewEvent(parsed: Extract<ParsedInput, { kind: "handler" }>): NewEvent {
-    if (parsed.topic === undefined || parsed.startHandler === undefined) {
+    if (parsed.topic === undefined) {
         return {
             topic: CLI_CHAT_TOPIC,
             isChat: true,
@@ -394,7 +392,7 @@ function buildNewEvent(parsed: Extract<ParsedInput, { kind: "handler" }>): NewEv
     }
     return {
         topic: parsed.topic,
-        startHandler: parsed.startHandler,
+        isExactTopic: true,
         // Direct handler calls are not "chat messages from the user"
         // — they're operator-triggered runs. Skipping `isChat` keeps
         // the AgentRunner on the agentrun-lineage context path (no
@@ -461,12 +459,10 @@ export async function runOneShot(
         return 2;
     }
 
-    if (parsed.topic !== undefined && parsed.startHandler !== undefined) {
-        const resolved = await catalog.resolve(parsed.topic, parsed.startHandler);
+    if (parsed.topic !== undefined) {
+        const resolved = await catalog.resolve(parsed.topic, { isExactTopic: true });
         if (!resolved) {
-            process.stderr.write(
-                `no handler found for topic="${parsed.topic}" handler="${parsed.startHandler}"\n`,
-            );
+            process.stderr.write(`no handler found for topic="${parsed.topic}"\n`);
             return 1;
         }
     }

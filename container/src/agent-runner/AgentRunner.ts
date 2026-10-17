@@ -328,7 +328,13 @@ export class AgentRunner {
      * @throws Generic Error for any non-retryable failure.
      */
     async run(ctx: AgentRunnerContext): Promise<string> {
-        const handler = HandlerFile.load(ctx.row.topic, ctx.row.handler);
+        const handler = HandlerFile.load(ctx.row.topic, { isExactTopic: ctx.row.isExactTopic });
+        if (handler.shadowedPath !== null) {
+            ctx.log.warn(
+                { handlerPath: handler.relativePath, shadowedPath: handler.shadowedPath },
+                `handler conflict: both ${handler.relativePath} and ${handler.shadowedPath} exist — using ${handler.relativePath}; delete one of them`,
+            );
+        }
         const {
             model,
             label: modelLabel,

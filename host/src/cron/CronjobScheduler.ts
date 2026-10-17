@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import {
     EVENT_PRIORITY,
     type Logger,
@@ -6,6 +6,8 @@ import {
     type NewEvent,
     type ParsedCron,
     parseCron,
+    topicFromHandlerPath,
+    twinHandlerPath,
     type WorkspaceFile,
 } from "@getfamiliar/shared";
 import { Cron } from "croner";
@@ -39,6 +41,13 @@ const CRON_FILTER = { frontmatter: { cron: "*" } } as const;
  * keeps working. Handler files at the workspace root are also dropped
  * with a warning: handlers must live under at least one topic folder
  * so the path → topic mapping is unambiguous.
+ *
+ * A firing emits an exact-topic event: the topic derived from the file
+ * (`mail/digest.md` → `mail:digest`) must resolve to that very file, it
+ * never falls back up the topic chain. A folder-form `x/index.md` whose
+ * file-form twin `x.md` exists is shadowed — the event would run `x.md`
+ * — so its firing is skipped with a warning (checked at fire time, as
+ * the twin can appear or vanish after registration).
  */
 export class CronjobScheduler {
     private readonly watcher: WorkspaceWatcher;
@@ -128,11 +137,11 @@ export class CronjobScheduler {
             );
             return;
         }
-        const target = pathToHandlerTarget(file.relativePath);
-        if (target === null) {
+        const topic = topicFromHandlerPath(file.relativePath);
+        if (topic === null) {
             this.log.warn(
                 { path: file.relativePath },
-                "cron found on file at workspace root, skipping (handlers must live under a topic folder)",
+                `cron found on file ${file.relativePath}, skipping (handlers must live under a topic folder and their path must form a valid topic)`,
             );
             return;
         }
@@ -145,7 +154,7 @@ export class CronjobScheduler {
             return;
         }
         const job = new Cron(parsed.expression, () => {
-            void this.fire(file.relativePath, parsed.verbatim, target);
+            void this.fire(file, parsed.verbatim, topic);
         });
         this.jobs.set(file.relativePath, { parsed, job });
         this.log.info(`cronjob for handler ${file.relativePath} scheduled at ${parsed.verbatim}`);
@@ -161,14 +170,33 @@ export class CronjobScheduler {
         this.log.info(`cronjob for handler ${relativePath} removed`);
     }
 
-    private async fire(
-        relativePath: string,
-        verbatim: string,
-        target: { topic: string; startHandler: string },
-    ): Promise<void> {
+    /**
+     * Emit the exact-topic event for one cron firing, unless the file is
+     * shadowed by its file-form twin.
+     *
+     * @param file The cron-bearing handler file.
+     * @param verbatim The `cron:` value, for logging.
+     * @param topic The topic derived from the file's path.
+     */
+    private async fire(file: WorkspaceFile, verbatim: string, topic: string): Promise<void> {
+        const relativePath = file.relativePath;
+        const twin = twinHandlerPath(relativePath);
+        if (relativePath.endsWith("/index.md") && twin !== null) {
+            const workspaceDir = file.absolutePath.slice(
+                0,
+                file.absolutePath.length - relativePath.length,
+            );
+            if (existsSync(`${workspaceDir}${twin}`)) {
+                this.log.warn(
+                    { path: relativePath, twin },
+                    `cronjob for handler ${relativePath} (${verbatim}) skipped: ${twin} also exists and takes precedence for topic ${topic}; delete one of them`,
+                );
+                return;
+            }
+        }
         const event: NewEvent = {
-            topic: target.topic,
-            startHandler: target.startHandler,
+            topic,
+            isExactTopic: true,
             prompt: "The cronjob has fired",
             priority: EVENT_PRIORITY.BACKGROUND,
             privileged: false,
@@ -180,29 +208,12 @@ export class CronjobScheduler {
             );
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            this.log.error({ path: relativePath, err: message }, "cronjob fired but emit failed");
+            this.log.error(
+                { path: relativePath, err: message },
+                `cronjob for handler ${relativePath} fired but emit failed: ${message}`,
+            );
         }
     }
-}
-
-/**
- * Map a workspace-relative handler path to its `(topic, startHandler)`
- * pair. Returns `null` for files at the workspace root, which are not
- * handlers by project convention (root holds PROMPT.md, SOUL.md, etc.).
- *
- * Example: `mail/important/digest.md` → `mail:important` / `digest`.
- */
-export function pathToHandlerTarget(
-    relativePath: string,
-): { topic: string; startHandler: string } | null {
-    const parts = relativePath.split("/");
-    if (parts.length < 2) {
-        return null;
-    }
-    const file = parts[parts.length - 1];
-    const startHandler = file.endsWith(".md") ? file.slice(0, -3) : file;
-    const topic = parts.slice(0, -1).join(":");
-    return { topic, startHandler };
 }
 
 /**

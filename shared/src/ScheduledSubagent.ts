@@ -12,7 +12,7 @@
  *    `scheduled_subagents_changed` NOTIFY and installs a Croner job for
  *    `fireAt` with `maxRuns: 1`.
  * 3. When the job fires, the host atomically claims-and-deletes the
- *    row, then emits a fresh event with the row's topic / handler /
+ *    row, then emits a fresh exact-topic event with the row's topic /
  *    prompt / payload / priority / privileged.
  *
  * `prompt` is optional at the table level so the agent can schedule
@@ -25,8 +25,8 @@ export interface ScheduledSubagentRow {
     readonly key: string;
     /** UTC ISO-8601 firing time (e.g. `2026-05-21T13:00:00Z`). */
     readonly fireAt: string;
+    /** Handler address; must resolve exactly (no fallback up the topic chain). */
     readonly topic: string;
-    readonly handler: string;
     readonly prompt: string | null;
     readonly payload: unknown;
     readonly priority: number;
@@ -42,7 +42,6 @@ export interface NewScheduledSubagent {
     readonly key: string;
     readonly fireAt: string;
     readonly topic: string;
-    readonly handler: string;
     readonly prompt?: string | null;
     readonly payload?: unknown;
     readonly priority?: number;

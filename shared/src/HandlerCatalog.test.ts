@@ -21,24 +21,34 @@ async function touch(rel: string, contents = ""): Promise<void> {
     await writeFile(abs, contents);
 }
 
-test("list emits handler paths grouped by topic", async () => {
+test("list emits one entry per handler topic", async () => {
     await touch("chat/index.md");
     await touch("chat/analyze.md");
-    await touch("chat/telegram/index.md");
+    await touch("chat/telegram.md");
     await touch("grocery/fruits/order.md");
 
     const list = await new HandlerCatalog(root).list();
     const slashes = list.map((h) => h.slashPath);
     assert.deepEqual(slashes, [
+        "/chat",
         "/chat/analyze",
-        "/chat/index",
-        "/chat/telegram/index",
+        "/chat/telegram",
         "/grocery/fruits/order",
     ]);
-    const tg = list.find((h) => h.slashPath === "/chat/telegram/index");
+    const tg = list.find((h) => h.slashPath === "/chat/telegram");
     assert.equal(tg?.topic, "chat:telegram");
-    assert.equal(tg?.handler, "index");
-    assert.equal(tg?.relativePath, "chat/telegram/index.md");
+    assert.equal(tg?.relativePath, "chat/telegram.md");
+});
+
+test("list hides a folder-form handler shadowed by its file-form twin", async () => {
+    await touch("chat/telegram.md");
+    await touch("chat/telegram/index.md");
+
+    const list = await new HandlerCatalog(root).list();
+    assert.deepEqual(
+        list.map((h) => h.relativePath),
+        ["chat/telegram.md"],
+    );
 });
 
 test("list skips every workspace-root file and the skills subtree", async () => {
@@ -53,7 +63,7 @@ test("list skips every workspace-root file and the skills subtree", async () => 
     const list = await new HandlerCatalog(root).list();
     assert.deepEqual(
         list.map((h) => h.slashPath),
-        ["/mail/index"],
+        ["/mail"],
     );
 });
 
@@ -62,29 +72,45 @@ test("list returns empty when workspace dir is missing", async () => {
     assert.deepEqual(list, []);
 });
 
-test("resolve returns deepest existing candidate", async () => {
+test("resolve prefers the most specific level", async () => {
     await touch("chat/index.md");
     await touch("chat/telegram/index.md");
     const catalog = new HandlerCatalog(root);
 
-    const deep = await catalog.resolve("chat:telegram", "index");
-    assert.equal(deep, path.join(root, "chat/telegram/index.md"));
+    const deep = await catalog.resolve("chat:telegram", { isExactTopic: false });
+    assert.equal(deep?.absolutePath, path.join(root, "chat/telegram/index.md"));
 });
 
-test("resolve falls back up the topic chain", async () => {
-    await touch("chat/analyze.md");
+test("resolve falls back up the topic chain for non-exact topics", async () => {
+    await touch("chat/index.md");
     const catalog = new HandlerCatalog(root);
 
-    const hit = await catalog.resolve("chat:telegram:group", "analyze");
-    assert.equal(hit, path.join(root, "chat/analyze.md"));
+    const hit = await catalog.resolve("chat:telegram:group", { isExactTopic: false });
+    assert.equal(hit?.relativePath, "chat/index.md");
+});
+
+test("resolve does not fall back for exact topics", async () => {
+    await touch("chat/index.md");
+    const catalog = new HandlerCatalog(root);
+
+    assert.equal(await catalog.resolve("chat:telegram", { isExactTopic: true }), null);
+});
+
+test("resolve reports a shadowed twin", async () => {
+    await touch("chat/telegram.md");
+    await touch("chat/telegram/index.md");
+    const catalog = new HandlerCatalog(root);
+
+    const hit = await catalog.resolve("chat:telegram", { isExactTopic: true });
+    assert.equal(hit?.relativePath, "chat/telegram.md");
+    assert.equal(hit?.shadowedPath, "chat/telegram/index.md");
 });
 
 test("resolve returns null when nothing matches", async () => {
     await touch("chat/index.md");
     const catalog = new HandlerCatalog(root);
 
-    const miss = await catalog.resolve("chat", "missing");
-    assert.equal(miss, null);
+    assert.equal(await catalog.resolve("mail", { isExactTopic: false }), null);
 });
 
 test("list excludes files under writable paths", async () => {
@@ -95,7 +121,7 @@ test("list excludes files under writable paths", async () => {
     const catalog = new HandlerCatalog(root, ["wiki/**"]);
     assert.deepEqual(
         (await catalog.list()).map((h) => h.slashPath),
-        ["/mail/index"],
+        ["/mail"],
     );
 });
 
@@ -103,12 +129,13 @@ test("resolve refuses a handler under a writable path even when it exists", asyn
     await touch("wiki/index.md");
     const catalog = new HandlerCatalog(root, ["wiki/**"]);
 
-    assert.equal(await catalog.resolve("wiki", "index"), null);
+    assert.equal(await catalog.resolve("wiki", { isExactTopic: true }), null);
 });
 
 test("writable globs do not affect non-writable handlers", async () => {
     await touch("mail/index.md");
     const catalog = new HandlerCatalog(root, ["wiki/**"]);
 
-    assert.equal(await catalog.resolve("mail", "index"), path.join(root, "mail/index.md"));
+    const hit = await catalog.resolve("mail", { isExactTopic: true });
+    assert.equal(hit?.absolutePath, path.join(root, "mail/index.md"));
 });

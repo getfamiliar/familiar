@@ -12,7 +12,7 @@ required. Real enablement is gated on at least one cached login under
 
 ## What the agent sees
 
-For every new mail the plugin emits a `mail:new:ms365` event. The container's handler resolver picks up the most specific handler available — `workspace/mail/new/ms365/index.md` first, then `workspace/mail/new/index.md`, falling back to `workspace/mail/index.md`. The handler decides what to do; the plugin's job is only to surface the mail.
+For every new mail the plugin emits a `mail:new:ms365` event. The container's handler resolver runs the most specific handler available, and only that one — `workspace/mail/new/ms365.md` (or `mail/new/ms365/index.md`) first, then `workspace/mail/new.md` (or `mail/new/index.md`), falling back to `workspace/mail/index.md`. The handler decides what to do; the plugin's job is only to surface the mail.
 
 **Prompt** the handler receives:
 

@@ -10,6 +10,7 @@ import { CHAT_COMPACTION_TOPIC } from "../chat/ChatCompactor.js";
 export const CORE_EMITTED_EVENTS: readonly EmittedEventDescriptor[] = [
     {
         topic: CHAT_COMPACTION_TOPIC,
+        isExactTopic: true,
         description:
             "The chat history grew past the compaction threshold and should be summarized.",
     },

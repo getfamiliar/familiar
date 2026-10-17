@@ -356,8 +356,8 @@ export class AgentrunScheduler {
         const runner = runnerFactory(row);
         const parentSuffix = row.parentAgentrunId ? ` (parent=${row.parentAgentrunId})` : "";
         log.info(
-            { agentrunId: row.id, topic: row.topic, handler: row.handler },
-            `agentrun ${row.id} started [${row.topic}/${row.handler}]${parentSuffix}`,
+            { agentrunId: row.id, topic: row.topic },
+            `agentrun ${row.id} started [${row.topic}]${parentSuffix}`,
         );
 
         const runPromise = runner.run(ctx);
@@ -672,7 +672,6 @@ export class AgentrunScheduler {
             component: "agent-runner",
             agentrunId: row.id,
             topic: row.topic,
-            handler: row.handler,
         });
 
         return {

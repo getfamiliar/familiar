@@ -5,7 +5,7 @@ import { buildMemoryCommands } from "./Commands.js";
 import { type MemoryConfig, readMemoryConfig } from "./Config.js";
 import type { MemoryStore } from "./MemoryStore.js";
 import { buildMemoryPromptAppender } from "./PromptAppender.js";
-import { buildMemoryTools, SAVE_HANDLER, SAVE_TOPIC } from "./Tools.js";
+import { buildMemoryTools, SAVE_TOPIC } from "./Tools.js";
 
 /**
  * Singleton store + config handles for the host daemon process.
@@ -28,7 +28,7 @@ let sharedConfig: MemoryConfig | undefined;
  *  1. A per-agentrun **context provider** that injects relevant
  *     memories into the system prompt, keyed off the agentrun's prompt.
  *  2. A **`memory_search`** tool the agent can call to retrieve more.
- *  3. A **`memory_save`** tool that fires a `skills:memory` event
+ *  3. A **`memory_save`** tool that fires a `skills:memory:save` event
  *     whose handler (shipped here at `workspace/skills/memory/save.md`)
  *     uses a reasoning agentrun to decide where in the wiki to file
  *     the content and writes it there.
@@ -96,7 +96,7 @@ export default definePlugin({
         getEmittedEvents: () => [
             {
                 topic: SAVE_TOPIC,
-                startHandler: SAVE_HANDLER,
+                isExactTopic: true,
                 description: "The agent called `memory_save` to file a memory in the background.",
             },
         ],

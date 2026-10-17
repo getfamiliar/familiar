@@ -31,7 +31,7 @@ export class MockEventBus {
             isChat: event.isChat === true,
             preferredChatChannelId: event.preferredChatChannelId ?? null,
             prompt: event.prompt ?? null,
-            startHandler: event.startHandler ?? null,
+            isExactTopic: event.isExactTopic ?? false,
             privileged: event.privileged === true,
             outputChatOnFailure: event.outputChatOnFailure === true,
             createdAt: now,

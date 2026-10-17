@@ -135,8 +135,8 @@ export class ScheduledSubagentScheduler {
         }
         this.jobs.set(row.key, job);
         this.log.info(
-            { key: row.key, fireAt: row.fireAt, topic: row.topic, handler: row.handler },
-            "scheduled subagent armed",
+            { key: row.key, fireAt: row.fireAt, topic: row.topic },
+            `scheduled subagent ${row.key} armed for ${row.fireAt} [${row.topic}]`,
         );
     }
 
@@ -162,7 +162,7 @@ export class ScheduledSubagentScheduler {
         const payload = (row.payload ?? {}) as Record<string, unknown>;
         const event: NewEvent = {
             topic: row.topic,
-            startHandler: row.handler,
+            isExactTopic: true,
             prompt,
             priority: row.priority ?? EVENT_PRIORITY.BACKGROUND,
             privileged: row.privileged,
@@ -171,15 +171,14 @@ export class ScheduledSubagentScheduler {
         try {
             const handle = await this.emit(event);
             this.log.info(
-                { key, eventId: handle.id, topic: row.topic, handler: row.handler },
-                "scheduled subagent fired",
+                { key, eventId: handle.id, topic: row.topic },
+                `scheduled subagent ${key} fired as event ${handle.id} [${row.topic}]`,
             );
         } catch (err) {
             this.log.error(
                 {
                     key,
                     topic: row.topic,
-                    handler: row.handler,
                     err: err instanceof Error ? err.message : String(err),
                 },
                 "scheduled subagent fired but emit failed",

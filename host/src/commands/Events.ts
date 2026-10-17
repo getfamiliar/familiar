@@ -1,4 +1,3 @@
-import path from "node:path";
 import {
     AgentRunBus,
     DEFAULT_WRITABLE_PATHS,
@@ -6,14 +5,16 @@ import {
     EventBus,
     HandlerCatalog,
     markdownTable,
+    type ResolvedHandler,
     renderMarkdown,
     StepResultBus,
     type StepResultRow,
+    topicFromHandlerPath,
     writeMarkdown,
 } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
-import { pathToHandlerTarget, readVerbatimCron } from "../cron/CronjobScheduler.js";
+import { readVerbatimCron } from "../cron/CronjobScheduler.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
 import { CORE_EMITTED_EVENTS } from "../events/CoreEmittedEvents.js";
 import { renderEventReport } from "../events/EventReportRenderer.js";
@@ -264,9 +265,9 @@ function renderPromptPreview(prompt: string): string {
 
 /**
  * `familiar events list [search] [-n N]` — print a table of the last N events
- * (default 10), newest first. Columns: ID, TOPIC, HANDLER, STATE,
+ * (default 10), newest first. Columns: ID, TOPIC, STATE,
  * PROMPT (first ~100 chars). When `search` is given, only rows whose
- * topic, start_handler, prompt, or payload case-insensitively contain
+ * topic, prompt, or payload case-insensitively contain
  * the substring are listed. Intended as the entry point to find an
  * event id to drill into with `events report <id>`.
  */
@@ -329,11 +330,10 @@ const eventsListCommand = defineCommand({
             const tableRows = rows.map((row) => [
                 row.id,
                 row.topic,
-                row.startHandler ?? "index",
                 row.state,
                 renderPromptPreview(row.prompt),
             ]);
-            writeMarkdown(markdownTable(["ID", "TOPIC", "HANDLER", "STATE", "PROMPT"], tableRows), {
+            writeMarkdown(markdownTable(["ID", "TOPIC", "STATE", "PROMPT"], tableRows), {
                 raw,
             });
         } finally {
@@ -348,7 +348,10 @@ interface TopicRow {
     /** `core`, the declaring plugin's id, or `cron`. */
     readonly source: string;
     readonly description: string;
-    /** Workspace-relative handler path, or `null` when none resolves. */
+    /**
+     * Workspace-relative handler path (with a note when it shadows its
+     * twin), or `null` when none resolves.
+     */
     readonly handler: string | null;
 }
 
@@ -356,9 +359,10 @@ interface TopicRow {
  * `familiar events topics` — table of every event topic the system emits:
  * the host's own, each plugin's `getEmittedEvents` declaration (under the
  * current config), and one per cron handler. The HANDLER column shows
- * which workspace file the topic's start handler (default `index`)
- * resolves to, so a topic that
- * no handler catches stands out. Works without the daemon.
+ * which workspace file the topic resolves to — falling back up the topic
+ * chain for world events, exact for addressed ones (`isExactTopic`, cron)
+ * — so a topic that no handler catches stands out. Works without the
+ * daemon.
  *
  * @param pluginHost Plugin host; its plugins are prepared on demand.
  * @returns The citty command.
@@ -389,11 +393,10 @@ function eventsTopicsCommand(pluginHost: PluginHost) {
             const resolveHandler = async (
                 descriptor: EmittedEventDescriptor,
             ): Promise<string | null> => {
-                const absolute = await catalog.resolve(
-                    descriptor.topic,
-                    descriptor.startHandler ?? "index",
-                );
-                return absolute === null ? null : toWorkspaceRelative(boot.workspaceDir, absolute);
+                const resolved = await catalog.resolve(descriptor.topic, {
+                    isExactTopic: descriptor.isExactTopic === true,
+                });
+                return resolved === null ? null : describeResolvedHandler(resolved);
             };
 
             const rows: TopicRow[] = [];
@@ -408,7 +411,7 @@ function eventsTopicsCommand(pluginHost: PluginHost) {
                     handler: await resolveHandler(declared),
                 });
             }
-            rows.push(...(await listCronTopicRows(boot.workspaceDir)));
+            rows.push(...(await listCronTopicRows(boot.workspaceDir, catalog)));
 
             writeMarkdown(renderTopicsDocument(rows), { raw: args.raw === true });
         },
@@ -416,31 +419,51 @@ function eventsTopicsCommand(pluginHost: PluginHost) {
 }
 
 /**
- * One row per cron handler: its topic is the handler file's folder, and
- * the handler is the file itself (cron events name their start handler).
- * Handlers directly at the workspace root (no topic) are skipped — the
- * cron scheduler ignores them too.
+ * One row per cron handler: its topic is derived from the handler file's
+ * path (`mail/digest.md` → `mail:digest`) and resolved exactly, like the
+ * cron event will be. A folder-form file shadowed by its `x.md` twin
+ * therefore shows the twin — the cron scheduler skips such firings.
+ * Files without a valid topic (workspace root, dotted names) are
+ * skipped — the cron scheduler ignores them too.
  *
  * @param workspaceDir Absolute workspace root.
- * @returns Rows sorted by handler path.
+ * @param catalog Handler catalog over the same workspace.
+ * @returns Rows sorted by topic.
  */
-async function listCronTopicRows(workspaceDir: string): Promise<TopicRow[]> {
+async function listCronTopicRows(
+    workspaceDir: string,
+    catalog: HandlerCatalog,
+): Promise<TopicRow[]> {
     const files = await scanWorkspace(workspaceDir, { frontmatter: { cron: "*" } });
     const rows: TopicRow[] = [];
     for (const file of files) {
-        const target = pathToHandlerTarget(file.relativePath);
-        if (target === null) {
+        const topic = topicFromHandlerPath(file.relativePath);
+        if (topic === null) {
             continue;
         }
         const verbatim = readVerbatimCron(file.absolutePath) ?? "";
+        const resolved = await catalog.resolve(topic, { isExactTopic: true });
         rows.push({
-            topic: target.topic,
+            topic,
             source: "cron",
-            description: `Fires \`${verbatim}\``,
-            handler: file.relativePath,
+            description: `Fires \`${verbatim}\` (from \`${file.relativePath}\`)`,
+            handler: resolved === null ? null : describeResolvedHandler(resolved),
         });
     }
-    return rows.sort((a, b) => (a.handler ?? "").localeCompare(b.handler ?? ""));
+    return rows.sort((a, b) => a.topic.localeCompare(b.topic));
+}
+
+/**
+ * Render a resolved handler for the HANDLER column: its path, plus a
+ * conflict note when its folder-form twin also exists.
+ *
+ * @param resolved The catalog's resolution.
+ * @returns The cell text.
+ */
+function describeResolvedHandler(resolved: ResolvedHandler): string {
+    return resolved.shadowedPath === null
+        ? resolved.relativePath
+        : `${resolved.relativePath} (conflict: also ${resolved.shadowedPath})`;
 }
 
 /**
@@ -462,18 +485,6 @@ function renderTopicsDocument(rows: readonly TopicRow[]): string {
         `# Event topics\n\n${table}\n` +
         "Not listed: topics chosen at runtime — `familiar events emit`, cli-chat's topic prefix and deferred `schedule_subagent` wake-ups accept any topic.\n"
     );
-}
-
-/**
- * Express an absolute path under the workspace as a forward-slash
- * relative path, the form handler paths are shown in everywhere else.
- *
- * @param workspaceDir Absolute workspace root.
- * @param absolute Absolute path inside it.
- * @returns The workspace-relative path.
- */
-function toWorkspaceRelative(workspaceDir: string, absolute: string): string {
-    return path.relative(workspaceDir, absolute).split(path.sep).join("/");
 }
 
 /**

@@ -1,7 +1,7 @@
-import { markdownTable, parseCron, writeMarkdown } from "@getfamiliar/shared";
+import { markdownTable, parseCron, topicFromHandlerPath, writeMarkdown } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
-import { pathToHandlerTarget, readVerbatimCron } from "../cron/CronjobScheduler.js";
+import { readVerbatimCron } from "../cron/CronjobScheduler.js";
 import { scanWorkspace } from "../utils/WorkspaceWatcher.js";
 
 /**
@@ -37,14 +37,14 @@ export const cronCommand = defineCommand({
                 const rows: Row[] = [];
                 for (const file of files) {
                     const verbatim = readVerbatimCron(file.absolutePath) ?? "";
-                    const target = pathToHandlerTarget(file.relativePath);
+                    const topic = topicFromHandlerPath(file.relativePath);
                     const parsed = parseCron(verbatim);
                     rows.push({
                         path: file.relativePath,
                         verbatim,
                         expression: parsed?.expression ?? "—",
                         source: parsed?.source ?? "—",
-                        status: target === null ? "root" : parsed === null ? "invalid" : "ok",
+                        status: topic === null ? "no-topic" : parsed === null ? "invalid" : "ok",
                     });
                 }
                 rows.sort((a, b) => a.path.localeCompare(b.path));
@@ -59,7 +59,7 @@ interface Row {
     readonly verbatim: string;
     readonly expression: string;
     readonly source: string;
-    readonly status: "ok" | "invalid" | "root";
+    readonly status: "ok" | "invalid" | "no-topic";
 }
 
 /**

@@ -99,15 +99,14 @@ Run `familiar prompt placeholders` for the authoritative list including placehol
 | Placeholder | Kind | Value |
 | --- | --- | --- |
 | `{CACHE_MARKER}` | static | Not a value: the split point between system prompt and user message (see above). Only the first one in `PROMPT.md` counts. |
-| `{HANDLER_CONTENT}` | static | The body of the resolved handler (merged with its parent handlers, see "Inheritance"). Placeholders inside it are expanded. |
+| `{HANDLER_CONTENT}` | static | The body of the resolved handler file. Placeholders inside it are expanded. |
 | `{PRELOADED_SKILLS}` | static | The full content of every skill listed in the handler's `skills` frontmatter (frontmatter stripped), each under its own `# Skill \`id\` (preloaded)` heading with a note that it is already loaded. Empty when the handler preloads nothing. Not cut at the per-file size limit. Placeholders inside are expanded. |
-| `{HANDLER_PATH}` | static | Workspace-relative path of the handler, e.g. `chat/telegram/index.md`. |
-| `{HANDLER_INHERITS}` | static | The parent handlers it was merged with, as `` `chat/index.md` ``, or `(none)`. |
+| `{HANDLER_PATH}` | static | Workspace-relative path of the handler, e.g. `chat/telegram.md`. |
 | `{SKILL_LIST}` | static | One bullet per skill in `skills/`: `` - `id`: description ``. |
 | `{TOOL_LIST}` | static¹ | One bullet per tool preloaded for this run. |
 | `{PYTHON_PACKAGE_LIST}` | static | Comma-separated python packages available to the `bash` tool (`python.packages` in `config.yml`). |
 | `{WRITABLE_PATH_LIST}` | static | Comma-separated `core.writablePaths` globs a non-privileged run may write to. |
-| `{RUNTIME_LIST}` | dynamic | Bullets: current time, event topic, handler file, inheritance, scratch dir (`/scratch/<event-id>/`), `outputChat`, `privileged`. |
+| `{RUNTIME_LIST}` | dynamic | Bullets: current time, event topic, handler file, scratch dir (`/scratch/<event-id>/`), `outputChat`, `privileged`. |
 | `{CURRENT_TIME}` | dynamic | e.g. `Tuesday, 2026-05-19T18:43:12 in timezone Europe/Berlin`. |
 | `{EVENT_TOPIC}` | dynamic | The event topic, e.g. `chat:telegram`. |
 | `{PRIVILEGED}` | dynamic | `yes` if the run stems from you (terminal, your Telegram), else `no`. Non-privileged runs can't write outside their `/scratch/<event-id>/` and the writable paths. |
@@ -133,7 +132,7 @@ For one run, the model gets:
 
 ## Handlers
 
-A handler is a markdown file at `<topic folder>/<name>.md`. The topic `chat:telegram` maps to the folder `chat/telegram/`. When an event arrives, its root run uses the handler `index` (unless the event names another start handler); handlers start other handlers by name via the `start_subagent` / `schedule_subagent` tools.
+A handler is a markdown file, and its **topic is its address**: `:` separates folders, the last segment names the file. The topic `chat:telegram` is the handler `chat/telegram.md` — or, equivalently, `chat/telegram/index.md` (handy when the folder holds further handlers anyway). Only one of the two forms may exist for a topic. An event runs the handler of its topic; handlers start other handlers by topic via the `start_subagent` / `schedule_subagent` tools (e.g. `topic: "mail:analyze"` runs `mail/analyze.md`).
 
 ```markdown
 ---
@@ -147,17 +146,21 @@ Triage the incoming mail. Before replying, read `people/<sender>.md` if it exist
 
 Keep handlers short. Tell the agent *where to find* context (`people/…`, `wiki/…`, a skill) instead of pasting it in — it reads files on demand with `fs_read`.
 
-Files directly in the workspace root (`PROMPT.md`, `SOUL.md`, …) are never handlers, and neither is anything under `core.writablePaths`. Handlers *may* live in a skill folder (see [Skills](#skills)).
+Files directly in the workspace root (`PROMPT.md`, `SOUL.md`, …) are never handlers — so a top-level topic like `mail` is always `mail/index.md` — and neither is anything under `core.writablePaths`. Handlers *may* live in a skill folder (see [Skills](#skills)); e.g. the memory plugin's `skills:memory:save` is `skills/memory/save.md`.
 
-### Resolution and inheritance
+### Resolution
 
-Handlers are resolved from the most specific folder upwards. For topic `chat:telegram:group` and handler `index`, Familiar looks at:
+For topic `chat:telegram:group`, Familiar looks at:
 
-1. `chat/telegram/group/index.md`
-2. `chat/telegram/index.md`
+1. `chat/telegram/group.md`, then `chat/telegram/group/index.md`
+2. `chat/telegram.md`, then `chat/telegram/index.md`
 3. `chat/index.md`
 
-By default **every** existing file in that chain is merged, root first: the bodies are concatenated (general guidance first, specific last) and frontmatter fields declared deeper override the ones above. Set `mergeMode: replace` in a file to cut the chain above it — that file then stands alone (with whatever is below it). `{HANDLER_INHERITS}` and the runtime list show which files were merged.
+The **first file found is the handler, and it is the only file loaded** — nothing from the levels above is merged in. If you want shared guidance across several handlers, put it in a file and include it with `{mail/rules.md}`, or make it a skill.
+
+Only **events** from the outside world (a new mail, a chat message, …) walk up the chain, so `mail:new:ms365` lands on `mail/index.md` until you write a more specific handler. Everything that names a handler on purpose must match exactly, with no fallback: `start_subagent` / `schedule_subagent` (including deferred wake-ups), cron firings, cli-chat's `/a/b/c` direct calls, and plugin emissions like memory's `skills:memory:save`. A missing file there is an error, not a silent detour to a more general handler.
+
+If both `x.md` and `x/index.md` exist, `x.md` wins and every run logs a warning (`familiar events topics` and `familiar prompt dry-run` show the conflict too) — delete one of them.
 
 ### Frontmatter reference
 
@@ -168,12 +171,11 @@ All fields are optional. Unknown fields are ignored (so `description:` for your 
 | `model` | string | `inference.defaultModel` | Model to run under: an alias from `inference.aliases` in `config.yml` (e.g. `fast`, `smart`) or a provider model id. Use a light model for routing and triage, a heavy one for drafting and reasoning. |
 | `temperature` | number | provider default | Sampling temperature. `0` for deterministic extraction tasks, higher for creative writing. |
 | `tools` | list or comma string | `core` | Tools preloaded into the run. Entries are tool names (`send_chat`), globs (`mail_*`, quote them in a YAML list: `"mail_*"`), or groups: `core`, `fs`, `bash`, `reflection`, `mcp`, `all`, `none`, plus one group per MCP id and per plugin id. Entries are combined. Tools not listed stay reachable through `tool_call`; preloading just saves the model a discovery step. |
-| `skills` | list or comma string | — | Skill ids (folder names under `skills/`) whose `SKILL.md` is rendered straight into the prompt via `{PRELOADED_SKILLS}`, e.g. `skills: jira, reflection`. The `tools` a preloaded skill declares are added to this handler's preloaded tools. A missing skill fails the run with an error naming it. Like every field, a deeper handler's `skills` replaces its parent's. |
+| `skills` | list or comma string | — | Skill ids (folder names under `skills/`) whose `SKILL.md` is rendered straight into the prompt via `{PRELOADED_SKILLS}`, e.g. `skills: jira, reflection`. The `tools` a preloaded skill declares are added to this handler's preloaded tools. A missing skill fails the run with an error naming it. |
 | `maxOutputTokens` | positive integer | from model metadata | Cap on tokens the model may produce per step. Never exceeds what the model supports. Useful against runaway monologues. |
 | `maxRetries` | integer ≥ 0 | `inference.maxRetries` (10) | Retries on temporary provider errors (429, 5xx, timeouts) with exponential backoff. `0` disables retries for this handler. |
 | `outputChat` | boolean | `false` | Also post the run's final text answer into the chat. For models that answer in text instead of calling `send_chat`. Don't combine with a handler that calls `send_chat`, or you'll get every answer twice. |
 | `cron` | string | — | Run this handler on a schedule. Friendly syntax (`every monday at 8 am`, `every 5 minutes`, `weekly`) or a raw cron expression. Picked up live when you save the file; check with `familiar cron list`. |
-| `mergeMode` | `merge` \| `replace` | `merge` | How this file combines with the handlers above it (see "Resolution and inheritance"). |
 | `systemPrompt` | `default` \| `none` \| path | `default` | Which template to render: `default` = `PROMPT.md`; `none` = only the handler body, no template at all (no identity, no tool list, no runtime facts) — for narrowly defined tasks where framing would only distract; a path like `prompts/minimal.md` = your own template for this handler. |
 | `toolCallOffloadingLimit` | positive integer | `core.toolCallOffloadingLimit` (16,000) | Token size above which a tool result is written to a scratch file instead of being shown inline (the model gets the path and can read it in parts). Raise it for handlers that need large results inline, lower it for noisy ones. |
 
@@ -223,7 +225,7 @@ Now: {CURRENT_TIME}
 
 and set `systemPrompt: prompts/minimal.md` in those handlers.
 
-**Shared rules for all mail handlers.** Write them once to `mail/rules.md`, and include `{mail/rules.md}` in each mail handler — or put them in `mail/index.md` and let inheritance carry them to `mail/new/ms365/index.md`.
+**Shared rules for all mail handlers.** Write them once to `mail/rules.md`, and include `{mail/rules.md}` in each mail handler (`mail/index.md`, `mail/new/ms365.md`, …). Handlers don't inherit from each other — only the most specific one runs.
 
 **Adding personal context.** Put facts about you in `CONTEXT.md` (job, family, preferences) — it's included by the default template. For larger knowledge, keep files under `people/` or `wiki/` and tell handlers to read them on demand.
 
@@ -232,7 +234,7 @@ and set `systemPrompt: prompts/minimal.md` in those handlers.
 | Command | What it shows |
 | --- | --- |
 | `familiar prompt placeholders` | Every placeholder, its source (core or plugin), whether it's static or dynamic, and what it contains. Works without a running daemon. |
-| `familiar prompt dry-run <topic> [--handler <name>] [--privileged] [--prompt "<text>"] [--full]` | Renders the prompt for a handler exactly as a run would — with the real tool set and plugin values — without starting a run or calling a model. Shows the template used, every placeholder with its value and where it ends up, plugin-appended sections and all warnings. `--full` prints the complete system prompt and user message head. `--prompt` feeds a sample message to plugins (e.g. so memory search has something to search for). Needs the daemon running. |
+| `familiar prompt dry-run <topic> [--privileged] [--prompt "<text>"] [--full]` | Renders the prompt for the handler an event of `<topic>` would run (e.g. `chat:telegram`, `skills:memory:save`) — with the real tool set and plugin values — without starting a run or calling a model. Shows the template used, every placeholder with its value and where it ends up, plugin-appended sections and all warnings. `--full` prints the complete system prompt and user message head. `--prompt` feeds a sample message to plugins (e.g. so memory search has something to search for). Needs the daemon running. |
 | `familiar cron list` | Every handler with a `cron:` field and how its schedule was parsed. |
 | `familiar tools list` | All available tools — useful for writing `tools:`. |
 | `familiar events report <id> -v` | What happened in a past event, including the prompt each run actually received — when `core.logSystemPrompt` is enabled in `config.yml` (`"full"`, or `"non-static"` to replace includes by `<content of file …>` and keep the log small). |

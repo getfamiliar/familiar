@@ -68,7 +68,6 @@ export function buildGetScheduledSubagentsTool(
                     key: row.key,
                     when: renderInZone(row.fireAt, timezone),
                     topic: row.topic,
-                    handler: row.handler,
                     prompt: row.prompt,
                     payload: row.payload,
                 }));

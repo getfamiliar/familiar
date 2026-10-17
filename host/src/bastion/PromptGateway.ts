@@ -75,7 +75,6 @@ export interface PromptPlaceholdersResponse {
  */
 interface DryRunInput {
     readonly topic: string;
-    readonly handler: string;
     readonly prompt: string | null;
     readonly privileged: boolean;
 }
@@ -305,12 +304,11 @@ function parseDryRun(raw: unknown): DryRunInput | null {
         return null;
     }
     const value = raw as Record<string, unknown>;
-    if (typeof value.topic !== "string" || typeof value.handler !== "string") {
+    if (typeof value.topic !== "string") {
         return null;
     }
     return {
         topic: value.topic,
-        handler: value.handler,
         prompt: typeof value.prompt === "string" ? value.prompt : null,
         privileged: value.privileged === true,
     };
@@ -334,7 +332,7 @@ function buildDryRunRows(input: DryRunInput): RunRows {
         isChat: false,
         preferredChatChannelId: null,
         prompt: input.prompt ?? "",
-        startHandler: input.handler,
+        isExactTopic: false,
         privileged: input.privileged,
         outputChatOnFailure: false,
         createdAt: now,
@@ -345,7 +343,7 @@ function buildDryRunRows(input: DryRunInput): RunRows {
         eventId: event.id,
         parentAgentrunId: null,
         topic: input.topic,
-        handler: input.handler,
+        isExactTopic: false,
         model: null,
         priority: 0,
         state: "running",

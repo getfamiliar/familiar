@@ -80,11 +80,11 @@ export function buildEventListTool(deps: ReflectionToolsDeps): PluginTool<EventL
                 }
 
                 const lines: string[] = [];
-                lines.push("| ID | Topic | Handler | State | Prompt |");
-                lines.push("| --- | --- | --- | --- | --- |");
+                lines.push("| ID | Topic | State | Prompt |");
+                lines.push("| --- | --- | --- | --- |");
                 for (const row of rows) {
                     lines.push(
-                        `| ${row.id} | \`${row.topic}\` | ${row.startHandler ?? "index"} | ` +
+                        `| ${row.id} | \`${row.topic}\` | ` +
                             `${row.state} | ${escapeCell(renderPromptPreview(row.prompt))} |`,
                     );
                 }

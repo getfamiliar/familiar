@@ -10,7 +10,7 @@ function row(id: string, parentAgentrunId: string | null, prompt = "p"): AgentRu
         eventId: "1",
         parentAgentrunId,
         topic: "t",
-        handler: "h",
+        isExactTopic: true,
         model: null,
         priority: 50,
         state: "done",

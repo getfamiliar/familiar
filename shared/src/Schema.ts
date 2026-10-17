@@ -52,16 +52,18 @@ export const CHATMESSAGES_NEW_CHANNEL = "chatmessages_new";
 export const SCHEDULED_SUBAGENTS_CHANNEL = "scheduled_subagents_changed";
 
 /**
- * Topic regex used by the events check constraint and by the container
- * runtime when resolving handler files. One word, optionally followed
- * by any number of `:`-prefixed sub-topic words. Examples:
- * `mail`, `chat:cli`, `chat:telegram:group:reaction`.
+ * Topic regex used by the topic check constraints and by the container
+ * runtime when resolving handler files. One word (word characters and
+ * dashes), optionally followed by any number of `:`-prefixed sub-topic
+ * words. Examples: `mail`, `chat:cli`, `mail:extract-style`,
+ * `chat:telegram:group:reaction`.
  *
- * The container resolves a handler for topic `a:b:c` by walking the
- * chain `a/b/c/<basename>.md → a/b/<basename>.md → a/<basename>.md`
- * deepest-first and merging every existing layer (see HandlerFile.load).
+ * The topic is a handler's whole address: `a:b:c` names the single file
+ * `a/b/c.md` (or its folder form `a/b/c/index.md`). Events fall back up
+ * the chain (`a:b`, `a`) when that file is missing; everything else must
+ * match exactly (see `HandlerResolution.ts`).
  */
-export const TOPIC_PATTERN = "^\\w+(:\\w+)*$";
+export const TOPIC_PATTERN = "^[\\w-]+(:[\\w-]+)*$";
 
 export const SCHEMA_SQL = `
 -- Drop legacy single-table artifacts from before the events/agentruns
@@ -108,10 +110,13 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS preferred_chat_channel_id text;
 -- emitter's framing without the EventWatcher having to reach into the
 -- payload schema.
 ALTER TABLE events ADD COLUMN IF NOT EXISTS prompt text;
--- Optional override for the root agentrun's handler. When NULL the
--- input-event watcher falls back to 'index' — same behaviour as
--- before this column existed. Set by the emitter on NewEvent.
-ALTER TABLE events ADD COLUMN IF NOT EXISTS start_handler text;
+-- The topic is the handler's whole address now; the separate start
+-- handler basename is gone.
+ALTER TABLE events DROP COLUMN IF EXISTS start_handler;
+-- When true the topic must name an existing handler file exactly; when
+-- false (world events) handler resolution falls back up the topic chain.
+-- Copied onto the root agentrun by the input-event watcher.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS is_exact_topic boolean NOT NULL DEFAULT false;
 -- Privileged events originate from a trusted user-input source (operator
 -- at the local terminal via cli-chat, operator on Telegram). The flag
 -- propagates verbatim to the root agentrun and to every child agentrun
@@ -136,7 +141,6 @@ CREATE TABLE IF NOT EXISTS agentruns (
   event_id           bigint NOT NULL REFERENCES events(id) ON DELETE CASCADE,
   parent_agentrun_id bigint REFERENCES agentruns(id) ON DELETE CASCADE,
   topic              text NOT NULL,
-  handler            text NOT NULL,
   priority           smallint NOT NULL DEFAULT 50,
   state              text NOT NULL DEFAULT 'pending',
   prompt             text,
@@ -153,6 +157,11 @@ CREATE TABLE IF NOT EXISTS agentruns (
 -- Forward-compat ALTER for databases created before result_text landed.
 -- Safe no-op on fresh databases where the column already exists.
 ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS result_text text;
+-- The topic is the handler's whole address; the basename column is gone.
+ALTER TABLE agentruns DROP COLUMN IF EXISTS handler;
+-- Whether handler resolution must match the topic exactly. Root
+-- agentruns copy the event's flag; spawned children are always exact.
+ALTER TABLE agentruns ADD COLUMN IF NOT EXISTS is_exact_topic boolean NOT NULL DEFAULT true;
 -- Inherited from the originating event (root agentrun) or parent
 -- agentrun (children spawned via schedule_subagent / start_subagent). See
 -- the matching ALTER on the events table for the trust-model rationale.
@@ -455,7 +464,6 @@ CREATE TABLE IF NOT EXISTS scheduled_subagents (
   key         text PRIMARY KEY,
   fire_at     timestamptz NOT NULL,
   topic       text NOT NULL,
-  handler     text NOT NULL,
   prompt      text,
   payload     jsonb NOT NULL DEFAULT '{}'::jsonb,
   priority    smallint NOT NULL DEFAULT 50,
@@ -463,6 +471,12 @@ CREATE TABLE IF NOT EXISTS scheduled_subagents (
   created_at  timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT scheduled_subagents_topic_format CHECK (topic ~ '${TOPIC_PATTERN}')
 );
+
+-- The topic is the handler's whole address; the basename column is gone.
+ALTER TABLE scheduled_subagents DROP COLUMN IF EXISTS handler;
+-- Re-add the topic CHECK so a widened TOPIC_PATTERN reaches existing tables.
+ALTER TABLE scheduled_subagents DROP CONSTRAINT IF EXISTS scheduled_subagents_topic_format;
+ALTER TABLE scheduled_subagents ADD CONSTRAINT scheduled_subagents_topic_format CHECK (topic ~ '${TOPIC_PATTERN}');
 
 CREATE INDEX IF NOT EXISTS scheduled_subagents_fire_at_idx
   ON scheduled_subagents (fire_at);

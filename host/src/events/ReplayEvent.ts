@@ -33,7 +33,7 @@ export async function replayOne(
         outputChatOnFailure: source.outputChatOnFailure,
         idempotencyKey:
             source.idempotencyKey === null ? undefined : `${source.idempotencyKey}-replay`,
-        startHandler: source.startHandler ?? undefined,
+        isExactTopic: source.isExactTopic,
     };
     const sourceDir = path.join(scratchDir, source.id);
     const sourceEntries = await listScratchFiles(sourceDir);

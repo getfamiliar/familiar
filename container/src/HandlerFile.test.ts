@@ -40,14 +40,14 @@ test("load refuses a handler whose leaf lives under a writable path", () => {
     setWritablePaths(["wiki/**"]);
     touch("wiki/index.md");
 
-    assert.throws(() => HandlerFile.load("wiki", "index"), /core\.writablePaths/);
+    assert.throws(() => HandlerFile.load("wiki", { isExactTopic: true }), /core\.writablePaths/);
 });
 
 test("load still resolves a normal handler outside writable paths", () => {
     setWritablePaths(["wiki/**"]);
     touch("mail/index.md");
 
-    const handler = HandlerFile.load("mail", "index");
+    const handler = HandlerFile.load("mail", { isExactTopic: true });
     assert.equal(handler.relativePath, "mail/index.md");
 });
 
@@ -55,7 +55,7 @@ test("load resolves wiki handlers when no writable paths are configured", () => 
     delete process.env[CONFIG_VAR];
     touch("wiki/index.md");
 
-    const handler = HandlerFile.load("wiki", "index");
+    const handler = HandlerFile.load("wiki", { isExactTopic: true });
     assert.equal(handler.relativePath, "wiki/index.md");
 });
 
@@ -64,7 +64,7 @@ test("load resolves handlers living next to a skill (intended, e.g. skills/memor
     touch("skills/memory/SKILL.md", "# memory skill\n");
     touch("skills/memory/save.md", "# save handler\n");
 
-    const handler = HandlerFile.load("skills:memory", "save");
+    const handler = HandlerFile.load("skills:memory:save", { isExactTopic: true });
     assert.equal(handler.relativePath, "skills/memory/save.md");
 });
 
@@ -72,7 +72,7 @@ test("systemPrompt accepts default, none and a workspace .md path", () => {
     delete process.env[CONFIG_VAR];
     for (const value of ["default", "none", "prompts/minimal.md"]) {
         touch("mail/index.md", `---\nsystemPrompt: ${value}\n---\nbody\n`);
-        assert.equal(HandlerFile.load("mail", "index").header.systemPrompt, value);
+        assert.equal(HandlerFile.load("mail", { isExactTopic: true }).header.systemPrompt, value);
     }
 });
 
@@ -80,7 +80,7 @@ test("systemPrompt rejects the retired modes and unsafe paths", () => {
     delete process.env[CONFIG_VAR];
     for (const value of ["full", "only-soul", "../outside.md", "/abs.md", "prompts/x.txt"]) {
         touch("mail/index.md", `---\nsystemPrompt: ${value}\n---\nbody\n`);
-        assert.throws(() => HandlerFile.load("mail", "index"), /systemPrompt/);
+        assert.throws(() => HandlerFile.load("mail", { isExactTopic: true }), /systemPrompt/);
     }
 });
 
@@ -88,21 +88,64 @@ test("skills parses from a comma string and a YAML list", () => {
     touch("mail/index.md", "---\nskills: jira, tesla\n---\nbody\n");
     touch("chat/index.md", "---\nskills:\n  - reflection\n  - whoop\n---\nbody\n");
 
-    assert.deepEqual(HandlerFile.load("mail", "index").header.skills, ["jira", "tesla"]);
-    assert.deepEqual(HandlerFile.load("chat", "index").header.skills, ["reflection", "whoop"]);
+    assert.deepEqual(HandlerFile.load("mail", { isExactTopic: true }).header.skills, [
+        "jira",
+        "tesla",
+    ]);
+    assert.deepEqual(HandlerFile.load("chat", { isExactTopic: true }).header.skills, [
+        "reflection",
+        "whoop",
+    ]);
 });
 
 test("skills rejects path-like entries", () => {
     touch("mail/index.md", "---\nskills: ../secret\n---\nbody\n");
 
-    assert.throws(() => HandlerFile.load("mail", "index"), /header field "skills"/);
+    assert.throws(() => HandlerFile.load("mail", { isExactTopic: true }), /header field "skills"/);
 });
 
-test("a child handler's skills replace its parent's", () => {
-    touch("chat/index.md", "---\nskills: memory\n---\nparent\n");
-    touch("chat/telegram/index.md", "---\nskills: reflection\n---\nchild\n");
-    touch("chat/whatsapp/index.md", "child without skills\n");
+test("only the most specific handler file is loaded — nothing is inherited", () => {
+    touch("chat/index.md", "---\nskills: memory\nmodel: parent-model\n---\nparent body\n");
+    touch("chat/telegram.md", "---\nskills: reflection\n---\nchild body\n");
 
-    assert.deepEqual(HandlerFile.load("chat:telegram", "index").header.skills, ["reflection"]);
-    assert.deepEqual(HandlerFile.load("chat:whatsapp", "index").header.skills, ["memory"]);
+    const handler = HandlerFile.load("chat:telegram", { isExactTopic: false });
+    assert.equal(handler.relativePath, "chat/telegram.md");
+    assert.equal(handler.body, "child body");
+    assert.deepEqual(handler.header.skills, ["reflection"]);
+    assert.equal(handler.header.model, undefined);
+});
+
+test("non-exact topics fall back up the chain to the nearest existing file", () => {
+    touch("chat/index.md", "parent body\n");
+
+    const handler = HandlerFile.load("chat:telegram:group", { isExactTopic: false });
+    assert.equal(handler.relativePath, "chat/index.md");
+    assert.equal(handler.body, "parent body");
+});
+
+test("exact topics do not fall back", () => {
+    touch("chat/index.md", "parent body\n");
+
+    assert.throws(
+        () => HandlerFile.load("chat:telegram", { isExactTopic: true }),
+        /Handler not found for topic="chat:telegram"/,
+    );
+});
+
+test("x.md wins over x/index.md and the loser is reported as shadowed", () => {
+    touch("mail/new/ms365.md", "file form\n");
+    touch("mail/new/ms365/index.md", "folder form\n");
+
+    const handler = HandlerFile.load("mail:new:ms365", { isExactTopic: true });
+    assert.equal(handler.relativePath, "mail/new/ms365.md");
+    assert.equal(handler.body, "file form");
+    assert.equal(handler.shadowedPath, "mail/new/ms365/index.md");
+});
+
+test("the folder form x/index.md resolves when it is the only form", () => {
+    touch("mail/new/ms365/index.md", "folder form\n");
+
+    const handler = HandlerFile.load("mail:new:ms365", { isExactTopic: true });
+    assert.equal(handler.relativePath, "mail/new/ms365/index.md");
+    assert.equal(handler.shadowedPath, null);
 });

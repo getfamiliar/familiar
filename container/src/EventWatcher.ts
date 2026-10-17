@@ -74,11 +74,9 @@ export class EventWatcher {
     }
 
     /**
-     * Insert a root agentrun for `event` pointing at the topic's
-     * handler — `event.startHandler` if the emitter set one, else
-     * the default `index`. Topic, priority, and payload are copied
-     * so the agentrun is self-contained for handler resolution and
-     * execution.
+     * Insert a root agentrun for `event`. Topic, `isExactTopic`,
+     * priority, and payload are copied so the agentrun is
+     * self-contained for handler resolution and execution.
      *
      * On insert failure the event is marked `failed` directly — no
      * agentrun ever existed for it, so the reactive terminal logic has
@@ -95,7 +93,7 @@ export class EventWatcher {
             const root = await this.agentruns.add({
                 eventId: event.id,
                 topic: event.topic,
-                handler: event.startHandler ?? "index",
+                isExactTopic: event.isExactTopic,
                 priority: event.priority,
                 payload: event.payload,
                 prompt: event.prompt,

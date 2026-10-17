@@ -18,8 +18,7 @@ test("/exit and /clear are builtins", () => {
 test("two-segment path becomes a handler call", () => {
     assert.deepEqual(parseInput("/calendar/today"), {
         kind: "handler",
-        topic: "calendar",
-        startHandler: "today",
+        topic: "calendar:today",
         prompt: "",
         rawInput: "/calendar/today",
     });
@@ -28,26 +27,33 @@ test("two-segment path becomes a handler call", () => {
 test("three-segment path joins topic with colons", () => {
     assert.deepEqual(parseInput("/grocery/fruits/order Please order apples"), {
         kind: "handler",
-        topic: "grocery:fruits",
-        startHandler: "order",
+        topic: "grocery:fruits:order",
         prompt: "Please order apples",
         rawInput: "/grocery/fruits/order Please order apples",
     });
 });
 
-test("single-segment slash falls back to plain prompt", () => {
-    assert.deepEqual(parseInput("/foo bar"), {
+test("single-segment path addresses a top-level topic", () => {
+    assert.deepEqual(parseInput("/mail bar"), {
         kind: "handler",
-        prompt: "/foo bar",
-        rawInput: "/foo bar",
+        topic: "mail",
+        prompt: "bar",
+        rawInput: "/mail bar",
+    });
+});
+
+test("a bare slash falls back to plain prompt", () => {
+    assert.deepEqual(parseInput("/ bar"), {
+        kind: "handler",
+        prompt: "/ bar",
+        rawInput: "/ bar",
     });
 });
 
 test("trailing slashes are ignored, not turned into empty segments", () => {
     assert.deepEqual(parseInput("/grocery/fruits/"), {
         kind: "handler",
-        topic: "grocery",
-        startHandler: "fruits",
+        topic: "grocery:fruits",
         prompt: "",
         rawInput: "/grocery/fruits/",
     });

@@ -72,15 +72,15 @@ The system splits into two trust zones: a **host** that holds credentials and or
 
 The container runs a pull-based input watcher and an `AgentrunScheduler`:
 
-- **Input-event watcher.** Watches the `events` table for new rows in `pending`, atomically claims them (`pending → running`), and inserts a root `agentruns` row pointing at `<topic>/index.md` in the workspace. After that the input event is no longer of interest to the watcher; the event's terminal state mirrors the root agentrun's terminal state, set reactively when the root settles.
+- **Input-event watcher.** Watches the `events` table for new rows in `pending`, atomically claims them (`pending → running`), and inserts a root `agentruns` row for the event's topic (resolved to a workspace handler file, see "Handler resolution"). After that the input event is no longer of interest to the watcher; the event's terminal state mirrors the root agentrun's terminal state, set reactively when the root settles.
 - **`AgentrunScheduler`.** Single in-process authority on which agentrun runs next. Holds an in-memory map of active runners (executing vs. paused), picks eligible `pending` rows preferring resume candidates, owns per-run timeouts and retry / failure classification, and is the *only* writer of agentrun lifecycle state. Concurrency is gated on the count of *executing* (non-paused) runners; the default `maxConcurrentExecuting=1` matches the single Featherless Pro slot. Per-model parallelism is a future filter on the same picker.
 
 A handler can spawn **subagents** in two ways. A subagent is not needed to reach a tool — every tool is directly callable via dynamic discovery. Spawn one when you want isolation: a fresh/empty context and a different model or tool set (both taken from the target handler's frontmatter), and — in the future — parallel fan-out.
 
-- `schedule_subagent({handler, topic?, prompt?, payload?, when?, key?})` — fire-and-forget, or an alarm. With a future `when` (ISO-8601 wall-clock in the user's local timezone), the host defers it and fires a fresh event at that time; pass a stable `key` to make rescheduling idempotent (re-using the key overwrites the previous schedule), or omit it for an auto-generated id. Without `when`, the new agentrun runs immediately as a child of the current run under the same event; the caller does not see its result. A `when` that parses to a past instant silently falls back to the immediate path. Companion tools: `unschedule_subagent({key})` cancels a pending schedule, `get_scheduled_subagents` lists them.
-- `start_subagent({handler, topic?, prompt?, payload?})` — suspending. The current run is parked (state `waiting`) while the subagent executes; when it settles, the tool returns the subagent's final text as `resultText` (or its error if it failed) so the parent can react. The Scheduler genuinely frees the parent's execution slot during the wait — other agentruns can interleave.
+- `schedule_subagent({topic, prompt?, payload?, when?, key?})` — fire-and-forget, or an alarm. With a future `when` (ISO-8601 wall-clock in the user's local timezone), the host defers it and fires a fresh event at that time; pass a stable `key` to make rescheduling idempotent (re-using the key overwrites the previous schedule), or omit it for an auto-generated id. Without `when`, the new agentrun runs immediately as a child of the current run under the same event; the caller does not see its result. A `when` that parses to a past instant silently falls back to the immediate path. Companion tools: `unschedule_subagent({key})` cancels a pending schedule, `get_scheduled_subagents` lists them.
+- `start_subagent({topic, prompt?, payload?})` — suspending. The current run is parked (state `waiting`) while the subagent executes; when it settles, the tool returns the subagent's final text as `resultText` (or its error if it failed) so the parent can react. The Scheduler genuinely frees the parent's execution slot during the wait — other agentruns can interleave.
 
-`schedule_subagent` (immediate mode) and `start_subagent` children inherit `event_id` and `privileged` from the parent; `topic` defaults to the parent's when omitted. This produces an arbitrary, branching workflow tree rooted at `<topic>/index.md` instead of a fixed pipeline. **The root agentrun is the orchestrator of its event**: the event's terminal state is the root's terminal state. Immediate `schedule_subagent` children are out-of-band side effects (they will not flip the event's outcome on their own — useful for fan-out fire-and-forget); `start_subagent` children fold their result back into the parent, so they participate in the root's outcome through the chain of returns. Deferred `schedule_subagent` wake-ups always run under a fresh event (no parent). The same suspend/resume mechanism will back the approval gate (see open question #1).
+`schedule_subagent` (immediate mode) and `start_subagent` children inherit `event_id` and `privileged` from the parent; `topic` is required and names the target handler exactly (`mail:analyze` → `mail/analyze.md`; the path form `mail/analyze.md` is accepted too). This produces an arbitrary, branching workflow tree rooted at the event's handler instead of a fixed pipeline. **The root agentrun is the orchestrator of its event**: the event's terminal state is the root's terminal state. Immediate `schedule_subagent` children are out-of-band side effects (they will not flip the event's outcome on their own — useful for fan-out fire-and-forget); `start_subagent` children fold their result back into the parent, so they participate in the root's outcome through the chain of returns. Deferred `schedule_subagent` wake-ups always run under a fresh event (no parent). The same suspend/resume mechanism will back the approval gate (see open question #1).
 
 The container has no direct network access except through the MCP gateway. It has no credentials. It can read and write its workspace and the bus state database.
 
@@ -89,22 +89,21 @@ The container has no direct network access except through the MCP gateway. It ha
 A canonical event lifecycle:
 
 1. **Host plugin** detects something in the world (e.g. new mail via IMAP IDLE) and calls a standardized event ingestion API on the host.
-2. **Host** writes the event to the `events` table with a globally unique idempotency key. Topic matches `\w+(:\w+)*` (e.g. `mail:new`, `chat:telegram:group:reaction`). `NOTIFY events_new` wakes the container.
-3. **Container's input-event watcher** atomically claims the event (`pending → running`) and inserts a root `agentruns` row for it, with `handler=event.startHandler ?? 'index'` and `topic` copied from the event. `NOTIFY agentruns_changed` wakes the agentrun scheduler.
+2. **Host** writes the event to the `events` table with a globally unique idempotency key. Topic matches `[\w-]+(:[\w-]+)*` (e.g. `mail:new`, `chat:telegram:group:reaction`). `NOTIFY events_new` wakes the container.
+3. **Container's input-event watcher** atomically claims the event (`pending → running`) and inserts a root `agentruns` row for it, with `topic` and `is_exact_topic` copied from the event. `NOTIFY agentruns_changed` wakes the agentrun scheduler.
 4. **`AgentrunScheduler`** picks the row (`pending → running`), resolves the handler markdown file (see "Handler resolution"), and runs an agent session against it. The handler's content is the prompt; the agent has MCP tools plus the `schedule_subagent` / `start_subagent` subagent tools.
-5. **Inside the handler**, the agent decides what to do next. It may call MCP tools, edit workspace files, and spawn subagents via `schedule_subagent` (fire-and-forget when called without `when`) or `start_subagent` (suspend-and-await) — e.g. `index.md` triages, fans `respond` off as a scheduled child, and starts `analyze` to react to its summary. Each child is another `agentruns` row with `parent_agentrun_id` set to the spawning row, `event_id` propagated, and `calltype` set to `'scheduled'` or `'started'`. A `schedule_subagent` call with a future `when` produces no child agentrun under the current event — it inserts a `scheduled_subagents` row instead, and the host fires it later as a fresh event.
+5. **Inside the handler**, the agent decides what to do next. It may call MCP tools, edit workspace files, and spawn subagents via `schedule_subagent` (fire-and-forget when called without `when`) or `start_subagent` (suspend-and-await) — e.g. `mail/index.md` triages, fans `mail:respond` off as a scheduled child, and starts `mail:analyze` to react to its summary. Each child is another `agentruns` row with `parent_agentrun_id` set to the spawning row, `event_id` propagated, and `calltype` set to `'scheduled'` or `'started'`. A `schedule_subagent` call with a future `when` produces no child agentrun under the current event — it inserts a `scheduled_subagents` row instead, and the host fires it later as a fresh event.
 6. **For risky writes**, the handler proposes a **pending action** through the approval gate. The agentrun **suspends** until the user responds, then resumes and continues. Suspend/resume mechanics are TBD — see open questions.
 7. **When the root agentrun finishes**, `AgentRunBus.settle()` writes its terminal state and, in the same transaction, mirrors that state onto the parent event via `EVENT_TERMINAL_UPDATE_SQL` (the event's outcome equals the root's outcome — root settles `done` → event `done`; root settles `failed` → event `failed`). Non-root agentruns settling out-of-band (scheduled `schedule_subagent` descendants) do not flip the event. `NOTIFY events_state` lets host plugins react to the final outcome (e.g. send a chat reply back to the user).
 8. **Consequence events** (a write that triggers another world change) re-enter step 1 as fresh events with a new id. There is no global causation chain across events; lineage *within* an event lives on `agentruns.parent_agentrun_id`. Producers can pass parent context in the new event's payload if needed.
 
 ### Handler resolution
 
-The agentrun's `topic` and `handler` fields determine which markdown file to load. Override rule for a topic like `chat:telegram` and handler `analyze`:
+The topic is the handler's whole address — there is no separate handler basename. `:` separates folders and the last segment names the file: topic `chat:telegram` is `workspace/chat/telegram.md`, or its folder form `workspace/chat/telegram/index.md`. Only one of the two forms may exist; if both do, `x.md` wins and the run logs a conflict warning. Workspace-root files are never handlers, so a single-segment topic `mail` is only `mail/index.md`. The candidate list lives in `shared/src/HandlerResolution.ts` (`handlerCandidateLevels` / `resolveHandlerPath` / `topicFromHandlerPath` / `twinHandlerPath`), shared by the container's `HandlerFile.load` and the host's `HandlerCatalog`.
 
-1. Try `workspace/chat/telegram/analyze.md`.
-2. Fall back to `workspace/chat/analyze.md`.
+**Exactly one file is loaded** — nothing is merged or concatenated from less specific levels. Shared guidance goes into an included file (`{mail/rules.md}`) or a skill.
 
-The override applies uniformly to all handlers, not just `index`. Validation happens at subagent-spawn time: both `schedule_subagent` and `start_subagent` resolve the path and refuse if neither file exists, so the calling agent gets a synchronous error.
+**Only world events fall back up the topic chain.** `events.is_exact_topic` / `NewEvent.isExactTopic` (default `false`) decides: for a non-exact event with topic `mail:new:ms365` the resolver tries `mail/new/ms365.md`, `mail/new/ms365/index.md`, then `mail/new.md`, `mail/new/index.md`, then `mail/index.md`, and runs the first file found. The root agentrun copies the flag (`agentruns.is_exact_topic`); everything that *addresses* a handler is exact and fails when the file is missing — `start_subagent` / `schedule_subagent` children (column default `true`) and deferred wake-ups, cron firings, cli-chat `/a/b/c` direct calls, the chat compactor and memory's `skills:memory:save`. Validation happens at subagent-spawn time: both subagent tools resolve the topic exactly and refuse if it doesn't exist, so the calling agent gets a synchronous error.
 
 ### Safety mechanisms
 
@@ -119,8 +118,8 @@ Three distinct storage layers, each with a clear purpose and owner.
 
 Postgres database, owned by the host. Both host and container access it via the shared `EventBus` / `AgentRunBus` clients in `shared/`. Two tables today:
 
-- `events` — `id`, `topic` (CHECK against `\w+(:\w+)*`), `priority`, `state` (`pending|running|done|failed`), `payload`, `idempotency_key`, timestamps. Immutable record of "the world said this happened". State transitions are bookkeeping — nothing wakes on them except host-side completion waiters via `NOTIFY events_state`.
-- `agentruns` — `id`, `event_id` (FK), `parent_agentrun_id` (self-FK, null for root), `topic`, `handler`, `priority`, `state` (`pending|running|done|failed`), `prompt`, `payload`, `result`, `error`, timestamps. The assistant's response tree per event.
+- `events` — `id`, `topic` (CHECK against `TOPIC_PATTERN`, `[\w-]+(:[\w-]+)*`), `is_exact_topic`, `priority`, `state` (`pending|running|done|failed`), `payload`, `idempotency_key`, timestamps. Immutable record of "the world said this happened". State transitions are bookkeeping — nothing wakes on them except host-side completion waiters via `NOTIFY events_state`.
+- `agentruns` — `id`, `event_id` (FK), `parent_agentrun_id` (self-FK, null for root), `topic`, `is_exact_topic`, `priority`, `state` (`pending|running|done|failed`), `prompt`, `payload`, `result`, `error`, timestamps. The assistant's response tree per event.
 
 Three NOTIFY channels: `events_new` (INSERT into events; wakes the input-event watcher), `events_state` (state UPDATE on events; for host-side completion waiters), `agentruns_changed` (INSERT and state UPDATE on agentruns; wakes the agentrun scheduler).
 
@@ -136,13 +135,11 @@ workspace/
   SOUL.md                   # the assistant's core identity and values, included by the default PROMPT.md as {SOUL.md}
   CONTEXT.md                # system-environment notes so the agent knows where and what it is, included as {CONTEXT.md}
   <topic>/                  # one folder per top-level topic (e.g. mail/, chat/, calendar/) - the user can invent new ones as needed, some are shipped by plugins
-    index.md                # default entry-point handler for events of this topic
-    analyze.md              # additional handler, queued by name from another handler
-    daily-digest.md         # example of a handler with "cron"
-    ...
-    <subtopic>/             # optional override folder for `<topic>:<subtopic>`
-      index.md              # overrides the parent index.md for this subtype
-      analyze.md            # overrides the parent analyze.md
+    index.md                # handler for topic `<topic>` (and fallback for unhandled `<topic>:*` events)
+    analyze.md              # handler for topic `<topic>:analyze`, started by topic from another handler
+    daily-digest.md         # example of a handler with "cron" (fires topic `<topic>:daily-digest`)
+    <subtopic>.md           # handler for `<topic>:<subtopic>` — takes over from index.md for those events
+    <subtopic>/             # folder form: `<subtopic>/index.md` is the same handler as `<subtopic>.md` (only one may exist)
       ...
   skills/                   # shared how-to recipes, referenced from handlers (see "Skills" below)
     <name>/
@@ -171,7 +168,7 @@ Handlers reference skills by path in prose — there is no `load_skill` tool. Ex
 
 Because models often skip that read, a handler can **preload** skills via its `skills:` frontmatter (`skills: jira, reflection, tesla`): `container/src/SkillFile.ts` loads each `skills/<id>/SKILL.md` (missing → `SkillNotFoundError`, the run fails) and `PromptBuilder` renders the bodies into the structural `{PRELOADED_SKILLS}` placeholder, one `# Skill \`<id>\` (preloaded)` section each, exempt from the per-file and (by their length) the system-prompt size caps. A skill's own `tools:` frontmatter is added to the handler's tool entries when it is preloaded (`combineToolEntries`; an omitted handler `tools` keeps its implicit `core`).
 
-Skills grant no privileges — preloaded tools only save a discovery step, every tool is reachable via `tool_call` anyway and privilege is checked per call. A skill folder may also hold **handlers next to the recipe** — this is intended: e.g. the memory plugin's `skills/memory/save.md` runs as a subagent (topic `skills:memory`, handler `save`), and a `skills/memory/dream.md` with a `cron:` field would be scheduled like any other cronjob. `HandlerFile.load` and the `CronjobScheduler` treat `skills/` like any topic folder; only `HandlerCatalog.list` (cli-chat tab-completion) skips the subtree so the `SKILL.md` recipes don't clutter the proposals.
+Skills grant no privileges — preloaded tools only save a discovery step, every tool is reachable via `tool_call` anyway and privilege is checked per call. A skill folder may also hold **handlers next to the recipe** — this is intended: e.g. the memory plugin's `skills/memory/save.md` runs for the exact topic `skills:memory:save`, and a `skills/memory/dream.md` with a `cron:` field would be scheduled like any other cronjob. `HandlerFile.load` and the `CronjobScheduler` treat `skills/` like any topic folder; only `HandlerCatalog.list` (cli-chat tab-completion) skips the subtree so the `SKILL.md` recipes don't clutter the proposals.
 
 ### 3. Configuration and secrets (host, YAML)
 
@@ -238,16 +235,14 @@ Declares:
 
 ### Emitted event topics
 
-Topics are not declared in the manifest but in code: a plugin's `getEmittedEvents(ctx)` hook (`shared/src/Plugin.ts`) returns the topics it emits *under the current config* (`{topic, description, startHandler?}`) — e.g. ms365 omits `mail:new:ms365` when its mail poller is off. The hook is synchronous and side-effect-free like `tools()`; `PluginHost.listEmittedEvents()` collects it after `prepare`. Host-emitted topics live in `CORE_EMITTED_EVENTS` (`host/src/events/CoreEmittedEvents.ts`). `familiar events topics` lists core, plugin and cron topics with the handler file each resolves to (works without the daemon).
+Topics are not declared in the manifest but in code: a plugin's `getEmittedEvents(ctx)` hook (`shared/src/Plugin.ts`) returns the topics it emits *under the current config* (`{topic, description, isExactTopic?}`) — e.g. ms365 omits `mail:new:ms365` when its mail poller is off. The hook is synchronous and side-effect-free like `tools()`; `PluginHost.listEmittedEvents()` collects it after `prepare`. Host-emitted topics live in `CORE_EMITTED_EVENTS` (`host/src/events/CoreEmittedEvents.ts`). `familiar events topics` lists core, plugin and cron topics with the handler file each resolves to (works without the daemon).
 
 ## Cronjobs
 
 Any handler can declare a `cron:` field in its YAML frontmatter. The host's
 `CronjobScheduler` (in `host/src/cron/`) scans the workspace at daemon startup, watches for
 file changes via the generalized `WorkspaceWatcher` (in `host/src/utils/`), and
-registers a Croner job per valid expression. When the cron fires, the scheduler emits a
-fresh event whose `topic` and `startHandler` resolve to the same `.md` file, with the
-prompt `"The cronjob has fired"` and no payload.
+registers a Croner job per valid expression. When the cron fires, the scheduler emits a fresh exact-topic event whose `topic` is derived from the file's path (`mail/digest.md` → `mail:digest`, `mail/digest/index.md` → `mail:digest`), with the prompt `"The cronjob has fired"` and no payload. A folder-form `x/index.md` whose twin `x.md` exists is shadowed, so its firing is skipped with a warning.
 
 The expression is parsed by `friendly-node-cron` first (`every monday at 8 am`,
 `every 5 minutes`, `weekly`, …). If the friendly grammar doesn't match, the verbatim string
@@ -259,7 +254,7 @@ a handler file re-evaluates its job live — no daemon restart needed.
 parsed expression. The command runs a standalone filesystem scan, so it works whether the
 daemon is up or not.
 
-Example: `workspace/emails/monday-digest.md`
+Example: `workspace/emails/monday-digest.md` (fires topic `emails:monday-digest`)
 
 ```markdown
 ---
@@ -271,8 +266,7 @@ Compile a briefing of calendar events, open tasks with deadlines this week, and 
 mails marked important. Send the briefing via Telegram.
 ```
 
-**Handler placement rule:** handler markdown files must live under at least one topic
-folder (e.g. `workflows/<name>.md`, `mail/digest.md`).
+**Handler placement rule:** handler markdown files must live under at least one topic folder (e.g. `workflows/<name>.md`, `mail/digest.md`), and every path segment must be a valid topic word (`[\w-]+`, so no dots or spaces in file names).
 
 ### Editing handlers via chat
 
@@ -284,7 +278,7 @@ Handler behavior is shaped by markdown files in layers, each with distinct owner
 
 - **Code-level capability** — what plugins make possible (in TypeScript/MCPs)
 - **Prompt template** — `PROMPT.md`, the single file defining how a handler's prompt is assembled; it pulls in `SOUL.md` and `CONTEXT.md` (identity and situational context, written by the user) via `{SOUL.md}` / `{CONTEXT.md}` includes
-- **Handler layer** — per-topic handler files (`<topic>/index.md`, `<topic>/analyze.md`, …) and sub-topic overrides (`<topic>/<subtopic>/…`). Plugin-shipped defaults, user-editable.
+- **Handler layer** — one handler file per topic (`<topic>/index.md`, `<topic>/analyze.md`, `<topic>/<subtopic>.md`, …); the most specific file for an event's topic runs alone. Plugin-shipped defaults, user-editable.
 - **Knowledge layer** — facts about people, projects, etc. (`people/`, plugin-specific), built up over time by handlers themselves, correctable by the user
 
 Handler prompts are kept short. They tell the agent how to find more context (e.g. "always read `people/<sender>.md` before drafting a reply"). The agent pulls additional files into context as needed. This avoids loading large amounts of context into every prompt and lets the assistant build its own knowledge structure over time, guided by user conventions.
@@ -307,7 +301,7 @@ Core placeholders are defined (name, description, kind) in `CORE_PROMPT_PLACEHOL
 - `ctx.prompt.registerPlaceholder({name, description, provide})` — a named, per-run placeholder (`/prompt-placeholders/`, only names a template uses are resolved). Register in `prepare()` so the CLI sees it; colliding or malformed names throw `PromptPlaceholderConflictError`.
 - `ctx.prompt.registerPromptAppender(fn)` — free text appended to the user-message head (`/prompt-appenders/`), e.g. the memory plugin's `# Memories` table.
 
-CLI: `familiar prompt placeholders` lists every placeholder (works without the daemon). `familiar prompt dry-run <topic> [--handler] [--privileged] [--prompt] [--full]` renders a handler's prompt inside the running agent container (`docker exec` → `container/src/prompt/PromptDryRun.ts`) with the real tool set and plugin values, without inserting an agentrun or calling a model.
+CLI: `familiar prompt placeholders` lists every placeholder (works without the daemon). `familiar prompt dry-run <topic> [--privileged] [--prompt] [--full]` renders a handler's prompt inside the running agent container (`docker exec` → `container/src/prompt/PromptDryRun.ts`) with the real tool set and plugin values, without inserting an agentrun or calling a model.
 
 ## Lifecycle and operations
 
@@ -367,11 +361,11 @@ The following are deliberately deferred but should be addressed during implement
 
 1. **Bus state schema and access** — done: `events` and `agentruns` tables, `EventBus` and `AgentRunBus` clients in `shared/`, reactive event-terminal logic via `EVENT_TERMINAL_UPDATE_SQL`.
 2. **Container watchers** — input-event watcher (events `pending → running`, spawns root agentrun) and agentrun scheduler (agentruns `pending → running → done|failed`, runs handler markdown via the agent runner). The current `TriageWatcher.ts` is a stub for the input-event watcher; replace it next.
-3. **Handler resolution + subagent tools** — workspace path resolver with sub-topic override fallback, plus the in-handler `schedule_subagent` (fire-and-forget when called without `when`, deferred fresh-event when called with one) and `start_subagent` (suspending) tools that spawn child agentruns by basename and validate at spawn time.
+3. **Handler resolution + subagent tools** — workspace path resolver with sub-topic override fallback, plus the in-handler `schedule_subagent` (fire-and-forget when called without `when`, deferred fresh-event when called with one) and `start_subagent` (suspending) tools that spawn child agentruns by topic and validate at spawn time.
 4. **Plugin loader and lifecycle** — host-side plugin loading, manifest parsing, container mount of `mcps/`, `workspace-template/` copy on first install.
 5. **Logging service** — centralized structured logging.
 6. **Approval gate** — `pending_actions` table, suspend/resume mechanics (per the open question above), notification push (start with Telegram or simple web UI), response handling.
-7. **First real plugin** — ms365 plugin end to end as the reference implementation: msal-node device-code login in the host, `mail/index.md` (and optionally `mail/new/ms365/index.md`) handlers in the workspace, direct Microsoft Graph calls from host-side plugin tools.
+7. **First real plugin** — ms365 plugin end to end as the reference implementation: msal-node device-code login in the host, `mail/index.md` (and optionally `mail/new/ms365.md`) handlers in the workspace, direct Microsoft Graph calls from host-side plugin tools.
 8. **Cron scheduler** — host-side scanning of handler frontmatter for `cron:` fields,
    live re-evaluation on file change, event emission on firing. *(Implemented:
    `host/src/cron/`, `host/src/utils/WorkspaceWatcher.ts`.)*

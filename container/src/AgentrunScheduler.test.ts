@@ -167,11 +167,11 @@ function buildHarness(opts: HarnessOptions): Harness {
 async function seedRootAgentrun(
     eventBus: MockEventBus,
     agentRunBus: MockAgentRunBus,
-    handler: string,
-    overrides: Partial<{ prompt: string; topic: string; priority: number }> = {},
+    topic: string,
+    overrides: Partial<{ prompt: string; priority: number }> = {},
 ): Promise<{ event: EventRow; root: AgentRunRow }> {
     const event = await eventBus.add({
-        topic: overrides.topic ?? "chat:cli",
+        topic,
         prompt: overrides.prompt ?? "hello",
         priority: overrides.priority,
     });
@@ -179,7 +179,7 @@ async function seedRootAgentrun(
     const root = await agentRunBus.add({
         eventId: event.id,
         topic: event.topic,
-        handler,
+        isExactTopic: event.isExactTopic,
         priority: event.priority,
         prompt: event.prompt,
         privileged: event.privileged,
@@ -224,8 +224,7 @@ describe("AgentrunScheduler — subagents", () => {
             const child = await agentRunBus.add({
                 eventId: ctx.row.eventId,
                 parentAgentrunId: ctx.row.id,
-                topic: ctx.row.topic,
-                handler: "analyze",
+                topic: "analyze",
                 priority: ctx.row.priority,
                 payload: {},
                 privileged: ctx.row.privileged,
@@ -275,8 +274,7 @@ describe("AgentrunScheduler — subagents", () => {
             const child = await agentRunBus.add({
                 eventId: ctx.row.eventId,
                 parentAgentrunId: ctx.row.id,
-                topic: ctx.row.topic,
-                handler: "analyze",
+                topic: "analyze",
                 payload: {},
                 privileged: ctx.row.privileged,
                 calltype: "started",
@@ -324,8 +322,7 @@ describe("AgentrunScheduler — subagents", () => {
             const a = await agentRunBus.add({
                 eventId: ctx.row.eventId,
                 parentAgentrunId: ctx.row.id,
-                topic: ctx.row.topic,
-                handler: "a",
+                topic: "a",
                 payload: {},
                 privileged: ctx.row.privileged,
                 calltype: "started",
@@ -333,8 +330,7 @@ describe("AgentrunScheduler — subagents", () => {
             const b = await agentRunBus.add({
                 eventId: ctx.row.eventId,
                 parentAgentrunId: ctx.row.id,
-                topic: ctx.row.topic,
-                handler: "b",
+                topic: "b",
                 payload: {},
                 privileged: ctx.row.privileged,
                 calltype: "started",
@@ -364,7 +360,7 @@ describe("AgentrunScheduler — subagents", () => {
 
         // Track parent state transitions.
         harness.agentRunBus.subscribe((row) => {
-            if (row.handler === "index") {
+            if (row.topic === "index") {
                 stateHistory.push(row.state);
             }
         });
@@ -376,12 +372,12 @@ describe("AgentrunScheduler — subagents", () => {
             // Wait long enough for A's behavior to fire and settle.
             for (let i = 0; i < 20; i++) {
                 await flush();
-                const rowA = [...harness.store.agentruns.values()].find((r) => r.handler === "a");
+                const rowA = [...harness.store.agentruns.values()].find((r) => r.topic === "a");
                 if (rowA?.state === "done") {
                     break;
                 }
             }
-            const rowA = [...harness.store.agentruns.values()].find((r) => r.handler === "a");
+            const rowA = [...harness.store.agentruns.values()].find((r) => r.topic === "a");
             assert.equal(rowA?.state, "done", "child A should be done while parent waits on B");
 
             // Parent must still be waiting — B hasn't finished.
@@ -599,8 +595,7 @@ describe("AgentrunScheduler — timeouts", () => {
             const child = await agentRunBus.add({
                 eventId: ctx.row.eventId,
                 parentAgentrunId: ctx.row.id,
-                topic: ctx.row.topic,
-                handler: "slow",
+                topic: "slow",
                 payload: {},
                 privileged: ctx.row.privileged,
                 calltype: "started",
@@ -677,8 +672,7 @@ describe("AgentrunScheduler — schedule_subagent (immediate mode, fire-and-forg
             await agentRunBus.add({
                 eventId: ctx.row.eventId,
                 parentAgentrunId: ctx.row.id,
-                topic: ctx.row.topic,
-                handler: "followup",
+                topic: "followup",
                 payload: {},
                 privileged: ctx.row.privileged,
                 calltype: "scheduled",
@@ -711,7 +705,7 @@ describe("AgentrunScheduler — schedule_subagent (immediate mode, fire-and-forg
             // Drain the queued child to verify it stays out-of-band: the
             // event remains 'done' after the child settles.
             const followup = [...harness.store.agentruns.values()].find(
-                (r) => r.handler === "followup",
+                (r) => r.topic === "followup",
             );
             assert.ok(followup);
             await waitForTerminal(harness.agentRunBus, harness.store, followup.id);
@@ -777,7 +771,7 @@ describe("AgentrunScheduler — concurrency control", () => {
                 harness.eventBus,
                 harness.agentRunBus,
                 "second",
-                { topic: "chat:cli", prompt: "second" },
+                { prompt: "second" },
             );
 
             // Let the picker run.

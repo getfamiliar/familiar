@@ -340,14 +340,13 @@ function statusLine(text: string): string {
 }
 
 /**
- * Workspace-relative handler path string for display purposes, e.g.
- * `chat/scheduler.md`. We don't have the leaf's actual filesystem
- * path on the row, only the topic + handler basename; rebuild a
- * canonical form so the output is consistent with the input syntax.
+ * Handler address for display purposes, in the slash form the REPL
+ * accepts as input, e.g. `/chat/scheduler`. The row only carries the
+ * topic, not the resolved file (`chat/scheduler.md` or
+ * `chat/scheduler/index.md`), so the topic is what we show.
  */
 function handlerPath(row: AgentRunRow): string {
-    const segments = row.topic.split(":");
-    return `${segments.join("/")}/${row.handler}.md`;
+    return `/${row.topic.split(":").join("/")}`;
 }
 
 /**

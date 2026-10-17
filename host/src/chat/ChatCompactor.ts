@@ -10,6 +10,7 @@ import {
     type NewEvent,
     type NotificationHandler,
     type PostgresConnection,
+    resolveHandlerPath,
 } from "@getfamiliar/shared";
 
 /** Default upper bound on total `chatmessages` bytes before compaction fires. */
@@ -20,9 +21,6 @@ export const DEFAULT_KEEP_UNCOMPACTED_BYTES = 30_000;
 
 /** Topic of the event the compactor emits to have the chat history summarized. */
 export const CHAT_COMPACTION_TOPIC = "chat:compaction";
-
-/** Workspace-relative path of the default summarisation handler. */
-const COMPACTION_HANDLER_RELATIVE_PATH = path.join("chat", "compaction", "index.md");
 
 /**
  * Dependencies the {@link ChatCompactor} needs from its owner.
@@ -47,8 +45,9 @@ export interface ChatCompactorDeps {
     readonly host: HostContext;
     /**
      * Absolute path of the workspace directory (`<home>/workspace`). Used
-     * to probe for the optional `chat/compaction/index.md` handler — if
-     * it's missing the compactor falls back to plain truncation.
+     * to probe for the optional `chat:compaction` handler
+     * (`chat/compaction.md` or `chat/compaction/index.md`) — if it's
+     * missing the compactor falls back to plain truncation.
      */
     readonly workspaceDir: string;
     /** Host config; read for the two `chat.compaction.*` thresholds. */
@@ -264,11 +263,15 @@ export class ChatCompactor {
                 return;
             }
 
-            const handlerPath = path.join(this.deps.workspaceDir, COMPACTION_HANDLER_RELATIVE_PATH);
-            if (!existsSync(handlerPath)) {
+            const handler = resolveHandlerPath(
+                CHAT_COMPACTION_TOPIC,
+                { isExactTopic: true },
+                (relativePath) => existsSync(path.join(this.deps.workspaceDir, relativePath)),
+            );
+            if (handler === null) {
                 this.deps.log.warn(
-                    { handlerPath, deleted: batch.ids.length },
-                    "chat compaction handler missing — falling back to truncation",
+                    { topic: CHAT_COMPACTION_TOPIC, deleted: batch.ids.length },
+                    `chat compaction handler for topic ${CHAT_COMPACTION_TOPIC} missing (chat/compaction.md) — falling back to truncation of ${batch.ids.length} rows`,
                 );
                 await this.deleteRows(batch.ids);
                 return;
@@ -341,6 +344,7 @@ export class ChatCompactor {
     private async runHandlerEvent(batch: CompactionBatch): Promise<string | undefined> {
         const event: NewEvent = {
             topic: CHAT_COMPACTION_TOPIC,
+            isExactTopic: true,
             prompt: batch.transcript,
             isChat: false,
             priority: EVENT_PRIORITY.BACKGROUND,

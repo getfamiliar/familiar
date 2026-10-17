@@ -8,9 +8,9 @@ export type CliChatBuiltin = (typeof CLI_CHAT_BUILTINS)[number];
 /**
  * Result of parsing one user-entered line.
  *
- * A `handler` arm covers both the plain-prompt case (no topic / no
- * startHandler — the platform falls back to `chat:cli` + `index`) and
- * the `/topic/sub/handler …` direct-call case. There is no separate
+ * A `handler` arm covers both the plain-prompt case (no topic — the
+ * platform falls back to `chat:cli`) and the `/topic/sub/handler …`
+ * direct-call case, whose path is the handler's topic. There is no separate
  * "prompt" kind because a plain prompt is just a default handler call
  * — keeping a single arm avoids divergent emit code paths.
  */
@@ -18,7 +18,6 @@ export type ParsedInput =
     | {
           readonly kind: "handler";
           readonly topic?: string;
-          readonly startHandler?: string;
           readonly prompt: string;
           /**
            * Trimmed raw input line, before slash-command parsing. For
@@ -36,12 +35,11 @@ export type ParsedInput =
  *
  * Rules:
  * - `/exit` / `/clear` → builtin.
- * - `/a/b … rest` (≥ 2 path segments after the leading `/`) → handler
- *   call with topic = `a:b…`-without-last and startHandler = the last
- *   segment. Anything after the first space is the prompt.
- * - Anything else (including a single-segment `/foo` that isn't a
- *   builtin) → plain handler with no topic/startHandler. The literal
- *   line goes through as the prompt so the model sees it.
+ * - `/a/b … rest` (any other `/` path) → handler call with topic
+ *   `a:b` — the path is the handler's address (`a/b.md` or
+ *   `a/b/index.md`). Anything after the first space is the prompt.
+ * - Anything else → plain handler with no topic. The literal line goes
+ *   through as the prompt so the model sees it.
  */
 export function parseInput(raw: string): ParsedInput {
     const line = raw.trim();
@@ -63,20 +61,15 @@ export function parseInput(raw: string): ParsedInput {
         .slice(1)
         .split("/")
         .filter((s) => s.length > 0);
-    if (segments.length >= 2) {
-        const startHandler = segments[segments.length - 1];
-        const topic = segments.slice(0, -1).join(":");
-        return {
-            kind: "handler",
-            topic,
-            startHandler,
-            prompt: messagePart,
-            rawInput: line,
-        };
+    if (segments.length === 0) {
+        // A bare `/` names no handler — let the literal line through as
+        // a plain prompt rather than erroring.
+        return { kind: "handler", prompt: line, rawInput: line };
     }
-
-    // Single-segment `/foo` that isn't a recognised builtin — let the
-    // literal line through as a plain prompt rather than erroring, so
-    // typos don't block the user.
-    return { kind: "handler", prompt: line, rawInput: line };
+    return {
+        kind: "handler",
+        topic: segments.join(":"),
+        prompt: messagePart,
+        rawInput: line,
+    };
 }

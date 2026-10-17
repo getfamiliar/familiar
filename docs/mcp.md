@@ -227,7 +227,7 @@ Three reserved names plus one auto-group per declared MCP / plugin id:
 | --- | --- |
 | `all` | Every key in the available pool — container built-ins + plugin tools + MCP tools. |
 | `mcp` | Just the namespaced MCP-tool keys. |
-| `none` | Empty set. Lets a child handler override its parent's `tools:` to nothing under the replace-merge inheritance rule. |
+| `none` | Empty set. Preloads no tools at all (an omitted `tools:` means the implicit `core` default). |
 | `<mcp-id>` | One auto-group per entry declared in `mcp.yml`. Resolves to every tool key that MCP exposes. So `tools: fetch` is shorthand for `tools: fetch_*`. |
 | `<plugin-id>` | One auto-group per plugin that contributes tools. Resolves to every tool key the plugin registered. |
 
