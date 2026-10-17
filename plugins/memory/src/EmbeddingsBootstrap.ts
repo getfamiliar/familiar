@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { Logger } from "@getfamiliar/shared";
 import { type EmbeddingModel, embed } from "ai";
+import { describeErrorChain } from "./ErrorChain.js";
 
 /**
  * Identity snapshot persisted at `data/memory/embedding.json` after a
@@ -29,6 +30,11 @@ export type HandshakeResult =
           readonly ready: true;
           readonly identity: EmbeddingIdentity;
           readonly indexInvalidated: boolean;
+          /**
+           * `true` when a trial-embed actually reached the provider; `false`
+           * when the identity came from `embedding.json` without a call.
+           */
+          readonly probed: boolean;
       }
     | { readonly ready: false; readonly reason: string };
 
@@ -62,7 +68,7 @@ export async function handshakeEmbeddings(opts: {
 
     const prior = await readIdentity(identityPath);
     if (prior && prior.provider === opts.provider && prior.model === opts.model) {
-        return { ready: true, identity: prior, indexInvalidated: false };
+        return { ready: true, identity: prior, indexInvalidated: false, probed: false };
     }
 
     let dimension: number;
@@ -74,8 +80,7 @@ export async function handshakeEmbeddings(opts: {
         });
         dimension = result.embedding.length;
     } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        return { ready: false, reason };
+        return { ready: false, reason: describeErrorChain(err) };
     }
 
     let indexInvalidated = false;
@@ -102,7 +107,7 @@ export async function handshakeEmbeddings(opts: {
     };
     await fs.writeFile(identityPath, `${JSON.stringify(identity, null, 2)}\n`, "utf8");
 
-    return { ready: true, identity, indexInvalidated };
+    return { ready: true, identity, indexInvalidated, probed: true };
 }
 
 /**

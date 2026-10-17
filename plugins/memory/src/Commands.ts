@@ -3,6 +3,7 @@ import { renderMarkdown } from "@getfamiliar/shared";
 import { type CommandDef, defineCommand } from "citty";
 import { buildMemoryStore } from "./BuildStore.js";
 import { readMemoryConfig } from "./Config.js";
+import { describeErrorChain } from "./ErrorChain.js";
 import type { FileSummary, MemoryStore, StoredChunk } from "./MemoryStore.js";
 import { formatHitsFlat } from "./PromptAppender.js";
 
@@ -56,6 +57,13 @@ function searchCommand(ctx: HostContext): CommandDef<any> {
                 const hits = await store.search(query, { limit });
                 const md = formatHitsFlat(hits);
                 process.stdout.write(`${renderMarkdown(md)}\n`);
+            } catch (err) {
+                // The query embedding is the first real provider call of the
+                // CLI run; surface the nested network cause, not just the
+                // SDK's wrapper message.
+                throw new Error(`memory search failed: ${describeErrorChain(err)}`, {
+                    cause: err,
+                });
             } finally {
                 await store.close();
             }

@@ -66,8 +66,11 @@ export async function buildMemoryStore(
             provider: cfg.embeddings.provider,
             model: cfg.embeddings.model,
             dimension: handshake.identity.dimension,
+            probed: handshake.probed,
         },
-        `memory: using embedding ${cfg.embeddings.provider}/${cfg.embeddings.model}, validated and found to use ${handshake.identity.dimension} dimensions`,
+        handshake.probed
+            ? `memory: using embedding ${cfg.embeddings.provider}/${cfg.embeddings.model}, validated by a trial call and found to use ${handshake.identity.dimension} dimensions`
+            : `memory: using embedding ${cfg.embeddings.provider}/${cfg.embeddings.model} with ${handshake.identity.dimension} dimensions (identity from data/memory/embedding.json, provider not contacted)`,
     );
 
     const store = new MemoryStore({
