@@ -1,6 +1,10 @@
+import path from "node:path";
 import {
     AgentRunBus,
+    DEFAULT_WRITABLE_PATHS,
+    type EmittedEventDescriptor,
     EventBus,
+    HandlerCatalog,
     markdownTable,
     renderMarkdown,
     StepResultBus,
@@ -9,10 +13,14 @@ import {
 } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../Bootstrap.js";
+import { pathToHandlerTarget, readVerbatimCron } from "../cron/CronjobScheduler.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
+import { CORE_EMITTED_EVENTS } from "../events/CoreEmittedEvents.js";
 import { renderEventReport } from "../events/EventReportRenderer.js";
 import { replayOne } from "../events/ReplayEvent.js";
+import type { PluginHost } from "../plugins/PluginHost.js";
 import { HostConfigService } from "../utils/ConfigService.js";
+import { scanWorkspace } from "../utils/WorkspaceWatcher.js";
 import { parseEventIdSpec } from "./EventIdSpec.js";
 import { verbosityFrom } from "./tools/verbosity.js";
 
@@ -334,19 +342,161 @@ const eventsListCommand = defineCommand({
     },
 });
 
-/** Parent command for the `events` subtree (emit, list, replay, report). */
-export const eventsCommand = defineCommand({
-    meta: {
-        name: "events",
-        description: "List, inspect and work with events.",
-    },
-    subCommands: {
-        emit: eventsEmitCommand,
-        list: eventsListCommand,
-        replay: eventsReplayCommand,
-        report: eventsReportCommand,
-    },
-});
+/** One row of the `events topics` table. */
+interface TopicRow {
+    readonly topic: string;
+    /** `core`, the declaring plugin's id, or `cron`. */
+    readonly source: string;
+    readonly description: string;
+    /** Workspace-relative handler path, or `null` when none resolves. */
+    readonly handler: string | null;
+}
+
+/**
+ * `familiar events topics` — table of every event topic the system emits:
+ * the host's own, each plugin's `getEmittedEvents` declaration (under the
+ * current config), and one per cron handler. The HANDLER column shows
+ * which workspace file the topic's start handler (default `index`)
+ * resolves to, so a topic that
+ * no handler catches stands out. Works without the daemon.
+ *
+ * @param pluginHost Plugin host; its plugins are prepared on demand.
+ * @returns The citty command.
+ */
+function eventsTopicsCommand(pluginHost: PluginHost) {
+    return defineCommand({
+        meta: {
+            name: "topics",
+            description:
+                "List the event topics the host, the plugins and the cron handlers emit, with the handler each resolves to.",
+        },
+        args: {
+            raw: {
+                type: "boolean",
+                description:
+                    "Skip terminal styling and emit the raw markdown verbatim. Useful for piping into a file or a markdown viewer.",
+                default: false,
+            },
+        },
+        async run({ args }) {
+            const boot = bootstrap();
+            const config = new HostConfigService(boot.configFile);
+            const writablePaths = config.getStringList(
+                "core.writablePaths",
+                DEFAULT_WRITABLE_PATHS,
+            );
+            const catalog = new HandlerCatalog(boot.workspaceDir, writablePaths);
+            const resolveHandler = async (
+                descriptor: EmittedEventDescriptor,
+            ): Promise<string | null> => {
+                const absolute = await catalog.resolve(
+                    descriptor.topic,
+                    descriptor.startHandler ?? "index",
+                );
+                return absolute === null ? null : toWorkspaceRelative(boot.workspaceDir, absolute);
+            };
+
+            const rows: TopicRow[] = [];
+            for (const core of CORE_EMITTED_EVENTS) {
+                rows.push({ ...core, source: "core", handler: await resolveHandler(core) });
+            }
+            for (const declared of pluginHost.listEmittedEvents()) {
+                rows.push({
+                    topic: declared.topic,
+                    source: declared.pluginId,
+                    description: declared.description,
+                    handler: await resolveHandler(declared),
+                });
+            }
+            rows.push(...(await listCronTopicRows(boot.workspaceDir)));
+
+            writeMarkdown(renderTopicsDocument(rows), { raw: args.raw === true });
+        },
+    });
+}
+
+/**
+ * One row per cron handler: its topic is the handler file's folder, and
+ * the handler is the file itself (cron events name their start handler).
+ * Handlers directly at the workspace root (no topic) are skipped — the
+ * cron scheduler ignores them too.
+ *
+ * @param workspaceDir Absolute workspace root.
+ * @returns Rows sorted by handler path.
+ */
+async function listCronTopicRows(workspaceDir: string): Promise<TopicRow[]> {
+    const files = await scanWorkspace(workspaceDir, { frontmatter: { cron: "*" } });
+    const rows: TopicRow[] = [];
+    for (const file of files) {
+        const target = pathToHandlerTarget(file.relativePath);
+        if (target === null) {
+            continue;
+        }
+        const verbatim = readVerbatimCron(file.absolutePath) ?? "";
+        rows.push({
+            topic: target.topic,
+            source: "cron",
+            description: `Fires \`${verbatim}\``,
+            handler: file.relativePath,
+        });
+    }
+    return rows.sort((a, b) => (a.handler ?? "").localeCompare(b.handler ?? ""));
+}
+
+/**
+ * Render the topics table plus a note on the open-ended topics no
+ * declaration can list.
+ *
+ * @param rows Collected topic rows.
+ * @returns Markdown source for {@link writeMarkdown}.
+ */
+function renderTopicsDocument(rows: readonly TopicRow[]): string {
+    const table =
+        rows.length === 0
+            ? "No event topics declared.\n"
+            : markdownTable(
+                  ["TOPIC", "SOURCE", "DESCRIPTION", "HANDLER"],
+                  rows.map((r) => [r.topic, r.source, r.description, r.handler ?? "(none)"]),
+              );
+    return (
+        `# Event topics\n\n${table}\n` +
+        "Not listed: topics chosen at runtime — `familiar events emit`, cli-chat's topic prefix and deferred `schedule_subagent` wake-ups accept any topic.\n"
+    );
+}
+
+/**
+ * Express an absolute path under the workspace as a forward-slash
+ * relative path, the form handler paths are shown in everywhere else.
+ *
+ * @param workspaceDir Absolute workspace root.
+ * @param absolute Absolute path inside it.
+ * @returns The workspace-relative path.
+ */
+function toWorkspaceRelative(workspaceDir: string, absolute: string): string {
+    return path.relative(workspaceDir, absolute).split(path.sep).join("/");
+}
+
+/**
+ * Parent command for the `events` subtree (emit, list, replay, report, topics).
+ *
+ * @param pluginHost Plugin host, for the plugins' declared topics.
+ * @returns The citty command.
+ */
+export function buildEventsCommand(pluginHost: PluginHost) {
+    return defineCommand({
+        meta: {
+            name: "events",
+            description: "List, inspect and work with events.",
+        },
+        subCommands: {
+            emit: eventsEmitCommand,
+            list: eventsListCommand,
+            replay: eventsReplayCommand,
+            report: eventsReportCommand,
+            topics: eventsTopicsCommand(pluginHost),
+        },
+    });
+}
 
 /**
  * Parse the optional `--priority` arg. Returns undefined when absent.

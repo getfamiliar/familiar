@@ -1,7 +1,7 @@
 import path from "node:path";
 import { definePlugin, type HostContext } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
-import { runOneShot, runRepl } from "./Repl.js";
+import { CLI_CHAT_TOPIC, runOneShot, runRepl } from "./Repl.js";
 
 /**
  * cli-chat plugin.
@@ -21,6 +21,12 @@ export default definePlugin({
     workspaceTemplate: path.join(import.meta.dirname, "..", "workspace-template"),
     host: {
         main: (ctx) => cliChatCommand(ctx),
+        getEmittedEvents: () => [
+            {
+                topic: CLI_CHAT_TOPIC,
+                description: "The user typed a chat message in `familiar cli-chat`.",
+            },
+        ],
     },
 });
 

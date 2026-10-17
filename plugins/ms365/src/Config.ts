@@ -43,7 +43,7 @@ export interface Ms365MailConfig {
     readonly enabled: boolean;
     /**
      * When `true` (default), the daemon runs the mailbox poller that
-     * emits `mail:ms365` events. When `false`, polling is skipped but
+     * emits `mail:new:ms365` events. When `false`, polling is skipped but
      * the provider stays registered — use this when the user wants
      * on-demand tool access (read, draft, send) without proactive
      * new-mail processing. Has no effect when {@link enabled} is `false`

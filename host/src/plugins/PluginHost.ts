@@ -2,6 +2,7 @@ import { cpSync, existsSync } from "node:fs";
 import type {
     AnyCommandDef,
     ConfigService,
+    EmittedEventDescriptor,
     HostContext,
     Logger,
     ModelMetaData,
@@ -10,7 +11,7 @@ import type {
     PluginTool,
     PostgresConnection,
 } from "@getfamiliar/shared";
-import { EventBus, ModelNotSupported } from "@getfamiliar/shared";
+import { EventBus, ModelNotSupported, TOPIC_PATTERN } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { type Bootstrap, isDevMode } from "../Bootstrap.js";
 import { readBastionTokenFile } from "../bastion/BastionToken.js";
@@ -61,6 +62,12 @@ const DAEMON_PIDFILE_POLL_MS = 500;
  * {@link PluginHost.setBastionEndpoint}.
  */
 const DEFAULT_BASTION_BASE_URL = "http://127.0.0.1:8788";
+
+/** An {@link EmittedEventDescriptor} tagged with the plugin that declared it. */
+export interface PluginEmittedEvent extends EmittedEventDescriptor {
+    /** Id of the declaring plugin. */
+    readonly pluginId: string;
+}
 
 /** Lifecycle hook a plugin failed in; see {@link PluginHost.failedPlugins}. */
 type PluginFailurePhase = "prepare" | "start" | "tools";
@@ -187,6 +194,51 @@ export class PluginHost {
      */
     get modelMetadata(): ModelMetadataService {
         return this.modelMetadataService;
+    }
+
+    /**
+     * Collect the event topics every plugin declares via
+     * {@link import("@getfamiliar/shared").PluginHostManifest.getEmittedEvents},
+     * in registration order. Prepares the plugins first (idempotent) so
+     * hooks see their `prepare`-time state, and skips plugins disabled by
+     * a failed hook. A throwing hook is logged and skipped; descriptors
+     * whose topic doesn't match `TOPIC_PATTERN` are logged and dropped.
+     * The same topic from two plugins is kept — each row names its plugin.
+     *
+     * @returns One entry per declared topic, tagged with the plugin id.
+     */
+    listEmittedEvents(): PluginEmittedEvent[] {
+        this.prepareAll();
+        const topicRe = new RegExp(TOPIC_PATTERN);
+        const out: PluginEmittedEvent[] = [];
+        for (const plugin of this.plugins) {
+            const hook = plugin.host?.getEmittedEvents;
+            if (!hook || this.failedPlugins.has(plugin.id)) {
+                continue;
+            }
+            let descriptors: readonly EmittedEventDescriptor[];
+            try {
+                descriptors = hook(this.context(plugin.id));
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                this.log.warn(
+                    { plugin: plugin.id, err: message },
+                    `plugin "${plugin.id}" getEmittedEvents threw: ${message} — its topics are not listed`,
+                );
+                continue;
+            }
+            for (const descriptor of descriptors) {
+                if (!topicRe.test(descriptor.topic)) {
+                    this.log.warn(
+                        { plugin: plugin.id, topic: descriptor.topic },
+                        `plugin "${plugin.id}" declared invalid event topic "${descriptor.topic}" — ignored`,
+                    );
+                    continue;
+                }
+                out.push({ pluginId: plugin.id, ...descriptor });
+            }
+        }
+        return out;
     }
 
     /**

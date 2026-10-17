@@ -3,7 +3,7 @@ import { defineCommand, runMain } from "citty";
 import { bootstrap, requireHomeDir } from "./Bootstrap.js";
 import { configCommand } from "./commands/Config.js";
 import { cronCommand } from "./commands/Cron.js";
-import { eventsCommand } from "./commands/Events.js";
+import { buildEventsCommand } from "./commands/Events.js";
 import { initCommand } from "./commands/Init.js";
 import { pluginCommand } from "./commands/Plugin.js";
 import { buildPromptCommand } from "./commands/Prompt.js";
@@ -83,7 +83,7 @@ async function main(): Promise<void> {
                 init: initCommand,
                 start: startCommand,
                 stop: stopCommand,
-                events: eventsCommand,
+                events: buildEventsCommand(pluginHost),
                 psql: psqlCommand,
                 config: configCommand,
                 cron: cronCommand,

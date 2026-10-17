@@ -51,9 +51,9 @@ describe("isUsableChannelId", () => {
 
 describe("HostContextImpl ctx.mail.emitMailEvent", () => {
     const mailEvent: NewEvent = {
-        topic: "mail:ms365",
+        topic: "mail:new:ms365",
         prompt: "A new e-mail was received",
-        idempotencyKey: "mail:ms365:<abc@example.com>",
+        idempotencyKey: "mail:new:ms365:<abc@example.com>",
     };
 
     it("suppresses the event in dev mode when mail.emitEventsInDev is unset", async () => {

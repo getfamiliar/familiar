@@ -31,7 +31,7 @@ export {
 } from "./Calendar.js";
 export type { ChatFilter, ChatMessage, ChatRole, NewChatMessage } from "./ChatMessage.js";
 export { type ChatHandler, ChatMessageBus, type ChatUnsubscribe } from "./ChatMessageBus.js";
-export type { ConfigService } from "./Config.js";
+export { type ConfigService, DEFAULT_WRITABLE_PATHS } from "./Config.js";
 export type { ContainerToolInfo } from "./ContainerTool.js";
 export { type ParsedCron, parseCron } from "./CronExpression.js";
 export type {
@@ -95,6 +95,7 @@ export type {
     AnyCommandDef,
     EmitHandle,
     EmitOptions,
+    EmittedEventDescriptor,
     HostContext,
     McpClient,
     McpInfo,

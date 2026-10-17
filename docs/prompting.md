@@ -4,7 +4,7 @@ This is the reference for shaping how the assistant thinks and behaves. Everythi
 
 ## The big picture
 
-Every time something happens in your world (a mail arrives, a cron fires, you write in the chat), Familiar creates an **event** with a **topic** such as `mail:ms365` or `chat:telegram`. The agent then runs a **handler** for that topic: a markdown file that tells the model what to do. The prompt the model receives is assembled from three kinds of files:
+Every time something happens in your world (a mail arrives, a cron fires, you write in the chat), Familiar creates an **event** with a **topic** such as `mail:new:ms365` or `chat:telegram` (`familiar events topics` lists them all, with the handler each one resolves to). The agent then runs a **handler** for that topic: a markdown file that tells the model what to do. The prompt the model receives is assembled from three kinds of files:
 
 | File | What it is | Who writes it |
 | --- | --- | --- |
@@ -223,7 +223,7 @@ Now: {CURRENT_TIME}
 
 and set `systemPrompt: prompts/minimal.md` in those handlers.
 
-**Shared rules for all mail handlers.** Write them once to `mail/rules.md`, and include `{mail/rules.md}` in each mail handler — or put them in `mail/index.md` and let inheritance carry them to `mail/ms365/index.md`.
+**Shared rules for all mail handlers.** Write them once to `mail/rules.md`, and include `{mail/rules.md}` in each mail handler — or put them in `mail/index.md` and let inheritance carry them to `mail/new/ms365/index.md`.
 
 **Adding personal context.** Put facts about you in `CONTEXT.md` (job, family, preferences) — it's included by the default template. For larger knowledge, keep files under `people/` or `wiki/` and tell handlers to read them on demand.
 

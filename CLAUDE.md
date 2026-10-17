@@ -232,10 +232,13 @@ A plugin may emit events on any number of topics and usually ships default handl
 Declares:
 
 - Plugin id (`[a-z0-9-]+`), version
-- Event topics produced (with payload schema), each matching `\w+(:\w+)*`
 - MCPs required (with required scopes)
 - MCPs provided (optional)
 - Cronjobs and daemons (with schedule and entry points)
+
+### Emitted event topics
+
+Topics are not declared in the manifest but in code: a plugin's `getEmittedEvents(ctx)` hook (`shared/src/Plugin.ts`) returns the topics it emits *under the current config* (`{topic, description, startHandler?}`) — e.g. ms365 omits `mail:new:ms365` when its mail poller is off. The hook is synchronous and side-effect-free like `tools()`; `PluginHost.listEmittedEvents()` collects it after `prepare`. Host-emitted topics live in `CORE_EMITTED_EVENTS` (`host/src/events/CoreEmittedEvents.ts`). `familiar events topics` lists core, plugin and cron topics with the handler file each resolves to (works without the daemon).
 
 ## Cronjobs
 
@@ -368,7 +371,7 @@ The following are deliberately deferred but should be addressed during implement
 4. **Plugin loader and lifecycle** — host-side plugin loading, manifest parsing, container mount of `mcps/`, `workspace-template/` copy on first install.
 5. **Logging service** — centralized structured logging.
 6. **Approval gate** — `pending_actions` table, suspend/resume mechanics (per the open question above), notification push (start with Telegram or simple web UI), response handling.
-7. **First real plugin** — ms365 plugin end to end as the reference implementation: msal-node device-code login in the host, `mail/index.md` (and optionally `mail/ms365/index.md`) handlers in the workspace, direct Microsoft Graph calls from host-side plugin tools.
+7. **First real plugin** — ms365 plugin end to end as the reference implementation: msal-node device-code login in the host, `mail/index.md` (and optionally `mail/new/ms365/index.md`) handlers in the workspace, direct Microsoft Graph calls from host-side plugin tools.
 8. **Cron scheduler** — host-side scanning of handler frontmatter for `cron:` fields,
    live re-evaluation on file change, event emission on firing. *(Implemented:
    `host/src/cron/`, `host/src/utils/WorkspaceWatcher.ts`.)*
@@ -420,7 +423,7 @@ Ephemeral runtime scratch lives in `tmp/` instead (gitignored, safe to wipe):
 
 All **human-facing** CLI (and plugin) output is produced as markdown and emitted through `writeMarkdown` from `@getfamiliar/shared` (`shared/src/markdownOutput.ts`). It renders ANSI-styled via `renderMarkdown` (`shared/src/markdownTerminal.ts`) when stdout is a TTY, and emits the raw markdown verbatim when piped or redirected. The TTY check lives *inside* `writeMarkdown` — call sites never read `process.stdout.isTTY` themselves; they only optionally pass `{ raw: true }` (wired to a `--raw` flag) to force raw output on a TTY. So a command can never accidentally render box-drawing tables and ANSI escapes into a pipe. Build tables with `markdownTable(headers, rows)` (cells escaped via `escapeTableCell`). All three helpers are exported from `shared/` so plugins can use them too.
 
-Every command that lists, tabulates, or reports for a human exposes `--raw` and ends by handing a markdown string to `writeMarkdown` — see `cron list`, `events list`/`events report`, `tools list`/`tools list-mcps`/`tools lint-mcps`, `plugin list`, `config lint`, `prompt placeholders`/`prompt dry-run`.
+Every command that lists, tabulates, or reports for a human exposes `--raw` and ends by handing a markdown string to `writeMarkdown` — see `cron list`, `events list`/`events report`/`events topics`, `tools list`/`tools list-mcps`/`tools lint-mcps`, `plugin list`, `config lint`, `prompt placeholders`/`prompt dry-run`.
 
 **Exceptions** (and why): the `start` daemon streams through the structured logger (ordering and flush matter); interactive prompts/wizards (`tools add-mcp`) write directly; machine-readable output stays literal (`events emit` prints JSON). The rule of thumb: *if it's a table, list, report, or prose status for a human to read, render it; if it's a stream, a prompt, or data for a machine, don't.*
 

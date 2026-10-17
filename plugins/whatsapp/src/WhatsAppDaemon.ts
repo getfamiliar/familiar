@@ -13,7 +13,8 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import { clearAuth, loadAuth, type WhatsAppAuth } from "./Auth.js";
 
-const TOPIC = "chat:whatsapp:group";
+/** Topic of the event emitted per incoming group text message. */
+export const WHATSAPP_GROUP_TOPIC = "chat:whatsapp:group";
 const GROUP_JID_SUFFIX = "@g.us";
 const RECONNECT_BACKOFF_MIN_MS = 1000;
 const RECONNECT_BACKOFF_MAX_MS = 5 * 60 * 1000;
@@ -312,7 +313,7 @@ async function handleIncomingMessage(
 
     try {
         await ctx.events.emit({
-            topic: TOPIC,
+            topic: WHATSAPP_GROUP_TOPIC,
             isChat: false,
             priority: EVENT_PRIORITY.ASYNC,
             idempotencyKey: `whatsapp:${messageId}`,

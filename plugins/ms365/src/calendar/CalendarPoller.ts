@@ -9,6 +9,7 @@ import { Cron } from "croner";
 import type { GraphAuth } from "../auth/GraphAuth.js";
 import type { LoginStore } from "../auth/LoginStore.js";
 import type { Ms365CalendarConfig } from "../Config.js";
+import { CALENDAR_NEW_TOPIC, CALENDAR_UPDATE_TOPIC } from "../EmittedEvents.js";
 import {
     type CalendarDeltaPage,
     type GraphCalendar,
@@ -636,10 +637,10 @@ export class CalendarPoller {
         }
         let topic: string | null = null;
         if (created) {
-            topic = "calendar:new:ms365";
+            topic = CALENDAR_NEW_TOPIC;
             summary.created += 1;
         } else if (changed && opts.emitUpdates) {
-            topic = "calendar:update:ms365";
+            topic = CALENDAR_UPDATE_TOPIC;
             summary.updated += 1;
         } else {
             summary.unchanged += 1;

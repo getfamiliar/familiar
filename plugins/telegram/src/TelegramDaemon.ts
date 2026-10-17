@@ -3,6 +3,8 @@ import { type EmitHandle, EVENT_PRIORITY, type HostContext } from "@getfamiliar/
 import { Bot, type Context, GrammyError, HttpError } from "grammy";
 import telegramifyMarkdown from "telegramify-markdown";
 
+/** Topic of the event emitted per incoming Telegram message. */
+export const TELEGRAM_TOPIC = "chat:telegram";
 const TELEGRAM_CHANNEL = "telegram";
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 /**
@@ -464,7 +466,7 @@ async function emitChatEvent(
     let handle: EmitHandle;
     try {
         handle = await em.ctx.events.emit({
-            topic: "chat:telegram",
+            topic: TELEGRAM_TOPIC,
             isChat: true,
             priority: EVENT_PRIORITY.CHAT,
             preferredChatChannelId: TELEGRAM_CHANNEL,

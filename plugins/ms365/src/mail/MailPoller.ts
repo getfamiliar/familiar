@@ -8,6 +8,7 @@ import {
     type MailAttachmentMeta,
     type NewEvent,
 } from "@getfamiliar/shared";
+import { MAIL_NEW_TOPIC } from "../EmittedEvents.js";
 import {
     type DeltaPage,
     GraphClient,
@@ -208,10 +209,10 @@ async function emitMailEvent(
     });
 
     const event: NewEvent = {
-        topic: "mail:ms365",
+        topic: MAIL_NEW_TOPIC,
         prompt,
         priority: EVENT_PRIORITY.ASYNC,
-        idempotencyKey: `mail:ms365:${message.internetMessageId}`,
+        idempotencyKey: `${MAIL_NEW_TOPIC}:${message.internetMessageId}`,
         payload,
         files: fetched?.files,
     };

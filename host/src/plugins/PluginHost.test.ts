@@ -184,3 +184,49 @@ describe("PluginHost plugin failure isolation", () => {
         assert.ok(lines.some((l) => l.includes('plugin "toolless" failed in tools: schema bug')));
     });
 });
+
+describe("PluginHost.listEmittedEvents", () => {
+    it("collects topics in registration order, skipping throwing hooks, failed plugins and bad topics", () => {
+        const { host } = buildHost([
+            {
+                id: "first",
+                host: {
+                    getEmittedEvents: () => [
+                        { topic: "mail:new:first", description: "new mail" },
+                        { topic: "not a topic", description: "bad" },
+                    ],
+                },
+            },
+            {
+                id: "throws",
+                host: {
+                    getEmittedEvents: () => {
+                        throw new Error("boom");
+                    },
+                },
+            },
+            {
+                id: "broken",
+                host: {
+                    prepare: () => {
+                        throw new Error("bad config");
+                    },
+                    getEmittedEvents: () => [{ topic: "chat:broken", description: "never listed" }],
+                },
+            },
+            {
+                id: "second",
+                host: { getEmittedEvents: () => [{ topic: "chat:second", description: "chat" }] },
+            },
+        ] as unknown as PluginManifest[]);
+
+        const topics = host.listEmittedEvents();
+
+        assert.deepEqual(topics, [
+            { pluginId: "first", topic: "mail:new:first", description: "new mail" },
+            { pluginId: "second", topic: "chat:second", description: "chat" },
+        ]);
+        assert.ok(lines.some((l) => l.includes('invalid event topic "not a topic"')));
+        assert.ok(lines.some((l) => l.includes('plugin "throws" getEmittedEvents threw: boom')));
+    });
+});

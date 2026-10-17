@@ -1,4 +1,4 @@
-import type { ConfigService } from "@getfamiliar/shared";
+import { type ConfigService, DEFAULT_WRITABLE_PATHS } from "@getfamiliar/shared";
 
 /**
  * Configured weights for the hybrid (vector + BM25) search Orama
@@ -123,7 +123,7 @@ export function readMemoryConfig(config: ConfigService): MemoryConfig {
             excludeGlobs.push(entry);
         }
     }
-    const writablePaths = config.getStringList("core.writablePaths", ["wiki/**"]);
+    const writablePaths = config.getStringList("core.writablePaths", DEFAULT_WRITABLE_PATHS);
     const embeddings: EmbeddingsConfig = {
         provider: config.getString("memory.embeddings.provider"),
         model: config.getString("memory.embeddings.model"),

@@ -5,7 +5,7 @@ import { buildMemoryCommands } from "./Commands.js";
 import { type MemoryConfig, readMemoryConfig } from "./Config.js";
 import type { MemoryStore } from "./MemoryStore.js";
 import { buildMemoryPromptAppender } from "./PromptAppender.js";
-import { buildMemoryTools } from "./Tools.js";
+import { buildMemoryTools, SAVE_HANDLER, SAVE_TOPIC } from "./Tools.js";
 
 /**
  * Singleton store + config handles for the host daemon process.
@@ -93,6 +93,13 @@ export default definePlugin({
             }
             return buildMemoryTools(sharedStore, sharedConfig);
         },
+        getEmittedEvents: () => [
+            {
+                topic: SAVE_TOPIC,
+                startHandler: SAVE_HANDLER,
+                description: "The agent called `memory_save` to file a memory in the background.",
+            },
+        ],
         commands: (ctx: HostContext) => buildMemoryCommands(ctx),
     },
 });

@@ -11,8 +11,9 @@ import { formatHitsFlat } from "./PromptAppender.js";
  * skill explainer at `skills/memory/SKILL.md` lives alongside the
  * handler so both ship together in the plugin's `workspace-template/`.
  */
-const SAVE_TOPIC = "skills:memory";
-const SAVE_HANDLER = "save";
+export const SAVE_TOPIC = "skills:memory";
+/** Handler basename the save event starts at (`skills/memory/save.md`). */
+export const SAVE_HANDLER = "save";
 
 const NOT_READY_MESSAGE =
     "memory search is temporarily disabled — index still warming up or backend misconfigured";

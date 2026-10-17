@@ -1,7 +1,11 @@
 import path from "node:path";
 import { definePlugin } from "@getfamiliar/shared";
 import { buildCommands } from "./Commands.js";
-import { createSocketRegistry, startWhatsAppDaemon } from "./WhatsAppDaemon.js";
+import {
+    createSocketRegistry,
+    startWhatsAppDaemon,
+    WHATSAPP_GROUP_TOPIC,
+} from "./WhatsAppDaemon.js";
 import { buildWhatsAppTools } from "./WhatsAppTools.js";
 
 /**
@@ -34,6 +38,12 @@ export default definePlugin({
     host: {
         start: (ctx) => startWhatsAppDaemon(ctx, socketRegistry),
         tools: () => buildWhatsAppTools(socketRegistry),
+        getEmittedEvents: () => [
+            {
+                topic: WHATSAPP_GROUP_TOPIC,
+                description: "A text message arrived in a WhatsApp group of the linked account.",
+            },
+        ],
         commands: (ctx) => buildCommands(ctx),
     },
 });

@@ -610,6 +610,23 @@ export interface PluginToolCallContext {
 }
 
 /**
+ * One kind of event a plugin emits onto the bus, as returned by
+ * {@link PluginHostManifest.getEmittedEvents}. Describes a topic, not an
+ * individual event — `familiar events topics` lists these.
+ */
+export interface EmittedEventDescriptor {
+    /** Event topic, matching `TOPIC_PATTERN` (e.g. `mail:new:ms365`). */
+    readonly topic: string;
+    /** One-line, human-readable description of when the event fires. */
+    readonly description: string;
+    /**
+     * Handler basename the event starts at, when the plugin sets
+     * `startHandler` on emit (e.g. memory's `save`). Omit for `index`.
+     */
+    readonly startHandler?: string;
+}
+
+/**
  * Host-side surface a plugin may declare. All fields optional; a
  * plugin that's pure workspace template (no host code) leaves `host`
  * out of its manifest entirely.
@@ -715,6 +732,19 @@ export interface PluginHostManifest {
      * collision between two plugins, the first registered wins (logged).
      */
     getModelProviders?(ctx: HostContext): readonly ModelProviderDescriptor[];
+    /**
+     * Declare the event topics this plugin emits onto the bus under the
+     * current configuration — e.g. ms365 omits `mail:new:ms365` when its
+     * mail feature is disabled. Backs `familiar events topics`, so the
+     * operator can see which topics exist and which handler file each
+     * one resolves to.
+     *
+     * Hard rules: synchronous, side-effect-free — derive the list from
+     * constants and `ctx.config`, no network, no DB. Called after
+     * `prepare`, also from one-shot CLI runs without the daemon. Topics
+     * that don't match `TOPIC_PATTERN` are logged and dropped.
+     */
+    getEmittedEvents?(ctx: HostContext): readonly EmittedEventDescriptor[];
     /**
      * Default command for the plugin's CLI root. When set, invoking
      * the plugin id with no subcommand (e.g. `familiar cli-chat`) runs

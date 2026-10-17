@@ -2,6 +2,7 @@ import path from "node:path";
 import { definePlugin } from "@getfamiliar/shared";
 import { buildMs365Commands } from "./Commands.js";
 import { makeLoginStore } from "./Config.js";
+import { listMs365EmittedEvents } from "./EmittedEvents.js";
 import { startMs365Daemon } from "./Ms365Daemon.js";
 import { buildSentSampleTool } from "./mail/SentSampleTool.js";
 import { Ms365StorageProvider } from "./storage/Ms365StorageProvider.js";
@@ -10,7 +11,7 @@ import { Ms365StorageProvider } from "./storage/Ms365StorageProvider.js";
  * Microsoft 365 host-side plugin.
  *
  * Polls one or more Microsoft 365 mailboxes via Microsoft Graph and
- * emits a `mail:ms365` event per new message. Calendar support shares
+ * emits a `mail:new:ms365` event per new message. Calendar support shares
  * the same auth and Graph client.
  *
  * Authentication is host-side via msal-node device-code flow; the
@@ -42,5 +43,6 @@ export default definePlugin({
         start: (ctx) => startMs365Daemon(ctx),
         commands: (ctx) => buildMs365Commands(ctx),
         tools: () => [buildSentSampleTool()],
+        getEmittedEvents: (ctx) => listMs365EmittedEvents(ctx),
     },
 });

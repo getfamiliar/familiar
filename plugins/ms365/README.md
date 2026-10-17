@@ -1,11 +1,6 @@
 # Microsoft 365 plugin
 
-Polls one or more Microsoft 365 mailboxes and calendars via direct Microsoft
-Graph calls (no MCP — see `memory/project_ms365_mcp_incompatible.md` for the
-rationale). Mail polling emits a `mail:ms365` event per new mail; calendar
-polling feeds the core `calendar_events` table the plugin-agnostic `cal_*`
-agent tools read from, and emits a `calendar:new` event when an event the
-poller hasn't seen before shows up.
+Polls one or more Microsoft 365 mailboxes and calendars via direct Microsoft Graph calls (no MCP — see `memory/project_ms365_mcp_incompatible.md` for the rationale). Mail polling emits a `mail:new:ms365` event per new mail; calendar polling feeds the core `calendar_events` table the plugin-agnostic `cal_*` agent tools read from, and emits `calendar:new:ms365` / `calendar:update:ms365` / `calendar:delete:ms365` events as entries appear, change or disappear. `familiar events topics` lists the topics active under the current config.
 
 **Calendar scope**: the plugin supports the user's own calendars and shared
 calendars they have delegated access to. Group calendars and team / Microsoft
@@ -17,11 +12,7 @@ required. Real enablement is gated on at least one cached login under
 
 ## What the agent sees
 
-For every new mail the plugin emits a `mail:ms365` event. The container's
-handler resolver picks up the most specific handler available —
-`workspace/mail/ms365/index.md` first, falling back to
-`workspace/mail/index.md`. The handler decides what to do; the plugin's job
-is only to surface the mail.
+For every new mail the plugin emits a `mail:new:ms365` event. The container's handler resolver picks up the most specific handler available — `workspace/mail/new/ms365/index.md` first, then `workspace/mail/new/index.md`, falling back to `workspace/mail/index.md`. The handler decides what to do; the plugin's job is only to surface the mail.
 
 **Prompt** the handler receives:
 
@@ -108,7 +99,7 @@ characters, malformed shape, etc.) the field carries the safe sentinel
 `invalid@invalid.invalid` and the raw, untrusted bytes are preserved on
 `rawAddress`. **Handlers must never use `rawAddress` as a path component.**
 
-Idempotency key: `mail:ms365:<internetMessageId>`. The bus rejects duplicates,
+Idempotency key: `mail:new:ms365:<internetMessageId>`. The bus rejects duplicates,
 so each mail produces at most one event ever — across re-polls, delta-link
 resets, and daemon restarts.
 

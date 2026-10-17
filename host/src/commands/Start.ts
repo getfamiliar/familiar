@@ -4,6 +4,7 @@ import { createInterface } from "node:readline";
 import {
     type ConfigService,
     createLogger,
+    DEFAULT_WRITABLE_PATHS,
     EventBus,
     jsonStdoutStream,
     type Logger,
@@ -157,7 +158,7 @@ export const startCommand = defineCommand({
         // host-side (with default) because the shell entrypoint reads it as
         // the discrete `CORE_WRITABLE_PATHS` env var; the same value also
         // rides in the container config blob for the container's fs gate.
-        const writablePaths = config.getStringList("core.writablePaths", ["wiki/**", "files/**"]);
+        const writablePaths = config.getStringList("core.writablePaths", DEFAULT_WRITABLE_PATHS);
         // Touch the chat-channel default so a missing value fails the
         // daemon now rather than at first chat event.
         config.getString("core.defaultChatChannel");

@@ -1,5 +1,6 @@
 import {
     DaemonStoppedError,
+    DEFAULT_WRITABLE_PATHS,
     EVENT_PRIORITY,
     HandlerCatalog,
     type HostContext,
@@ -10,6 +11,8 @@ import { type ChatPromptFn, chatPrompt } from "./ChatPrompt.js";
 import { CLI_CHAT_BUILTINS, type ParsedInput, parseInput } from "./InputParser.js";
 import { RunRenderer } from "./RunRenderer.js";
 
+/** Topic of plain cli-chat messages (direct handler calls carry their own). */
+export const CLI_CHAT_TOPIC = "chat:cli";
 const CLI_CHANNEL = "cli";
 const ANSI_CLEAR_SCREEN = "\x1b[2J\x1b[H";
 const DAEMON_GOODBYE = "The daemon has stopped. Goodbye.";
@@ -28,7 +31,7 @@ const DAEMON_GOODBYE = "The daemon has stopped. Goodbye.";
  */
 export async function runRepl(ctx: HostContext, prompt: ChatPromptFn = chatPrompt): Promise<void> {
     const isTty = process.stdout.isTTY === true;
-    const writablePaths = ctx.config.getStringList("core.writablePaths", ["wiki/**"]);
+    const writablePaths = ctx.config.getStringList("core.writablePaths", DEFAULT_WRITABLE_PATHS);
     const catalog = new HandlerCatalog(ctx.workspaceDir, writablePaths);
 
     if (isTty) {
@@ -377,7 +380,7 @@ async function runTurn(
 function buildNewEvent(parsed: Extract<ParsedInput, { kind: "handler" }>): NewEvent {
     if (parsed.topic === undefined || parsed.startHandler === undefined) {
         return {
-            topic: "chat:cli",
+            topic: CLI_CHAT_TOPIC,
             isChat: true,
             priority: EVENT_PRIORITY.CHAT,
             preferredChatChannelId: CLI_CHANNEL,
@@ -445,7 +448,7 @@ export async function runOneShot(
     options: { readonly returnOnly: boolean },
 ): Promise<number> {
     const isTty = process.stdout.isTTY === true;
-    const writablePaths = ctx.config.getStringList("core.writablePaths", ["wiki/**"]);
+    const writablePaths = ctx.config.getStringList("core.writablePaths", DEFAULT_WRITABLE_PATHS);
     const catalog = new HandlerCatalog(ctx.workspaceDir, writablePaths);
     const parsed = parseInput(message);
 

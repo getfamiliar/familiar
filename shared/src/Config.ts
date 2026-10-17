@@ -19,6 +19,12 @@
  * boot. Plugin-side keys are not policed by the platform — plugins own
  * the validation of their own subtrees.
  */
+
+/**
+ * Fallback for `core.writablePaths` when `config.yml` doesn't set it:
+ * the workspace globs the agent may write to, which are never handlers.
+ */
+export const DEFAULT_WRITABLE_PATHS: readonly string[] = ["wiki/**", "files/**"];
 export interface ConfigService {
     /**
      * Read a string under a dotted path. Throws when the key is

@@ -18,6 +18,9 @@ export const DEFAULT_COMPACTION_THRESHOLD_BYTES = 60_000;
 /** Default amount of recent history kept verbatim when compacting. */
 export const DEFAULT_KEEP_UNCOMPACTED_BYTES = 30_000;
 
+/** Topic of the event the compactor emits to have the chat history summarized. */
+export const CHAT_COMPACTION_TOPIC = "chat:compaction";
+
 /** Workspace-relative path of the default summarisation handler. */
 const COMPACTION_HANDLER_RELATIVE_PATH = path.join("chat", "compaction", "index.md");
 
@@ -337,7 +340,7 @@ export class ChatCompactor {
      */
     private async runHandlerEvent(batch: CompactionBatch): Promise<string | undefined> {
         const event: NewEvent = {
-            topic: "chat:compaction",
+            topic: CHAT_COMPACTION_TOPIC,
             prompt: batch.transcript,
             isChat: false,
             priority: EVENT_PRIORITY.BACKGROUND,
