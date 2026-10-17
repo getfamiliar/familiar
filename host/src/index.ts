@@ -2,12 +2,12 @@ import { createLogger, prettyStdoutStream } from "@getfamiliar/shared";
 import { defineCommand, runMain } from "citty";
 import { bootstrap, requireHomeDir } from "./Bootstrap.js";
 import { configCommand } from "./commands/Config.js";
-import { cronCommand } from "./commands/Cron.js";
 import { buildEventsCommand } from "./commands/Events.js";
 import { initCommand } from "./commands/Init.js";
-import { pluginCommand } from "./commands/Plugin.js";
+import { pluginsCommand } from "./commands/Plugin.js";
 import { buildPromptCommand } from "./commands/Prompt.js";
 import { psqlCommand } from "./commands/Psql.js";
+import { type CommandGroup, createGroupedShowUsage } from "./commands/RootUsage.js";
 import { startCommand } from "./commands/Start.js";
 import { stopCommand } from "./commands/Stop.js";
 import { buildStorageCommand } from "./commands/Storage.js";
@@ -48,6 +48,17 @@ function isRunningAsRoot(): boolean {
     return process.getuid?.() === 0;
 }
 
+/** Title of the root help group that also collects every plugin-provided command. */
+const PLUGINS_GROUP_TITLE = "Plugins";
+
+/** Grouping of the root subcommands in `familiar --help`. */
+const ROOT_COMMAND_GROUPS: readonly CommandGroup[] = [
+    { title: "Start / Stop / Init", commands: ["init", "start", "stop"] },
+    { title: "Configuration", commands: ["config", "storage", "tools"] },
+    { title: "Maintenance & Audit", commands: ["events", "prompt", "psql"] },
+    { title: PLUGINS_GROUP_TITLE, commands: ["plugins"] },
+];
+
 /**
  * Async entry point. Plugins are discovered and imported at runtime
  * (`await loadPlugins`), so the whole startup is async — the plugin list
@@ -73,28 +84,28 @@ async function main(): Promise<void> {
     }
     const plugins = await loadPlugins(boot, cliLogger);
     const pluginHost = new PluginHost(boot, cliLogger, plugins);
-    runMain(
-        defineCommand({
-            meta: {
-                name: "familiar",
-                description: "Familiar host CLI",
-            },
-            subCommands: {
-                init: initCommand,
-                start: startCommand,
-                stop: stopCommand,
-                events: buildEventsCommand(pluginHost),
-                psql: psqlCommand,
-                config: configCommand,
-                cron: cronCommand,
-                tools: toolsCommand,
-                plugin: pluginCommand,
-                prompt: buildPromptCommand(pluginHost),
-                storage: buildStorageCommand(pluginHost),
-                ...pluginHost.buildSubCommands(),
-            },
-        }),
-    );
+    const root = defineCommand({
+        meta: {
+            name: "familiar",
+            description: "Familiar host CLI",
+        },
+        subCommands: {
+            init: initCommand,
+            start: startCommand,
+            stop: stopCommand,
+            events: buildEventsCommand(pluginHost),
+            psql: psqlCommand,
+            config: configCommand,
+            tools: toolsCommand,
+            plugins: pluginsCommand,
+            prompt: buildPromptCommand(pluginHost),
+            storage: buildStorageCommand(pluginHost),
+            ...pluginHost.buildSubCommands(),
+        },
+    });
+    runMain(root, {
+        showUsage: createGroupedShowUsage(root, ROOT_COMMAND_GROUPS, PLUGINS_GROUP_TITLE),
+    });
 }
 
 void main().catch((err: unknown) => {

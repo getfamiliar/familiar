@@ -113,7 +113,7 @@ function makeLog(verbose = false): Logger {
 }
 
 /**
- * `familiar plugin add <pkg>` — install a plugin package into the project
+ * `familiar plugins add <pkg>` — install a plugin package into the project
  * and add it to `config/plugins` so it loads on next start. A package
  * that's already a prebundled core plugin is installed as needed but not
  * appended (bundled plugins load automatically).
@@ -183,7 +183,7 @@ const addCommand = defineCommand({
 });
 
 /**
- * `familiar plugin remove <pkg>` — remove a plugin from `config/plugins`
+ * `familiar plugins remove <pkg>` — remove a plugin from `config/plugins`
  * and uninstall the package. Refuses to remove a prebundled core plugin
  * (those are managed by the `@getfamiliar/cli` meta-package, not the whitelist).
  */
@@ -230,7 +230,7 @@ const removeCommand = defineCommand({
 });
 
 /**
- * `familiar plugin list` — print the prebundled core plugins and the
+ * `familiar plugins list` — print the prebundled core plugins and the
  * whitelisted optional/third-party plugins for this project.
  */
 const listCommand = defineCommand({
@@ -258,9 +258,9 @@ const listCommand = defineCommand({
     },
 });
 
-/** Parent `familiar plugin` command grouping add/remove/list. */
-export const pluginCommand = defineCommand({
-    meta: { name: "plugin", description: "Manage installed plugins (add, remove, list)" },
+/** Parent `familiar plugins` command grouping add/remove/list. */
+export const pluginsCommand = defineCommand({
+    meta: { name: "plugins", description: "Manage installed plugins (add, remove, list)" },
     subCommands: {
         add: addCommand,
         remove: removeCommand,

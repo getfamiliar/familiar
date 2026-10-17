@@ -235,7 +235,7 @@ Declares:
 
 ### Emitted event topics
 
-Topics are not declared in the manifest but in code: a plugin's `getEmittedEvents(ctx)` hook (`shared/src/Plugin.ts`) returns the topics it emits *under the current config* (`{topic, description, isExactTopic?}`) — e.g. ms365 omits `mail:new:ms365` when its mail poller is off. The hook is synchronous and side-effect-free like `tools()`; `PluginHost.listEmittedEvents()` collects it after `prepare`. Host-emitted topics live in `CORE_EMITTED_EVENTS` (`host/src/events/CoreEmittedEvents.ts`). `familiar events topics` lists core, plugin and cron topics with the handler file each resolves to (works without the daemon).
+Topics are not declared in the manifest but in code: a plugin's `getEmittedEvents(ctx)` hook (`shared/src/Plugin.ts`) returns the topics it emits *under the current config* (`{topic, description, isExactTopic?}`) — e.g. ms365 omits `mail:new:ms365` when its mail poller is off. The hook is synchronous and side-effect-free like `tools()`; `PluginHost.listEmittedEvents()` collects it after `prepare`. Host-emitted topics live in `CORE_EMITTED_EVENTS` (`host/src/events/CoreEmittedEvents.ts`). `familiar events list-topics` lists core, plugin and cron topics with the handler file each resolves to (works without the daemon).
 
 ## Cronjobs
 
@@ -250,7 +250,7 @@ is passed straight to Croner as a raw cron expression. Invalid expressions are l
 `warn` and silently dropped; the rest of the workspace keeps working. Editing or deleting
 a handler file re-evaluates its job live — no daemon restart needed.
 
-`familiar cron list` prints every handler with a `cron:` field, the verbatim string, and the
+`familiar events list-crons` prints every handler with a `cron:` field, the verbatim string, and the
 parsed expression. The command runs a standalone filesystem scan, so it works whether the
 daemon is up or not.
 
@@ -417,7 +417,7 @@ Ephemeral runtime scratch lives in `tmp/` instead (gitignored, safe to wipe):
 
 All **human-facing** CLI (and plugin) output is produced as markdown and emitted through `writeMarkdown` from `@getfamiliar/shared` (`shared/src/markdownOutput.ts`). It renders ANSI-styled via `renderMarkdown` (`shared/src/markdownTerminal.ts`) when stdout is a TTY, and emits the raw markdown verbatim when piped or redirected. The TTY check lives *inside* `writeMarkdown` — call sites never read `process.stdout.isTTY` themselves; they only optionally pass `{ raw: true }` (wired to a `--raw` flag) to force raw output on a TTY. So a command can never accidentally render box-drawing tables and ANSI escapes into a pipe. Build tables with `markdownTable(headers, rows)` (cells escaped via `escapeTableCell`). All three helpers are exported from `shared/` so plugins can use them too.
 
-Every command that lists, tabulates, or reports for a human exposes `--raw` and ends by handing a markdown string to `writeMarkdown` — see `cron list`, `events list`/`events report`/`events topics`, `tools list`/`tools list-mcps`/`tools lint-mcps`, `plugin list`, `config lint`, `prompt placeholders`/`prompt dry-run`.
+Every command that lists, tabulates, or reports for a human exposes `--raw` and ends by handing a markdown string to `writeMarkdown` — see `events list-crons`, `events list`/`events report`/`events list-topics`, `tools list`/`tools list-mcps`/`tools lint-mcps`, `plugins list`, `config lint`, `prompt placeholders`/`prompt dry-run`.
 
 **Exceptions** (and why): the `start` daemon streams through the structured logger (ordering and flush matter); interactive prompts/wizards (`tools add-mcp`) write directly; machine-readable output stays literal (`events emit` prints JSON). The rule of thumb: *if it's a table, list, report, or prose status for a human to read, render it; if it's a stream, a prompt, or data for a machine, don't.*
 

@@ -221,7 +221,7 @@ export class CronjobScheduler {
  * pulling in the full handler parser. Returns `undefined` if there is
  * no frontmatter, no `cron:` key, or the file cannot be read.
  *
- * Exported so the `familiar cron list` CLI uses the same extraction path.
+ * Exported so the `familiar events list-crons` CLI uses the same extraction path.
  */
 export function readVerbatimCron(absolutePath: string): string | undefined {
     let source: string;

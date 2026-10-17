@@ -84,7 +84,7 @@ Because the CLI derives its image tag from its own version, `npm update` is all 
 | `familiar init` | Scaffold a project in the current folder |
 | `familiar start` | Start the daemon (pulls images as needed) |
 | `familiar stop` | Stop the daemon |
-| `familiar plugin add\|remove\|list` | Manage plugins (see below) |
+| `familiar plugins add\|remove\|list` | Manage plugins (see below) |
 | `familiar config lint` | Validate `config/config.yml` |
 | `familiar events\|agentrun\|cron\|tools\|psql` | Inspect and operate the running system |
 
@@ -131,9 +131,9 @@ A plain, line-oriented file. Blank lines and `#` comments are ignored; every oth
 ### Managing plugins
 
 ```bash
-familiar plugin add @getfamiliar/plugin-featherless   # npm-installs it and adds the line
-familiar plugin remove @getfamiliar/plugin-ms365      # drops the line and uninstalls
-familiar plugin list                                  # shows core + whitelisted
+familiar plugins add @getfamiliar/plugin-featherless   # npm-installs it and adds the line
+familiar plugins remove @getfamiliar/plugin-ms365      # drops the line and uninstalls
+familiar plugins list                                  # shows core + whitelisted
 ```
 
 `add` refuses to duplicate a core plugin (they load automatically); `remove` refuses to touch a core plugin (they are managed by the meta-package, not the whitelist).
@@ -143,7 +143,7 @@ familiar plugin list                                  # shows core + whitelisted
 A third-party plugin is just an npm package whose default export is a `definePlugin(...)` manifest. Publish it under any name, then on any instance:
 
 ```bash
-familiar plugin add @acme/familiar-jira
+familiar plugins add @acme/familiar-jira
 ```
 
 It is resolved and imported from the project's `node_modules`, exactly like a first-party optional plugin.

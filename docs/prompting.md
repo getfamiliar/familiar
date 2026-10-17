@@ -4,7 +4,7 @@ This is the reference for shaping how the assistant thinks and behaves. Everythi
 
 ## The big picture
 
-Every time something happens in your world (a mail arrives, a cron fires, you write in the chat), Familiar creates an **event** with a **topic** such as `mail:new:ms365` or `chat:telegram` (`familiar events topics` lists them all, with the handler each one resolves to). The agent then runs a **handler** for that topic: a markdown file that tells the model what to do. The prompt the model receives is assembled from three kinds of files:
+Every time something happens in your world (a mail arrives, a cron fires, you write in the chat), Familiar creates an **event** with a **topic** such as `mail:new:ms365` or `chat:telegram` (`familiar events list-topics` lists them all, with the handler each one resolves to). The agent then runs a **handler** for that topic: a markdown file that tells the model what to do. The prompt the model receives is assembled from three kinds of files:
 
 | File | What it is | Who writes it |
 | --- | --- | --- |
@@ -160,7 +160,7 @@ The **first file found is the handler, and it is the only file loaded** — noth
 
 Only **events** from the outside world (a new mail, a chat message, …) walk up the chain, so `mail:new:ms365` lands on `mail/index.md` until you write a more specific handler. Everything that names a handler on purpose must match exactly, with no fallback: `start_subagent` / `schedule_subagent` (including deferred wake-ups), cron firings, cli-chat's `/a/b/c` direct calls, and plugin emissions like memory's `skills:memory:save`. A missing file there is an error, not a silent detour to a more general handler.
 
-If both `x.md` and `x/index.md` exist, `x.md` wins and every run logs a warning (`familiar events topics` and `familiar prompt dry-run` show the conflict too) — delete one of them.
+If both `x.md` and `x/index.md` exist, `x.md` wins and every run logs a warning (`familiar events list-topics` and `familiar prompt dry-run` show the conflict too) — delete one of them.
 
 ### Frontmatter reference
 
@@ -175,7 +175,7 @@ All fields are optional. Unknown fields are ignored (so `description:` for your 
 | `maxOutputTokens` | positive integer | from model metadata | Cap on tokens the model may produce per step. Never exceeds what the model supports. Useful against runaway monologues. |
 | `maxRetries` | integer ≥ 0 | `inference.maxRetries` (10) | Retries on temporary provider errors (429, 5xx, timeouts) with exponential backoff. `0` disables retries for this handler. |
 | `outputChat` | boolean | `false` | Also post the run's final text answer into the chat. For models that answer in text instead of calling `send_chat`. Don't combine with a handler that calls `send_chat`, or you'll get every answer twice. |
-| `cron` | string | — | Run this handler on a schedule. Friendly syntax (`every monday at 8 am`, `every 5 minutes`, `weekly`) or a raw cron expression. Picked up live when you save the file; check with `familiar cron list`. |
+| `cron` | string | — | Run this handler on a schedule. Friendly syntax (`every monday at 8 am`, `every 5 minutes`, `weekly`) or a raw cron expression. Picked up live when you save the file; check with `familiar events list-crons`. |
 | `systemPrompt` | `default` \| `none` \| path | `default` | Which template to render: `default` = `PROMPT.md`; `none` = only the handler body, no template at all (no identity, no tool list, no runtime facts) — for narrowly defined tasks where framing would only distract; a path like `prompts/minimal.md` = your own template for this handler. |
 | `toolCallOffloadingLimit` | positive integer | `core.toolCallOffloadingLimit` (16,000) | Token size above which a tool result is written to a scratch file instead of being shown inline (the model gets the path and can read it in parts). Raise it for handlers that need large results inline, lower it for noisy ones. |
 
@@ -235,7 +235,7 @@ and set `systemPrompt: prompts/minimal.md` in those handlers.
 | --- | --- |
 | `familiar prompt placeholders` | Every placeholder, its source (core or plugin), whether it's static or dynamic, and what it contains. Works without a running daemon. |
 | `familiar prompt dry-run <topic> [--privileged] [--prompt "<text>"] [--full]` | Renders the prompt for the handler an event of `<topic>` would run (e.g. `chat:telegram`, `skills:memory:save`) — with the real tool set and plugin values — without starting a run or calling a model. Shows the template used, every placeholder with its value and where it ends up, plugin-appended sections and all warnings. `--full` prints the complete system prompt and user message head. `--prompt` feeds a sample message to plugins (e.g. so memory search has something to search for). Needs the daemon running. |
-| `familiar cron list` | Every handler with a `cron:` field and how its schedule was parsed. |
+| `familiar events list-crons` | Every handler with a `cron:` field and how its schedule was parsed. |
 | `familiar tools list` | All available tools — useful for writing `tools:`. |
 | `familiar events report <id> -v` | What happened in a past event, including the prompt each run actually received — when `core.logSystemPrompt` is enabled in `config.yml` (`"full"`, or `"non-static"` to replace includes by `<content of file …>` and keep the log small). |
 

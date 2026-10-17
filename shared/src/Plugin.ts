@@ -612,7 +612,7 @@ export interface PluginToolCallContext {
 /**
  * One kind of event a plugin emits onto the bus, as returned by
  * {@link PluginHostManifest.getEmittedEvents}. Describes a topic, not an
- * individual event — `familiar events topics` lists these.
+ * individual event — `familiar events list-topics` lists these.
  */
 export interface EmittedEventDescriptor {
     /** Event topic, matching `TOPIC_PATTERN` (e.g. `mail:new:ms365`). */
@@ -622,7 +622,7 @@ export interface EmittedEventDescriptor {
     /**
      * `true` when the plugin emits this topic with `isExactTopic` (it
      * addresses one handler file, e.g. memory's `skills:memory:save`),
-     * so `familiar events topics` resolves it without falling back up
+     * so `familiar events list-topics` resolves it without falling back up
      * the topic chain. Omit for world events.
      */
     readonly isExactTopic?: boolean;
@@ -737,7 +737,7 @@ export interface PluginHostManifest {
     /**
      * Declare the event topics this plugin emits onto the bus under the
      * current configuration — e.g. ms365 omits `mail:new:ms365` when its
-     * mail feature is disabled. Backs `familiar events topics`, so the
+     * mail feature is disabled. Backs `familiar events list-topics`, so the
      * operator can see which topics exist and which handler file each
      * one resolves to.
      *

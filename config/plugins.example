@@ -3,7 +3,7 @@
 # Prebundled core plugins (e.g. @getfamiliar/plugin-cli-chat) load
 # automatically and do NOT need to be listed here. This file is the
 # explicit whitelist for OPTIONAL first-party plugins and ANY third-party
-# plugin — add a line to activate it, or use `familiar plugin add <pkg>`
+# plugin — add a line to activate it, or use `familiar plugins add <pkg>`
 # (which installs it and appends the line). Lines starting with # and
 # blank lines are ignored.
 #

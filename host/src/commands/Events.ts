@@ -5,6 +5,7 @@ import {
     EventBus,
     HandlerCatalog,
     markdownTable,
+    parseCron,
     type ResolvedHandler,
     renderMarkdown,
     StepResultBus,
@@ -105,7 +106,7 @@ const eventsEmitCommand = defineCommand({
 const eventsReportCommand = defineCommand({
     meta: {
         name: "report",
-        description: "Render the full report for one event id (reads bus tables directly).",
+        description: "Display the full execution report of the given event.",
     },
     args: {
         id: {
@@ -342,7 +343,75 @@ const eventsListCommand = defineCommand({
     },
 });
 
-/** One row of the `events topics` table. */
+/** One row of the `events list-crons` table. */
+interface CronRow {
+    readonly path: string;
+    readonly verbatim: string;
+    readonly expression: string;
+    readonly source: string;
+    readonly status: "ok" | "invalid" | "no-topic";
+}
+
+/**
+ * `familiar events list-crons` — every handler with a `cron:` frontmatter
+ * field, its verbatim expression and the parsed Croner expression. Runs a
+ * standalone workspace scan, so it works without the daemon.
+ */
+const eventsListCronsCommand = defineCommand({
+    meta: {
+        name: "list-crons",
+        description:
+            "List every handler with a `cron:` frontmatter field. Shows the verbatim expression and the parsed Croner expression.",
+    },
+    args: {
+        raw: {
+            type: "boolean",
+            description:
+                "Skip terminal styling and emit the raw markdown verbatim. Useful for piping into a file or a markdown viewer.",
+            default: false,
+        },
+    },
+    async run({ args }) {
+        const boot = bootstrap();
+        const files = await scanWorkspace(boot.workspaceDir, {
+            frontmatter: { cron: "*" },
+        });
+        const rows: CronRow[] = [];
+        for (const file of files) {
+            const verbatim = readVerbatimCron(file.absolutePath) ?? "";
+            const topic = topicFromHandlerPath(file.relativePath);
+            const parsed = parseCron(verbatim);
+            rows.push({
+                path: file.relativePath,
+                verbatim,
+                expression: parsed?.expression ?? "—",
+                source: parsed?.source ?? "—",
+                status: topic === null ? "no-topic" : parsed === null ? "invalid" : "ok",
+            });
+        }
+        rows.sort((a, b) => a.path.localeCompare(b.path));
+        writeMarkdown(renderCronTable(rows), { raw: args.raw === true });
+    },
+});
+
+/**
+ * Render the cron rows as a markdown document: a GFM table, or a short
+ * prose line when no handler declares a `cron:` field.
+ *
+ * @param rows - the collected cron handler rows
+ * @returns markdown source for {@link writeMarkdown}
+ */
+function renderCronTable(rows: readonly CronRow[]): string {
+    if (rows.length === 0) {
+        return "No handlers with `cron:` frontmatter found.\n";
+    }
+    return markdownTable(
+        ["PATH", "VERBATIM", "PARSED", "SOURCE", "STATUS"],
+        rows.map((r) => [r.path, r.verbatim, r.expression, r.source, r.status]),
+    );
+}
+
+/** One row of the `events list-topics` table. */
 interface TopicRow {
     readonly topic: string;
     /** `core`, the declaring plugin's id, or `cron`. */
@@ -356,7 +425,7 @@ interface TopicRow {
 }
 
 /**
- * `familiar events topics` — table of every event topic the system emits:
+ * `familiar events list-topics` — table of every event topic the system emits:
  * the host's own, each plugin's `getEmittedEvents` declaration (under the
  * current config), and one per cron handler. The HANDLER column shows
  * which workspace file the topic resolves to — falling back up the topic
@@ -370,7 +439,7 @@ interface TopicRow {
 function eventsTopicsCommand(pluginHost: PluginHost) {
     return defineCommand({
         meta: {
-            name: "topics",
+            name: "list-topics",
             description:
                 "List the event topics the host, the plugins and the cron handlers emit, with the handler each resolves to.",
         },
@@ -488,7 +557,7 @@ function renderTopicsDocument(rows: readonly TopicRow[]): string {
 }
 
 /**
- * Parent command for the `events` subtree (emit, list, replay, report, topics).
+ * Parent command for the `events` subtree (emit, list, list-crons, list-topics, replay, report).
  *
  * @param pluginHost Plugin host, for the plugins' declared topics.
  * @returns The citty command.
@@ -502,9 +571,10 @@ export function buildEventsCommand(pluginHost: PluginHost) {
         subCommands: {
             emit: eventsEmitCommand,
             list: eventsListCommand,
+            "list-crons": eventsListCronsCommand,
+            "list-topics": eventsTopicsCommand(pluginHost),
             replay: eventsReplayCommand,
             report: eventsReportCommand,
-            topics: eventsTopicsCommand(pluginHost),
         },
     });
 }

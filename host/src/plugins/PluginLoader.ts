@@ -217,7 +217,7 @@ export interface PluginSources {
  * Collect the plugin package names from both sources without importing
  * them — the prebundled core set ({@link discoverBundled}) and the
  * `config/plugins` whitelist ({@link readWhitelist}). Used by
- * {@link loadPlugins} and by `familiar plugin list`.
+ * {@link loadPlugins} and by `familiar plugins list`.
  *
  * @param boot Bootstrap providing the home dir.
  * @param log Logger for diagnostics.

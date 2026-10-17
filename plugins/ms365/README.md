@@ -1,6 +1,6 @@
 # Microsoft 365 plugin
 
-Polls one or more Microsoft 365 mailboxes and calendars via direct Microsoft Graph calls (no MCP — see `memory/project_ms365_mcp_incompatible.md` for the rationale). Mail polling emits a `mail:new:ms365` event per new mail; calendar polling feeds the core `calendar_events` table the plugin-agnostic `cal_*` agent tools read from, and emits `calendar:new:ms365` / `calendar:update:ms365` / `calendar:delete:ms365` events as entries appear, change or disappear. `familiar events topics` lists the topics active under the current config.
+Polls one or more Microsoft 365 mailboxes and calendars via direct Microsoft Graph calls (no MCP — see `memory/project_ms365_mcp_incompatible.md` for the rationale). Mail polling emits a `mail:new:ms365` event per new mail; calendar polling feeds the core `calendar_events` table the plugin-agnostic `cal_*` agent tools read from, and emits `calendar:new:ms365` / `calendar:update:ms365` / `calendar:delete:ms365` events as entries appear, change or disappear. `familiar events list-topics` lists the topics active under the current config.
 
 **Calendar scope**: the plugin supports the user's own calendars and shared
 calendars they have delegated access to. Group calendars and team / Microsoft
