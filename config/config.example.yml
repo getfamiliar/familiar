@@ -266,7 +266,7 @@ inference:
 # --- Plugin-owned subtrees below. Each plugin parses + validates its
 # --- own keys; the platform linter does not police them.
 
-# Memory plugin. Indexes every .md file under data/workspace/ with an
+# Memory plugin. Indexes every .md file under workspace/ with an
 # Orama hybrid (vector + BM25) index and surfaces relevant snippets in
 # the system prompt. `embeddings.provider` + `embeddings.model` are
 # required; everything else has a default. The provider id references

@@ -1,6 +1,6 @@
 # Writing prompts
 
-This is the reference for shaping how the assistant thinks and behaves. Everything that ends up in front of the model is plain markdown in your workspace (`data/workspace/`, mounted as `/workspace` in the agent container). There is no prompt text hidden in code: if you want to know what the model sees, read the files described here, or ask the CLI to render it for you.
+This is the reference for shaping how the assistant thinks and behaves. Everything that ends up in front of the model is plain markdown in your workspace (`workspace/` in your Familiar folder, mounted as `/workspace` in the agent container). There is no prompt text hidden in code: if you want to know what the model sees, read the files described here, or ask the CLI to render it for you.
 
 ## The big picture
 

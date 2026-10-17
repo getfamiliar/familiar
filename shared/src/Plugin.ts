@@ -298,6 +298,13 @@ export interface HostContext {
      */
     readonly dataDir: string;
     /**
+     * Absolute host path of the project's `workspace/` directory — the
+     * assistant's markdown workspace (handlers, PROMPT.md, SOUL.md,
+     * knowledge files), bind-mounted into the agent container as
+     * `/workspace`.
+     */
+    readonly workspaceDir: string;
+    /**
      * Absolute host path of the project's `tmp/` directory — the
      * gitignored, safe-to-wipe scratch root (it also holds the daemon
      * pidfile, the postgres port file, and per-event scratch dirs).
@@ -751,7 +758,7 @@ export interface PluginManifest {
     readonly host?: PluginHostManifest;
     /**
      * Absolute path to a directory of files copied into
-     * `data/workspace/` on first install. Existing files are left
+     * the workspace (`<home>/workspace/`) on first install. Existing files are left
      * alone — diff/merge on plugin updates is a separate concern.
      * Plugins typically derive this with
      * `path.join(__dirname, "..", "workspace-template")` (or the ESM

@@ -1,4 +1,3 @@
-import path from "node:path";
 import {
     DaemonStoppedError,
     EVENT_PRIORITY,
@@ -30,7 +29,7 @@ const DAEMON_GOODBYE = "The daemon has stopped. Goodbye.";
 export async function runRepl(ctx: HostContext, prompt: ChatPromptFn = chatPrompt): Promise<void> {
     const isTty = process.stdout.isTTY === true;
     const writablePaths = ctx.config.getStringList("core.writablePaths", ["wiki/**"]);
-    const catalog = new HandlerCatalog(path.join(ctx.dataDir, "workspace"), writablePaths);
+    const catalog = new HandlerCatalog(ctx.workspaceDir, writablePaths);
 
     if (isTty) {
         const owl = supportsUtf8() ? "🦉 " : "";
@@ -447,7 +446,7 @@ export async function runOneShot(
 ): Promise<number> {
     const isTty = process.stdout.isTTY === true;
     const writablePaths = ctx.config.getStringList("core.writablePaths", ["wiki/**"]);
-    const catalog = new HandlerCatalog(path.join(ctx.dataDir, "workspace"), writablePaths);
+    const catalog = new HandlerCatalog(ctx.workspaceDir, writablePaths);
     const parsed = parseInput(message);
 
     if (parsed.kind === "builtin") {

@@ -33,14 +33,16 @@ function copyIfMissing(src: string, dest: string, log: Logger): void {
  * that does not require an already-initialized home dir.
  *
  * Writes `package.json` (pinning the `familiar` dependency), creates
- * `config/`, `data/`, `tmp/`, and seeds `config/config.yml`,
+ * `config/`, `data/`, `tmp/`, `workspace/`, and seeds `config/config.yml`,
  * `config/mcp.yml`, `config/plugins`, and `data/workspace-template/` from
- * the packaged `template/` assets.
+ * the packaged `template/` assets. The workspace itself stays empty; the
+ * daemon fills it from the templates on its first start.
  */
 export const initCommand = defineCommand({
     meta: {
         name: "init",
-        description: "Scaffold a Familiar project (config/, data/, tmp/) in the current folder",
+        description:
+            "Scaffold a Familiar project (config/, data/, tmp/, workspace/) in the current folder",
     },
     run() {
         const boot = bootstrap();
@@ -66,7 +68,7 @@ export const initCommand = defineCommand({
             log.info(`wrote ${pkgPath}`);
         }
 
-        for (const dir of ["config", "data", "tmp"]) {
+        for (const dir of ["config", "data", "tmp", "workspace"]) {
             mkdirSync(join(home, dir), { recursive: true });
         }
 

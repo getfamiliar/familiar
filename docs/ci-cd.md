@@ -54,7 +54,7 @@ The installable package is `@getfamiliar/cli`; the command it provides is `famil
     mcp.yml             # MCP server config
     plugins             # optional-plugin whitelist (see “Plugins”)
   data/
-    workspace-template/ # seeds data/workspace on first start
+    workspace-template/ # seeds workspace/ on first start
   tmp/
 ```
 

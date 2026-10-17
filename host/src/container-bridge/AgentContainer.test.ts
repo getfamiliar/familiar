@@ -15,7 +15,7 @@ import {
 function configFixture(overrides: Partial<AgentContainerConfig> = {}): AgentContainerConfig {
     return {
         imageName: "familiar-agent",
-        dataPath: "/data",
+        workspacePath: "/workspace",
         containerSrcPath: "/src",
         sharedBuildPath: "/shared/build",
         mountSource: true,
@@ -88,7 +88,7 @@ describe("buildAgentRunArgs — source mounts follow mountSource", () => {
         assert.ok(argv.includes("/src:/app/src:ro"), "container/src overlay expected");
         assert.ok(argv.includes("/shared/build:/shared/build:ro"), "shared/build overlay expected");
         // The workspace and scratch mounts are always present.
-        assert.ok(argv.includes("/data/workspace:/workspace"));
+        assert.ok(argv.includes("/workspace:/workspace"));
         assert.ok(argv.includes("/scratch:/scratch"));
     });
 
@@ -97,7 +97,7 @@ describe("buildAgentRunArgs — source mounts follow mountSource", () => {
         assert.ok(!argv.some((a) => a === "/src:/app/src:ro"), "no container/src overlay");
         assert.ok(!argv.some((a) => a.endsWith(":/shared/build:ro")), "no shared/build overlay");
         // Workspace and scratch mounts remain.
-        assert.ok(argv.includes("/data/workspace:/workspace"));
+        assert.ok(argv.includes("/workspace:/workspace"));
         assert.ok(argv.includes("/scratch:/scratch"));
         // The image is still the last positional arg.
         assert.equal(argv[argv.length - 1], "familiar-agent");

@@ -134,8 +134,8 @@ export async function ensureAgentImage(
 export interface AgentContainerConfig {
     /** Docker image tag to run (e.g. `familiar-agent`). */
     readonly imageName: string;
-    /** Absolute host path to the data directory; mounted as workspace. */
-    readonly dataPath: string;
+    /** Absolute host path of the workspace (`<home>/workspace/`); mounted as `/workspace`. */
+    readonly workspacePath: string;
     /**
      * Absolute host path of `container/src/`. Bind-mounted (read-only)
      * over `/app/src` inside the container so the tsx-watch entrypoint
@@ -206,7 +206,7 @@ export interface AgentContainerConfig {
  * Manages the single long-running agent container (`familiar-agent`).
  *
  * Mounts:
- *   - {dataPath}/workspace → /workspace (assistant memory)
+ *   - {workspacePath} → /workspace (assistant memory)
  *   - {containerSrcPath} → /app/src (read-only, hot-reload via tsx watch)
  *   - {sharedBuildPath} → /shared/build (read-only, fresh per dev-launcher rebuild)
  *   - {scratchPath} → /scratch (read-write, shared with every MCP)
@@ -276,7 +276,6 @@ export class AgentContainer {
  * @returns The full docker CLI argv.
  */
 export function buildAgentRunArgs(config: AgentContainerConfig): string[] {
-    const workspaceDir = `${config.dataPath}/workspace`;
     const args = [
         "run",
         "-d",
@@ -297,7 +296,7 @@ export function buildAgentRunArgs(config: AgentContainerConfig): string[] {
         "-e",
         `HOST_GID=${config.hostGid}`,
         "-v",
-        `${workspaceDir}:/workspace`,
+        `${config.workspacePath}:/workspace`,
     ];
     // In pull mode the prebuilt image already carries the exact versioned
     // container/src and shared/build; only dev/build mode overlays the

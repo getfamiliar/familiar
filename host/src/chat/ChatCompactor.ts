@@ -43,7 +43,7 @@ export interface ChatCompactorDeps {
      */
     readonly host: HostContext;
     /**
-     * Absolute path of the workspace directory (`data/workspace`). Used
+     * Absolute path of the workspace directory (`<home>/workspace`). Used
      * to probe for the optional `chat/compaction/index.md` handler — if
      * it's missing the compactor falls back to plain truncation.
      */

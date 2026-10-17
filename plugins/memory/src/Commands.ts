@@ -139,7 +139,7 @@ async function openReadOnlyStore(ctx: HostContext): Promise<MemoryStore | null> 
         cfg,
         (key) => ctx.inference.resolveProvider(key),
         ctx.dataDir,
-        `${ctx.dataDir}/workspace`,
+        ctx.workspaceDir,
         ctx.logger,
     );
     if (!built) {

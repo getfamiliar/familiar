@@ -393,7 +393,7 @@ export const startCommand = defineCommand({
 
         const container = new AgentContainer({
             imageName: AGENT_IMAGE_TAG,
-            dataPath: boot.dataDir,
+            workspacePath: boot.workspaceDir,
             containerSrcPath: boot.containerSrcDir,
             sharedBuildPath: boot.sharedBuildDir,
             mountSource: boot.imageMode === "build",
@@ -440,6 +440,7 @@ export const startCommand = defineCommand({
             config,
             log: log.child({ component: "cron-scheduler" }),
             dataDir: boot.dataDir,
+            workspaceDir: boot.workspaceDir,
             tmpDir: boot.tmpDir,
             scratchDir: boot.scratchDir,
             pidFile: boot.pidFile,

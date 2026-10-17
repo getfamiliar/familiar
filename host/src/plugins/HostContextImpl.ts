@@ -82,6 +82,13 @@ export interface HostContextImplDeps {
      */
     dataDir: string;
     /**
+     * Absolute host path of the project's `workspace/` directory,
+     * surfaced as `ctx.workspaceDir` to plugins. Sourced from the host
+     * {@link Bootstrap} (`boot.workspaceDir`) so there is one source of
+     * truth.
+     */
+    workspaceDir: string;
+    /**
      * Absolute host path of the project's `tmp/` directory, surfaced as
      * `ctx.tmpDir` to plugins. Sourced from the host {@link Bootstrap}
      * (`boot.tmpDir`) so there is one source of truth.
@@ -275,6 +282,10 @@ export class HostContextImpl implements HostContext {
 
     get dataDir(): string {
         return this.deps.dataDir;
+    }
+
+    get workspaceDir(): string {
+        return this.deps.workspaceDir;
     }
 
     get tmpDir(): string {

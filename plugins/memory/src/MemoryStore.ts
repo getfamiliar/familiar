@@ -86,7 +86,7 @@ export interface FileSummary {
 export interface MemoryStoreOptions {
     /** Absolute path of the per-plugin data dir (`<dataDir>/memory/`). */
     readonly dataDir: string;
-    /** Absolute path to the workspace root (`data/workspace/`). */
+    /** Absolute path to the workspace root (`<home>/workspace/`). */
     readonly workspaceDir: string;
     /** Vercel AI SDK embedding model, already wrapped via the factory. */
     readonly embeddingModel: EmbeddingModel;

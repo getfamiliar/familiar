@@ -2,7 +2,7 @@
 
 Long-term memory for the agent, backed by [Orama](https://docs.orama.com)'s
 hybrid (vector + BM25) search over every markdown file in
-`data/workspace/`. Surfaces relevant snippets in the agent's system prompt,
+`workspace/`. Surfaces relevant snippets in the agent's system prompt,
 exposes `memory_search` / `memory_save` tools, and ships a CLI for
 inspection.
 
@@ -68,7 +68,7 @@ artifact.
 
 ### Chunking
 
-Every `.md` file in `data/workspace/` (except those matching `excludeGlobs`)
+Every `.md` file in `workspace/` (except those matching `excludeGlobs`)
 is split into chunks on every h1/h2/h3 heading. Each chunk gets:
 
 - **`headlines`** — the full trail to that section, e.g.

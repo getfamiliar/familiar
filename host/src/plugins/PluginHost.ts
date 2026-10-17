@@ -747,6 +747,7 @@ export class PluginHost {
             config: this.config,
             log: this.log.child({ component: `plugin:${pluginId}` }),
             dataDir: this.boot.dataDir,
+            workspaceDir: this.boot.workspaceDir,
             tmpDir: this.boot.tmpDir,
             scratchDir: this.boot.scratchDir,
             pidFile: this.boot.pidFile,

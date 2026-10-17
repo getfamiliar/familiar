@@ -71,6 +71,11 @@ export interface Bootstrap {
      * gitignored, safe to wipe.
      */
     readonly llmDebugDir: string;
+    /**
+     * Absolute host path of `<home>/workspace/` — the assistant's
+     * markdown workspace, bind-mounted into the agent container as
+     * `/workspace`.
+     */
     readonly workspaceDir: string;
     /**
      * Absolute host path of `data/workspace-template/`. Copied into
@@ -247,7 +252,7 @@ export function bootstrap(): Bootstrap {
         postgresPortFile: `${tmpDir}/.postgres-port`,
         bastionTokenFile: `${tmpDir}/.bastion-token`,
         llmDebugDir: `${tmpDir}/llm-debug`,
-        workspaceDir: `${dataDir}/workspace`,
+        workspaceDir: `${homeDir}/workspace`,
         workspaceTemplateDir: `${dataDir}/workspace-template`,
         postgresDataDir: `${dataDir}/postgres`,
         logsDir: `${dataDir}/logs`,

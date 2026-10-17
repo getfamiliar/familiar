@@ -50,15 +50,13 @@ export default definePlugin({
         start: async (ctx: HostContext): Promise<void> => {
             const cfg = readMemoryConfig(ctx.config);
             sharedConfig = cfg;
-            const workspaceDir = path.join(ctx.dataDir, "workspace");
-
             let built: Awaited<ReturnType<typeof buildMemoryStore>>;
             try {
                 built = await buildMemoryStore(
                     cfg,
                     (key) => ctx.inference.resolveProvider(key),
                     ctx.dataDir,
-                    workspaceDir,
+                    ctx.workspaceDir,
                     ctx.logger,
                 );
             } catch (err) {

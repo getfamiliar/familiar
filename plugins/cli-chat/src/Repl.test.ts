@@ -39,7 +39,7 @@ function makeCtx(options: {
     const appended: Array<{ eventId: string; text: string }> = [];
 
     const ctx = {
-        dataDir: "/nonexistent-workspace-for-test",
+        workspaceDir: "/nonexistent-workspace-for-test",
         daemonDownSignal: new AbortController().signal,
         config: {
             getStringList: (_key: string, fallback: readonly string[]) => fallback,

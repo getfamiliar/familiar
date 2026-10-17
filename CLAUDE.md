@@ -225,7 +225,7 @@ my-plugin/
       ...
 ```
 
-A plugin may emit events on any number of topics and usually ships default handlers for the emitted events in its folder under `workspace-template/`. The daemon checks all workspace templates on startup and copies new / missing files to the `data/workspace` directory.
+A plugin may emit events on any number of topics and usually ships default handlers for the emitted events in its folder under `workspace-template/`. The daemon checks all workspace templates on startup and copies new / missing files to the `workspace/` directory.
 
 ### Plugin manifest (in package.json)
 
@@ -385,11 +385,14 @@ When in doubt during implementation:
 - **Auditability over efficiency.** When in doubt, log it. Make every consequential decision inspectable.
 - **One agent container, multiple watchers and agentruns.** Don't isolate handlers in separate containers. Process-level isolation gains nothing here and costs latency and IPC complexity.
 
+## The `workspace/` folder
+
+`workspace/` at the project root (gitignored) is mounted into the agent container as `/workspace`. The assistant's memory and personality live here (PROMPT.md, SOUL.md, CONTEXT.md, topic folders, people/, etc.). `familiar init` creates it empty; the daemon seeds it on every start from `data/workspace-template/` and the plugins' `workspace-template/` folders (missing files only). Host code reaches it via `boot.workspaceDir`, plugins via `ctx.workspaceDir`.
+
 ## The `data/` folder
 
 The `data/` folder is the persistent host-side storage. Layout:
 
-- `data/workspace/` — mounted into the agent container as `/workspace`. The assistant's memory and personality live here (PROMPT.md, SOUL.md, CONTEXT.md, topic folders, people/, etc.).
 - `data/postgres/` — bind-mounted into `familiar-postgres` as `/var/lib/postgresql/data`. Cluster state for the bus-state DB. The container runs with `--user <hostUid>:<hostGid>` so cluster files are owned by the operator and `rm -rf data/postgres` works from the host without `sudo`. A daemon upgraded from the old uid-70 layout needs a one-time `sudo chown -R "$(id -u):$(id -g)" data/postgres`.
 
 Ephemeral runtime scratch lives in `tmp/` instead (gitignored, safe to wipe):
