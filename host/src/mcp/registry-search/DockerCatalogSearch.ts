@@ -1,8 +1,14 @@
 import { parse } from "yaml";
+import { sanitizeExternalText } from "../../utils/ExternalTextSanitizer.js";
 import { imageNamespace } from "./ImagePlatforms.js";
-import { parseGithubRepo, tokenize } from "./PublisherIdentity.js";
+import { parseGithubRepo, parseGithubTreeUrl, tokenize } from "./PublisherIdentity.js";
 import { fetchWithTimeout, isMapping, optionalNumber, optionalString } from "./RegistryHttp.js";
-import type { ExcludedEntry, McpSearchCandidate } from "./SearchCandidate.js";
+import type {
+    EnvVarSpec,
+    ExcludedEntry,
+    McpDetailsSubject,
+    McpSearchCandidate,
+} from "./SearchCandidate.js";
 
 /**
  * The Docker MCP catalog as Docker Desktop's MCP Toolkit reads it: every
@@ -60,7 +66,7 @@ export async function searchDockerCatalog(query: string): Promise<DockerCatalogM
  * @returns Catalog key → entry.
  * @throws Error on download or parse failure.
  */
-async function loadCatalog(): Promise<Map<string, unknown>> {
+export async function loadCatalog(): Promise<Map<string, unknown>> {
     if (catalogCache !== null && Date.now() - catalogCache.fetchedAt < CATALOG_CACHE_TTL_MS) {
         return catalogCache.entries;
     }
@@ -113,7 +119,7 @@ function isCatalogMatch(
  * @param entry Catalog entry.
  * @returns The candidate or the exclusion.
  */
-function mapCatalogEntry(
+export function mapCatalogEntry(
     key: string,
     entry: Record<string, unknown>,
 ): McpSearchCandidate | ExcludedEntry {
@@ -124,8 +130,8 @@ function mapCatalogEntry(
     const base = {
         registry: "docker" as const,
         name: key,
-        title: optionalString(entry.title) ?? key,
-        description: optionalString(entry.description) ?? "",
+        title: sanitizeExternalText(optionalString(entry.title) ?? key),
+        description: sanitizeExternalText(optionalString(entry.description) ?? ""),
         alternativeInstalls: 0,
         publisher: null,
         owner: optionalString(metadata.owner),
@@ -232,4 +238,140 @@ function catalogRequirements(entry: Record<string, unknown>): string[] {
         requirements.push("volume mounts");
     }
     return requirements;
+}
+
+/**
+ * One catalog entry by key.
+ *
+ * @param key Catalog key, e.g. `notion`.
+ * @returns The raw entry, or `null` when the catalog has no such key.
+ * @throws Error when the catalog can't be loaded.
+ */
+export async function getDockerCatalogEntry(key: string): Promise<Record<string, unknown> | null> {
+    const entry = (await loadCatalog()).get(key);
+    return isMapping(entry) ? entry : null;
+}
+
+/**
+ * Registry facts of a catalog entry for the details report.
+ *
+ * @param key Catalog key.
+ * @param entry Raw catalog entry.
+ * @returns The sanitized subject.
+ */
+export function describeCatalogEntry(
+    key: string,
+    entry: Record<string, unknown>,
+): McpDetailsSubject {
+    const source = optionalString(entry.source);
+    const upstream = optionalString(entry.upstream) ?? source;
+    const githubRepo = parseGithubRepo(upstream ?? source);
+    const tree = parseGithubTreeUrl(source);
+    const remote = isMapping(entry.remote) ? entry.remote : {};
+    const remoteUrl = optionalString(remote.url);
+    const image = optionalString(entry.image);
+    const installKey = image !== undefined ? (image.split("@")[0] as string) : (remoteUrl ?? key);
+    const settings: EnvVarSpec[] = catalogSettings(entry);
+    if (isMapping(remote.headers)) {
+        for (const header of Object.keys(remote.headers)) {
+            settings.push({ name: header, kind: "header", isSecret: true, isRequired: true });
+        }
+    }
+    const toolsUrl = optionalString(entry.toolsUrl)?.replace(/^http:\/\//, "https://");
+    return {
+        registry: "docker",
+        name: key,
+        title: sanitizeExternalText(optionalString(entry.title) ?? key),
+        description: sanitizeExternalText(optionalString(entry.description) ?? ""),
+        version: tree?.ref,
+        repository:
+            githubRepo !== null && upstream !== undefined
+                ? { ...githubRepo, url: upstream }
+                : undefined,
+        repositoryRef: tree?.ref ?? "HEAD",
+        repositorySubfolder: tree?.subfolder,
+        settingsByInstall: new Map([[installKey, settings]]),
+        toolsUrl,
+        inlineToolNames: (Array.isArray(entry.tools) ? entry.tools : [])
+            .map((tool) => (isMapping(tool) ? optionalString(tool.name) : undefined))
+            .filter((name): name is string => name !== undefined)
+            .map(sanitizeExternalText),
+        volumes: stringList(entry.volumes),
+        allowHosts: stringList(entry.allowHosts),
+        remoteUrls: remoteUrl !== undefined ? [remoteUrl] : [],
+    };
+}
+
+/**
+ * Settings of a catalog server: secrets, env vars and config parameters.
+ *
+ * @param entry Raw catalog entry.
+ * @returns Sanitized setting specs.
+ */
+function catalogSettings(entry: Record<string, unknown>): EnvVarSpec[] {
+    const settings: EnvVarSpec[] = [];
+    for (const secret of Array.isArray(entry.secrets) ? entry.secrets : []) {
+        const name = isMapping(secret) ? optionalString(secret.env) : undefined;
+        if (name === undefined || !isMapping(secret)) {
+            continue;
+        }
+        settings.push({
+            name,
+            kind: "env",
+            isSecret: true,
+            isRequired: true,
+            description: optionalSanitized(secret.description),
+            defaultValue: optionalSanitized(secret.example),
+        });
+    }
+    for (const env of Array.isArray(entry.env) ? entry.env : []) {
+        const name = isMapping(env) ? optionalString(env.name) : undefined;
+        if (name === undefined || !isMapping(env)) {
+            continue;
+        }
+        settings.push({
+            name,
+            kind: "env",
+            isSecret: false,
+            isRequired: false,
+            description: optionalSanitized(env.description),
+            defaultValue: optionalSanitized(env.value),
+        });
+    }
+    for (const config of Array.isArray(entry.config) ? entry.config : []) {
+        if (!isMapping(config) || !isMapping(config.properties)) {
+            continue;
+        }
+        const prefix = optionalString(config.name);
+        const required = new Set(stringList(config.required));
+        for (const [property, schema] of Object.entries(config.properties)) {
+            settings.push({
+                name: `${prefix !== undefined ? `${prefix}.` : ""}${property}`,
+                kind: "parameter",
+                isSecret: false,
+                isRequired: required.has(property),
+                description:
+                    (isMapping(schema) ? optionalSanitized(schema.description) : undefined) ??
+                    optionalSanitized(config.description),
+                defaultValue: isMapping(schema) ? optionalSanitized(schema.default) : undefined,
+            });
+        }
+    }
+    return settings;
+}
+
+/** A sanitized non-empty string, or undefined. */
+function optionalSanitized(value: unknown): string | undefined {
+    if (typeof value === "number" || typeof value === "boolean") {
+        return String(value);
+    }
+    const text = optionalString(value);
+    return text !== undefined ? sanitizeExternalText(text) || undefined : undefined;
+}
+
+/** The string elements of a YAML list. */
+function stringList(value: unknown): string[] {
+    return Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === "string").map(sanitizeExternalText)
+        : [];
 }

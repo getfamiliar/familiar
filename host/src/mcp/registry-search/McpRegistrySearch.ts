@@ -156,7 +156,7 @@ export async function searchMcpRegistries(
  * @param platform Target platform.
  * @returns The variant or the exclusion.
  */
-async function firstFittingVariant(
+export async function firstFittingVariant(
     variants: readonly McpSearchCandidate[],
     platform: string,
 ): Promise<McpSearchCandidate | ExcludedEntry> {
@@ -180,7 +180,7 @@ async function firstFittingVariant(
  * @param platform Target `os/arch`.
  * @returns The candidate (with platforms) or an exclusion.
  */
-async function checkPlatform(
+export async function checkPlatform(
     candidate: McpSearchCandidate,
     platform: string,
 ): Promise<McpSearchCandidate | ExcludedEntry> {
@@ -251,6 +251,6 @@ function repositoryKey(repository: { readonly owner: string; readonly repo: stri
  * @param err The thrown value.
  * @returns Its message.
  */
-function errorText(err: unknown): string {
+export function errorText(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
 }

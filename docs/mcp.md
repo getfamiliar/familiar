@@ -96,6 +96,21 @@ CLI entrypoint to override. Use a custom image if you need to.
 
 Ratings other than `docker-built` are clamped to 0–4. The findings also list the install facts for `mcp_add`: source, image/package/url, a suggested id, and required env vars.
 
+### Details of one server
+
+`familiar tools mcp-details <name>` and the agent tool `mcp_registry_details` (`host/src/mcp/registry-search/McpDetails.ts`, `DetailsReport.ts`) take a name from the search's Name column — a Docker catalog key (`notion`) or an official-registry name (`com.notion/mcp`, fetched via `/v0.1/servers/<name>/versions/latest`) — plus an optional `--query` (the service the user is after, for the first-party check). Unsuitable servers are described too, with the reason in the status line. The markdown contains:
+
+- name, title, version (official: `version`; Docker: the pinned source commit), provenance tier, security rating with its findings, status (lifecycle, platform, unsuitable reason), repository;
+- the registry description;
+- a settings table (env vars, catalog parameters, remote headers, required package arguments: secret / required / default / description);
+- *architecture hints* detected automatically: Docker daemon use (`docker.sock`, `DOCKER_HOST`, …), OAuth/login mentions, volumes, expected egress (`allowHosts`), broad cloud credentials, remotes needing headers or without declared auth;
+- the tools with parameters and read-only / destructive annotations — only the Docker catalog publishes tool lists (`toolsUrl`); for official-registry and remote servers the report says so, and the tools have to be verified with `tool_list` after installing;
+- the README, `.env.example` (or `.env.sample`) and Dockerfile from the GitHub repository at the pinned ref (subfolder first in monorepos), read from raw.githubusercontent.com with the GitHub API's `/readme` as fallback.
+
+**Cleaning.** Every external string (registry texts, tool texts, files) goes through `host/src/utils/ExternalTextSanitizer.ts`: invisible and bidi-control characters, Unicode tag characters and HTML comments (also unterminated ones) are removed. The README is additionally reduced to plain text — images, badges, `<picture>`/`<svg>` and HTML tags removed, entities decoded, links rendered as `text (url)`.
+
+**Long sections** are saved instead of inlined: README over 8,000 characters (the report keeps the first 1,500), a tool table over 12,000, `.env.example` / Dockerfile over 3,000. The agent tool writes them to the event's scratch folder (`/scratch/<event>/…`, readable with `fs_read`); the CLI writes them to `tmp/scratch/mcp-details/<name-slug>/` and prints the path.
+
 ## `mcp.yml` reference
 
 Top-level shape: a YAML mapping of id → entry. The id (the YAML key) must match
@@ -176,7 +191,7 @@ Runs already in progress keep the tool set they started with; new tools appear f
 
 ### Agent tools
 
-Any run can search the registries with `mcp_registry_search` (level `default`, tool group `config`) — the same search and markdown as `familiar tools search-mcp`, see "Searching the registries" below. Privileged runs can edit `mcp.yml` themselves (tool group `config`): `mcp_list` (entries as on disk, secret env values masked, with `pending-add` / `pending-change` / `pending-remove` status), `mcp_add` (writes one complete entry; it does not search any registry — use `mcp_registry_search` first), `mcp_remove`, and `mcp_set_env` (sets or adds one env var). None of them applies anything — the agent calls `config_reload` after its edits.
+Any run can search the registries with `mcp_registry_search` and describe one server with `mcp_registry_details` (both level `default`, tool group `config`) — the same output as `familiar tools search-mcp` / `familiar tools mcp-details`, see "Searching the registries" below. The `configuration` skill (`skills/configuration/mcp.md`) walks the agent through purpose, search, details, fit check (auth, Docker daemon, proportionate credentials, setup commands) and a tool-gating proposal before `mcp_add`. Privileged runs can edit `mcp.yml` themselves (tool group `config`): `mcp_list` (entries as on disk, secret env values masked, with `pending-add` / `pending-change` / `pending-remove` status), `mcp_add` (writes one complete entry; it does not search any registry — use `mcp_registry_search` first), `mcp_remove`, and `mcp_set_env` (sets or adds one env var). None of them applies anything — the agent calls `config_reload` after its edits.
 
 `mcp_execute_bash_command` (privileged, group `config`) is the agent's `familiar tools call-mcp`: `{id, args}` runs the entry's container one-shot (same image, env, mounts and mcp.yml `args:`, read from the file as on disk, so it works before `config_reload`) with `args` appended — no shell, one array item per argument. It returns `{callId, running, exitCode, output, outputTruncated, timedOut}`, where `output` is stdout+stderr new since the last read. A command that is still running after `waitSeconds` (default 20, max 120) returns its output so far and keeps running — the case of a device-code login waiting for the user. The agent then polls with `{callId}` or kills it with `{callId, stop: true}`. The container is named `familiar-mcp-exec-<id>-<callId>`, is killed after 15 minutes and on daemon shutdown, and output beyond 1 MB that nobody has read is dropped from the front (`outputTruncated`). **Every configured secret value is masked in the output** (`***`): all `config.yml` values at or below a secret key and all secret `mcp.yml` env values, including their URL-encoded and JSON-escaped forms; values shorter than 4 characters are left alone. The secrets are read fresh on every poll, and while the command runs, a possible secret prefix at the end of the output is held back until the next read.
 
@@ -427,6 +442,7 @@ atlassian:
   approximate bytes freed. `tmp/` itself is left in place so the daemon's next start doesn't fail
   on a missing parent.
 - **Search the registries.** `familiar tools search-mcp <term…>` searches the Docker MCP catalog and the official MCP registry and prints the servers that fit this runtime as a security-rated table, followed by the findings behind every rating — see "Searching the registries" below. `-v` also lists the filtered-out servers with their reasons, `--limit <n>` changes the row count (default 20), `--platform <os/arch>` checks images against another platform, `--raw` emits unstyled markdown. Works without the daemon.
+- **Show one server's details.** `familiar tools mcp-details <name> [--query <service>] [--platform <os/arch>] [--raw]` prints rating, settings, architecture hints, tools, the cleaned README, `.env.example` and Dockerfile — see "Details of one server" below. Works without the daemon.
 - **Add a new MCP interactively.** `familiar tools add-mcp <package>` searches the Docker MCP registry
   first
   (`https://raw.githubusercontent.com/docker/mcp-registry/main/servers/<name>/server.yaml`), then

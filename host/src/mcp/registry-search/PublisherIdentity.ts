@@ -135,3 +135,27 @@ export function parseGithubRepo(url: string | undefined): { owner: string; repo:
     const repo = (match[2] as string).replace(/\.git$/i, "");
     return { owner, repo };
 }
+
+/**
+ * Ref and subfolder of a GitHub tree URL, e.g. the Docker catalog's
+ * pinned `source` (`https://github.com/awslabs/mcp/tree/780e3f1/src/core-mcp-server`).
+ *
+ * @param url The URL.
+ * @returns `{ref, subfolder?}`, or `null` when it is not a `/tree/<ref>` URL.
+ */
+export function parseGithubTreeUrl(
+    url: string | undefined,
+): { ref: string; subfolder?: string } | null {
+    if (url === undefined) {
+        return null;
+    }
+    const match =
+        /^https?:\/\/(?:www\.)?github\.com\/[^/]+\/[^/]+\/tree\/([^/#?]+)(?:\/([^#?]+))?/i.exec(
+            url,
+        );
+    if (match === null) {
+        return null;
+    }
+    const subfolder = match[2]?.replace(/\/+$/, "");
+    return subfolder ? { ref: match[1] as string, subfolder } : { ref: match[1] as string };
+}

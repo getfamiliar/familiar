@@ -110,3 +110,45 @@ export interface McpSearchResult {
     /** Registry failures; the search still returns what the other registry found. */
     readonly warnings: readonly string[];
 }
+
+/** One setting a server wants: env var, catalog parameter, remote header or CLI argument. */
+export interface EnvVarSpec {
+    readonly name: string;
+    readonly kind: "env" | "parameter" | "header" | "argument";
+    readonly isSecret: boolean;
+    readonly isRequired: boolean;
+    readonly description?: string;
+    readonly defaultValue?: string;
+}
+
+/**
+ * Registry facts about one server for `mcp_registry_details`, taken from
+ * the raw entry — available even when the server is not suitable.
+ * All strings are already sanitized.
+ */
+export interface McpDetailsSubject {
+    readonly registry: "docker" | "official";
+    readonly name: string;
+    readonly title: string;
+    readonly description: string;
+    /** Official: `server.version`; Docker: the pinned source commit. */
+    readonly version?: string;
+    /** Official registry lifecycle status. */
+    readonly lifecycleStatus?: string;
+    readonly repository?: { readonly owner: string; readonly repo: string; readonly url: string };
+    /** Git ref the repository files are read at (`HEAD` when unknown). */
+    readonly repositoryRef: string;
+    /** Path of the server inside a monorepo. */
+    readonly repositorySubfolder?: string;
+    /** Settings per install identifier (image / package / remote URL). */
+    readonly settingsByInstall: ReadonlyMap<string, readonly EnvVarSpec[]>;
+    /** Docker catalog per-server tool list URL. */
+    readonly toolsUrl?: string;
+    /** Tool names inlined in the Docker catalog (fallback without `toolsUrl`). */
+    readonly inlineToolNames: readonly string[];
+    /** Docker catalog volume templates. */
+    readonly volumes: readonly string[];
+    /** Docker catalog egress allowlist (`host:port`). */
+    readonly allowHosts: readonly string[];
+    readonly remoteUrls: readonly string[];
+}

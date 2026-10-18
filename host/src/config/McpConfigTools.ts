@@ -11,6 +11,7 @@ import {
     secretRefusedError,
 } from "./ConfigToolSupport.js";
 import { buildMcpExecuteCommandTool } from "./McpExecuteCommandTool.js";
+import { buildMcpRegistryDetailsTool } from "./McpRegistryDetailsTool.js";
 import { buildMcpRegistrySearchTool } from "./McpRegistrySearchTool.js";
 import { isSecretMcpEnv, MASKED_SECRET_VALUE } from "./SecretKeys.js";
 
@@ -18,17 +19,18 @@ import { isSecretMcpEnv, MASKED_SECRET_VALUE } from "./SecretKeys.js";
 const MCP_ID_PATTERN = /^[a-z][a-z0-9]*$/;
 
 /**
- * Build the `mcp_*` tools: `mcp_registry_search` finds servers in the
- * public registries, `mcp_execute_bash_command` runs a one-shot command
+ * Build the `mcp_*` tools: `mcp_registry_search` / `mcp_registry_details`
+ * find and describe servers in the public registries, `mcp_execute_bash_command` runs a one-shot command
  * in an MCP's container, the others edit `config/mcp.yml`. Like the
  * `config_*` tools they only edit the file; `config_reload` applies it.
  *
  * @param deps Shared config-tool dependencies.
- * @returns `mcp_registry_search`, `mcp_list`, `mcp_add`, `mcp_remove`, `mcp_set_env`, `mcp_execute_bash_command`.
+ * @returns `mcp_registry_search`, `mcp_registry_details`, `mcp_list`, `mcp_add`, `mcp_remove`, `mcp_set_env`, `mcp_execute_bash_command`.
  */
 export function buildMcpConfigTools(deps: ConfigToolsDeps): readonly PluginTool[] {
     return [
         buildMcpRegistrySearchTool(),
+        buildMcpRegistryDetailsTool(),
         buildMcpListTool(deps),
         buildMcpAddTool(deps),
         buildMcpRemoveTool(deps),

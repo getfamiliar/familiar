@@ -4,6 +4,7 @@ import { callMcpCommand } from "./tools/CallMcp.js";
 import { lintMcpsCommand } from "./tools/LintMcps.js";
 import { listCommand } from "./tools/List.js";
 import { listMcpsCommand } from "./tools/ListMcps.js";
+import { mcpDetailsCommand } from "./tools/McpDetails.js";
 import { purgeMcpsCommand } from "./tools/PurgeMcps.js";
 import { searchMcpCommand } from "./tools/SearchMcp.js";
 
@@ -12,7 +13,8 @@ import { searchMcpCommand } from "./tools/SearchMcp.js";
  *
  * `list` shows every tool the agent can use (container built-ins,
  * plugin tools, MCP functions) grouped by tool group. The `*-mcp(s)`
- * subcommands are the MCP-management slice: search the registries, lint +
+ * subcommands are the MCP-management slice: search the registries
+ * (`search-mcp`, `mcp-details`), lint +
  * list config entries, add, purge caches, and run one-shot calls against
  * `config/mcp.yml`.
  */
@@ -28,6 +30,7 @@ export const toolsCommand = defineCommand({
         "list-mcps": listMcpsCommand,
         "purge-mcps": purgeMcpsCommand,
         "search-mcp": searchMcpCommand,
+        "mcp-details": mcpDetailsCommand,
         "add-mcp": addMcpCommand,
         "call-mcp": callMcpCommand,
     },

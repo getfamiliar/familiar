@@ -1,7 +1,14 @@
+import { sanitizeExternalText } from "../../utils/ExternalTextSanitizer.js";
 import { imageNamespace } from "./ImagePlatforms.js";
 import { parseGithubRepo, parsePublisherIdentity, tokenize } from "./PublisherIdentity.js";
-import { fetchJson, isMapping, optionalString } from "./RegistryHttp.js";
-import type { ExcludedEntry, InstallPlan, McpSearchCandidate } from "./SearchCandidate.js";
+import { fetchJson, HttpStatusError, isMapping, optionalString } from "./RegistryHttp.js";
+import type {
+    EnvVarSpec,
+    ExcludedEntry,
+    InstallPlan,
+    McpDetailsSubject,
+    McpSearchCandidate,
+} from "./SearchCandidate.js";
 
 /** List endpoint of the official MCP registry (public, no auth). */
 const OFFICIAL_REGISTRY_LIST = "https://registry.modelcontextprotocol.io/v0.1/servers";
@@ -160,7 +167,7 @@ function isOfficialMatch(server: Record<string, unknown>, queryTokens: readonly 
  * @param wrapped A `servers[]` element.
  * @returns The status, `active` when absent.
  */
-function lifecycleStatus(wrapped: Record<string, unknown>): string {
+export function lifecycleStatus(wrapped: Record<string, unknown>): string {
     const meta = isMapping(wrapped._meta) ? wrapped._meta : {};
     const official = meta["io.modelcontextprotocol.registry/official"];
     return (isMapping(official) ? optionalString(official.status) : undefined) ?? "active";
@@ -173,7 +180,7 @@ function lifecycleStatus(wrapped: Record<string, unknown>): string {
  * @param status Its lifecycle status.
  * @returns The match or the exclusion.
  */
-function mapOfficialServer(
+export function mapOfficialServer(
     server: Record<string, unknown>,
     status: string,
 ): OfficialServerMatch | ExcludedEntry {
@@ -189,8 +196,8 @@ function mapOfficialServer(
     const base = {
         registry: "official" as const,
         name,
-        title: optionalString(server.title) ?? name.split("/").pop() ?? name,
-        description: optionalString(server.description) ?? "",
+        title: sanitizeExternalText(optionalString(server.title) ?? name.split("/").pop() ?? name),
+        description: sanitizeExternalText(optionalString(server.description) ?? ""),
         tier: "registry-only" as const,
         publisher: parsePublisherIdentity(name),
         repository:
@@ -332,4 +339,143 @@ function mapRemote(remote: Record<string, unknown>): InstallPlan | string {
         identifier: url,
         requirements: headers.length > 0 ? ["optional request headers (not supported)"] : [],
     };
+}
+
+/**
+ * Fetch the latest version of one server by its exact name.
+ *
+ * @param name Reverse-DNS server name, e.g. `com.notion/mcp`.
+ * @returns The `server` object and its lifecycle status, or `null` when unknown.
+ * @throws Error on network or API failures.
+ */
+export async function fetchOfficialServer(
+    name: string,
+): Promise<{ server: Record<string, unknown>; status: string } | null> {
+    const url = `${OFFICIAL_REGISTRY_LIST}/${encodeURIComponent(name)}/versions/latest`;
+    let body: unknown;
+    try {
+        body = await fetchJson(url, {}, OFFICIAL_REGISTRY_TIMEOUT_MS);
+    } catch (err) {
+        if (err instanceof HttpStatusError && err.status === 404) {
+            return null;
+        }
+        throw err;
+    }
+    if (!isMapping(body) || !isMapping(body.server)) {
+        throw new Error(`official MCP registry: unexpected answer for "${name}"`);
+    }
+    return { server: body.server, status: lifecycleStatus(body) };
+}
+
+/**
+ * Registry facts of an official server for the details report.
+ *
+ * @param server The `server` object.
+ * @param status Its lifecycle status.
+ * @returns The sanitized subject.
+ */
+export function describeOfficialServer(
+    server: Record<string, unknown>,
+    status: string,
+): McpDetailsSubject {
+    const name = optionalString(server.name) ?? "(unnamed)";
+    const repository = isMapping(server.repository) ? server.repository : {};
+    const repositoryUrl = optionalString(repository.url);
+    const githubRepo = parseGithubRepo(repositoryUrl);
+    const settingsByInstall = new Map<string, EnvVarSpec[]>();
+    for (const pkg of Array.isArray(server.packages) ? server.packages : []) {
+        const identifier = isMapping(pkg) ? optionalString(pkg.identifier) : undefined;
+        if (identifier !== undefined && isMapping(pkg)) {
+            settingsByInstall.set(identifier, packageSettings(pkg));
+        }
+    }
+    const remoteUrls: string[] = [];
+    for (const remote of Array.isArray(server.remotes) ? server.remotes : []) {
+        const url = isMapping(remote) ? optionalString(remote.url) : undefined;
+        if (url === undefined || !isMapping(remote)) {
+            continue;
+        }
+        remoteUrls.push(url);
+        const headers = Array.isArray(remote.headers) ? remote.headers.filter(isMapping) : [];
+        settingsByInstall.set(
+            url,
+            headers
+                .filter((header) => typeof header.name === "string")
+                .map((header) => ({
+                    name: header.name as string,
+                    kind: "header" as const,
+                    isSecret: header.isSecret === true,
+                    isRequired: header.isRequired === true,
+                    description: optionalSanitized(header.description),
+                    defaultValue: optionalSanitized(header.value),
+                })),
+        );
+    }
+    return {
+        registry: "official",
+        name,
+        title: sanitizeExternalText(optionalString(server.title) ?? name.split("/").pop() ?? name),
+        description: sanitizeExternalText(optionalString(server.description) ?? ""),
+        version: optionalString(server.version),
+        lifecycleStatus: status,
+        repository:
+            githubRepo !== null && repositoryUrl !== undefined
+                ? { ...githubRepo, url: repositoryUrl }
+                : undefined,
+        repositoryRef: "HEAD",
+        repositorySubfolder: optionalString(repository.subfolder)?.replace(/^\/+|\/+$/g, ""),
+        settingsByInstall,
+        inlineToolNames: [],
+        volumes: [],
+        allowHosts: [],
+        remoteUrls,
+    };
+}
+
+/**
+ * Settings of one package: all env vars (optional ones too) and
+ * required arguments without a fixed value.
+ *
+ * @param pkg The package object.
+ * @returns Sanitized setting specs.
+ */
+function packageSettings(pkg: Record<string, unknown>): EnvVarSpec[] {
+    const settings: EnvVarSpec[] = [];
+    for (const env of Array.isArray(pkg.environmentVariables) ? pkg.environmentVariables : []) {
+        if (!isMapping(env) || typeof env.name !== "string") {
+            continue;
+        }
+        settings.push({
+            name: env.name,
+            kind: "env",
+            isSecret: env.isSecret === true,
+            isRequired: env.isRequired === true,
+            description: optionalSanitized(env.description),
+            defaultValue: optionalSanitized(env.default) ?? optionalSanitized(env.value),
+        });
+    }
+    for (const arg of Array.isArray(pkg.packageArguments) ? pkg.packageArguments : []) {
+        if (!isMapping(arg)) {
+            continue;
+        }
+        const label = optionalString(arg.name) ?? optionalString(arg.valueHint);
+        if (label === undefined) {
+            continue;
+        }
+        settings.push({
+            name: label,
+            kind: "argument",
+            isSecret: arg.isSecret === true,
+            isRequired: arg.isRequired === true,
+            description: optionalSanitized(arg.description),
+            defaultValue: optionalSanitized(arg.value) ?? optionalSanitized(arg.default),
+        });
+    }
+    return settings;
+}
+
+/** A sanitized non-empty string, or undefined. */
+function optionalSanitized(value: unknown): string | undefined {
+    const text = optionalString(value);
+    return text !== undefined ? sanitizeExternalText(text) || undefined : undefined;
 }

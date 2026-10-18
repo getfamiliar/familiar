@@ -1,5 +1,6 @@
 import { markdownTable } from "@getfamiliar/shared";
 import { proposeId } from "../registries/RegistryEntry.js";
+import type { PublisherIdentity } from "./PublisherIdentity.js";
 import type { InstallPlan, McpSearchResult, RatedCandidate } from "./SearchCandidate.js";
 import { formatCount, renderStars } from "./SecurityRating.js";
 
@@ -85,10 +86,22 @@ export function renderSearchReport(result: McpSearchResult, isVerbose: boolean):
  * @returns Markdown lines.
  */
 function renderFindings(candidate: RatedCandidate, position: number): string[] {
-    const lines = [
+    return [
         `### ${position}. ${candidate.name} — ${renderStars(candidate.rating.stars)}`,
         "",
+        ...renderCandidateFacts(candidate),
     ];
+}
+
+/**
+ * The rating's findings with their star effect, then install facts —
+ * shared by the search report and `mcp_registry_details`.
+ *
+ * @param candidate The rated candidate.
+ * @returns Markdown list lines.
+ */
+export function renderCandidateFacts(candidate: RatedCandidate): string[] {
+    const lines: string[] = [];
     candidate.rating.findings.forEach((finding, index) => {
         const label =
             index === 0
@@ -143,10 +156,14 @@ function renderFindings(candidate: RatedCandidate, position: number): string[] {
  * publisher's key when the name is pure scaffolding (`com.notion/mcp`).
  * Leading digits are dropped — ids must start with a letter.
  *
- * @param candidate The candidate.
+ * @param candidate The candidate (or any entry with name, publisher and owner).
  * @returns The id.
  */
-function suggestedId(candidate: RatedCandidate): string {
+export function suggestedId(candidate: {
+    readonly name: string;
+    readonly publisher?: PublisherIdentity | null;
+    readonly owner?: string;
+}): string {
     const proposed = proposeId(candidate.name);
     const fallback = candidate.publisher?.key ?? candidate.owner;
     const id =
