@@ -1,35 +1,49 @@
-import type { HostContext } from "@getfamiliar/shared";
+import { type HostContext, markdownTable, writeMarkdown } from "@getfamiliar/shared";
 import { Boom } from "@hapi/boom";
 import makeWASocket, { DisconnectReason, type WASocket } from "@whiskeysockets/baileys";
 import { type CommandDef, defineCommand } from "citty";
 import qrcodeTerminal from "qrcode-terminal";
-import { clearAuth, loadAuth } from "./Auth.js";
-import { buildBaileysLogger, resolveWaVersion } from "./WhatsAppDaemon.js";
-
-const BROWSER_DESCRIPTION: [string, string, string] = ["familiar", "Chrome", "1.0"];
+import { readAuthorizedNumber } from "./AgentAccount.js";
+import {
+    clearAuth,
+    linkSubcommandFor,
+    loadAuth,
+    logoutSubcommandFor,
+    type WhatsAppAccount,
+    type WhatsAppAuth,
+} from "./Auth.js";
+import { BROWSER_DESCRIPTION, buildBaileysLogger, resolveWaVersion } from "./Connection.js";
 
 /**
  * Build the citty subcommands exposed under `familiar whatsapp`.
  *
  * Subcommands:
- * - `status` — read-only summary of pairing state.
- * - `link` — interactive pairing flow (renders a QR until WhatsApp
+ * - `status` — read-only summary of both accounts' pairing state.
+ * - `link` / `link-agent` — interactive pairing flow for the user's
+ *   account / the agent's own number (renders a QR until WhatsApp
  *   reports the connection is open, then exits).
- * - `logout` — wipes credentials so the next `link` starts fresh.
+ * - `logout` / `logout-agent` — wipes that account's credentials so the
+ *   next link starts fresh.
  *
- * Each subcommand re-loads auth from `<dataDir>/whatsapp/auth/` on
- * invocation rather than capturing a snapshot, since CLI processes
+ * Each subcommand re-loads auth from disk on invocation rather than capturing a snapshot, since CLI processes
  * are short-lived and run in a separate process from the daemon.
  */
 // biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
 export function buildCommands(ctx: HostContext): readonly CommandDef<any>[] {
-    return [statusCommand(ctx), linkCommand(ctx), logoutCommand(ctx)];
+    return [
+        statusCommand(ctx),
+        linkCommand(ctx, "user"),
+        linkCommand(ctx, "agent"),
+        logoutCommand(ctx, "user"),
+        logoutCommand(ctx, "agent"),
+    ];
 }
 
 /**
- * `familiar whatsapp status` — print whether the device is linked,
- * which auth dir the creds live in, and the current group allowlist
- * (if any). Read-only; no socket connection is opened.
+ * `familiar whatsapp status` — print for both accounts whether they are
+ * linked (and as which number) and where the creds live, plus the group
+ * allowlist and the agent's authorized number. Read-only; no socket
+ * connection is opened.
  */
 function statusCommand(ctx: HostContext) {
     return defineCommand({
@@ -37,54 +51,78 @@ function statusCommand(ctx: HostContext) {
             name: "status",
             description: "Show WhatsApp plugin pairing state and configuration.",
         },
-        async run() {
-            const auth = await loadAuth(ctx);
-            if (auth.hasExistingCreds) {
-                process.stdout.write(`Linked. Auth state: ${auth.authDir}\n`);
-            } else {
-                process.stdout.write(
-                    `Not linked. Run \`familiar whatsapp link\` to pair this device.\nAuth dir (will be created on link): ${auth.authDir}\n`,
+        args: {
+            raw: {
+                type: "boolean",
+                description: "Emit raw markdown even on a TTY.",
+                default: false,
+            },
+        },
+        async run({ args }) {
+            const rows: string[][] = [];
+            for (const account of ["user", "agent"] as const) {
+                const auth = await loadAuth(ctx, account);
+                const me = auth.state.creds.me?.id;
+                rows.push(
+                    auth.hasExistingCreds && me
+                        ? [account, `linked as ${me}`, auth.authDir]
+                        : [
+                              account,
+                              `not linked — run \`familiar whatsapp ${linkSubcommandFor(account)}\``,
+                              auth.authDir,
+                          ],
                 );
             }
             const allowlist = ctx.config
                 .getArray("whatsapp.groupAllowlist", [])
                 .filter((s): s is string => typeof s === "string" && s.trim().length > 0);
-            if (allowlist.length > 0) {
-                process.stdout.write(`Group allowlist: ${allowlist.join(", ")}\n`);
-            } else {
-                process.stdout.write(
-                    "Group allowlist: (unset — all groups the linked account is in are observed)\n",
-                );
-            }
+            const authorizedNumber = readAuthorizedNumber(ctx);
+            const lines = [
+                "# WhatsApp",
+                "",
+                markdownTable(["Account", "State", "Auth dir"], rows),
+                "",
+                `- **Group allowlist:** ${allowlist.length > 0 ? allowlist.join(", ") : "unset — all groups of the user account are observed"}`,
+                `- **Agent authorized number:** ${authorizedNumber ?? "unset (discovery mode) — message the agent number to learn yours"}`,
+                "",
+            ];
+            writeMarkdown(lines.join("\n"), { raw: args.raw });
         },
     });
 }
 
 /**
- * `familiar whatsapp link` — connect to WhatsApp, render every QR
+ * `familiar whatsapp link` / `link-agent` — connect to WhatsApp, render every QR
  * code baileys produces to the terminal, and exit when the connection
  * reaches `open` (success) or fails terminally.
  *
- * Run this once per device. The user opens WhatsApp on their phone,
- * goes to *Settings → Linked devices → Link a device*, scans the QR.
- * Baileys persists creds to `<dataDir>/whatsapp/auth/` via
- * `creds.update`, so the next `familiar start` reuses them silently.
+ * Run this once per account. The user opens WhatsApp on the phone that
+ * holds the number (for `link-agent`: the agent's number), goes to
+ * *Settings → Linked devices → Link a device*, scans the QR. Baileys
+ * persists creds to the account's auth dir via `creds.update`, so the
+ * next `familiar start` reuses them silently.
  *
  * Multiple QR codes may appear because baileys rotates them every ~20
  * seconds; just scan whichever is currently displayed.
+ *
+ * @param ctx Host context.
+ * @param account Which account the command pairs.
+ * @returns The citty command.
  */
-function linkCommand(ctx: HostContext) {
+function linkCommand(ctx: HostContext, account: WhatsAppAccount) {
     return defineCommand({
         meta: {
-            name: "link",
+            name: linkSubcommandFor(account),
             description:
-                "Pair the host with a WhatsApp account by displaying a QR for the user's phone to scan.",
+                account === "agent"
+                    ? "Pair the agent's own WhatsApp number by displaying a QR for its phone to scan."
+                    : "Pair the user's WhatsApp account by displaying a QR for the phone to scan.",
         },
         async run() {
-            const auth = await loadAuth(ctx);
+            const auth = await loadAuth(ctx, account);
             if (auth.hasExistingCreds) {
                 process.stdout.write(
-                    "Already linked. Run `familiar whatsapp logout` first if you want to re-pair.\n",
+                    `Already linked. Run \`familiar whatsapp ${logoutSubcommandFor(account)}\` first if you want to re-pair.\n`,
                 );
                 return;
             }
@@ -119,6 +157,11 @@ function linkCommand(ctx: HostContext) {
                     process.stdout.write(
                         `\nLinked successfully as ${me}. Run \`familiar start\` to bring the daemon up.\n`,
                     );
+                    if (account === "agent" && readAuthorizedNumber(ctx) === null) {
+                        process.stdout.write(
+                            "Tip: set whatsapp.agent.authorizedNumber in config/config.yml to your own number so the agent talks to you.\n",
+                        );
+                    }
                     process.exit(0);
                 }
                 if (result === "restartRequired") {
@@ -138,19 +181,26 @@ function linkCommand(ctx: HostContext) {
 }
 
 /**
- * `familiar whatsapp logout` — wipe local creds. The next `familiar
- * whatsapp link` will start a fresh pairing flow. Does NOT remove the
+ * `familiar whatsapp logout` / `logout-agent` — wipe the account's local creds.
+ * The next `link` will start a fresh pairing flow. Does NOT remove the
  * device from the user's phone — that has to be done in WhatsApp's
  * Linked Devices UI. Local-only state is the host's only concern.
+ *
+ * @param ctx Host context.
+ * @param account Which account's credentials the command wipes.
+ * @returns The citty command.
  */
-function logoutCommand(ctx: HostContext) {
+function logoutCommand(ctx: HostContext, account: WhatsAppAccount) {
     return defineCommand({
         meta: {
-            name: "logout",
-            description: "Wipe local WhatsApp credentials (does not unlink from the phone side).",
+            name: logoutSubcommandFor(account),
+            description:
+                account === "agent"
+                    ? "Wipe the agent number's local WhatsApp credentials (does not unlink from the phone side)."
+                    : "Wipe the user account's local WhatsApp credentials (does not unlink from the phone side).",
         },
         async run() {
-            await clearAuth(ctx);
+            await clearAuth(ctx, account);
             process.stdout.write(
                 "Local WhatsApp credentials wiped. Don't forget to remove the device on your phone too (Settings → Linked devices).\n",
             );
@@ -187,7 +237,7 @@ type LinkAttemptResult = "open" | "restartRequired" | "loggedOut" | string;
  */
 async function runLinkAttempt(
     ctx: HostContext,
-    auth: Awaited<ReturnType<typeof loadAuth>>,
+    auth: WhatsAppAuth,
     version: Awaited<ReturnType<typeof resolveWaVersion>>,
     renderQR: boolean,
 ): Promise<LinkAttemptResult> {
@@ -202,8 +252,12 @@ async function runLinkAttempt(
     return await new Promise<LinkAttemptResult>((resolve) => {
         sock.ev.on("connection.update", (update) => {
             if (renderQR && update.qr) {
+                const phone =
+                    auth.account === "agent"
+                        ? "the phone holding the agent's number"
+                        : "your phone";
                 process.stdout.write(
-                    "\nScan this QR with your phone (Settings → Linked devices → Link a device):\n\n",
+                    `\nScan this QR with ${phone} (Settings → Linked devices → Link a device):\n\n`,
                 );
                 qrcodeTerminal.generate(update.qr, { small: true }, (rendered) => {
                     process.stdout.write(`${rendered}\n`);

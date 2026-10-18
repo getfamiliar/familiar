@@ -2,7 +2,7 @@
     "name": "@getfamiliar/plugin-whatsapp",
     "type": "module",
     "version": "0.0.1",
-    "description": "Familiar plugin: read-only WhatsApp group observer that pairs the user's account as a linked device and emits chat:whatsapp:group events.",
+    "description": "Familiar plugin: observes the user's WhatsApp groups and direct messages (chat:whatsapp:group / chat:whatsapp:new) and bridges a dedicated agent number to the chat:whatsapp chat pipeline.",
     "publishConfig": {
         "access": "public"
     },
@@ -31,6 +31,7 @@
     "dependencies": {
         "@whiskeysockets/baileys": "7.0.0-rc.9",
         "citty": "^0.1.6",
+        "@getfamiliar/plugin-transcribe-whisper": "*",
         "@getfamiliar/shared": "*",
         "qrcode-terminal": "^0.12.0"
     },

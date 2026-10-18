@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { buildGroupCode } from "./WhatsAppDaemon.js";
+import { buildGroupCode } from "./UserAccount.js";
 
 describe("buildGroupCode", () => {
     it("returns null when given null (no group name available)", () => {

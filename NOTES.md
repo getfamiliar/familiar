@@ -1,13 +1,9 @@
 NEXT:
 
-* Implement aliases!
-
 * Memory enhancements:
   - List of questions.md in the wiki that can be used to ask the user for more information about uncertainties in the memories.
   - Summarize memory files and segments that get too long, over the 6000 char limit
   - add more stuff here, this memory grows like weed
-
-* Telegram Group Summaries
 
 * Whatsapp Single Mode
 
@@ -48,6 +44,8 @@ Neues CLI Tool: `logs`
 - Plugin-specific config linters as extension point. Special Cases:
   - ms365.calendar.refreshCron: check if it's a valid cron expression. If not, thats a problem because the delta will never be updated and the calendar will never be refreshed / keep the same from/to dates forever.
 
+- Telegram Group Events: require a MTProto Client (gramJS) and a separate login, the current bot mode cannot do that. A lot of work for no use currently.
+
 ### Later features with external deps
 
 * Firecrawl for web crawling and browsing automation (see firecrawl.dev)
@@ -71,15 +69,19 @@ Neues CLI Tool: `logs`
 ## Workspace Linter
 
 - No unexpected .md files in the root
-- Parse the tools frontmatter statements and check if they are valid (existing tools and groups and parseable)
+- Parse the tools frontmatter statements and check if they are valid (existing tools)
 - Parse all cron expressions to check if valid
 - Check token count of the aggregated system prompt and warn if too high
+- Check if both x.md and x/index.md are present and warn
+- Check model aliases on existence
 
 Extreme:
 - Check handler files freeform content for tool name mentions that do not exist
 - Check models if they exist
 
 plugins:
+- Check for events that are emitted but not processed.
+
 - Check if chat/compaction/index.md exists and is parseable
 - Check if skills/memory/save.md exists and is parseable
 

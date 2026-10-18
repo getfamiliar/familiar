@@ -1,6 +1,7 @@
 import { type EventRow, type PluginTool, runJsonTool, ToolError } from "@getfamiliar/shared";
 import type { WAMessageKey } from "@whiskeysockets/baileys";
-import type { WhatsAppSocketRegistry } from "./WhatsAppDaemon.js";
+import type { WhatsAppSocketRegistry } from "./Connection.js";
+import { classifyChatJid } from "./Jid.js";
 
 /**
  * Build the WhatsApp plugin's agent-facing tools. The {@link
@@ -17,8 +18,8 @@ export function buildWhatsAppTools(registry: WhatsAppSocketRegistry): readonly P
 }
 
 /**
- * Tool that marks the WhatsApp group message this agentrun is reacting
- * to as read on the user's phone. Resolves the {@link WAMessageKey}
+ * Tool that marks the WhatsApp message (group or direct) this agentrun
+ * is reacting to as read on the user's phone. Resolves the {@link WAMessageKey}
  * from `event.payload.whatsapp` (the same fields the daemon stamped on
  * the event at emit time) and calls baileys' bulk `readMessages`.
  *
@@ -31,7 +32,7 @@ function markReadTool(registry: WhatsAppSocketRegistry): PluginTool<Record<strin
     return {
         name: "mark_read",
         description:
-            "Mark the WhatsApp group message this agentrun is reacting to as read on " +
+            "Mark the WhatsApp message (group or direct) this agentrun is reacting to as read on " +
             "the user's phone. Call this once you've handled the message (e.g. after " +
             "appending it to a digest file) so it stops appearing as unread in " +
             "WhatsApp. No arguments — the message is taken from the current event.",
@@ -56,14 +57,14 @@ function markReadTool(registry: WhatsAppSocketRegistry): PluginTool<Record<strin
  * Pull the {@link WAMessageKey} fields out of the event payload the
  * WhatsApp daemon emits. Throws a descriptive error if the payload is
  * not a WhatsApp event — the agent should only ever invoke this tool
- * from a `chat:whatsapp:group` agentrun, so a missing field indicates a
+ * from a `chat:whatsapp:group` or `chat:whatsapp:new` agentrun, so a missing field indicates a
  * real misuse rather than something to recover from silently.
  */
 function resolveMessageKey(event: EventRow): WAMessageKey {
     const payload = event.payload;
     if (payload === null || typeof payload !== "object") {
         throw new Error(
-            "event.payload is missing — mark_read requires a chat:whatsapp:group event",
+            "event.payload is missing — mark_read requires a chat:whatsapp:group or chat:whatsapp:new event",
         );
     }
     const wa = (payload as { whatsapp?: unknown }).whatsapp;
@@ -71,14 +72,18 @@ function resolveMessageKey(event: EventRow): WAMessageKey {
         throw new Error("event.payload.whatsapp is missing");
     }
     const id = readPayloadString(wa as object, "message_id");
-    const remoteJid = readPayloadString(wa as object, "group_jid");
+    const remoteJid = readPayloadString(wa as object, "chat_jid");
     const from = (wa as { from?: unknown }).from;
     if (from === null || typeof from !== "object") {
         throw new Error("event.payload.whatsapp.from is missing");
     }
+    // Only group message keys carry a participant; in a direct chat the
+    // sender is the chat itself.
     const participantRaw = (from as { jid?: unknown }).jid;
     const participant =
-        typeof participantRaw === "string" && participantRaw.length > 0
+        classifyChatJid(remoteJid) === "group" &&
+        typeof participantRaw === "string" &&
+        participantRaw.length > 0
             ? participantRaw
             : undefined;
     const fromMe = (from as { is_self?: unknown }).is_self === true;

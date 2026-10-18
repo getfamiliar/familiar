@@ -300,13 +300,27 @@ inference:
 #   botToken: ""
 #   authorizedUserId: null
 
-# WhatsApp plugin group allowlist. Empty / omitted means every group
-# the linked account is in is observed. Each entry is matched against
-# the message's remoteJid via endsWith, so users can write either the
-# full JID or just the numeric id.
+# WhatsApp plugin. Two accounts can be linked independently:
+# - the user's personal number (`familiar whatsapp link`): groups and
+#   direct messages are observed as chat:whatsapp:group / chat:whatsapp:new
+# - a second number owned by the agent (`familiar whatsapp link-agent`):
+#   the user chats with it like with the Telegram bot (chat:whatsapp,
+#   chat channel "whatsapp").
+#
+# groupAllowlist: empty / omitted means every group the user account is
+# in is observed. Each entry is matched against the message's remoteJid
+# via endsWith, so users can write either the full JID or just the
+# numeric id.
+#
+# agent.authorizedNumber: the only number the agent's WhatsApp account
+# talks to — your own number in international format (with or without
+# "+"). While unset, the agent replies to any sender with their number
+# so you can paste it here.
 # whatsapp:
 #   groupAllowlist:
 #     - "1203....@g.us"
+#   agent:
+#     authorizedNumber: "+49176..."
 
 # Core mail settings (cross-provider). Safety knobs are applied by the
 # core `mail_send_*` tools before dispatching to whichever plugin owns
