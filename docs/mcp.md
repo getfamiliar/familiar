@@ -74,6 +74,28 @@ CLI entrypoint to override. Use a custom image if you need to.
 5. **Restart the daemon.** `familiar stop && familiar start`. Logs from `familiar-mcp-<id>` flow into
    the host log stream the same way the agent's logs do.
 
+## Searching the registries
+
+`familiar tools search-mcp <term…>` and the agent tool `mcp_registry_search` run the same search (`host/src/mcp/registry-search/`) and produce the same markdown. All words of the term must match.
+
+**Sources.** The Docker MCP catalog (`https://desktop.docker.com/mcp/catalog/v3/catalog.yaml`, the file Docker's MCP Toolkit reads; it carries pulls, GitHub stars and owner per entry; cached in-process for an hour) is matched against key, title, description and tags. The official MCP registry (`/v0.1/servers?search=…&version=latest`) is matched against name (minus the `io.github.` prefix), title and description; its server-side search is a substring match on the full name, so a broad term (`github`) hits thousands of `io.github.*` names. When that search is cut after 500 servers, two targeted searches (`/<term>`, `<term>/`) follow so names that start with the term aren't lost — these are slow on the registry side (~30 s) and best effort.
+
+**Filtered out** (counted below the table; `-v` / `verbose: true` lists them with the reason):
+
+- Packages other than `oci` / `npm` / `pypi`, packages serving a non-stdio transport, packages from a non-default npm/PyPI registry, and Docker `poci` entries.
+- Remotes that need request headers, an OAuth login, URL template variables, or speak only legacy SSE — `external` forwards to a plain URL and the agent speaks Streamable HTTP.
+- Official servers with lifecycle status `deprecated` or `deleted`.
+- Images without a variant for the docker engine's platform (`docker version` → e.g. `linux/arm64`). Docker Hub images are checked through the Hub API (manifest GETs would count against the anonymous pull limit), other registries through the OCI distribution API with an anonymous token. A failed lookup keeps the candidate with a note. For official servers the next install variant (preference image → npm → pypi → remote) is tried before the server is dropped.
+- Official servers whose source repository is also a Docker catalog entry — the catalog entry has the stronger provenance.
+
+**Security rating (0–5 stars).** Every finding below the table names its star effect, so the agent can argue the rating:
+
+1. *Provenance tier* sets the base. `docker-built` (image `mcp/<name>`, built and signed by Docker with provenance and SBOM) is a fixed 5/5 regardless of other signals. `docker-community-image` (catalog entry, image pushed by the publisher) and `docker-remote` (catalog entry pointing at a hosted endpoint) start at 3. `registry-only` starts at 1 and always needs further investigation — the registry verifies the namespace, not the code.
+2. *Publisher identity.* The reverse-DNS name encodes what the registry verified: `io.github.<user>/…` a GitHub login, `com.vendor/…` DNS ownership of `vendor.com`. When the publisher (or, for catalog entries, the owner, image namespace or endpoint domain) is the vendor of the targeted service — the search term when it names the entry, else the entry's own name — the entry is *first party*: +2 for registry-only (+1 for a partial name match, "likely"), +1 for Docker community/remote entries. A community image pushed under the upstream repository owner's namespace gets another +1. A repository owned by someone other than the publisher, and a remote on the publisher's own domain, are reported as context.
+3. *Popularity* (GitHub stars, Docker pulls, npm/PyPI downloads last month) is a weak signal: −1 when every known number is low (< 25 stars, < 1,000 pulls, < 200 downloads), +1 when one is high (≥ 1,000 stars, ≥ 100k pulls, ≥ 50k downloads) and none is low. GitHub stars come from the unauthenticated API (60 requests/hour, cached per process) and are only fetched for the head of the ranking; a rate-limited lookup shows up as a note.
+
+Ratings other than `docker-built` are clamped to 0–4. The findings also list the install facts for `mcp_add`: source, image/package/url, a suggested id, and required env vars.
+
 ## `mcp.yml` reference
 
 Top-level shape: a YAML mapping of id → entry. The id (the YAML key) must match
@@ -111,7 +133,7 @@ Each element of the `env` array is a mapping with these fields:
 | --- | --- | --- | --- |
 | `name` | string | yes | Environment-variable name. |
 | `value` | string | yes | The value injected into the container. |
-| `is_secret` | boolean | no | Marks the value as sensitive: the agent's `mcp_*` tools mask it and refuse to write it (names containing `KEY`/`TOKEN`/`PASSWORD`/`SECRET` count as secret anyway). Log masking is not implemented yet. |
+| `is_secret` | boolean | no | Marks the value as sensitive: the agent's `mcp_*` tools mask it and refuse to write it (names containing `KEY`/`TOKEN`/`PASSWORD`/`SECRET` count as secret anyway). `mcp_execute_bash_command` masks the value in command output; log masking is not implemented yet. |
 | `example` | string | no | Placeholder shown by the (future) "add MCP" CLI. |
 | `description` | string | no | Human-facing help string. |
 
@@ -154,7 +176,9 @@ Runs already in progress keep the tool set they started with; new tools appear f
 
 ### Agent tools
 
-Privileged runs can edit `mcp.yml` themselves (tool group `config`): `mcp_list` (entries as on disk, secret env values masked, with `pending-add` / `pending-change` / `pending-remove` status), `mcp_add` (writes one complete entry; it does not search any registry), `mcp_remove`, and `mcp_set_env` (sets or adds one env var). None of them applies anything — the agent calls `config_reload` after its edits.
+Any run can search the registries with `mcp_registry_search` (level `default`, tool group `config`) — the same search and markdown as `familiar tools search-mcp`, see "Searching the registries" below. Privileged runs can edit `mcp.yml` themselves (tool group `config`): `mcp_list` (entries as on disk, secret env values masked, with `pending-add` / `pending-change` / `pending-remove` status), `mcp_add` (writes one complete entry; it does not search any registry — use `mcp_registry_search` first), `mcp_remove`, and `mcp_set_env` (sets or adds one env var). None of them applies anything — the agent calls `config_reload` after its edits.
+
+`mcp_execute_bash_command` (privileged, group `config`) is the agent's `familiar tools call-mcp`: `{id, args}` runs the entry's container one-shot (same image, env, mounts and mcp.yml `args:`, read from the file as on disk, so it works before `config_reload`) with `args` appended — no shell, one array item per argument. It returns `{callId, running, exitCode, output, outputTruncated, timedOut}`, where `output` is stdout+stderr new since the last read. A command that is still running after `waitSeconds` (default 20, max 120) returns its output so far and keeps running — the case of a device-code login waiting for the user. The agent then polls with `{callId}` or kills it with `{callId, stop: true}`. The container is named `familiar-mcp-exec-<id>-<callId>`, is killed after 15 minutes and on daemon shutdown, and output beyond 1 MB that nobody has read is dropped from the front (`outputTruncated`). **Every configured secret value is masked in the output** (`***`): all `config.yml` values at or below a secret key and all secret `mcp.yml` env values, including their URL-encoded and JSON-escaped forms; values shorter than 4 characters are left alone. The secrets are read fresh on every poll, and while the command runs, a possible secret prefix at the end of the output is held back until the next read.
 
 **Secrets never pass through the agent.** An env var is a secret when it has `is_secret: true` or its name contains `KEY`, `TOKEN`, `PASSWORD` or `SECRET` (case-insensitive). `mcp_list` masks such values (`"***set***"` / `null`), `mcp_add` only accepts them empty and reports them as still to be entered, and `mcp_set_env` refuses them. The user enters secret values directly (by editing `mcp.yml`, or later through a dedicated secret prompt).
 
@@ -402,6 +426,7 @@ atlassian:
   stop the daemon first with `familiar stop`. Reports the number of directories removed and
   approximate bytes freed. `tmp/` itself is left in place so the daemon's next start doesn't fail
   on a missing parent.
+- **Search the registries.** `familiar tools search-mcp <term…>` searches the Docker MCP catalog and the official MCP registry and prints the servers that fit this runtime as a security-rated table, followed by the findings behind every rating — see "Searching the registries" below. `-v` also lists the filtered-out servers with their reasons, `--limit <n>` changes the row count (default 20), `--platform <os/arch>` checks images against another platform, `--raw` emits unstyled markdown. Works without the daemon.
 - **Add a new MCP interactively.** `familiar tools add-mcp <package>` searches the Docker MCP registry
   first
   (`https://raw.githubusercontent.com/docker/mcp-registry/main/servers/<name>/server.yaml`), then
@@ -437,7 +462,8 @@ atlassian:
   ```
   No `--name` is set on the docker invocation, so the call won't collide with a bastion-managed
   `familiar-mcp-<id>` container that may be running concurrently. The exit status of the docker child is
-  propagated to the calling shell. `external` sources are refused (no container to run).
+  propagated to the calling shell. `external` sources are refused (no container to run). The agent's
+  counterpart is `mcp_execute_bash_command` (see "Agent tools").
 
 - **Listing live MCPs directly.** `docker ps --filter name=familiar-mcp-` shows every currently-spawned
   MCP child. Containers are **ephemeral**: they only exist while the bastion holds them open, and

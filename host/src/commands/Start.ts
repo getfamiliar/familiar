@@ -53,6 +53,7 @@ import { ModelMetadataRefresher } from "../cron/ModelMetadataRefresher.js";
 import { ScheduledSubagentScheduler } from "../cron/ScheduledSubagentScheduler.js";
 import { ToolCallsGc } from "../cron/ToolCallsGc.js";
 import { PostgresContainer } from "../db/PostgresContainer.js";
+import { McpCommandRunner } from "../mcp/McpCommandRunner.js";
 import { McpGateway } from "../mcp/McpGateway.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
 import {
@@ -438,6 +439,7 @@ export const startCommand = defineCommand({
         await workspaceWatcher.start();
         pluginHost.setWorkspaceWatcher(workspaceWatcher);
 
+        const mcpCommandRunner = new McpCommandRunner();
         await pluginHost.startDaemons(
             buildConfigTools({
                 configFile: boot.configFile,
@@ -446,6 +448,9 @@ export const startCommand = defineCommand({
                 mcpRegistry,
                 reloader,
                 isPluginToolGroup: (id) => pluginToolsRegistry.hasPlugin(id),
+                boot,
+                log: log.child({ component: "config-tools" }),
+                mcpCommandRunner,
             }),
         );
         log.info("plugin daemons started");
@@ -579,6 +584,7 @@ export const startCommand = defineCommand({
                 await safeStop(log, "chat compactor", () => chatCompactor.stop());
                 await safeStop(log, "cron scheduler", () => cronScheduler.stop());
                 await safeStop(log, "workspace watcher", () => workspaceWatcher.stop());
+                await safeStop(log, "mcp one-shot commands", () => mcpCommandRunner.stopAll());
                 await safeStop(log, "plugin host", () => pluginHost.close());
                 await safeStop(log, "agent container", () => container.stop());
                 await safeStop(log, "bastion bridge", () => bridge.stop());

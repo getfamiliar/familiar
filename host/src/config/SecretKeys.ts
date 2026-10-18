@@ -42,6 +42,20 @@ export function isSecretConfigKey(key: string): boolean {
 }
 
 /**
+ * Whether an MCP env var holds a secret: flagged `is_secret` or named
+ * like one (`GITHUB_TOKEN`, `API_KEY`, …).
+ *
+ * @param env The env entry (or its name and flag).
+ * @returns `true` for a secret.
+ */
+export function isSecretMcpEnv(env: {
+    readonly name: string;
+    readonly is_secret?: unknown;
+}): boolean {
+    return env.is_secret === true || isSecretConfigKey(env.name);
+}
+
+/**
  * Deep-copy `value` with every secret replaced: leaves at or below a
  * secret segment become {@link MASKED_SECRET_VALUE} when set (non-empty)
  * and `null` when empty, so the agent can tell "configured" from

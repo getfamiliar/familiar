@@ -1,4 +1,6 @@
-import { ToolError } from "@getfamiliar/shared";
+import { type Logger, ToolError } from "@getfamiliar/shared";
+import type { Bootstrap } from "../Bootstrap.js";
+import type { McpCommandRunner } from "../mcp/McpCommandRunner.js";
 import type { McpRegistry } from "../mcp/McpRegistry.js";
 import type { DaemonReloader } from "../reload/DaemonReloader.js";
 import type { HostConfigService } from "../utils/ConfigService.js";
@@ -17,6 +19,12 @@ export interface ConfigToolsDeps {
     readonly reloader: DaemonReloader;
     /** Whether a plugin with this id contributes tools (MCP ids must not clash). */
     readonly isPluginToolGroup: (id: string) => boolean;
+    /** Host paths and uid/gid for one-shot MCP containers. */
+    readonly boot: Bootstrap;
+    /** Daemon logger. */
+    readonly log: Logger;
+    /** Keeps the agent's one-shot MCP commands alive across tool calls. */
+    readonly mcpCommandRunner: McpCommandRunner;
 }
 
 /** Tool group every config tool joins (`tools: core + config`). */

@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { Logger, PluginTool, PluginToolCallContext } from "@getfamiliar/shared";
+import type { Bootstrap } from "../Bootstrap.js";
+import { McpCommandRunner } from "../mcp/McpCommandRunner.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
 import type { DaemonReloader } from "../reload/DaemonReloader.js";
 import { HostConfigService } from "../utils/ConfigService.js";
@@ -53,6 +55,9 @@ beforeEach(() => {
             mcpRegistry: new McpRegistry(mcpConfigFile, silentLog),
             reloader: {} as DaemonReloader,
             isPluginToolGroup: (id) => id === "telegram",
+            boot: {} as Bootstrap,
+            log: silentLog,
+            mcpCommandRunner: new McpCommandRunner(),
         }).map((tool) => [tool.name, tool]),
     );
 });

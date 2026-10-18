@@ -10,39 +10,31 @@ import {
     type ConfigToolsDeps,
     secretRefusedError,
 } from "./ConfigToolSupport.js";
-import { isSecretConfigKey, MASKED_SECRET_VALUE } from "./SecretKeys.js";
+import { buildMcpExecuteCommandTool } from "./McpExecuteCommandTool.js";
+import { buildMcpRegistrySearchTool } from "./McpRegistrySearchTool.js";
+import { isSecretMcpEnv, MASKED_SECRET_VALUE } from "./SecretKeys.js";
 
 /** Same id rule the `mcp.yml` linter enforces; repeated here for an early, specific error. */
 const MCP_ID_PATTERN = /^[a-z][a-z0-9]*$/;
 
 /**
- * Build the `mcp_*` tools that edit `config/mcp.yml`. Like the
+ * Build the `mcp_*` tools: `mcp_registry_search` finds servers in the
+ * public registries, `mcp_execute_bash_command` runs a one-shot command
+ * in an MCP's container, the others edit `config/mcp.yml`. Like the
  * `config_*` tools they only edit the file; `config_reload` applies it.
  *
  * @param deps Shared config-tool dependencies.
- * @returns `mcp_list`, `mcp_add`, `mcp_remove`, `mcp_set_env`.
+ * @returns `mcp_registry_search`, `mcp_list`, `mcp_add`, `mcp_remove`, `mcp_set_env`, `mcp_execute_bash_command`.
  */
 export function buildMcpConfigTools(deps: ConfigToolsDeps): readonly PluginTool[] {
     return [
+        buildMcpRegistrySearchTool(),
         buildMcpListTool(deps),
         buildMcpAddTool(deps),
         buildMcpRemoveTool(deps),
         buildMcpSetEnvTool(deps),
+        buildMcpExecuteCommandTool(deps),
     ];
-}
-
-/**
- * Whether an MCP env var holds a secret: flagged `is_secret` or named
- * like one (`GITHUB_TOKEN`, `API_KEY`, …).
- *
- * @param env The env entry (or its name and flag).
- * @returns `true` for a secret.
- */
-export function isSecretMcpEnv(env: {
-    readonly name: string;
-    readonly is_secret?: unknown;
-}): boolean {
-    return env.is_secret === true || isSecretConfigKey(env.name);
 }
 
 /** `mcp_list` — the entries in `mcp.yml`, secrets masked, with reload status. */
@@ -98,7 +90,7 @@ function buildMcpAddTool(deps: ConfigToolsDeps): PluginTool<McpAddArgs, object> 
         level: "privileged",
         groups: [CONFIG_TOOL_GROUP],
         description:
-            "Add an MCP server entry to config/mcp.yml. Does not search any registry — pass the complete entry. " +
+            "Add an MCP server entry to config/mcp.yml. Does not search any registry (use mcp_registry_search) — pass the complete entry. " +
             "`id`: lowercase letters/digits, starting with a letter (it becomes the tool prefix and tool group). " +
             "`entry`: { title, description, source: docker-mcp-registry|npm|pypi|external, image (docker) | " +
             "package + optional version (npm/pypi) | url (external), env?: [{name, value, is_secret?, description?}], " +

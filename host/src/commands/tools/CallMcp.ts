@@ -1,23 +1,14 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { createLogger, prettyStdoutStream } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
-import { parse } from "yaml";
 import { bootstrap } from "../../Bootstrap.js";
 import type {
     DockerArgsOptions,
     RuntimeContainerConfig,
 } from "../../mcp/factories/DockerArgsOptions.js";
-import { buildDockerRegistryArgs } from "../../mcp/factories/DockerMcpRegistryFactory.js";
-import { buildNpmDockerArgs } from "../../mcp/factories/NpmFactory.js";
-import { buildPypiDockerArgs } from "../../mcp/factories/PypiFactory.js";
 import { lintMcpConfigFile } from "../../mcp/McpConfigLoader.js";
-import {
-    DEFAULT_IDLE_TIMEOUT_SECONDS,
-    type McpEntry,
-    type McpEnvVar,
-    type McpNetwork,
-    type McpSource,
-} from "../../mcp/McpEntry.js";
+import type { McpEntry } from "../../mcp/McpEntry.js";
+import { buildMcpOneShotDockerArgs, loadMcpEntryFromFile } from "../../mcp/McpOneShot.js";
 import { ensureRuntimeImage, mcpMountDirFor } from "../../mcp/RuntimeImages.js";
 import { dockerCapture, dockerInteractive } from "../../utils/DockerTools.js";
 
@@ -92,7 +83,7 @@ export const callMcpCommand = defineCommand({
             process.exit(1);
         }
 
-        const entry = loadEntry(boot.mcpConfigFile, id);
+        const entry = loadMcpEntryFromFile(boot.mcpConfigFile, id);
         if (entry === null) {
             process.stderr.write(`unknown mcp "${id}" (not declared in config/mcp.yml)\n`);
             process.exit(1);
@@ -157,16 +148,8 @@ function spawnAndExit(
         containerName: null,
         appendArgs: extraArgs,
     };
-    let argv: string[];
-    if (entry.source === "npm") {
-        argv = buildNpmDockerArgs(entry, runtimeConfig, options);
-    } else if (entry.source === "pypi") {
-        argv = buildPypiDockerArgs(entry, runtimeConfig, options);
-    } else {
-        argv = buildDockerRegistryArgs(entry, runtimeConfig, options);
-    }
     try {
-        process.exit(dockerInteractive(argv));
+        process.exit(dockerInteractive(buildMcpOneShotDockerArgs(entry, runtimeConfig, options)));
     } catch (err) {
         const cause = err instanceof Error ? err.message : String(err);
         process.stderr.write(`${cause}\n`);
@@ -198,60 +181,4 @@ async function warnIfBastionAlive(id: string): Promise<void> {
     } catch {
         // ignore — docker probe failure isn't worth blocking the call
     }
-}
-
-/**
- * Pull a single entry from `mcp.yml` by id. Mirrors the projection
- * `McpList.ts` does: parse the YAML, walk to the named key,
- * shape the fields we need without going through the
- * logger-requiring `loadMcpEntries` path.
- */
-function loadEntry(filePath: string, id: string): McpEntry | null {
-    const raw = readFileSync(filePath, "utf-8");
-    const root = parse(raw);
-    if (root === null || root === undefined || typeof root !== "object" || Array.isArray(root)) {
-        return null;
-    }
-    const value = (root as Record<string, unknown>)[id];
-    if (
-        value === undefined ||
-        value === null ||
-        typeof value !== "object" ||
-        Array.isArray(value)
-    ) {
-        return null;
-    }
-    const e = value as Record<string, unknown>;
-    const network: McpNetwork = {
-        disable: Boolean((e.network as Record<string, unknown> | undefined)?.disable ?? false),
-    };
-    return {
-        id,
-        title: (e.title as string) ?? id,
-        description: (e.description as string) ?? "",
-        source: e.source as McpSource,
-        env: ((e.env as McpEnvVar[] | undefined) ?? []).map((env) => ({
-            name: env.name,
-            value: env.value,
-            is_secret: env.is_secret,
-            example: env.example,
-            description: env.description,
-        })),
-        volumes: (e.volumes as string[] | undefined) ?? [],
-        args: (e.args as string[] | undefined) ?? [],
-        command: typeof e.command === "string" ? e.command : null,
-        network,
-        allowlist: (e.allowlist as string[] | undefined) ?? [],
-        denylist: (e.denylist as string[] | undefined) ?? [],
-        approval: (e.approval as string[] | undefined) ?? [],
-        privileged: (e.privileged as string[] | undefined) ?? [],
-        image: typeof e.image === "string" ? e.image : undefined,
-        package: typeof e.package === "string" ? e.package : undefined,
-        version: typeof e.version === "string" ? e.version : undefined,
-        url: typeof e.url === "string" ? e.url : undefined,
-        idleTimeoutSeconds:
-            typeof e.idleTimeoutSeconds === "number"
-                ? e.idleTimeoutSeconds
-                : DEFAULT_IDLE_TIMEOUT_SECONDS,
-    };
 }
