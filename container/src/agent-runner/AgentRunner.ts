@@ -36,34 +36,45 @@ import { synthesizeResultText } from "./synthesizeResultText.js";
 
 /**
  * When `true`, every step's full SDK result object is JSON-encoded
- * into `stepresults.raw_result`. Read once at module load from the
- * passed config key `inference.captureRawStepResultToDatabase`, so a
- * daemon restart is required to flip it. Off by default.
+ * into `stepresults.raw_result`. Read per step from the passed config
+ * key `inference.captureRawStepResultToDatabase`, so a config reload
+ * applies it. Off by default.
+ *
+ * @returns Whether raw step capture is on.
  */
-const CAPTURE_RAW_STEP_RESULT =
-    PassedConfig.get<boolean>("inference.captureRawStepResultToDatabase") ?? false;
+function isCaptureRawStepResultEnabled(): boolean {
+    return PassedConfig.get<boolean>("inference.captureRawStepResultToDatabase") ?? false;
+}
 
 /**
  * When `true`, the assembled initial model-message array (prior history
  * + the run's leading user turn) is JSON-encoded onto
  * `agentruns.initial_messages` right before the first `agent.generate()`
- * call. Read once at module load from the passed config key
- * `inference.captureInitialMessageHistory`, so a daemon restart is
- * required to flip it. Off by default.
+ * call. Read per run from the passed config key
+ * `inference.captureInitialMessageHistory`, so a config reload applies it
+ * from the next run on. Off by default.
+ *
+ * @returns Whether initial-history capture is on.
  */
-const CAPTURE_INITIAL_MESSAGE_HISTORY =
-    PassedConfig.get<boolean>("inference.captureInitialMessageHistory") ?? false;
+function isCaptureInitialMessageHistoryEnabled(): boolean {
+    return PassedConfig.get<boolean>("inference.captureInitialMessageHistory") ?? false;
+}
 
 /**
  * Fraction of a model's context window used as the per-step output
  * ceiling when the model's metadata declares no explicit `outputLimit`.
- * Read once at module load from the passed config key
- * `inference.outputFallbackPercentage`, so a daemon restart is required
- * to change it. Defaults to {@link DEFAULT_OUTPUT_FALLBACK_FRACTION}.
+ * Read per run from the passed config key
+ * `inference.outputFallbackPercentage`, so a config reload applies it
+ * from the next run on. Defaults to {@link DEFAULT_OUTPUT_FALLBACK_FRACTION}.
+ *
+ * @returns The fallback fraction.
  */
-const OUTPUT_FALLBACK_FRACTION =
-    PassedConfig.get<number>("inference.outputFallbackPercentage") ??
-    DEFAULT_OUTPUT_FALLBACK_FRACTION;
+function outputFallbackFraction(): number {
+    return (
+        PassedConfig.get<number>("inference.outputFallbackPercentage") ??
+        DEFAULT_OUTPUT_FALLBACK_FRACTION
+    );
+}
 
 /** Default context-management threshold fraction of the model's context window. */
 const DEFAULT_CONTEXT_THRESHOLD_PERCENTAGE = 0.7;
@@ -94,13 +105,17 @@ function clampContextThreshold(raw: number | undefined): number {
 /**
  * Fraction of the model's context window at which {@link ContextManager}
  * starts moving old tool results to scratch (and, failing that, dropping
- * the oldest messages). Read once at module load from the passed config
+ * the oldest messages). Read per run from the passed config
  * key `inference.contextManagement.thresholdPercentage`. Clamped to
  * `(0.3, 1.0)`.
+ *
+ * @returns The clamped threshold fraction.
  */
-const CONTEXT_THRESHOLD_PERCENTAGE = clampContextThreshold(
-    PassedConfig.get<number>("inference.contextManagement.thresholdPercentage"),
-);
+function contextThresholdPercentage(): number {
+    return clampContextThreshold(
+        PassedConfig.get<number>("inference.contextManagement.thresholdPercentage"),
+    );
+}
 
 /**
  * Fraction of the model's context window used as the upper bound for an
@@ -112,13 +127,19 @@ const TOOL_OFFLOAD_CONTEXT_FRACTION = 0.25;
 /**
  * Absolute token cap for an inline tool result, used as the ceiling in
  * `min(0.25 * contextLimit, cap)` and as the whole threshold when the
- * model's context window is unknown. Read once at module load from the
+ * model's context window is unknown. Read per run from the
  * passed config key `core.toolCallOffloadingLimit`. Per-handler
  * `toolCallOffloadingLimit` frontmatter overrides it per run. Defaults to
  * {@link DEFAULT_TOOL_CALL_OFFLOADING_LIMIT}.
+ *
+ * @returns The token cap.
  */
-const TOOL_OFFLOAD_TOKEN_CAP =
-    PassedConfig.get<number>("core.toolCallOffloadingLimit") ?? DEFAULT_TOOL_CALL_OFFLOADING_LIMIT;
+function toolOffloadTokenCap(): number {
+    return (
+        PassedConfig.get<number>("core.toolCallOffloadingLimit") ??
+        DEFAULT_TOOL_CALL_OFFLOADING_LIMIT
+    );
+}
 
 /**
  * Compute the per-result offload token threshold: the smaller of a
@@ -378,7 +399,7 @@ export class AgentRunner {
         // The offload cap is the per-handler frontmatter override, else the
         // config/env cap; the effective threshold is that capped by a
         // fraction of the model's context window.
-        const offloadTokenCap = handler.header.toolCallOffloadingLimit ?? TOOL_OFFLOAD_TOKEN_CAP;
+        const offloadTokenCap = handler.header.toolCallOffloadingLimit ?? toolOffloadTokenCap();
         const offloadTokenThreshold = computeOffloadTokenThreshold(
             modelMetaData?.contextLimit,
             offloadTokenCap,
@@ -437,11 +458,12 @@ export class AgentRunner {
         // (`outputLimit`, else a fraction of `contextLimit`); a declared
         // value is kept but clamped down to that ceiling so a handler
         // can never ask for more than the model / context allows.
-        const modelCeiling = resolveModelCeiling(modelMetaData, OUTPUT_FALLBACK_FRACTION);
+        const fallbackFraction = outputFallbackFraction();
+        const modelCeiling = resolveModelCeiling(modelMetaData, fallbackFraction);
         const effectiveMaxOutputTokens = deriveMaxOutputTokens(
             modelMetaData,
             handler.header.maxOutputTokens,
-            OUTPUT_FALLBACK_FRACTION,
+            fallbackFraction,
         );
         ctx.log.info(
             {
@@ -449,11 +471,11 @@ export class AgentRunner {
                 declared: handler.header.maxOutputTokens ?? null,
                 outputLimit: modelMetaData?.outputLimit ?? null,
                 contextLimit: modelMetaData?.contextLimit ?? null,
-                fallbackFraction: OUTPUT_FALLBACK_FRACTION,
+                fallbackFraction,
                 modelCeiling,
                 effectiveMaxOutputTokens,
             },
-            `output cap for ${modelLabel}: declared=${handler.header.maxOutputTokens ?? "?"} outputLimit=${modelMetaData?.outputLimit ?? "?"} contextLimit=${modelMetaData?.contextLimit ?? "?"} fraction=${OUTPUT_FALLBACK_FRACTION} ceiling=${modelCeiling} → effective=${effectiveMaxOutputTokens}`,
+            `output cap for ${modelLabel}: declared=${handler.header.maxOutputTokens ?? "?"} outputLimit=${modelMetaData?.outputLimit ?? "?"} contextLimit=${modelMetaData?.contextLimit ?? "?"} fraction=${fallbackFraction} ceiling=${modelCeiling} → effective=${effectiveMaxOutputTokens}`,
         );
 
         // Tools only work if the model supports tool calls. Warn on every
@@ -475,7 +497,7 @@ export class AgentRunner {
         const contextManager = new ContextManager({
             contextLimit: modelMetaData?.contextLimit,
             fallbackContextLimit: FALLBACK_CONTEXT_LIMIT,
-            thresholdPercentage: CONTEXT_THRESHOLD_PERCENTAGE,
+            thresholdPercentage: contextThresholdPercentage(),
             systemPromptTokens: estimateTokens(systemPrompt),
             spill: buildContainerToolRunContext(ctx.row.eventId, offloadTokenThreshold).spill,
             log: ctx.log,
@@ -595,7 +617,7 @@ export class AgentRunner {
         // before handing it to the model. Opt-in (off by default) since
         // it can be several KB per run; surfaced by the report layer's
         // -vv view.
-        if (CAPTURE_INITIAL_MESSAGE_HISTORY) {
+        if (isCaptureInitialMessageHistoryEnabled()) {
             await ctx.stampInitialMessages(messages);
         }
 
@@ -795,7 +817,7 @@ export class AgentRunner {
             outputTokensReasoning: step.usage.outputTokenDetails?.reasoningTokens ?? null,
             toolCalls: step.toolCalls,
             toolResults: persistedToolResults,
-            rawResult: CAPTURE_RAW_STEP_RESULT ? safeJsonClone(step) : undefined,
+            rawResult: isCaptureRawStepResultEnabled() ? safeJsonClone(step) : undefined,
         });
         ctx.onStepFinished();
     }

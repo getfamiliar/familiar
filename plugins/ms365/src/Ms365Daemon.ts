@@ -15,10 +15,29 @@ import { MailPoller } from "./mail/MailPoller.js";
 import { Ms365MailProvider } from "./mail/Ms365MailProvider.js";
 
 /**
+ * Cancel functions of everything {@link startMs365Daemon} left running
+ * (poll loops, the calendar refresh cron). Drained by {@link stopMs365Daemon}.
+ */
+const stopActions: (() => void)[] = [];
+
+/**
+ * Stop the poll loops and the calendar refresh cron so the plugin can be
+ * restarted (config reload) or the daemon can shut down. A poll already
+ * in flight finishes but schedules no follow-up. The mail / calendar
+ * providers are unregistered by the host.
+ */
+export function stopMs365Daemon(): void {
+    for (const stop of stopActions.splice(0)) {
+        stop();
+    }
+}
+
+/**
  * Boot the Microsoft 365 plugin: load logins, hand the live store to
  * the tools registry, prepare the mail poller, and start its poll
  * loop. Daemon stays up even when nothing is logged in — the user
- * runs `familiar ms365 login` to add an account, then restarts.
+ * runs `familiar ms365 login` to add an account, then restarts (or
+ * reloads the config, which restarts this plugin when `ms365.*` changed).
  *
  * Calendar support lands as a sibling block here once the calendar
  * subdirectory exists. Auth is shared.
@@ -75,13 +94,14 @@ export async function startMs365Daemon(ctx: HostContext): Promise<void> {
                 log("mail: not active; idle until a login is added");
             } else {
                 log(`mail: registered; polling every ${mail.pollingIntervalMinutes}m`);
-                runPollLoop(
+                const stopMailPolling = runPollLoop(
                     (): Promise<void> => mailPoller.pollOnce(),
                     mail.pollingIntervalMinutes,
                     mail.pollingBackoffMinutes,
                     "mail",
                     log,
                 );
+                stopActions.push(stopMailPolling);
             }
         }
     }
@@ -117,7 +137,7 @@ export async function startMs365Daemon(ctx: HostContext): Promise<void> {
     }
 
     log(`calendar: registered; polling every ${calendar.pollingIntervalMinutes}m`);
-    runPollLoop(
+    const stopCalendarPolling = runPollLoop(
         () => calendarPoller.pollOnce(),
         calendar.pollingIntervalMinutes,
         calendar.pollingBackoffMinutes,
@@ -125,6 +145,7 @@ export async function startMs365Daemon(ctx: HostContext): Promise<void> {
         log,
     );
     calendarPoller.startRefreshCron(log);
+    stopActions.push(stopCalendarPolling, () => calendarPoller.stopRefreshCron());
 }
 
 /**
@@ -132,6 +153,9 @@ export async function startMs365Daemon(ctx: HostContext): Promise<void> {
  * and calendar polling: success → poll again after the interval,
  * failure → exponential backoff capped at 4× the interval. Timers are
  * unref'd so an idle poller doesn't keep the daemon alive on its own.
+ *
+ * @returns A cancel function: clears the pending timer and stops a poll
+ *   in flight from scheduling the next one.
  */
 function runPollLoop(
     pollOnce: () => Promise<void>,
@@ -139,16 +163,21 @@ function runPollLoop(
     backoffMinutes: number,
     label: string,
     log: (msg: string) => void,
-): void {
+): () => void {
     const intervalMs = intervalMinutes * 60_000;
     const backoffBaseMs = backoffMinutes * 60_000;
     // Cap backoff at 4× the interval so a stuck poll still retries
     // roughly every hour for the default 15-min cadence.
     const backoffCapMs = intervalMs * 4;
     let failures = 0;
+    let timer: NodeJS.Timeout | undefined;
+    let isStopped = false;
 
     const schedule = (delayMs: number) => {
-        const timer = setTimeout(tick, delayMs);
+        if (isStopped) {
+            return;
+        }
+        timer = setTimeout(tick, delayMs);
         timer.unref();
     };
 
@@ -173,6 +202,10 @@ function runPollLoop(
     // without doing I/O — host startup isn't blocked on the first
     // Graph round-trip.
     schedule(0);
+    return () => {
+        isStopped = true;
+        clearTimeout(timer);
+    };
 }
 
 /**

@@ -3,7 +3,7 @@ import { definePlugin } from "@getfamiliar/shared";
 import { buildMs365Commands } from "./Commands.js";
 import { makeLoginStore } from "./Config.js";
 import { listMs365EmittedEvents } from "./EmittedEvents.js";
-import { startMs365Daemon } from "./Ms365Daemon.js";
+import { startMs365Daemon, stopMs365Daemon } from "./Ms365Daemon.js";
 import { buildSentSampleTool } from "./mail/SentSampleTool.js";
 import { Ms365StorageProvider } from "./storage/Ms365StorageProvider.js";
 
@@ -41,6 +41,7 @@ export default definePlugin({
             }
         },
         start: (ctx) => startMs365Daemon(ctx),
+        stop: async () => stopMs365Daemon(),
         commands: (ctx) => buildMs365Commands(ctx),
         tools: () => [buildSentSampleTool()],
         getEmittedEvents: (ctx) => listMs365EmittedEvents(ctx),

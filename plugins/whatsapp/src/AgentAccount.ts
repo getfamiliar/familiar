@@ -1,5 +1,10 @@
 import { transcribeAudio } from "@getfamiliar/plugin-transcribe-whisper";
-import { type EmitHandle, EVENT_PRIORITY, type HostContext } from "@getfamiliar/shared";
+import {
+    type ChatUnsubscribe,
+    type EmitHandle,
+    EVENT_PRIORITY,
+    type HostContext,
+} from "@getfamiliar/shared";
 import { downloadMediaMessage, type WAMessage, type WASocket } from "@whiskeysockets/baileys";
 import {
     buildBaileysLogger,
@@ -112,37 +117,43 @@ export function buildAgentAccountAttacher(
  * @param ctx Host context providing the chat bus.
  * @param registry The agent account's socket registry.
  * @param authorizedNumber Recipient of every reply, or `null` to drop.
+ * @returns Disposer that removes the subscription (plugin stop).
  */
 export async function subscribeAgentChat(
     ctx: HostContext,
     registry: WhatsAppSocketRegistry,
     authorizedNumber: string | null,
-): Promise<void> {
-    await ctx.chat.subscribe({ channelId: WHATSAPP_CHANNEL, role: "assistant" }, async (m) => {
-        if (authorizedNumber === null) {
-            ctx.logger.info(
-                `dropping whatsapp assistant msg ${m.id}: no ${AUTHORIZED_NUMBER_KEY} set`,
-            );
+): Promise<ChatUnsubscribe> {
+    return await ctx.chat.subscribe(
+        { channelId: WHATSAPP_CHANNEL, role: "assistant" },
+        async (m) => {
+            if (authorizedNumber === null) {
+                ctx.logger.info(
+                    `dropping whatsapp assistant msg ${m.id}: no ${AUTHORIZED_NUMBER_KEY} set`,
+                );
+                return true;
+            }
+            const sock = await waitForSocket(registry);
+            if (sock === null) {
+                // Leave it undelivered; the subscription replays it on the
+                // next daemon start.
+                ctx.logger.info(
+                    `whatsapp[agent] socket offline for ${SEND_SOCKET_WAIT_MS}ms; leaving assistant msg ${m.id} undelivered`,
+                );
+                return false;
+            }
+            try {
+                await sock.sendMessage(`${authorizedNumber}@s.whatsapp.net`, {
+                    text: m.textContent,
+                });
+            } catch (err) {
+                // Ack anyway: returning false would replay forever on
+                // permanent failures.
+                ctx.logger.info(`whatsapp[agent] send of msg ${m.id} failed: ${formatError(err)}`);
+            }
             return true;
-        }
-        const sock = await waitForSocket(registry);
-        if (sock === null) {
-            // Leave it undelivered; the subscription replays it on the
-            // next daemon start.
-            ctx.logger.info(
-                `whatsapp[agent] socket offline for ${SEND_SOCKET_WAIT_MS}ms; leaving assistant msg ${m.id} undelivered`,
-            );
-            return false;
-        }
-        try {
-            await sock.sendMessage(`${authorizedNumber}@s.whatsapp.net`, { text: m.textContent });
-        } catch (err) {
-            // Ack anyway: returning false would replay forever on
-            // permanent failures.
-            ctx.logger.info(`whatsapp[agent] send of msg ${m.id} failed: ${formatError(err)}`);
-        }
-        return true;
-    });
+        },
+    );
 }
 
 /**

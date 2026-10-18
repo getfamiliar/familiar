@@ -56,6 +56,38 @@ export interface ChatCompactorDeps {
     readonly log: Logger;
 }
 
+/** The two `chat.compaction.*` byte limits, defaults applied. */
+export interface CompactionLimits {
+    readonly thresholdBytes: number;
+    readonly keepUncompactedBytes: number;
+}
+
+/**
+ * Read the compaction limits from config. Called per pass so a config
+ * reload takes effect without restarting the compactor.
+ *
+ * @param config Host config service.
+ * @returns The limits with defaults applied.
+ * @throws If `keepUncompactedBytes` is not below `thresholdBytes` — the
+ *   split point would sit past the trigger and compact forever.
+ */
+export function readCompactionLimits(config: ConfigService): CompactionLimits {
+    const thresholdBytes = config.getNumber(
+        "chat.compaction.thresholdBytes",
+        DEFAULT_COMPACTION_THRESHOLD_BYTES,
+    );
+    const keepUncompactedBytes = config.getNumber(
+        "chat.compaction.keepUncompactedBytes",
+        DEFAULT_KEEP_UNCOMPACTED_BYTES,
+    );
+    if (keepUncompactedBytes >= thresholdBytes) {
+        throw new Error(
+            `chat.compaction.keepUncompactedBytes (${keepUncompactedBytes}) must be less than chat.compaction.thresholdBytes (${thresholdBytes})`,
+        );
+    }
+    return { thresholdBytes, keepUncompactedBytes };
+}
+
 /** Row shape returned by the newest-first walk over `chatmessages`. */
 export interface CompactionRow {
     readonly id: string;
@@ -171,29 +203,15 @@ export function formatTranscript(rowsChronological: readonly CompactionRow[]): s
  */
 export class ChatCompactor {
     private readonly deps: ChatCompactorDeps;
-    private readonly thresholdBytes: number;
-    private readonly keepUncompactedBytes: number;
     private readonly notifyHandler: NotificationHandler;
     private listening = false;
     private inFlight = false;
 
     constructor(deps: ChatCompactorDeps) {
         this.deps = deps;
-        this.thresholdBytes = deps.config.getNumber(
-            "chat.compaction.thresholdBytes",
-            DEFAULT_COMPACTION_THRESHOLD_BYTES,
-        );
-        this.keepUncompactedBytes = deps.config.getNumber(
-            "chat.compaction.keepUncompactedBytes",
-            DEFAULT_KEEP_UNCOMPACTED_BYTES,
-        );
-        if (this.keepUncompactedBytes >= this.thresholdBytes) {
-            // A misconfigured pair would compact forever (split point
-            // sits past the trigger threshold). Fail loud at boot.
-            throw new Error(
-                `chat.compaction.keepUncompactedBytes (${this.keepUncompactedBytes}) must be less than chat.compaction.thresholdBytes (${this.thresholdBytes})`,
-            );
-        }
+        // Fail loud at boot on a misconfigured pair; later passes re-read
+        // the (reloadable) config through the same check.
+        readCompactionLimits(deps.config);
         this.notifyHandler = () => {
             void this.maybeCompact().catch((err) => {
                 this.deps.log.error(
@@ -211,8 +229,9 @@ export class ChatCompactor {
         }
         await this.deps.connection.listen(CHATMESSAGES_NEW_CHANNEL, this.notifyHandler);
         this.listening = true;
+        const limits = readCompactionLimits(this.deps.config);
         this.deps.log.info(
-            `chat compactor started (thresholdBytes=${this.thresholdBytes}, keepUncompactedBytes=${this.keepUncompactedBytes})`,
+            `chat compactor started (thresholdBytes=${limits.thresholdBytes}, keepUncompactedBytes=${limits.keepUncompactedBytes})`,
         );
         // Catch up on any pending compaction from prior runs (e.g. the
         // daemon was killed mid-grow). Cheap when nothing's pending.
@@ -241,12 +260,13 @@ export class ChatCompactor {
         }
         this.inFlight = true;
         try {
+            const limits = readCompactionLimits(this.deps.config);
             const totalBytes = await this.fetchTotalBytes();
-            if (totalBytes <= this.thresholdBytes) {
+            if (totalBytes <= limits.thresholdBytes) {
                 return;
             }
 
-            const batch = await this.collectToCompactBatch();
+            const batch = await this.collectToCompactBatch(limits.keepUncompactedBytes);
             if (batch.ids.length === 0) {
                 // Nothing older than the keep window even though we're
                 // over threshold — every row sits inside the kept set
@@ -255,8 +275,8 @@ export class ChatCompactor {
                 this.deps.log.warn(
                     {
                         totalBytes,
-                        thresholdBytes: this.thresholdBytes,
-                        keepUncompactedBytes: this.keepUncompactedBytes,
+                        thresholdBytes: limits.thresholdBytes,
+                        keepUncompactedBytes: limits.keepUncompactedBytes,
                     },
                     "chat compaction triggered but nothing falls outside the keep window",
                 );
@@ -309,8 +329,10 @@ export class ChatCompactor {
      * Fetch every row newest→oldest and hand them to
      * {@link selectCompactionBatch}. Thin DB shim so the split-point
      * math stays pure and unit-testable.
+     *
+     * @param keepUncompactedBytes Size of the newest-rows window kept verbatim.
      */
-    private async collectToCompactBatch(): Promise<CompactionBatch> {
+    private async collectToCompactBatch(keepUncompactedBytes: number): Promise<CompactionBatch> {
         const result = await this.deps.connection.getPool().query<{
             id: string;
             role: "user" | "assistant";
@@ -332,7 +354,7 @@ export class ChatCompactor {
             byteSize: Number.parseInt(row.byte_size, 10),
         }));
 
-        return selectCompactionBatch(rows, this.keepUncompactedBytes);
+        return selectCompactionBatch(rows, keepUncompactedBytes);
     }
 
     /**

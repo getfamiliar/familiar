@@ -33,6 +33,7 @@ import { PluginMcpService } from "../mcp/PluginMcpService.js";
 import { ModelMetadataService } from "../models/ModelMetadataService.js";
 import type { ResolvedProvider } from "../models/ProviderResolution.js";
 import { buildReflectionTools } from "../reflection/ReflectionTools.js";
+import { isConfigKeyOverlapping } from "../reload/ConfigDiff.js";
 import { parseStorageSettings } from "../storage/StorageConfig.js";
 import { StorageRegistry } from "../storage/StorageRegistry.js";
 import { StorageService } from "../storage/StorageService.js";
@@ -73,6 +74,16 @@ export interface PluginEmittedEvent extends EmittedEventDescriptor {
 /** Lifecycle hook a plugin failed in; see {@link PluginHost.failedPlugins}. */
 type PluginFailurePhase = "prepare" | "start" | "tools";
 
+/** Outcome of reloading the plugins after a config change. */
+export interface PluginReloadReport {
+    /** Plugins stopped and started again (successfully). */
+    readonly restarted: readonly string[];
+    /** Plugins whose restart failed in a hook; they are disabled now. */
+    readonly failed: readonly { readonly pluginId: string; readonly message: string }[];
+    /** Plugins affected by the change that have a `start` but no `stop`. */
+    readonly needsDaemonRestart: readonly string[];
+}
+
 /** Why a plugin was disabled: the hook that threw and what it threw. */
 interface PluginFailure {
     readonly phase: PluginFailurePhase;
@@ -101,6 +112,7 @@ export class PluginHost {
     private readonly config: ConfigService;
     private readonly mcpRegistry: McpRegistry;
     private readonly mcpService: PluginMcpService;
+    private readonly calendarRegistry: CalendarRegistry;
     private readonly calendarService: CalendarService;
     private readonly calendarSafety: CalendarSafety;
     private readonly mailRegistry: MailRegistry;
@@ -155,9 +167,10 @@ export class PluginHost {
             log: log.child({ component: "plugin-mcp" }),
         });
         const calendarStore = new CalendarStore(() => this.ensureConnection());
+        this.calendarRegistry = new CalendarRegistry();
         this.calendarService = new CalendarService({
             store: calendarStore,
-            registry: new CalendarRegistry(),
+            registry: this.calendarRegistry,
             events: async () => new EventBus(await this.ensureConnection()),
             config: this.config,
             log: log.child({ component: "calendar" }),
@@ -647,8 +660,12 @@ export class PluginHost {
      * does this explicitly so cross-plugin module state populated in
      * `prepare` is reliably visible by the time any `start` body
      * runs.
+     *
+     * @param daemonCoreTools Core tools the daemon builds itself (they
+     *   need daemon-owned objects such as the config reloader); registered
+     *   together with the host's own core tools.
      */
-    async startDaemons(): Promise<void> {
+    async startDaemons(daemonCoreTools: readonly PluginTool[] = []): Promise<void> {
         this.logSuppressedDevEvents();
         for (const plugin of this.plugins) {
             const host = plugin.host;
@@ -695,6 +712,7 @@ export class PluginHost {
                     logsDir: this.boot.logsDir,
                     scratchDir: this.boot.scratchDir,
                 }),
+                ...daemonCoreTools,
             ];
             this.toolsRegistry.register("core", coreCtx, coreTools);
             const registered = this.toolsRegistry.list();
@@ -711,6 +729,125 @@ export class PluginHost {
             this.log.warn(
                 `${this.failedPlugins.size} plugin${this.failedPlugins.size === 1 ? "" : "s"} disabled: ${summary}`,
             );
+        }
+    }
+
+    /**
+     * Restart every plugin a config reload affects: those whose own
+     * `<plugin.id>.*` group or one of its declared
+     * {@link import("@getfamiliar/shared").PluginHostManifest.restartOnConfigChange}
+     * subtrees changed. A plugin added to the config for the first time
+     * (e.g. `telegram.botToken` set via chat) starts here, without a
+     * daemon restart. Plugins are restarted one after another in
+     * registration order.
+     *
+     * @param changedKeys Dotted config paths the reload changed.
+     * @returns Which plugins restarted, failed, or need a daemon restart.
+     */
+    async reloadPluginsForConfigChange(
+        changedKeys: readonly string[],
+    ): Promise<PluginReloadReport> {
+        const restarted: string[] = [];
+        const failed: { pluginId: string; message: string }[] = [];
+        const needsDaemonRestart: string[] = [];
+        for (const plugin of this.plugins) {
+            const watched = [plugin.id, ...(plugin.host?.restartOnConfigChange ?? [])];
+            const isAffected = changedKeys.some((key) =>
+                watched.some((prefix) => isConfigKeyOverlapping(key, prefix)),
+            );
+            if (!isAffected || !plugin.host) {
+                continue;
+            }
+            if (this.isPluginRunning(plugin.id) && plugin.host.start && !plugin.host.stop) {
+                needsDaemonRestart.push(plugin.id);
+                this.log.warn(
+                    `plugin "${plugin.id}" config changed, but the plugin has no stop hook — restart the daemon to apply it`,
+                );
+                continue;
+            }
+            await this.restartPlugin(plugin);
+            const failure = this.failedPlugins.get(plugin.id);
+            if (failure === undefined) {
+                restarted.push(plugin.id);
+            } else {
+                failed.push({
+                    pluginId: plugin.id,
+                    message: `${failure.phase}: ${failure.error.message}`,
+                });
+            }
+        }
+        return { restarted, failed, needsDaemonRestart };
+    }
+
+    /**
+     * Whether the plugin's `start` ran successfully (or it has none) —
+     * i.e. it was not disabled in `prepare` or `start`.
+     *
+     * @param pluginId Plugin id.
+     * @returns `true` when the plugin is live.
+     */
+    private isPluginRunning(pluginId: string): boolean {
+        const phase = this.failedPlugins.get(pluginId)?.phase;
+        return phase !== "prepare" && phase !== "start";
+    }
+
+    /**
+     * Stop one plugin, drop everything it registered with the host, and
+     * run `prepare` → `start` → `tools` again in this process. Hook
+     * failures disable the plugin exactly like at boot (see
+     * {@link failedPlugins}); a throwing `stop` is logged and the restart
+     * continues. Tool calls arriving mid-restart fail as unknown tools.
+     *
+     * Subscriptions the plugin opened itself (chat, workspace watcher)
+     * are its `stop` hook's job; the host only unregisters what it can
+     * see: tools, mail / calendar / storage providers and prompt
+     * appenders / placeholders.
+     *
+     * @param plugin The plugin to restart.
+     */
+    private async restartPlugin(plugin: PluginManifest): Promise<void> {
+        const host = plugin.host;
+        if (!host) {
+            return;
+        }
+        if (this.isPluginRunning(plugin.id) && host.stop) {
+            try {
+                await host.stop(this.context(plugin.id));
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                this.log.error(
+                    { plugin: plugin.id, err: message },
+                    `plugin "${plugin.id}" stop hook threw during restart: ${message} — restarting anyway`,
+                );
+            }
+        }
+        this.toolsRegistry?.unregisterPlugin(plugin.id);
+        this.mailRegistry.unregisterPlugin(plugin.id);
+        this.calendarRegistry.unregisterPlugin(plugin.id);
+        this.storageRegistry.unregisterPlugin(plugin.id);
+        this.promptAppenderRegistry.unregisterPlugin(plugin.id);
+        this.promptPlaceholderRegistry.unregisterPlugin(plugin.id);
+        this.storageService.resetCaches();
+        this.failedPlugins.delete(plugin.id);
+
+        const ctx = this.context(plugin.id);
+        if (host.prepare) {
+            try {
+                host.prepare(ctx);
+            } catch (err) {
+                this.disablePlugin(plugin.id, "prepare", err);
+            }
+        }
+        if (host.start && !this.failedPlugins.has(plugin.id)) {
+            try {
+                await host.start(ctx);
+            } catch (err) {
+                this.disablePlugin(plugin.id, "start", err);
+            }
+        }
+        this.registerPluginTools(plugin, ctx);
+        if (!this.failedPlugins.has(plugin.id)) {
+            this.log.info(`plugin "${plugin.id}" restarted after config change`);
         }
     }
 
@@ -991,7 +1128,7 @@ function disabledPluginTool(
         execute: async () => {
             throw new Error(
                 `plugin "${pluginId}" failed in ${failure.phase} (${failure.error.message}); ` +
-                    "fix the cause and restart the daemon",
+                    "fix the cause, then reload the config (config_reload) or restart the daemon",
             );
         },
     };

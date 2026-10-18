@@ -67,6 +67,8 @@ interface CatalogEntry extends McpToolGating {
     readonly id: string;
     readonly title: string;
     readonly description: string;
+    /** Bumped by the host whenever a reload rebuilds this id's transport. */
+    readonly generation: number;
 }
 
 /** Internal record per declared MCP after the pool has connected. */
@@ -82,10 +84,12 @@ interface PooledClient extends McpToolGating {
  *
  * Lifecycle: at agent boot, {@link start} fetches the bastion's
  * `/mcp` catalog, spins up an MCP client per id over Streamable HTTP,
- * and pre-fetches each client's tool set. Per-agentrun the
- * {@link tools} method returns a merged, namespaced `ToolSet` that is
- * passed straight into `ToolsFactory.build`. {@link close} tears down
- * every client during container shutdown.
+ * and pre-fetches each client's tool set. Per agentrun,
+ * {@link refreshIfChanged} re-reads the catalog and reconnects only the
+ * ids a host config reload added or rebuilt; then the {@link tools}
+ * method returns a merged, namespaced `ToolSet` that is passed straight
+ * into `ToolsFactory.build`. {@link close} tears down every client
+ * during container shutdown.
  *
  * Tool naming: each MCP tool is registered as `${id}_${toolName}`.
  * Our id regex (`^[a-z0-9][a-z0-9-]*$`) bans underscores so the
@@ -103,6 +107,10 @@ export class McpClientPool {
     private merged: ToolSet = {};
     private keysById: Map<string, ReadonlySet<string>> = new Map();
     private levelsByKey: Map<string, ToolLevel> = new Map();
+    /** Catalog generation last attempted per id, whether the connect succeeded or not. */
+    private readonly attemptedGenerations = new Map<string, number>();
+    /** The refresh in progress, shared by concurrent {@link refreshIfChanged} callers. */
+    private refreshing: Promise<void> | undefined;
 
     constructor(config: McpClientPoolConfig) {
         this.config = config;
@@ -115,18 +123,65 @@ export class McpClientPool {
      * misbehaving MCP must not prevent the agent from booting.
      */
     async start(): Promise<void> {
-        const catalog = await this.fetchCatalog();
-        if (catalog.length === 0) {
-            this.config.log.info("no MCPs in catalog; pool empty");
+        await this.refreshIfChanged();
+    }
+
+    /**
+     * Bring the pool in line with the bastion's catalog after a host
+     * config reload. Called once per agentrun (cheap: one catalog GET).
+     * Ids that disappeared are closed; ids that are new or whose
+     * `generation` changed (the host rebuilt their transport, so the old
+     * session is stale) are (re)connected; everything else is untouched.
+     * An id that failed to connect is retried only once its generation
+     * changes, so a broken MCP doesn't cost a spawn attempt per run.
+     *
+     * Concurrent callers share one refresh. A catalog fetch failure is
+     * logged and leaves the pool as it is.
+     */
+    async refreshIfChanged(): Promise<void> {
+        if (this.refreshing === undefined) {
+            this.refreshing = this.refresh().finally(() => {
+                this.refreshing = undefined;
+            });
+        }
+        await this.refreshing;
+    }
+
+    /** Worker for {@link refreshIfChanged}. */
+    private async refresh(): Promise<void> {
+        let catalog: CatalogEntry[];
+        try {
+            catalog = await this.fetchCatalog();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.config.log.warn(`mcp catalog fetch failed, keeping current pool: ${message}`);
             return;
         }
-        const settled = await Promise.allSettled(catalog.map((entry) => this.connectOne(entry)));
+        const catalogIds = new Set(catalog.map((entry) => entry.id));
+        const stale = catalog.filter(
+            (entry) => this.attemptedGenerations.get(entry.id) !== entry.generation,
+        );
+        const removedIds = [...this.attemptedGenerations.keys()].filter(
+            (id) => !catalogIds.has(id),
+        );
+        if (stale.length === 0 && removedIds.length === 0) {
+            return;
+        }
+        const dropIds = new Set([...removedIds, ...stale.map((entry) => entry.id)]);
+        await this.closeClients(this.clients.filter((c) => dropIds.has(c.id)));
+        this.clients = this.clients.filter((c) => !dropIds.has(c.id));
+        for (const id of removedIds) {
+            this.attemptedGenerations.delete(id);
+        }
+
+        const settled = await Promise.allSettled(stale.map((entry) => this.connectOne(entry)));
         for (let i = 0; i < settled.length; i++) {
             const result = settled[i];
-            const entry = catalog[i];
-            if (result.status === "fulfilled" && result.value !== null) {
+            const entry = stale[i];
+            this.attemptedGenerations.set(entry.id, entry.generation);
+            if (result.status === "fulfilled") {
                 this.clients.push(result.value);
-            } else if (result.status === "rejected") {
+            } else {
                 const reason =
                     result.reason instanceof Error ? result.reason.message : String(result.reason);
                 this.config.log.error(
@@ -145,8 +200,9 @@ export class McpClientPool {
                     `  ${c.id} — ${countTools(c.tools)} tool${countTools(c.tools) === 1 ? "" : "s"}`,
             )
             .join("\n");
+        const changes = removedIds.length > 0 ? ` (removed: ${removedIds.join(", ")})` : "";
         this.config.log.info(
-            `mcp client pool initialized: ${totalTools} tool${totalTools === 1 ? "" : "s"} across ${this.clients.length} server${this.clients.length === 1 ? "" : "s"}\n${breakdown}`,
+            `mcp client pool synced with catalog: ${totalTools} tool${totalTools === 1 ? "" : "s"} across ${this.clients.length} server${this.clients.length === 1 ? "" : "s"}, (re)connected ${stale.map((e) => e.id).join(", ") || "none"}${changes}\n${breakdown}`,
         );
     }
 
@@ -190,8 +246,22 @@ export class McpClientPool {
 
     /** Close every client. Per-client failures are logged and swallowed. */
     async close(): Promise<void> {
+        await this.closeClients(this.clients);
+        this.clients = [];
+        this.attemptedGenerations.clear();
+        this.merged = {};
+        this.keysById = new Map();
+        this.levelsByKey = new Map();
+    }
+
+    /**
+     * Close the given clients in parallel; per-client failures are logged.
+     *
+     * @param clients The pooled clients to close.
+     */
+    private async closeClients(clients: readonly PooledClient[]): Promise<void> {
         await Promise.allSettled(
-            this.clients.map(async (c) => {
+            clients.map(async (c) => {
                 try {
                     await c.client.close();
                 } catch (err) {
@@ -200,10 +270,6 @@ export class McpClientPool {
                 }
             }),
         );
-        this.clients = [];
-        this.merged = {};
-        this.keysById = new Map();
-        this.levelsByKey = new Map();
     }
 
     /**
@@ -242,6 +308,7 @@ export class McpClientPool {
                     denylist: stringArray(e.denylist),
                     approval: stringArray(e.approval),
                     privileged: stringArray(e.privileged),
+                    generation: typeof e.generation === "number" ? e.generation : 0,
                 });
             }
         }

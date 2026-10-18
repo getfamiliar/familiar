@@ -24,7 +24,7 @@ export interface RegisteredPromptAppender {
  * is preserved so the assembled section list is stable across calls.
  */
 export class PromptAppenderRegistry {
-    private readonly entries: RegisteredPromptAppender[] = [];
+    private entries: RegisteredPromptAppender[] = [];
 
     /**
      * Register an appender for `pluginId`. Plugins may register more
@@ -40,6 +40,17 @@ export class PromptAppenderRegistry {
             throw new Error("PromptAppenderRegistry.register: pluginId must be non-empty");
         }
         this.entries.push({ pluginId, fn });
+    }
+
+    /**
+     * Drop whatever `pluginId` registered here, so the plugin can
+     * register again after a restart (config reload). No-op when it
+     * registered nothing.
+     *
+     * @param pluginId The restarting plugin.
+     */
+    unregisterPlugin(pluginId: string): void {
+        this.entries = this.entries.filter((entry) => entry.pluginId !== pluginId);
     }
 
     /**

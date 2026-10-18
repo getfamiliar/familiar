@@ -1,6 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Logger } from "@getfamiliar/shared";
 import { parse, YAMLParseError } from "yaml";
+import {
+    DEFAULT_COMPACTION_THRESHOLD_BYTES,
+    DEFAULT_KEEP_UNCOMPACTED_BYTES,
+} from "../chat/ChatCompactor.js";
 import { isSafePipRequirement } from "../container-bridge/PythonPackages.js";
 import { lintStorageStatic } from "../storage/StorageConfig.js";
 
@@ -94,6 +98,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
         "inference.contextManagement.thresholdPercentage",
         warnings,
     );
+    lintChatCompaction(config, errors);
     // Storage is a core group like `inference`; plugin-aware checks
     // (unknown `plugin:`) need the loaded providers and run separately.
     for (const finding of lintStorageStatic(config.storage)) {
@@ -256,6 +261,25 @@ function optionalPositiveInt(
     }
     if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
         warnings.push(`${path} should be a positive integer (got ${describe(value)}).`);
+    }
+}
+
+/**
+ * Validate the `chat.compaction.*` byte pair: `keepUncompactedBytes`
+ * must stay below `thresholdBytes` (defaults applied for the absent
+ * one), otherwise the compactor would compact forever. An error, not a
+ * warning — the compactor refuses to run with such a pair.
+ */
+function lintChatCompaction(root: Record<string, unknown>, errors: string[]): void {
+    const threshold = readPath(root, "chat.compaction.thresholdBytes");
+    const keep = readPath(root, "chat.compaction.keepUncompactedBytes");
+    const thresholdBytes =
+        typeof threshold === "number" ? threshold : DEFAULT_COMPACTION_THRESHOLD_BYTES;
+    const keepUncompactedBytes = typeof keep === "number" ? keep : DEFAULT_KEEP_UNCOMPACTED_BYTES;
+    if (keepUncompactedBytes >= thresholdBytes) {
+        errors.push(
+            `chat.compaction.keepUncompactedBytes (${keepUncompactedBytes}) must be less than chat.compaction.thresholdBytes (${thresholdBytes}).`,
+        );
     }
 }
 

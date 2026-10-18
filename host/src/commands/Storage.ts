@@ -329,7 +329,7 @@ function addCommand(pluginHost: PluginHost) {
                 () => assertLintClean(boot.configFile),
             );
             writeMarkdown(
-                `# storage add\n\nAdded to \`storage.mounts\` in ${boot.configFile}:\n\n\`\`\`yaml\n${block}\`\`\`\n\n${notes.join("\n\n")}\n\nRestart the daemon to apply.\n`,
+                `# storage add\n\nAdded to \`storage.mounts\` in ${boot.configFile}:\n\n\`\`\`yaml\n${block}\`\`\`\n\n${notes.join("\n\n")}\n\nApply it to a running daemon with \`familiar config reload\`.\n`,
                 { raw: args.raw === true },
             );
         },
@@ -372,7 +372,7 @@ function removeCommand() {
             }
             writeConfigAtomically(boot.configFile, updated, () => assertLintClean(boot.configFile));
             writeMarkdown(
-                `# storage remove\n\nRemoved mount \`${args.alias}\`. Restart the daemon to apply.\n`,
+                `# storage remove\n\nRemoved mount \`${args.alias}\`. Apply it to a running daemon with \`familiar config reload\`.\n`,
                 {
                     raw: args.raw === true,
                 },

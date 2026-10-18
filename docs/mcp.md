@@ -111,7 +111,7 @@ Each element of the `env` array is a mapping with these fields:
 | --- | --- | --- | --- |
 | `name` | string | yes | Environment-variable name. |
 | `value` | string | yes | The value injected into the container. |
-| `is_secret` | boolean | no | Marks the value as sensitive. Drives log masking once that lands; informational today. |
+| `is_secret` | boolean | no | Marks the value as sensitive: the agent's `mcp_*` tools mask it and refuse to write it (names containing `KEY`/`TOKEN`/`PASSWORD`/`SECRET` count as secret anyway). Log masking is not implemented yet. |
 | `example` | string | no | Placeholder shown by the (future) "add MCP" CLI. |
 | `description` | string | no | Human-facing help string. |
 
@@ -140,6 +140,23 @@ only.
 > doesn't — fully air-gapped installs aren't supported.
 >
 > Prep runs **only when the per-MCP mount dir is empty** (`tmp/mcp-mount-<id>/`). Once the package is cached, daemon restarts skip prep entirely — otherwise the package's install hooks would run with full network on every restart and could exfiltrate anything the offline phase-2 run had stashed in `/work`. A successful prep records a stamp next to the mount dir (`tmp/mcp-mount-<id>.prep.json`, outside `/work` so the MCP can't forge it) with the package, version, `command` and runtime image id. When any of them changes — a version bump in `mcp.yml`, or a rebuilt runtime image whose package manager uses a new cache layout (uv 0.12 reads `simple-v25/`, older caches only have `simple-v21/`) — the next start wipes the mount dir and preps afresh; it never re-preps in place. This applies only to `network.disable: true` entries, which can't hold login state anyway; online MCPs' mount dirs (e.g. totem's tokens) are never wiped. To force a re-prep (e.g. a poisoned cache), delete `tmp/mcp-mount-<id>/` and restart the daemon. If prep fails, the mount dir is wiped so the next start retries.
+
+## Reloading `mcp.yml`
+
+`mcp.yml` is parsed at daemon start and again on every config reload — `familiar config reload` from the shell or the privileged agent tool `config_reload` (both also reload `config.yml`, see `docs/config.md`). There is no file watcher: a half-edited file is never applied. A reload:
+
+1. **Validates first.** The whole file is linted, and an id that would collide with a plugin's tool group is refused. On any error nothing is applied and the daemon keeps the previous entries.
+2. **Diffs by id.** An entry counts as *changed* when any of its fields differ (env, args, gating, version, …).
+3. **Applies the diff in the gateway.** Removed and changed ids get their transport stopped (`familiar-mcp-<id>` is removed), changed and added ids get a fresh transport, and unchanged ids keep theirs. A request still in flight on a replaced transport is cut off; during the swap the affected ids answer 404. Newly referenced npm/pypi runtime images are built on demand.
+4. **Resyncs the clients.** Host-side plugin MCP sessions of removed and changed ids are dropped and reconnect on their next call. Every catalog entry carries a `generation` that changes whenever its transport is rebuilt; the agent container checks the catalog at the start of every agentrun and reconnects only ids whose generation changed (a fresh stdio child has not seen the old session's `initialize`). An id that failed to connect is retried only after its generation changes.
+
+Runs already in progress keep the tool set they started with; new tools appear from the next agentrun on.
+
+### Agent tools
+
+Privileged runs can edit `mcp.yml` themselves (tool group `config`): `mcp_list` (entries as on disk, secret env values masked, with `pending-add` / `pending-change` / `pending-remove` status), `mcp_add` (writes one complete entry; it does not search any registry), `mcp_remove`, and `mcp_set_env` (sets or adds one env var). None of them applies anything — the agent calls `config_reload` after its edits.
+
+**Secrets never pass through the agent.** An env var is a secret when it has `is_secret: true` or its name contains `KEY`, `TOKEN`, `PASSWORD` or `SECRET` (case-insensitive). `mcp_list` masks such values (`"***set***"` / `null`), `mcp_add` only accepts them empty and reports them as still to be entered, and `mcp_set_env` refuses them. The user enters secret values directly (by editing `mcp.yml`, or later through a dedicated secret prompt).
 
 ## How handlers use MCP tools
 
@@ -339,9 +356,7 @@ namespaced `atlassian_jira_create_issue` key. They apply **in this order**:
 Glob semantics match the `tools:` matcher: a bare name is an exact match; `*` matches any sequence
 (including `_`), fully anchored (`comment_*` matches `comment_reply` but not `commentary`). Some servers prefix their own tool names (totem reports `whoop_profile_update`), so check the bare names with `familiar tools list --mcp` — `familiar tools lint-mcps` warns about patterns that match no tool while the daemon is running.
 
-The config lives host-side in `mcp.yml`; the `/mcp/` catalog ships the four lists verbatim and the
-container resolves them (read once at boot — a change needs a daemon restart). `familiar tools list`
-applies the same gating so the operator sees exactly the agent's surface.
+The config lives host-side in `mcp.yml`; the `/mcp/` catalog ships the four lists verbatim and the container resolves them. A change applies with `familiar config reload` (or the agent's `config_reload` tool) — see "Reloading `mcp.yml`" below. `familiar tools list` applies the same gating so the operator sees exactly the agent's surface.
 
 ```yaml
 atlassian:
@@ -357,6 +372,7 @@ atlassian:
 
 ## Operations
 
+- **Reload.** `familiar config reload` applies `config/mcp.yml` (together with `config/config.yml`) to the running daemon — see "Reloading `mcp.yml`" below.
 - **List every tool.** `familiar tools list [search]` lists every tool the agent can use — container
   built-ins (`send_chat`, `fs_*`, `bash`, …), host plugin tools (`mail_*`, `whatsapp_*`, the
   reflection tools), and MCP functions — grouped by tool group. Non-`default` tools are badged
@@ -394,7 +410,7 @@ atlassian:
   vars (with the registry's description and example surfaced inline; secrets prompted via
   `password`), optional extra args, and the network setting; then shows a YAML preview and appends
   to `config/mcp.yml` on confirmation. Re-lints after writing so any structural problem surfaces
-  immediately.
+  immediately, then offers to reload the running daemon so the new MCP starts right away.
 
   The positional `<package>` is the **search term** for the registries (e.g. `fetch`,
   `mcp-server-time`, `io.github.foo/bar`). The local `mcp.yml` key is *derived* from the

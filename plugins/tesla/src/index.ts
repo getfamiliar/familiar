@@ -23,6 +23,9 @@ export default definePlugin({
     workspaceTemplate: path.join(import.meta.dirname, "..", "workspace-template"),
     host: {
         start: (ctx) => startTeslaDaemon(ctx),
+        // Nothing to release: no pollers or sockets, and `start` replaces
+        // the active session on a restart (config reload).
+        stop: async () => {},
         commands: (ctx) => buildTeslaCommands(ctx),
         tools: () => buildTeslaTools(),
     },

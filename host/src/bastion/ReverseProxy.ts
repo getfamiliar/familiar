@@ -88,21 +88,45 @@ export class ReverseProxy implements BastionModule {
     readonly name = "reverse-proxy";
 
     private readonly config: ReverseProxyConfig;
+    /** Live provider table; starts as `config.providers`, swapped by {@link applySettings}. */
+    private providers: Readonly<Record<string, ProviderConfig>>;
+    /** Live capture switch; starts as `config.captureModelHttpRequestBodies`. */
+    private captureModelHttpRequestBodies: boolean;
     private captureDirEnsured = false;
 
     constructor(config: ReverseProxyConfig) {
         this.config = config;
+        this.providers = config.providers;
+        this.captureModelHttpRequestBodies = config.captureModelHttpRequestBodies === true;
+    }
+
+    /**
+     * Swap the provider table and the capture switch after a config
+     * reload. Requests already being forwarded keep the provider they
+     * resolved; the next request sees the new table.
+     *
+     * @param settings The rebuilt provider table and capture switch.
+     */
+    applySettings(settings: {
+        readonly providers: Readonly<Record<string, ProviderConfig>>;
+        readonly captureModelHttpRequestBodies: boolean;
+    }): void {
+        this.providers = settings.providers;
+        this.captureModelHttpRequestBodies = settings.captureModelHttpRequestBodies;
+        const ids = Object.keys(this.providers);
+        this.config.log.info(
+            `reverse-proxy reloaded: ${ids.length} provider${ids.length === 1 ? "" : "s"} (${ids.join(", ") || "none"}), body capture ${this.captureModelHttpRequestBodies ? "ON" : "off"}`,
+        );
     }
 
     async start(bastion: Bastion): Promise<void> {
         bastion.registerPrefix("/llm/", (req, res, restPath) => {
             this.handle(req, res, restPath);
         });
-        const ids = Object.keys(this.config.providers);
-        const captureSuffix =
-            this.config.captureModelHttpRequestBodies === true
-                ? ` (body capture ON → ${this.config.captureDir ?? "<unset>"})`
-                : "";
+        const ids = Object.keys(this.providers);
+        const captureSuffix = this.captureModelHttpRequestBodies
+            ? ` (body capture ON → ${this.config.captureDir ?? "<unset>"})`
+            : "";
         this.config.log.info(
             ids.length === 0
                 ? `reverse-proxy registered /llm/ for no providers${captureSuffix}`
@@ -129,7 +153,7 @@ export class ReverseProxy implements BastionModule {
         }
         const providerId = trimmed.slice(0, slashIdx);
         const upstreamPath = trimmed.slice(slashIdx); // includes leading `/`
-        const provider = this.config.providers[providerId];
+        const provider = this.providers[providerId];
         if (provider === undefined) {
             replyError(res, 404, `unknown provider "${providerId}"`);
             return;
@@ -301,7 +325,7 @@ export class ReverseProxy implements BastionModule {
         fullUrl: string,
         forwardedHeaders: Readonly<Record<string, string | string[]>>,
     ): CaptureHandles | undefined {
-        if (this.config.captureModelHttpRequestBodies !== true) {
+        if (!this.captureModelHttpRequestBodies) {
             return undefined;
         }
         const dir = this.config.captureDir;

@@ -63,4 +63,89 @@ export class ContainerConfig {
     toJSON(): string {
         return JSON.stringify(this.map);
     }
+
+    /**
+     * The collected map as a fresh object, e.g. for the bastion's
+     * `/container-config/` endpoint.
+     *
+     * @returns A shallow copy of the flat config map.
+     */
+    toValues(): Record<string, unknown> {
+        return { ...this.map };
+    }
+}
+
+/**
+ * `config.yml` keys forwarded verbatim into the agent container. Their
+ * defaults live container-side; absent keys are simply omitted.
+ */
+export const FORWARDED_CONTAINER_CONFIG_KEYS: readonly string[] = [
+    "core.postgresPassword",
+    "core.agentStepTimeout",
+    "core.toolCallOffloadingLimit",
+    "core.maxToolDescriptionChars",
+    "core.toolDefinitionsContextFraction",
+    "core.toolHeuristicRunWindow",
+    "core.timezone",
+    "inference.defaultProvider",
+    "inference.defaultModel",
+    "inference.aliases",
+    "inference.maxRetries",
+    "inference.outputFallbackPercentage",
+    "inference.captureInitialMessageHistory",
+    "inference.contextManagement.thresholdPercentage",
+];
+
+/** Values the daemon computes (or resolves with host-side defaults) for the container. */
+export interface AgentContainerComputedValues {
+    /** Bastion URL as the agent dials it (via the bridge sidecar). */
+    readonly bastionUrl: string;
+    /** Shared bastion token. */
+    readonly bastionToken: string;
+    /** Provider id → npm package of every resolved inference provider. */
+    readonly providerNpmPackages: Readonly<Record<string, string>>;
+    /** Container log level (`debug` / `info`). */
+    readonly logLevel: string;
+    /** Resolved `core.logSystemPrompt` mode. */
+    readonly logSystemPrompt: string;
+    /** Resolved `inference.captureRawStepResultToDatabase` (dev default applied). */
+    readonly captureRawStepResultToDatabase: boolean;
+    /** `core.writablePaths` with the default applied. */
+    readonly writablePaths: readonly string[];
+    /** `python.packages` with the default applied. */
+    readonly pythonPackages: readonly string[];
+}
+
+/**
+ * Build the flat config map the agent container reads through
+ * `PassedConfig`. Used for the `FAMILIAR_CONTAINER_CONFIG` env var at
+ * container start and, after a config reload, for the bastion's
+ * `/container-config/` endpoint the container polls per agentrun.
+ *
+ * @param config Host config service (forwarded keys are read from it).
+ * @param computed Values resolved by the daemon.
+ * @returns The populated collector.
+ */
+export function buildAgentContainerConfig(
+    config: HostConfigService,
+    computed: AgentContainerComputedValues,
+): ContainerConfig {
+    const containerConfig = new ContainerConfig(config);
+    for (const key of FORWARDED_CONTAINER_CONFIG_KEYS) {
+        containerConfig.addConfigKey(key);
+    }
+    containerConfig.addValue("bastionUrl", computed.bastionUrl);
+    containerConfig.addValue("bastionToken", computed.bastionToken);
+    containerConfig.addValue("inference.providers", computed.providerNpmPackages);
+    containerConfig.addValue("core.logLevel", computed.logLevel);
+    containerConfig.addValue("core.logSystemPrompt", computed.logSystemPrompt);
+    containerConfig.addValue(
+        "inference.captureRawStepResultToDatabase",
+        computed.captureRawStepResultToDatabase,
+    );
+    // writablePaths / python.packages carry their host-resolved value
+    // (default applied) rather than the raw config read.
+    containerConfig.addValue("core.writablePaths", computed.writablePaths);
+    containerConfig.addValue("python.packages", computed.pythonPackages);
+    return containerConfig;
 }

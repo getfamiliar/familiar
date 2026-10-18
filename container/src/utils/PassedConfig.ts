@@ -17,19 +17,61 @@
 const CONFIG_ENV_VAR = "FAMILIAR_CONTAINER_CONFIG";
 
 /**
- * Parse the passed-config blob from the environment. A missing, blank, or
+ * The map last fetched from the bastion's `/container-config/` endpoint
+ * (see {@link applyPassedConfigOverlay}). When set it replaces the env
+ * blob entirely — a key the host dropped on reload must read as absent,
+ * not fall back to its boot-time env value.
+ */
+let overlay: { readonly version: number; readonly values: Record<string, unknown> } | undefined;
+
+/**
+ * Replace the passed config with a map the host published after a
+ * config reload. Older or equal versions are ignored, so a slow fetch
+ * can't roll back a newer one.
+ *
+ * @param version The host's publish counter.
+ * @param values The full flat config map.
+ * @returns `true` when the overlay changed.
+ */
+export function applyPassedConfigOverlay(
+    version: number,
+    values: Record<string, unknown>,
+): boolean {
+    if (overlay !== undefined && overlay.version >= version) {
+        return false;
+    }
+    overlay = { version, values };
+    return true;
+}
+
+/**
+ * Version of the applied overlay; `0` while the container still runs on
+ * its boot-time env blob. Lets caches keyed on config (e.g. the model
+ * catalogue) notice a reload.
+ *
+ * @returns The overlay version.
+ */
+export function passedConfigVersion(): number {
+    return overlay?.version ?? 0;
+}
+
+/**
+ * The passed config: the latest bastion overlay when one was applied,
+ * otherwise the blob from the environment. A missing, blank, or
  * unparseable value yields an empty map so every {@link PassedConfig.get}
  * returns `undefined` and call-site defaults take over rather than the
  * container failing to boot on a malformed blob.
  *
- * Deliberately un-cached: the blob is small and fixed for the container's
- * lifetime in production, while reading it fresh keeps the accessor
- * test-friendly (a test can set the env var per case) and matches the
- * "re-read per call" expectation of callers like `HandlerFile`.
+ * Deliberately un-cached: the blob is small, and reading it fresh keeps
+ * the accessor test-friendly (a test can set the env var per case) and
+ * matches the "re-read per call" expectation of callers like `HandlerFile`.
  *
  * @returns The parsed flat config map (possibly empty).
  */
 function load(): Record<string, unknown> {
+    if (overlay !== undefined) {
+        return overlay.values;
+    }
     const raw = process.env[CONFIG_ENV_VAR];
     if (!raw || raw.trim().length === 0) {
         return {};

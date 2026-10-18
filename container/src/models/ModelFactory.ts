@@ -8,7 +8,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createXai } from "@ai-sdk/xai";
 import type { LanguageModel } from "ai";
 import { bastionAuthHeaders } from "../utils/BastionAuth.js";
-import { PassedConfig, requireConfig } from "../utils/PassedConfig.js";
+import { PassedConfig, passedConfigVersion, requireConfig } from "../utils/PassedConfig.js";
 
 /**
  * Placeholder API key sent by every provider client. The real upstream
@@ -107,10 +107,21 @@ export interface ResolvedModelRef {
 }
 
 let catalogue: ProviderCatalogue | undefined;
+/** {@link passedConfigVersion} the cached catalogue and builders were built from. */
+let catalogueConfigVersion = 0;
 const builders = new Map<string, LanguageModelBuilder>();
 
-/** Lazy read of the `inference.*` passed config into a typed catalogue. */
+/**
+ * Lazy read of the `inference.*` passed config into a typed catalogue.
+ * Rebuilt (and the per-provider builders dropped) when a host config
+ * reload delivered a new passed-config version.
+ */
 function getCatalogue(): ProviderCatalogue {
+    if (catalogueConfigVersion !== passedConfigVersion()) {
+        catalogue = undefined;
+        builders.clear();
+        catalogueConfigVersion = passedConfigVersion();
+    }
     if (catalogue !== undefined) {
         return catalogue;
     }

@@ -45,6 +45,7 @@ let refreshTimer: NodeJS.Timeout | undefined;
 export default definePlugin({
     id: "featherless",
     host: {
+        restartOnConfigChange: [API_KEY_CONFIG],
         start: async (ctx) => {
             const apiKey = ctx.config.getString(API_KEY_CONFIG, null);
             if (apiKey === null || apiKey.length === 0) {

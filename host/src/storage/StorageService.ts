@@ -1029,6 +1029,17 @@ export class StorageService {
         return this.call(open, () => open.provider.rootRealId(open.drive));
     }
 
+    /**
+     * Forget every memoized drive handle and cached path lookup. Called
+     * after a config reload or a storage-provider plugin restart, when
+     * mounts may point elsewhere and old handles may belong to a stopped
+     * provider instance.
+     */
+    resetCaches(): void {
+        this.drives.clear();
+        this.pathCache.deletePrefix("");
+    }
+
     /** Drop cached path lookups for a mount after a mutation. */
     private invalidate(alias: string): void {
         this.pathCache.deletePrefix(`${alias}\u0000`);

@@ -4,7 +4,11 @@ import { readAuthorizedNumber, WHATSAPP_AGENT_TOPIC } from "./AgentAccount.js";
 import { buildCommands } from "./Commands.js";
 import { createSocketRegistry } from "./Connection.js";
 import { WHATSAPP_DIRECT_TOPIC, WHATSAPP_GROUP_TOPIC } from "./UserAccount.js";
-import { startWhatsAppDaemon, type WhatsAppSocketRegistries } from "./WhatsAppDaemon.js";
+import {
+    startWhatsAppDaemon,
+    stopWhatsAppDaemon,
+    type WhatsAppSocketRegistries,
+} from "./WhatsAppDaemon.js";
 import { buildWhatsAppTools } from "./WhatsAppTools.js";
 
 /**
@@ -38,6 +42,7 @@ export default definePlugin({
     workspaceTemplate: path.join(import.meta.dirname, "..", "workspace-template"),
     host: {
         start: (ctx) => startWhatsAppDaemon(ctx, socketRegistries),
+        stop: () => stopWhatsAppDaemon(),
         tools: () => buildWhatsAppTools(socketRegistries.user),
         getEmittedEvents: (ctx) => [
             {

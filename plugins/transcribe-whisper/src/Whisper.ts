@@ -30,6 +30,15 @@ export function setApiKey(key: string): void {
 }
 
 /**
+ * Forget the installed key, so a config reload that removed
+ * `inference.apiKeys.openai` deactivates transcription (calls then fail
+ * with the "not initialized" error).
+ */
+export function clearApiKey(): void {
+    apiKey = undefined;
+}
+
+/**
  * Transcribe a buffered audio file using OpenAI's Whisper API
  * (model `whisper-1`).
  *

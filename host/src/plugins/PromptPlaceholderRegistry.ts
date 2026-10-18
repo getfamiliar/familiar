@@ -52,6 +52,21 @@ export class PromptPlaceholderRegistry {
     }
 
     /**
+     * Drop whatever `pluginId` registered here, so the plugin can
+     * register again after a restart (config reload). No-op when it
+     * registered nothing.
+     *
+     * @param pluginId The restarting plugin.
+     */
+    unregisterPlugin(pluginId: string): void {
+        for (const [name, entry] of this.entries) {
+            if (entry.pluginId === pluginId) {
+                this.entries.delete(name);
+            }
+        }
+    }
+
+    /**
      * Look up one placeholder by name.
      *
      * @param name Placeholder name without braces.

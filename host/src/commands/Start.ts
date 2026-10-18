@@ -26,6 +26,7 @@ import { ModelMetadataGateway } from "../bastion/ModelMetadataGateway.js";
 import { PromptGateway } from "../bastion/PromptGateway.js";
 import { buildProviders, ReverseProxy } from "../bastion/ReverseProxy.js";
 import { ChatCompactor } from "../chat/ChatCompactor.js";
+import { buildConfigTools } from "../config/ConfigTools.js";
 import {
     AGENT_IMAGE_TAG,
     AgentContainer,
@@ -39,7 +40,11 @@ import {
     BRIDGE_IMAGE_TAG,
     ensureBridgeImage,
 } from "../container-bridge/BastionBridgeContainer.js";
-import { ContainerConfig } from "../container-bridge/ContainerConfig.js";
+import {
+    type AgentContainerComputedValues,
+    buildAgentContainerConfig,
+} from "../container-bridge/ContainerConfig.js";
+import { ContainerConfigGateway } from "../container-bridge/ContainerConfigGateway.js";
 import { ContainerToolsGateway } from "../container-bridge/ContainerToolsGateway.js";
 import { ContainerToolsRegistry } from "../container-bridge/ContainerToolsRegistry.js";
 import { CronjobScheduler } from "../cron/CronjobScheduler.js";
@@ -59,6 +64,8 @@ import { PluginHost } from "../plugins/PluginHost.js";
 import { loadPlugins } from "../plugins/PluginLoader.js";
 import { PluginToolsGateway } from "../plugins/ToolsGateway.js";
 import { PluginToolsRegistry } from "../plugins/ToolsRegistry.js";
+import { DaemonReloader } from "../reload/DaemonReloader.js";
+import { ReloadGateway } from "../reload/ReloadGateway.js";
 import { lintStorageStatic } from "../storage/StorageConfig.js";
 import { lintOrThrow } from "../utils/ConfigLinter.js";
 import { HostConfigService } from "../utils/ConfigService.js";
@@ -145,12 +152,6 @@ export const startCommand = defineCommand({
         // Postgres password is needed host-side for the postgres container;
         // it also rides into the agent via the container config blob below.
         const postgresPassword = config.getString("core.postgresPassword");
-        // In dev mode, default the inference debug captures to on when
-        // the operator hasn't pinned a value in config.yml. Explicit
-        // `true`/`false`/`"full"`/`"non-static"` in config always wins;
-        // in production the default is `"off"` so handler iteration
-        // doesn't add load to a deployed daemon.
-        const logSystemPromptMode: LogSystemPromptMode = resolveLogSystemPromptMode(config, dev);
         // Paths writable by non-privileged runs (and quoted in full by
         // the memory plugin). Accepts a bare string or a list; defaults
         // to the curated wiki plus the general-purpose files/ drop. These
@@ -162,13 +163,6 @@ export const startCommand = defineCommand({
         // Touch the chat-channel default so a missing value fails the
         // daemon now rather than at first chat event.
         config.getString("core.defaultChatChannel");
-        // Provider keys configured under inference.apiKeys. Each must
-        // resolve to a known provider (models.dev or a plugin); the
-        // reverse-proxy provider table + container env are built from the
-        // resolved set below, once the plugin host + metadata catalogue
-        // are available.
-        const apiKeys = config.getMapping("inference.apiKeys", {});
-
         const log = await buildDaemonLogger(boot, config, debugLogging);
 
         ensureDirs(boot);
@@ -207,41 +201,32 @@ export const startCommand = defineCommand({
         // resolution sees a current copy (no-op when fresh). Validate up
         // front and fail fast with one clear diagnostic, then build the
         // reverse-proxy provider table and the container's provider→npm
-        // map from the resolved set.
+        // map from the resolved set. A config reload re-runs the same
+        // resolution (see `applyInference` below).
         await pluginHost.modelMetadata.refreshIfStale(ONE_DAY_MS);
-        const providerKeys = Object.keys(apiKeys);
-        const providerErrors = await validateConfiguredProviders(providerKeys, (key) =>
-            pluginHost.modelMetadata.lookupProvider(key),
+        const providerErrors = await validateConfiguredProviders(
+            Object.keys(config.getMapping("inference.apiKeys", {})),
+            (key) => pluginHost.modelMetadata.lookupProvider(key),
         );
         if (providerErrors.length > 0) {
             throw new Error(
                 `inference provider config invalid:\n  - ${providerErrors.join("\n  - ")}`,
             );
         }
-        const resolvedProviders = (
-            await Promise.all(providerKeys.map((key) => pluginHost.resolveProvider(key)))
-        ).filter((p): p is ResolvedProvider => p !== undefined);
-        const providers = buildProviders(resolvedProviders);
-        const providerNpmPackages: Record<string, string> = {};
-        for (const provider of resolvedProviders) {
-            providerNpmPackages[provider.key] = provider.npmPackage;
-        }
+        let inference = await resolveInference(config, pluginHost);
 
         const postgres = new PostgresContainer({
             dataPath: boot.dataDir,
             portFilePath: boot.postgresPortFile,
             password: postgresPassword,
         });
-        const captureModelHttpRequestBodies = config.getBool(
-            "inference.captureModelHttpRequestBodies",
-            false,
-        );
-        const captureRawStepResultToDatabase =
-            config.getBool("inference.captureRawStepResultToDatabase", undefined) ?? dev;
         const reverseProxy = new ReverseProxy({
-            providers,
+            providers: inference.providers,
             log: log.child({ component: "reverse-proxy" }),
-            captureModelHttpRequestBodies,
+            captureModelHttpRequestBodies: config.getBool(
+                "inference.captureModelHttpRequestBodies",
+                false,
+            ),
             captureDir: boot.llmDebugDir,
         });
         const mcpGateway = new McpGateway({
@@ -287,6 +272,70 @@ export const startCommand = defineCommand({
         // live bastion; the agent receives it via its passed config.
         const bastionToken = resolveBastionToken(config);
         writeBastionTokenFile(boot, bastionToken);
+
+        // Set once the bridge sidecar is up (see below); the container
+        // config is built only after that.
+        let agentBastionUrl = "";
+        // Python packages baked into the agent image's venv for the bash
+        // tool (the container is offline; nothing can be added at runtime).
+        // Resolved host-side (with default) because the SAME list is the
+        // image build-arg; it also rides in the container config blob so the
+        // bash tool's help section can name the installed packages.
+        const pythonPackages = config.getStringList("python.packages", DEFAULT_PYTHON_PACKAGES);
+
+        // Everything the container's Node code reads is collected into one
+        // flat map (the container reads it back through `PassedConfig`): at
+        // start via the FAMILIAR_CONTAINER_CONFIG env var, after a config
+        // reload via the bastion's `/container-config/` endpoint, which the
+        // container checks once per agentrun.
+        const buildContainerConfigValues = (): Record<string, unknown> => {
+            const computed: AgentContainerComputedValues = {
+                bastionUrl: agentBastionUrl,
+                bastionToken,
+                providerNpmPackages: inference.providerNpmPackages,
+                logLevel: debugLogging ? "debug" : "info",
+                logSystemPrompt: resolveLogSystemPromptMode(config, dev),
+                captureRawStepResultToDatabase:
+                    config.getBool("inference.captureRawStepResultToDatabase", undefined) ?? dev,
+                writablePaths,
+                pythonPackages,
+            };
+            return buildAgentContainerConfig(config, computed).toValues();
+        };
+        const containerConfigGateway = new ContainerConfigGateway({
+            log: log.child({ component: "container-config-gateway" }),
+        });
+
+        // Applies config.yml / mcp.yml edits to the running daemon
+        // (agent tool `config_reload`, `familiar config reload`).
+        const reloader = new DaemonReloader({
+            configFile: boot.configFile,
+            mcpConfigFile: boot.mcpConfigFile,
+            config,
+            pluginHost,
+            toolsRegistry: pluginToolsRegistry,
+            mcpRegistry,
+            mcpGateway,
+            applyInference: async () => {
+                inference = await resolveInference(config, pluginHost);
+                reverseProxy.applySettings({
+                    providers: inference.providers,
+                    captureModelHttpRequestBodies: config.getBool(
+                        "inference.captureModelHttpRequestBodies",
+                        false,
+                    ),
+                });
+            },
+            publishContainerConfig: async () => {
+                containerConfigGateway.publish(buildContainerConfigValues());
+            },
+            log: log.child({ component: "config-reload" }),
+        });
+        const reloadGateway = new ReloadGateway({
+            reloader,
+            log: log.child({ component: "reload-gateway" }),
+        });
+
         const bastion = new Bastion({
             log: log.child({ component: "bastion" }),
             token: bastionToken,
@@ -297,6 +346,8 @@ export const startCommand = defineCommand({
                 containerToolsGateway,
                 promptGateway,
                 modelMetadataGateway,
+                containerConfigGateway,
+                reloadGateway,
             ],
         });
 
@@ -346,52 +397,13 @@ export const startCommand = defineCommand({
             bastionPort: bastion.listenPort,
         });
         await bridge.start();
-        const agentBastionUrl = `http://${BASTION_BRIDGE_HOST}:${bastion.listenPort}`;
+        agentBastionUrl = `http://${BASTION_BRIDGE_HOST}:${bastion.listenPort}`;
         log.info(`bastion bridge started; agent will dial ${agentBastionUrl}`);
 
-        // Python packages baked into the agent image's venv for the bash
-        // tool (the container is offline; nothing can be added at runtime).
-        // Resolved host-side (with default) because the SAME list is the
-        // image build-arg; it also rides in the container config blob so the
-        // bash tool's help section can name the installed packages.
-        const pythonPackages = config.getStringList("python.packages", DEFAULT_PYTHON_PACKAGES);
         await ensureAgentImage(boot, log, pythonPackages);
 
-        // Everything the container's Node code reads is collected into one
-        // JSON blob (the container reads it back through `PassedConfig`).
-        // Config-backed knobs are forwarded verbatim by key — their
-        // defaults live container-side, so absent keys are simply omitted.
-        // Computed / non-config values are added explicitly.
-        const containerConfig = new ContainerConfig(config);
-        containerConfig.addConfigKey("core.postgresPassword");
-        containerConfig.addConfigKey("core.agentStepTimeout");
-        containerConfig.addConfigKey("core.toolCallOffloadingLimit");
-        containerConfig.addConfigKey("core.maxToolDescriptionChars");
-        containerConfig.addConfigKey("core.toolDefinitionsContextFraction");
-        containerConfig.addConfigKey("core.toolHeuristicRunWindow");
-        containerConfig.addConfigKey("core.timezone");
-        containerConfig.addConfigKey("inference.defaultProvider");
-        containerConfig.addConfigKey("inference.defaultModel");
-        containerConfig.addConfigKey("inference.aliases");
-        containerConfig.addConfigKey("inference.maxRetries");
-        containerConfig.addConfigKey("inference.outputFallbackPercentage");
-        containerConfig.addConfigKey("inference.captureInitialMessageHistory");
-        containerConfig.addConfigKey("inference.contextManagement.thresholdPercentage");
-        // Computed / resolved values (host-side defaults or non-config).
-        containerConfig.addValue("bastionUrl", agentBastionUrl);
-        containerConfig.addValue("bastionToken", bastionToken);
-        containerConfig.addValue("inference.providers", providerNpmPackages);
-        containerConfig.addValue("core.logLevel", debugLogging ? "debug" : "info");
-        containerConfig.addValue("core.logSystemPrompt", logSystemPromptMode);
-        containerConfig.addValue(
-            "inference.captureRawStepResultToDatabase",
-            captureRawStepResultToDatabase,
-        );
-        // writablePaths / python.packages carry their host-resolved value
-        // (default already applied above) rather than the raw config read.
-        containerConfig.addValue("core.writablePaths", writablePaths);
-        containerConfig.addValue("python.packages", pythonPackages);
-
+        const containerConfigValues = buildContainerConfigValues();
+        containerConfigGateway.publish(containerConfigValues);
         const container = new AgentContainer({
             imageName: AGENT_IMAGE_TAG,
             workspacePath: boot.workspaceDir,
@@ -399,7 +411,7 @@ export const startCommand = defineCommand({
             sharedBuildPath: boot.sharedBuildDir,
             mountSource: boot.imageMode === "build",
             scratchPath: boot.scratchDir,
-            containerConfigJson: containerConfig.toJSON(),
+            containerConfigJson: JSON.stringify(containerConfigValues),
             writablePaths,
             hostUid: boot.hostUid,
             hostGid: boot.hostGid,
@@ -426,7 +438,16 @@ export const startCommand = defineCommand({
         await workspaceWatcher.start();
         pluginHost.setWorkspaceWatcher(workspaceWatcher);
 
-        await pluginHost.startDaemons();
+        await pluginHost.startDaemons(
+            buildConfigTools({
+                configFile: boot.configFile,
+                mcpConfigFile: boot.mcpConfigFile,
+                config,
+                mcpRegistry,
+                reloader,
+                isPluginToolGroup: (id) => pluginToolsRegistry.hasPlugin(id),
+            }),
+        );
         log.info("plugin daemons started");
 
         // Cron-fired events go through HostContextImpl, not raw
@@ -508,7 +529,7 @@ export const startCommand = defineCommand({
         // from an earlier debug session age out too.
         const llmDebugGc = new DirectoryGc({
             dir: boot.llmDebugDir,
-            retentionMs:
+            retentionMs: () =>
                 config.getNumber("inference.llmDebugRetentionDays", LLM_DEBUG_RETENTION_DAYS) *
                 ONE_DAY_MS,
             name: "llm-debug",
@@ -636,6 +657,39 @@ export const startCommand = defineCommand({
         await new Promise<void>(() => {});
     },
 });
+
+/** Inference provider tables derived from `inference.apiKeys`. */
+interface ResolvedInference {
+    /** Reverse-proxy table: provider id → upstream + auth. */
+    readonly providers: ReturnType<typeof buildProviders>;
+    /** Container table: provider id → npm package. */
+    readonly providerNpmPackages: Readonly<Record<string, string>>;
+}
+
+/**
+ * Resolve every `inference.apiKeys` provider against the models.dev
+ * catalogue + plugin descriptors and build the reverse-proxy and
+ * container tables from it. Keys that don't resolve are skipped here;
+ * the boot path and the reload validation report them up front.
+ *
+ * @param config Host config service.
+ * @param pluginHost Plugin host (provider resolution).
+ * @returns Both provider tables.
+ */
+async function resolveInference(
+    config: HostConfigService,
+    pluginHost: PluginHost,
+): Promise<ResolvedInference> {
+    const keys = Object.keys(config.getMapping("inference.apiKeys", {}));
+    const resolved = (await Promise.all(keys.map((key) => pluginHost.resolveProvider(key)))).filter(
+        (p): p is ResolvedProvider => p !== undefined,
+    );
+    const providerNpmPackages: Record<string, string> = {};
+    for (const provider of resolved) {
+        providerNpmPackages[provider.key] = provider.npmPackage;
+    }
+    return { providers: buildProviders(resolved), providerNpmPackages };
+}
 
 /**
  * Build the daemon's root logger. Stdout is pretty-printed when

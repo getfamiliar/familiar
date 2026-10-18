@@ -638,9 +638,18 @@ export interface EmittedEventDescriptor {
  */
 export interface PluginHostManifest {
     /**
-     * Synchronous, side-effect-light setup. Runs once per process,
-     * **before any plugin's `start`** and before any plugin one-shot
-     * CLI command's `run`. Use this for module-level state that other
+     * Config subtrees outside the plugin's own `<plugin.id>.*` group
+     * whose change restarts the plugin on a config reload (dotted paths,
+     * e.g. `["inference.apiKeys.openai"]`). The own group is always
+     * watched; list a foreign key here only when the plugin captures it
+     * in `prepare` / `start` instead of reading it per use.
+     */
+    restartOnConfigChange?: readonly string[];
+    /**
+     * Synchronous, side-effect-light setup. Runs once per process start
+     * and again on every plugin restart (config reload, after
+     * {@link stop}), **before the plugin's `start`** and before any plugin
+     * one-shot CLI command's `run`. Use this for module-level state that other
      * plugins consume — e.g. populating an API-key constant the
      * plugin's library exports — so the order in which siblings call
      * each other doesn't depend on `start` finishing first.
@@ -663,12 +672,22 @@ export interface PluginHostManifest {
      */
     start?(ctx: HostContext): Promise<void>;
     /**
-     * Drain hook called during daemon shutdown. Awaited in reverse
-     * registration order (LIFO of `start`), wrapped in a `safeStop`
-     * so a throw is logged but does not abort the rest of the drain.
+     * Drain hook called during daemon shutdown and before a plugin
+     * restart (config reload changed the plugin's config group). On
+     * shutdown it is awaited in reverse registration order (LIFO of
+     * `start`), wrapped in a `safeStop` so a throw is logged but does
+     * not abort the rest of the drain.
      *
-     * Use this for plugins that own dirty in-memory state which must
-     * be flushed to disk before the process exits — the memory
+     * Must release everything `start` set up — timers, poll loops,
+     * sockets, chat / workspace subscriptions — and reset module state,
+     * because a restart runs `prepare` → `start` → `tools` again in the
+     * same process. Providers, prompt appenders / placeholders and tools
+     * the plugin registered are unregistered by the host. A plugin with
+     * a `start` but no `stop` cannot be restarted: a config reload that
+     * touches it reports "daemon restart required" instead.
+     *
+     * Use this also for plugins that own dirty in-memory state which
+     * must be flushed to disk before the process exits — the memory
      * plugin's Orama index is the motivating case.
      *
      * Hard rules: must resolve within the daemon-wide drain budget
@@ -683,8 +702,9 @@ export interface PluginHostManifest {
     stop?(ctx: HostContext): Promise<void>;
     /**
      * Declarative list of {@link PluginTool}s this plugin contributes
-     * to the agent. Collected once, **after** the plugin's `start`
-     * resolves, so closures over `start`-time state are safe.
+     * to the agent. Collected **after** the plugin's `start` resolves
+     * (at boot and after every restart), so closures over `start`-time
+     * state are safe.
      *
      * Hard rules: synchronous, side-effect-free — just build and
      * return the tool list. The host registers each tool under

@@ -223,6 +223,12 @@ export class CalendarPoller {
         return poller;
     }
 
+    /** Stop the refresh cron started by {@link startRefreshCron}, if any. */
+    stopRefreshCron(): void {
+        this.refreshJob?.stop();
+        this.refreshJob = undefined;
+    }
+
     /**
      * Install the configured friendly-cron expression as a refresh
      * job. Refresh runs the full re-walk with scan-generation tagging

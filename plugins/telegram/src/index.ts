@@ -1,7 +1,7 @@
 import path from "node:path";
 import { definePlugin } from "@getfamiliar/shared";
 import { buildCommands } from "./Commands.js";
-import { startTelegramDaemon, TELEGRAM_TOPIC } from "./TelegramDaemon.js";
+import { startTelegramDaemon, stopTelegramDaemon, TELEGRAM_TOPIC } from "./TelegramDaemon.js";
 
 /**
  * Telegram host-side plugin.
@@ -31,6 +31,7 @@ export default definePlugin({
     workspaceTemplate: path.join(import.meta.dirname, "..", "workspace-template"),
     host: {
         start: (ctx) => startTelegramDaemon(ctx),
+        stop: () => stopTelegramDaemon(),
         getEmittedEvents: (ctx) =>
             ctx.config.getString("telegram.botToken", null) === null
                 ? []

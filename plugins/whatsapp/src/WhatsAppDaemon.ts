@@ -1,4 +1,4 @@
-import type { HostContext } from "@getfamiliar/shared";
+import type { ChatUnsubscribe, HostContext } from "@getfamiliar/shared";
 import { jidNormalizedUser } from "@whiskeysockets/baileys";
 import {
     buildAgentAccountAttacher,
@@ -6,7 +6,7 @@ import {
     subscribeAgentChat,
 } from "./AgentAccount.js";
 import { linkSubcommandFor, loadAuth, logoutSubcommandFor, type WhatsAppAuth } from "./Auth.js";
-import { type MutableSocketRegistry, runConnectionLoop } from "./Connection.js";
+import { type MutableSocketRegistry, runConnectionLoop, sleep } from "./Connection.js";
 import { buildUserAccountAttacher } from "./UserAccount.js";
 
 /**
@@ -19,8 +19,42 @@ export interface WhatsAppSocketRegistries {
 }
 
 /**
+ * Upper bound on waiting for the connection loops to wind down in
+ * {@link stopWhatsAppDaemon}. Closing a socket is local and fast; the
+ * cap only keeps a wedged socket from eating the daemon's drain budget.
+ */
+const STOP_GRACE_MS = 5000;
+
+/** What a running daemon holds, so {@link stopWhatsAppDaemon} can release it. */
+interface RunningWhatsAppDaemon {
+    readonly abort: AbortController;
+    readonly loops: Promise<void>[];
+    unsubscribeChat: ChatUnsubscribe | undefined;
+}
+
+/** The live daemon; `undefined` while stopped. */
+let running: RunningWhatsAppDaemon | undefined;
+
+/**
+ * Stop both connection loops (closing their sockets) and drop the
+ * outbound chat subscription, so the plugin can be restarted on a
+ * config reload or the daemon can shut down. Safe to call when the
+ * daemon never started.
+ */
+export async function stopWhatsAppDaemon(): Promise<void> {
+    const daemon = running;
+    running = undefined;
+    if (daemon === undefined) {
+        return;
+    }
+    daemon.abort.abort();
+    await daemon.unsubscribeChat?.();
+    await Promise.race([Promise.allSettled(daemon.loops), sleep(STOP_GRACE_MS)]);
+}
+
+/**
  * Start the WhatsApp daemon: one connection loop per linked account,
- * kicked off without awaiting.
+ * kicked off without awaiting; {@link stopWhatsAppDaemon} ends them.
  *
  * - **user** account → observes groups (`chat:whatsapp:group`) and
  *   direct messages (`chat:whatsapp:new`).
@@ -40,25 +74,37 @@ export async function startWhatsAppDaemon(
 ): Promise<void> {
     const userAuth = await loadLinkedAuth(ctx, "user");
     const agentAuth = await loadLinkedAuth(ctx, "agent");
+    const daemon: RunningWhatsAppDaemon = {
+        abort: new AbortController(),
+        loops: [],
+        unsubscribeChat: undefined,
+    };
+    running = daemon;
 
+    // The loops are long-lived and only resolve once stopped. They are
+    // detached so the host's `startDaemons` chain doesn't block on them.
     if (agentAuth) {
         const authorizedNumber = readAuthorizedNumber(ctx);
-        await subscribeAgentChat(ctx, registries.agent, authorizedNumber);
-        // Long-lived; never resolves under normal operation. Detach so
-        // the host's `startDaemons` chain doesn't block on it.
-        void runConnectionLoop(
-            ctx,
-            agentAuth,
-            registries.agent,
-            buildAgentAccountAttacher(ctx, authorizedNumber),
+        daemon.unsubscribeChat = await subscribeAgentChat(ctx, registries.agent, authorizedNumber);
+        daemon.loops.push(
+            runConnectionLoop(
+                ctx,
+                agentAuth,
+                registries.agent,
+                buildAgentAccountAttacher(ctx, authorizedNumber),
+                daemon.abort.signal,
+            ),
         );
     }
     if (userAuth) {
-        void runConnectionLoop(
-            ctx,
-            userAuth,
-            registries.user,
-            buildUserAccountAttacher(ctx, agentJidsOf(agentAuth)),
+        daemon.loops.push(
+            runConnectionLoop(
+                ctx,
+                userAuth,
+                registries.user,
+                buildUserAccountAttacher(ctx, agentJidsOf(agentAuth)),
+                daemon.abort.signal,
+            ),
         );
     }
 }

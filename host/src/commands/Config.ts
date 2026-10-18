@@ -1,47 +1,132 @@
+import { readFileSync } from "node:fs";
 import {
     createLogger,
     jsonStdoutStream,
     prettyStdoutStream,
     writeMarkdown,
 } from "@getfamiliar/shared";
+import { confirm, input, password } from "@inquirer/prompts";
 import { defineCommand } from "citty";
+import { parse } from "yaml";
 import { bootstrap } from "../Bootstrap.js";
+import { isSecretConfigKey } from "../config/SecretKeys.js";
 import { DEFAULT_PYTHON_PACKAGES } from "../container-bridge/AgentContainer.js";
 import { checkPackagesOnPyPI } from "../container-bridge/PythonPackages.js";
 import { validateConfiguredProviders } from "../models/ProviderResolution.js";
 import { PluginHost } from "../plugins/PluginHost.js";
 import { loadPlugins } from "../plugins/PluginLoader.js";
+import { renderReloadReport } from "../reload/DaemonReloader.js";
+import { requestDaemonReload } from "../reload/ReloadClient.js";
+import { setConfigValue, writeConfigAtomically } from "../utils/ConfigDocument.js";
 import { lintConfigFile } from "../utils/ConfigLinter.js";
 import { HostConfigService } from "../utils/ConfigService.js";
 
 /** 24 hours in milliseconds — staleness window for the models.dev cache. */
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Shared `--raw` flag of the markdown-reporting subcommands. */
+const RAW_ARG = {
+    type: "boolean",
+    description:
+        "Skip terminal styling and emit the raw markdown verbatim. Useful for piping into a file or a markdown viewer.",
+    default: false,
+} as const;
+
 /**
- * `familiar config` — root for config-related subcommands. Today only
- * `lint` is exposed; future additions (`get`, `set`, …) live under
- * the same root so the CLI surface stays organised.
+ * `familiar config` — root for config-related subcommands: `lint`
+ * validates the file, `set` edits one value, `reload` applies
+ * `config.yml` and `mcp.yml` to the running daemon.
  */
 export const configCommand = defineCommand({
     meta: {
         name: "config",
-        description: "Inspect and validate the system configuration.",
+        description: "Inspect, edit, validate and reload the system configuration.",
     },
     subCommands: {
+        reload: defineCommand({
+            meta: {
+                name: "reload",
+                description:
+                    "Apply config/config.yml and config/mcp.yml to the running daemon without restarting it.",
+            },
+            args: { raw: RAW_ARG },
+            async run({ args }) {
+                const boot = bootstrap();
+                const report = await requestDaemonReload(boot);
+                if (report === null) {
+                    process.stderr.write(
+                        "daemon is not running; the config is read on the next `familiar start`.\n",
+                    );
+                    process.exit(1);
+                }
+                writeMarkdown(renderReloadReport(report), { raw: args.raw === true });
+                if (report.errors.length > 0) {
+                    process.exit(1);
+                }
+            },
+        }),
+        set: defineCommand({
+            meta: {
+                name: "set",
+                description:
+                    "Set one value in config/config.yml (comments are kept). Secret keys and an omitted value are asked for interactively, with hidden input for secrets.",
+            },
+            args: {
+                key: {
+                    type: "positional",
+                    description: 'Dotted path, e.g. "mail.allowSend" or "telegram.botToken".',
+                    required: true,
+                },
+                value: {
+                    type: "positional",
+                    description:
+                        "New value, parsed as YAML (true, 42, [a, b], …). Omit to be prompted. Secret values are always prompted and stored as strings.",
+                    required: false,
+                },
+                raw: RAW_ARG,
+            },
+            async run({ args }) {
+                const boot = bootstrap();
+                const key = String(args.key);
+                const isSecret = isSecretConfigKey(key);
+                const value = await readValueArgument(key, isSecret, args.value);
+                const text = readFileSync(boot.configFile, "utf-8");
+                writeConfigAtomically(boot.configFile, setConfigValue(text, key, value), () => {
+                    const lint = lintConfigFile(boot.configFile);
+                    if (!lint.ok) {
+                        throw new Error(
+                            `config.yml would become invalid, change rolled back:\n  - ${lint.errors.join("\n  - ")}`,
+                        );
+                    }
+                });
+                process.stdout.write(`${key} written to config/config.yml.\n`);
+                const shouldReload =
+                    process.stdin.isTTY === true &&
+                    (await confirm({
+                        message: "Reload the running daemon now (if it is running)?",
+                        default: true,
+                    }));
+                if (!shouldReload) {
+                    process.stdout.write("Apply it later with `familiar config reload`.\n");
+                    return;
+                }
+                const report = await requestDaemonReload(boot);
+                if (report === null) {
+                    process.stdout.write(
+                        "Daemon not running; the value applies on the next start.\n",
+                    );
+                    return;
+                }
+                writeMarkdown(renderReloadReport(report), { raw: args.raw === true });
+            },
+        }),
         lint: defineCommand({
             meta: {
                 name: "lint",
                 description:
                     "Validate config/config.yml: structure, the platform minimum, and that every inference provider resolves.",
             },
-            args: {
-                raw: {
-                    type: "boolean",
-                    description:
-                        "Skip terminal styling and emit the raw markdown verbatim. Useful for piping into a file or a markdown viewer.",
-                    default: false,
-                },
-            },
+            args: { raw: RAW_ARG },
             async run({ args }) {
                 const boot = bootstrap();
                 const result = lintConfigFile(boot.configFile);
@@ -92,6 +177,40 @@ export const configCommand = defineCommand({
         }),
     },
 });
+
+/**
+ * Resolve the value for `config set`: secrets are always prompted with
+ * hidden input (a value on the command line would land in the shell
+ * history) and stored as strings; other keys use the argument, or a
+ * prompt when omitted, parsed as YAML so `true` / `42` / `[a, b]` keep
+ * their types.
+ *
+ * @param key The dotted path being set.
+ * @param isSecret Whether the key names a secret.
+ * @param argument The positional value, if given.
+ * @returns The value to write.
+ * @throws If a secret is passed on the command line or the input is empty.
+ */
+async function readValueArgument(
+    key: string,
+    isSecret: boolean,
+    argument: unknown,
+): Promise<unknown> {
+    if (isSecret) {
+        if (argument !== undefined) {
+            throw new Error(
+                `${key} is a secret — omit the value and enter it at the hidden prompt (keeps it out of the shell history).`,
+            );
+        }
+        const secret = await password({ message: `${key}:`, mask: "*" });
+        if (secret.length === 0) {
+            throw new Error(`${key}: empty value, nothing written.`);
+        }
+        return secret;
+    }
+    const raw = argument !== undefined ? String(argument) : await input({ message: `${key}:` });
+    return parse(raw) as unknown;
+}
 
 /**
  * Resolve every `inference.apiKeys` key against the models.dev catalogue

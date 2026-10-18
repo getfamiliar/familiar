@@ -78,7 +78,8 @@ export interface RegisteredPluginTool {
  *    mail` would be ambiguous between the mail plugin and a (hypothetical)
  *    mail MCP.
  * 4. Each plugin registers only once. Two `register(pluginId, ...)` calls
- *    are a wiring bug, not a feature.
+ *    are a wiring bug, not a feature — a plugin restart (config reload)
+ *    calls {@link unregisterPlugin} first.
  * 5. No duplicate keys across the whole registry. Two plugins that both
  *    declare a `send` tool would collide as `<a>_send`/`<b>_send` already,
  *    but identical keys *within* a plugin (after sanitization) are also
@@ -182,6 +183,35 @@ export class PluginToolsRegistry {
             this.tools.set(key, registered);
         }
         this.pluginIds.add(pluginId);
+    }
+
+    /**
+     * Remove every tool a plugin registered, so a restarted plugin can
+     * register again. The gateway reads the registry per request, so
+     * calls arriving in between fail as unknown tools. No-op for a
+     * plugin that registered nothing.
+     *
+     * @param pluginId The plugin whose tools to drop.
+     */
+    unregisterPlugin(pluginId: string): void {
+        for (const [key, tool] of this.tools) {
+            if (tool.pluginId === pluginId) {
+                this.tools.delete(key);
+            }
+        }
+        this.pluginIds.delete(pluginId);
+    }
+
+    /**
+     * Whether a plugin with this id contributes tools. Used to refuse an
+     * `mcp.yml` reload that would add an MCP id equal to a plugin's tool
+     * group (the same ambiguity {@link register} guards against).
+     *
+     * @param pluginId Plugin id to test.
+     * @returns `true` when the plugin has registered tools.
+     */
+    hasPlugin(pluginId: string): boolean {
+        return this.pluginIds.has(pluginId);
     }
 
     /** Snapshot of every registered tool, in insertion order. */

@@ -27,6 +27,7 @@ import { RealClock } from "./testing/MockClock.js";
 import { ToolsFactory } from "./tools/ToolsFactory.js";
 import { AgentrunRecovery } from "./utils/AgentrunRecovery.js";
 import { PassedConfig, resolveTimezone } from "./utils/PassedConfig.js";
+import { refreshPassedConfig } from "./utils/PassedConfigRefresh.js";
 
 /**
  * Process-wide handler-header defaults. A handler can override any of
@@ -122,10 +123,7 @@ async function main(): Promise<void> {
     );
     const chat = new ChatManager(new ChatMessageBus(connection));
     const recovery = new AgentrunRecovery(connection, log.child({ component: "recovery" }));
-    const timezone = resolveTimezone();
-
-    const stepTimeoutMs = (PassedConfig.get<number>("core.agentStepTimeout") ?? 150) * 1000;
-    const retryCap = PassedConfig.get<number>("inference.maxRetries") ?? 10;
+    const passedConfigLog = log.child({ component: "passed-config" });
 
     const scheduler = new AgentrunScheduler({
         agentRunBus,
@@ -134,7 +132,6 @@ async function main(): Promise<void> {
         inferenceEventBus,
         toolCallBus,
         scheduledSubagentBus,
-        timezone,
         log: log.child({ component: "agentrun-scheduler" }),
         clock: RealClock,
         runnerFactory: () => new AgentRunner(),
@@ -142,13 +139,18 @@ async function main(): Promise<void> {
         hostToolsClient,
         chat,
         recovery,
-        stepTimeoutMs,
-        retryCap,
-        maxToolDescriptionChars: PassedConfig.get<number>("core.maxToolDescriptionChars"),
-        toolDefinitionsContextFraction: PassedConfig.get<number>(
-            "core.toolDefinitionsContextFraction",
-        ),
-        toolHeuristicRunWindow: PassedConfig.get<number>("core.toolHeuristicRunWindow"),
+        // Read per run so a host config reload applies from the next run on.
+        settings: () => ({
+            timezone: resolveTimezone(),
+            stepTimeoutMs: (PassedConfig.get<number>("core.agentStepTimeout") ?? 150) * 1000,
+            retryCap: PassedConfig.get<number>("inference.maxRetries") ?? 10,
+            maxToolDescriptionChars: PassedConfig.get<number>("core.maxToolDescriptionChars"),
+            toolDefinitionsContextFraction: PassedConfig.get<number>(
+                "core.toolDefinitionsContextFraction",
+            ),
+            toolHeuristicRunWindow: PassedConfig.get<number>("core.toolHeuristicRunWindow"),
+        }),
+        refreshPassedConfig: () => refreshPassedConfig(bastionUrl, bastionToken, passedConfigLog),
         maxConcurrentExecuting: 1,
         subscribeChanges: (handler) => subscribeAgentrunsChanges(connection, handler),
     });

@@ -9,8 +9,12 @@ const DIRECTORY_GC_SCHEDULE = "0 * * * *";
 export interface DirectoryGcConfig {
     /** Absolute host path of the directory to sweep (e.g. `tmp/scratch/`). */
     readonly dir: string;
-    /** Entries whose mtime is older than this many milliseconds are removed. */
-    readonly retentionMs: number;
+    /**
+     * Entries whose mtime is older than this many milliseconds are removed.
+     * A function is re-evaluated on every sweep, so a config-backed window
+     * follows a config reload.
+     */
+    readonly retentionMs: number | (() => number);
     /**
      * Short label of the swept directory (e.g. `"scratch"`, `"llm-debug"`).
      * Prefixes every log line so a human tailing the log can tell sweeps apart.
@@ -34,7 +38,7 @@ export interface DirectoryGcConfig {
  */
 export class DirectoryGc {
     private readonly dir: string;
-    private readonly retentionMs: number;
+    private readonly retentionMs: number | (() => number);
     private readonly name: string;
     private readonly log: Logger;
     private job: Cron | undefined;
@@ -55,9 +59,22 @@ export class DirectoryGc {
             void this.sweep();
         });
         this.log.info(
-            { dir: this.dir, retentionMs: this.retentionMs, schedule: DIRECTORY_GC_SCHEDULE },
+            {
+                dir: this.dir,
+                retentionMs: this.currentRetentionMs(),
+                schedule: DIRECTORY_GC_SCHEDULE,
+            },
             `${this.name} GC scheduled for ${this.dir}`,
         );
+    }
+
+    /**
+     * Resolve the retention window for this sweep.
+     *
+     * @returns Retention in milliseconds.
+     */
+    private currentRetentionMs(): number {
+        return typeof this.retentionMs === "function" ? this.retentionMs() : this.retentionMs;
     }
 
     /** Cancel the cron and forget the handle. */
@@ -92,7 +109,7 @@ export class DirectoryGc {
             return;
         }
 
-        const cutoff = Date.now() - this.retentionMs;
+        const cutoff = Date.now() - this.currentRetentionMs();
         for (const entryName of entries) {
             const full = path.join(this.dir, entryName);
             let stat: Awaited<ReturnType<typeof fs.lstat>>;

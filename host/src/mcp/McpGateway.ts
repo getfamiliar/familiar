@@ -8,7 +8,7 @@ import { ExternalFactory } from "./factories/ExternalFactory.js";
 import { NpmFactory } from "./factories/NpmFactory.js";
 import { PypiFactory } from "./factories/PypiFactory.js";
 import type { McpEntry, McpSource } from "./McpEntry.js";
-import type { McpRegistry } from "./McpRegistry.js";
+import type { McpDiff, McpRegistry } from "./McpRegistry.js";
 import type { McpServerFactory } from "./McpServerFactory.js";
 import { ensureRuntimeImage, inspectRuntimeImageId } from "./RuntimeImages.js";
 import type { McpTransport } from "./transports/McpTransport.js";
@@ -73,6 +73,14 @@ export class McpGateway implements BastionModule {
     private readonly config: McpGatewayConfig;
     private readonly factories: ReadonlyMap<McpSource, McpServerFactory>;
     private transports: Map<string, McpTransport> = new Map();
+    /**
+     * Per-id transport generation, served on the catalog. Bumped every
+     * time {@link applyDiff} rebuilds or adds a transport, so the
+     * container's client pool knows which sessions are stale and must
+     * reconnect (a fresh stdio child has not seen their `initialize`).
+     */
+    private readonly generations = new Map<string, number>();
+    private nextGeneration = 1;
     /**
      * Runtime image ids, filled by {@link start} right after
      * `ensureRuntimeImage` and before any transport is built. The
@@ -142,23 +150,10 @@ export class McpGateway implements BastionModule {
 
         // Build only the runtime images that are actually referenced
         // by `mcp.yml`. No npm/pypi entries → no docker-build cost.
-        const sources = new Set<McpSource>();
-        for (const entry of entries) {
-            sources.add(entry.source);
-        }
-        if (sources.has("npm") || sources.has("pypi")) {
-            mkdirSync(this.config.tmpDir, { recursive: true });
-        }
-        for (const source of ["npm", "pypi"] as const) {
-            if (!sources.has(source)) {
-                continue;
-            }
-            await ensureRuntimeImage(source, this.config.boot, this.config.log);
-            this.runtimeImageIds.set(source, await inspectRuntimeImageId(source));
-        }
+        await this.ensureRuntimeImagesFor(entries);
 
         for (const entry of entries) {
-            this.transports.set(entry.id, this.buildTransport(entry));
+            this.installTransport(entry);
         }
         bastion.registerPrefix("/mcp/", (req, res, restPath) => {
             return this.dispatch(req, res, restPath);
@@ -171,15 +166,95 @@ export class McpGateway implements BastionModule {
         );
     }
 
+    /**
+     * Apply a reload of `mcp.yml` (the registry already holds the new
+     * entries): stop and drop the transports of removed ids, rebuild
+     * changed ones and build added ones. Unchanged ids keep their
+     * transport instance — and with it their cached `initialize`
+     * handshake — so connected clients stay valid.
+     *
+     * A request still in flight on a replaced transport is cut off when
+     * that transport stops; the next request reaches the new one.
+     * During the swap the affected ids answer 404.
+     *
+     * @param diff What the registry reload changed.
+     * @throws If ensuring a newly referenced runtime image fails; nothing
+     *   has been swapped at that point.
+     */
+    async applyDiff(diff: McpDiff): Promise<void> {
+        const rebuilt = [...diff.added, ...diff.changed];
+        const entries = rebuilt
+            .map((id) => this.config.registry.get(id))
+            .filter((entry): entry is McpEntry => entry !== undefined);
+        await this.ensureRuntimeImagesFor(entries);
+
+        const retired: McpTransport[] = [];
+        for (const id of [...diff.removed, ...diff.changed]) {
+            const transport = this.transports.get(id);
+            if (transport !== undefined) {
+                retired.push(transport);
+            }
+            this.transports.delete(id);
+            this.generations.delete(id);
+        }
+        // Stop before installing: a rebuilt stdio transport spawns its
+        // container under the same `familiar-mcp-<id>` name, which must
+        // be gone first. Requests in the gap get a 404 for the id.
+        await this.stopTransports(retired);
+        for (const entry of entries) {
+            this.installTransport(entry);
+        }
+        if (diff.added.length + diff.removed.length + diff.changed.length > 0) {
+            this.config.log.info(
+                `mcp-gateway reloaded: added [${diff.added.join(", ")}], removed [${diff.removed.join(", ")}], changed [${diff.changed.join(", ")}]`,
+            );
+        }
+    }
+
+    /**
+     * Build the npm / pypi runtime images the given entries need and
+     * that are not ensured yet. No npm/pypi entries → no docker-build cost.
+     *
+     * @param entries Entries about to get a transport.
+     */
+    private async ensureRuntimeImagesFor(entries: readonly McpEntry[]): Promise<void> {
+        for (const source of ["npm", "pypi"] as const) {
+            if (this.runtimeImageIds.has(source) || !entries.some((e) => e.source === source)) {
+                continue;
+            }
+            mkdirSync(this.config.tmpDir, { recursive: true });
+            await ensureRuntimeImage(source, this.config.boot, this.config.log);
+            this.runtimeImageIds.set(source, await inspectRuntimeImageId(source));
+        }
+    }
+
+    /**
+     * Build a transport for `entry`, store it and give it a fresh generation.
+     *
+     * @param entry The entry to serve.
+     */
+    private installTransport(entry: McpEntry): void {
+        this.transports.set(entry.id, this.buildTransport(entry));
+        this.generations.set(entry.id, this.nextGeneration++);
+    }
+
     async stop(): Promise<void> {
-        // Stop transports in parallel so one slow child (an MCP
-        // that takes a few seconds to acknowledge EOF) doesn't
-        // serialize with the others. Same pattern as
-        // `McpClientPool.close` container-side. Per-transport
-        // errors are caught locally so one failure can't cancel
-        // the others.
+        await this.stopTransports([...this.transports.values()]);
+        this.transports.clear();
+        this.generations.clear();
+    }
+
+    /**
+     * Stop transports in parallel so one slow child (an MCP that takes a
+     * few seconds to acknowledge EOF) doesn't serialize with the others.
+     * Same pattern as `McpClientPool.close` container-side. Per-transport
+     * errors are caught locally so one failure can't cancel the others.
+     *
+     * @param transports The transports to stop.
+     */
+    private async stopTransports(transports: readonly McpTransport[]): Promise<void> {
         await Promise.allSettled(
-            [...this.transports.values()].map(async (transport) => {
+            transports.map(async (transport) => {
                 try {
                     await transport.stop();
                 } catch (err) {
@@ -190,7 +265,6 @@ export class McpGateway implements BastionModule {
                 }
             }),
         );
-        this.transports.clear();
     }
 
     /**
@@ -221,7 +295,9 @@ export class McpGateway implements BastionModule {
 
     /**
      * Reply with the catalog of declared MCPs as a JSON array of
-     * `{ id, title, description, allowlist, denylist, approval, privileged }`.
+     * `{ id, title, description, allowlist, denylist, approval, privileged, generation }`.
+     * `generation` changes whenever the id's transport is rebuilt by a
+     * reload, telling the container pool to reconnect that client.
      * Used by the agent's `McpClientPool` at boot to discover what to
      * instantiate and how to gate each MCP's tools (the four glob lists
      * are resolved container-side). Only `GET` is supported; other
@@ -240,6 +316,7 @@ export class McpGateway implements BastionModule {
             denylist: readonly string[];
             approval: readonly string[];
             privileged: readonly string[];
+            generation: number;
         }> = [];
         for (const transport of this.transports.values()) {
             const entry = this.config.registry.get(transport.id);
@@ -251,6 +328,7 @@ export class McpGateway implements BastionModule {
                 denylist: entry?.denylist ?? [],
                 approval: entry?.approval ?? [],
                 privileged: entry?.privileged ?? [],
+                generation: this.generations.get(transport.id) ?? 0,
             });
         }
         res.writeHead(200, { "content-type": "application/json" });

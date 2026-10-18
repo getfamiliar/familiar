@@ -133,28 +133,36 @@ function renderLogObject(obj: unknown): string {
 export type SocketAttacher = (sock: WASocket) => void;
 
 /**
- * Forever-loop that owns one baileys socket of one account at a time.
- * Reconnects with exponential backoff on any close other than
- * `loggedOut`. On `loggedOut`, wipes that account's auth and exits the
- * loop — the user must re-link the device before another connection
- * makes sense.
+ * Loop that owns one baileys socket of one account at a time until
+ * `signal` aborts. Reconnects with exponential backoff on any close
+ * other than `loggedOut`. On `loggedOut`, wipes that account's auth and
+ * exits the loop — the user must re-link the device before another
+ * connection makes sense. Aborting `signal` closes the current socket
+ * (or cuts the backoff wait short) and ends the loop; the plugin's
+ * `stop` hook uses this for a restart (config reload) or shutdown.
  *
  * @param ctx Host context for logging and auth wiping.
  * @param auth Loaded, complete auth state of the account.
  * @param registry Registry the current socket is published to.
  * @param attach Account-specific handlers wired onto each socket.
+ * @param signal Stops the loop when aborted.
  */
 export async function runConnectionLoop(
     ctx: HostContext,
     auth: WhatsAppAuth,
     registry: MutableSocketRegistry,
     attach: SocketAttacher,
+    signal: AbortSignal,
 ): Promise<void> {
     const label = `whatsapp[${auth.account}]`;
     const linkCommand = `familiar whatsapp ${linkSubcommandFor(auth.account)}`;
     let backoffMs = RECONNECT_BACKOFF_MIN_MS;
-    while (true) {
-        const reason = await runConnection(ctx, auth, registry, attach, label);
+    while (!signal.aborted) {
+        const reason = await runConnection(ctx, auth, registry, attach, label, signal);
+        if (signal.aborted) {
+            ctx.logger.info(`${label} stopped`);
+            return;
+        }
         if (reason === "loggedOut") {
             ctx.logger.info(
                 `${label} logged out (device removed from phone); clearing auth and stopping. Run \`${linkCommand}\` to re-pair.`,
@@ -163,16 +171,17 @@ export async function runConnectionLoop(
             return;
         }
         ctx.logger.info(`${label} disconnected (${reason}); reconnecting in ${backoffMs}ms`);
-        await sleep(backoffMs);
+        await sleep(backoffMs, signal);
         backoffMs = Math.min(backoffMs * 2, RECONNECT_BACKOFF_MAX_MS);
     }
 }
 
 /**
  * Run a single baileys session: build the socket, attach handlers,
- * and resolve when the connection closes. The resolved value is
- * either `"loggedOut"` (terminal — caller must wipe auth) or any
- * other string description suitable for log output.
+ * and resolve when the connection closes (or `signal` aborts, which
+ * closes the socket). The resolved value is either `"loggedOut"`
+ * (terminal — caller must wipe auth) or any other string description
+ * suitable for log output.
  */
 async function runConnection(
     ctx: HostContext,
@@ -180,6 +189,7 @@ async function runConnection(
     registry: MutableSocketRegistry,
     attach: SocketAttacher,
     label: string,
+    signal: AbortSignal,
 ): Promise<"loggedOut" | string> {
     const version = await resolveWaVersion(ctx);
     const sock = makeWASocket({
@@ -194,6 +204,24 @@ async function runConnection(
     attach(sock);
 
     return await new Promise<"loggedOut" | string>((resolve) => {
+        // Only clear the registry while it still holds this socket: after a
+        // plugin restart the old socket's late close event must not wipe
+        // the new connection's socket.
+        const releaseRegistry = (): void => {
+            if (registry.current() === sock) {
+                registry.set(null);
+            }
+        };
+        const onAbort = (): void => {
+            releaseRegistry();
+            sock.end(undefined);
+            resolve("stopped");
+        };
+        if (signal.aborted) {
+            onAbort();
+            return;
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
         sock.ev.on("connection.update", (update) => {
             if (update.connection === "open") {
                 const me = sock.user?.id ?? "unknown";
@@ -201,7 +229,8 @@ async function runConnection(
                 return;
             }
             if (update.connection === "close") {
-                registry.set(null);
+                signal.removeEventListener("abort", onAbort);
+                releaseRegistry();
                 const err = update.lastDisconnect?.error;
                 const statusCode = extractStatusCode(err);
                 if (statusCode === DisconnectReason.loggedOut) {
@@ -274,12 +303,27 @@ function extractStatusCode(err: unknown): number | undefined {
 }
 
 /**
- * Resolve after `ms` milliseconds.
+ * Resolve after `ms` milliseconds, or as soon as `signal` aborts.
  *
  * @param ms Delay in milliseconds.
+ * @param signal Optional signal that ends the wait early.
  */
-export function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+        if (signal?.aborted) {
+            resolve();
+            return;
+        }
+        const onAbort = (): void => {
+            clearTimeout(timer);
+            resolve();
+        };
+        const timer = setTimeout(() => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve();
+        }, ms);
+        signal?.addEventListener("abort", onAbort, { once: true });
+    });
 }
 
 /**

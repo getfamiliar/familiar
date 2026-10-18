@@ -29,6 +29,17 @@ export class CalendarRegistry {
     }
 
     /**
+     * Drop whatever `pluginId` registered here, so the plugin can
+     * register again after a restart (config reload). No-op when it
+     * registered nothing.
+     *
+     * @param pluginId The restarting plugin.
+     */
+    unregisterPlugin(pluginId: string): void {
+        this.providers.delete(pluginId);
+    }
+
+    /**
      * Look up the provider that owns this calendar. Throws when no
      * provider has registered yet — the calendar row exists in the DB
      * but the plugin hasn't booted, which means writes against it must

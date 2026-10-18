@@ -170,9 +170,55 @@ export class HostConfigService implements ConfigService {
     }
 
     /**
-     * Lazy file load. Subsequent calls return the cached state. A
-     * single read failure is final for the lifetime of the service —
-     * if the file is fixed at runtime, the daemon should be restarted.
+     * The whole config tree currently in effect (the last loaded or
+     * reloaded state — not necessarily what is on disk now). Host-only,
+     * for comparing the live state with pending file edits.
+     *
+     * @returns The cached tree; callers must not mutate it.
+     */
+    snapshot(): Readonly<Record<string, unknown>> {
+        return this.ensureLoaded();
+    }
+
+    /**
+     * Re-read the file and swap the cached state, so every lazy reader
+     * sees the new values from its next read on. Values at `pinnedKeys`
+     * keep their previous value (or stay absent): those are keys the
+     * running daemon cannot apply without a restart, and pinning them
+     * keeps every reader consistent with what is actually in effect.
+     *
+     * The caller lints the file first; a parse failure here throws and
+     * leaves the previous state untouched.
+     *
+     * @param pinnedKeys Dotted paths whose current values survive the reload.
+     * @returns The state before and after the reload (after pinning).
+     * @throws If the file is missing, unreadable, or malformed.
+     */
+    reload(pinnedKeys: readonly string[] = []): {
+        readonly previous: Readonly<Record<string, unknown>>;
+        readonly current: Readonly<Record<string, unknown>>;
+    } {
+        const previous = this.ensureLoaded();
+        const next = readAndParse(this.filePath);
+        for (const key of pinnedKeys) {
+            const kept = readPath(previous, key);
+            const loaded = readPath(next, key);
+            if (JSON.stringify(kept) === JSON.stringify(loaded)) {
+                continue;
+            }
+            if (kept === undefined) {
+                deletePath(next, key);
+            } else {
+                writePath(next, key, structuredClone(kept));
+            }
+        }
+        this.state = next;
+        return { previous, current: next };
+    }
+
+    /**
+     * Lazy file load. Subsequent calls return the cached state until
+     * {@link reload} swaps it.
      */
     private ensureLoaded(): Record<string, unknown> {
         if (this.state === undefined) {
@@ -265,6 +311,20 @@ function writePath(root: Record<string, unknown>, path: string, value: unknown):
         cursor = next as Record<string, unknown>;
     }
     cursor[segments[segments.length - 1] as string] = value;
+}
+
+/**
+ * Remove the value at a dotted path. A missing path or a non-mapping
+ * intermediate is a no-op.
+ */
+function deletePath(root: Record<string, unknown>, path: string): void {
+    const segments = path.split(".");
+    const parent = readPath(root, segments.slice(0, -1).join("."));
+    const target = segments.length === 1 ? root : parent;
+    if (target === null || typeof target !== "object" || Array.isArray(target)) {
+        return;
+    }
+    delete (target as Record<string, unknown>)[segments[segments.length - 1] as string];
 }
 
 /**

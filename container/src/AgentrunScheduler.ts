@@ -25,6 +25,39 @@ import { buildContainerToolRunContext } from "./tools/ContainerToolRunContext.js
 import { ToolsFactory } from "./tools/ToolsFactory.js";
 import type { AgentrunRecovery } from "./utils/AgentrunRecovery.js";
 
+/** Reloadable knobs of the {@link AgentrunScheduler}; see {@link SchedulerDeps.settings}. */
+export interface SchedulerSettings {
+    /**
+     * IANA timezone string — typically `core.timezone` from the passed
+     * container config, resolved by `resolveTimezone()`. Threaded into
+     * agent-facing tools that need to convert between wall-clock and UTC
+     * (currently `schedule_subagent` / `get_scheduled_subagents`).
+     */
+    readonly timezone: string;
+    /**
+     * Per-*step* wall-clock budget for `agent.generate()` progress.
+     * The Scheduler arms a single timer with this budget at start,
+     * resets it on every completed SDK step (via the
+     * `onStepFinished` callback the runner fires from the SDK's
+     * `onStepFinish`), and pauses it while a runner is parked on
+     * `waitForSubagent` (so a slow child handler does not consume
+     * the parent's step budget). The cap catches a single wedged
+     * step (hung tool call, stuck model) without penalising
+     * long-but-healthy runs of many short steps.
+     */
+    readonly stepTimeoutMs: number;
+    /** Default retry cap; overridden per-handler via YAML frontmatter. */
+    readonly retryCap: number;
+    /**
+     * Dynamic-tool-loading knobs, sourced from `core.*` config. Each is
+     * optional — an undefined value lets the `ToolsFactory` call-site
+     * default apply (defaults live there, not here).
+     */
+    readonly maxToolDescriptionChars?: number;
+    readonly toolDefinitionsContextFraction?: number;
+    readonly toolHeuristicRunWindow?: number;
+}
+
 /**
  * Deps the {@link AgentrunScheduler} takes from the outside. Production
  * wiring assembles real implementations of each (postgres-backed
@@ -53,14 +86,6 @@ export interface SchedulerDeps {
      */
     readonly toolCallBus: ToolCallBus;
     readonly scheduledSubagentBus: ScheduledSubagentBus;
-    /**
-     * IANA timezone string — typically `core.timezone` from the passed
-     * container config, resolved by `resolveTimezone()`. Threaded into
-     * agent-facing tools that need
-     * to convert between wall-clock and UTC (currently
-     * `schedule_subagent` / `get_scheduled_subagents`).
-     */
-    readonly timezone: string;
     readonly log: Logger;
     readonly clock: Clock;
     /**
@@ -71,7 +96,10 @@ export interface SchedulerDeps {
      */
     readonly runnerFactory: (row: AgentRunRow) => AgentRunner;
     /** Pool used to assemble MCP tools per runner. */
-    readonly mcpPool: Pick<McpClientPool, "tools" | "mcpKeysById" | "mcpLevelsByKey">;
+    readonly mcpPool: Pick<
+        McpClientPool,
+        "tools" | "mcpKeysById" | "mcpLevelsByKey" | "refreshIfChanged"
+    >;
     /** Bastion client used to fetch host-side tools (plugin and core) per runner. */
     readonly hostToolsClient: Pick<HostToolsClient, "tools">;
     /** Shared chat manager — methods take `eventId` per call. */
@@ -79,27 +107,17 @@ export interface SchedulerDeps {
     /** Startup recovery helper. Implementations expose `recover()` only. */
     readonly recovery: Pick<AgentrunRecovery, "recover">;
     /**
-     * Per-*step* wall-clock budget for `agent.generate()` progress.
-     * The Scheduler arms a single timer with this budget at start,
-     * resets it on every completed SDK step (via the
-     * `onStepFinished` callback the runner fires from the SDK's
-     * `onStepFinish`), and pauses it while a runner is parked on
-     * `waitForSubagent` (so a slow child handler does not consume
-     * the parent's step budget). The cap catches a single wedged
-     * step (hung tool call, stuck model) without penalising
-     * long-but-healthy runs of many short steps.
+     * Reloadable settings, read when a run starts (step budget, timezone,
+     * tool knobs) or settles (retry cap). Production reads them from the
+     * passed container config, so a host config reload applies them from
+     * the next run on.
      */
-    readonly stepTimeoutMs: number;
-    /** Default retry cap; overridden per-handler via YAML frontmatter. */
-    readonly retryCap: number;
+    readonly settings: () => SchedulerSettings;
     /**
-     * Dynamic-tool-loading knobs, sourced from `core.*` config. Each is
-     * optional — an undefined value lets the `ToolsFactory` call-site
-     * default apply (defaults live there, not here).
+     * Refresh the passed-config overlay from the bastion before a fresh
+     * run starts (see `refreshPassedConfig`). Optional — tests omit it.
      */
-    readonly maxToolDescriptionChars?: number;
-    readonly toolDefinitionsContextFraction?: number;
-    readonly toolHeuristicRunWindow?: number;
+    readonly refreshPassedConfig?: () => Promise<void>;
     /**
      * Maximum number of runners executing (not paused) at once. Today
      * always `1` to match Featherless's single Pro slot; per-model
@@ -142,6 +160,8 @@ interface ActiveAgent {
      * and re-armed (with a fresh full step budget) on resume.
      */
     timeoutHandle: TimerHandle | null;
+    /** Per-step budget, read from the settings when the run started. */
+    readonly stepTimeoutMs: number;
 }
 
 /**
@@ -340,6 +360,11 @@ export class AgentrunScheduler {
         const { agentRunBus, log, runnerFactory } = this.deps;
 
         await agentRunBus.update(row.id, { state: "running" });
+        // Pick up a host config reload before reading any setting; the
+        // run keeps this snapshot of the step budget until it settles.
+        if (this.deps.refreshPassedConfig !== undefined) {
+            await this.deps.refreshPassedConfig();
+        }
 
         const abortController = new AbortController();
         const active: ActiveAgent = {
@@ -349,6 +374,7 @@ export class AgentrunScheduler {
             waiters: new Map(),
             paused: false,
             timeoutHandle: null,
+            stepTimeoutMs: this.deps.settings().stepTimeoutMs,
         };
         active.timeoutHandle = this.armTimeout(active);
 
@@ -487,7 +513,8 @@ export class AgentrunScheduler {
                     log.info({ agentrunId: id }, `agentrun ${id} done`);
                     break;
                 case "retryable": {
-                    const cap = outcome.error.handlerMaxRetriesOverride ?? this.deps.retryCap;
+                    const cap =
+                        outcome.error.handlerMaxRetriesOverride ?? this.deps.settings().retryCap;
                     // `cap` counts retries after the first attempt, so
                     // `retryCount` (retries made so far) may reach it.
                     if (row.retryCount < cap) {
@@ -618,7 +645,7 @@ export class AgentrunScheduler {
     /** Arm a fresh per-step timeout with the configured budget. */
     private armTimeout(active: ActiveAgent): TimerHandle {
         const start = this.deps.clock.now();
-        const budget = this.deps.stepTimeoutMs;
+        const budget = active.stepTimeoutMs;
         return this.deps.clock.setTimeout(() => {
             const elapsed = this.deps.clock.now() - start;
             active.abortController.abort(new AgentRunTimeoutError(elapsed));
@@ -657,15 +684,17 @@ export class AgentrunScheduler {
             inferenceEventBus,
             toolCallBus,
             scheduledSubagentBus,
-            timezone,
             mcpPool,
             hostToolsClient,
             chat,
             log,
+        } = this.deps;
+        const {
+            timezone,
             maxToolDescriptionChars,
             toolDefinitionsContextFraction,
             toolHeuristicRunWindow,
-        } = this.deps;
+        } = this.deps.settings();
         const waitForSubagent = (childId: string) => this.waitForSubagent(row.id, childId);
 
         const runnerLog = log.child({
@@ -683,6 +712,9 @@ export class AgentrunScheduler {
                     row.eventId,
                     offloadTokenThreshold,
                 );
+                // Pick up MCPs the host added / rebuilt / removed since the
+                // last run (config reload); a no-op catalog GET otherwise.
+                await mcpPool.refreshIfChanged();
                 const hostToolset = await hostToolsClient.tools(
                     row.eventId,
                     row.id,

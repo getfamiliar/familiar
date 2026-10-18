@@ -23,6 +23,17 @@ export class StorageRegistry implements StorageApi {
         this.providers.set(provider.pluginId, provider);
     }
 
+    /**
+     * Drop whatever `pluginId` registered here, so the plugin can
+     * register again after a restart (config reload). No-op when it
+     * registered nothing.
+     *
+     * @param pluginId The restarting plugin.
+     */
+    unregisterPlugin(pluginId: string): void {
+        this.providers.delete(pluginId);
+    }
+
     /** @returns The provider for `pluginId`, or `undefined`. */
     byPluginId(pluginId: string): StorageProvider | undefined {
         return this.providers.get(pluginId);

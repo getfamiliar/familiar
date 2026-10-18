@@ -1,6 +1,9 @@
 import { definePlugin } from "@getfamiliar/shared";
 import { buildCommands } from "./Commands.js";
-import { setApiKey } from "./Whisper.js";
+import { clearApiKey, setApiKey } from "./Whisper.js";
+
+/** Config key of the OpenAI API key the plugin transcribes with. */
+const OPENAI_API_KEY_CONFIG = "inference.apiKeys.openai";
 
 /**
  * Re-export the plugin's public library API. Sibling plugins
@@ -42,11 +45,13 @@ export { transcribeAudio } from "./Whisper.js";
 export default definePlugin({
     id: "transcribe-whisper",
     host: {
+        restartOnConfigChange: [OPENAI_API_KEY_CONFIG],
         prepare: (ctx) => {
-            const key = ctx.config.getString("inference.apiKeys.openai", null);
+            const key = ctx.config.getString(OPENAI_API_KEY_CONFIG, null);
             if (key !== null) {
                 setApiKey(key);
             } else {
+                clearApiKey();
                 ctx.logger.info(
                     "transcribe-whisper inactive: inference.apiKeys.openai not set in config/config.yml",
                 );

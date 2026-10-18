@@ -282,3 +282,127 @@ describe("buildTemplateSeedFilter", () => {
         assert.equal(existsSync(path.join(root, "workspace")), false);
     });
 });
+
+describe("PluginHost.reloadPluginsForConfigChange", () => {
+    it("restarts only plugins whose own group or declared foreign key changed", async () => {
+        const events: string[] = [];
+        const plugin = (id: string, extra: Record<string, unknown> = {}) =>
+            ({
+                id,
+                host: {
+                    prepare: () => events.push(`${id}:prepare`),
+                    start: async () => {
+                        events.push(`${id}:start`);
+                    },
+                    stop: async () => {
+                        events.push(`${id}:stop`);
+                    },
+                    tools: () => [okTool("ping")],
+                    ...extra,
+                },
+            }) as unknown as PluginManifest;
+        const { host, registry } = buildHost([
+            plugin("telegram"),
+            plugin("whisper", { restartOnConfigChange: ["inference.apiKeys.openai"] }),
+            plugin("untouched"),
+        ]);
+        host.prepareAll();
+        await host.startDaemons();
+        events.length = 0;
+
+        const report = await host.reloadPluginsForConfigChange([
+            "telegram.botToken",
+            "inference.apiKeys.openai",
+            "mail.allowSend",
+        ]);
+
+        assert.deepEqual(report, {
+            restarted: ["telegram", "whisper"],
+            failed: [],
+            needsDaemonRestart: [],
+        });
+        assert.deepEqual(events, [
+            "telegram:stop",
+            "telegram:prepare",
+            "telegram:start",
+            "whisper:stop",
+            "whisper:prepare",
+            "whisper:start",
+        ]);
+        assert.ok(registry.get("telegram_ping"), "tools re-registered after the restart");
+        assert.ok(registry.get("untouched_ping"));
+    });
+
+    it("starts a plugin that failed at boot once its config is fixed", async () => {
+        let isConfigured = false;
+        const { host, registry } = buildHost([
+            {
+                id: "telegram",
+                host: {
+                    start: async () => {
+                        if (!isConfigured) {
+                            throw new Error("telegram.botToken missing");
+                        }
+                    },
+                    stop: async () => {},
+                    tools: () => [okTool("send")],
+                },
+            } as unknown as PluginManifest,
+        ]);
+        host.prepareAll();
+        await host.startDaemons();
+        await assert.rejects(
+            registry.get("telegram_send")?.execute({}, {} as PluginToolCallContext) ??
+                Promise.resolve(),
+        );
+
+        isConfigured = true;
+        const report = await host.reloadPluginsForConfigChange(["telegram.botToken"]);
+        assert.deepEqual(report.restarted, ["telegram"]);
+        assert.equal(
+            await registry.get("telegram_send")?.execute({}, {} as PluginToolCallContext),
+            "ok",
+        );
+    });
+
+    it("reports a running plugin without a stop hook instead of starting it twice", async () => {
+        let starts = 0;
+        const { host } = buildHost([
+            {
+                id: "legacy",
+                host: {
+                    start: async () => {
+                        starts++;
+                    },
+                },
+            } as unknown as PluginManifest,
+        ]);
+        host.prepareAll();
+        await host.startDaemons();
+        const report = await host.reloadPluginsForConfigChange(["legacy.x"]);
+        assert.deepEqual(report.needsDaemonRestart, ["legacy"]);
+        assert.equal(starts, 1);
+    });
+
+    it("records a restart whose start throws as failed", async () => {
+        let shouldFail = false;
+        const { host } = buildHost([
+            {
+                id: "flaky",
+                host: {
+                    start: async () => {
+                        if (shouldFail) {
+                            throw new Error("boom");
+                        }
+                    },
+                    stop: async () => {},
+                },
+            } as unknown as PluginManifest,
+        ]);
+        host.prepareAll();
+        await host.startDaemons();
+        shouldFail = true;
+        const report = await host.reloadPluginsForConfigChange(["flaky"]);
+        assert.deepEqual(report.failed, [{ pluginId: "flaky", message: "start: boom" }]);
+    });
+});

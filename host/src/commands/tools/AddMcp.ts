@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { writeMarkdown } from "@getfamiliar/shared";
 import { confirm, input, password, select } from "@inquirer/prompts";
 import { defineCommand } from "citty";
 import { parse, stringify } from "yaml";
@@ -13,6 +14,8 @@ import {
     type RegistryCandidate,
     type RegistryHit,
 } from "../../mcp/registries/RegistryEntry.js";
+import { renderReloadReport } from "../../reload/DaemonReloader.js";
+import { requestDaemonReload } from "../../reload/ReloadClient.js";
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
@@ -173,9 +176,22 @@ async function runDialogue(positional: string | undefined): Promise<void> {
     for (const w of lintResult.warnings) {
         process.stdout.write(`warning: ${w}\n`);
     }
-    process.stdout.write(
-        "\nRestart the daemon to load the new MCP: familiar stop && familiar start\n",
-    );
+    const shouldReload = await confirm({
+        message: "Reload the running daemon now to start the new MCP (if it is running)?",
+        default: true,
+    });
+    if (!shouldReload) {
+        process.stdout.write("\nApply it later with `familiar config reload`.\n");
+        return;
+    }
+    const report = await requestDaemonReload(boot);
+    if (report === null) {
+        process.stdout.write(
+            "\nDaemon not running; the MCP starts with the next `familiar start`.\n",
+        );
+        return;
+    }
+    writeMarkdown(renderReloadReport(report));
 }
 
 /**

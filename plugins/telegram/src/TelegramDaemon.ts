@@ -58,6 +58,34 @@ export function readTelegramConfig(ctx: HostContext): TelegramConfig | null {
 }
 
 /**
+ * What a running daemon holds, so {@link stopTelegramDaemon} can release
+ * it before a restart (config reload) or on shutdown.
+ */
+interface RunningTelegramDaemon {
+    readonly bot: Bot;
+    readonly typing: TypingTracker | undefined;
+    unsubscribeChat: (() => Promise<void>) | undefined;
+}
+
+/** The live daemon; `undefined` while stopped or self-disabled. */
+let running: RunningTelegramDaemon | undefined;
+
+/**
+ * Stop long-polling, drop the outbound chat subscription and the typing
+ * ticker. Safe to call when the daemon never started.
+ */
+export async function stopTelegramDaemon(): Promise<void> {
+    const daemon = running;
+    running = undefined;
+    if (daemon === undefined) {
+        return;
+    }
+    daemon.typing?.dispose();
+    await daemon.unsubscribeChat?.();
+    await daemon.bot.stop();
+}
+
+/**
  * Start the Telegram bot daemon: validate config, register grammy
  * handlers, register the outbound chat subscription, and kick off
  * long-polling without awaiting it.
@@ -190,25 +218,31 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
         await gctx.reply("Only text, sticker, and voice messages are supported right now.");
     });
 
-    await ctx.chat.subscribe({ channelId: TELEGRAM_CHANNEL, role: "assistant" }, async (m) => {
-        if (authorizedUserId === null) {
-            ctx.logger.info("dropping telegram assistant msg: no telegram.authorizedUserId");
-            return true;
-        }
-        try {
-            for (const chunk of splitForTelegram(m.textContent)) {
-                await sendWithMarkdownFallback(bot, authorizedUserId, chunk, (msg) =>
-                    ctx.logger.info(msg),
-                );
+    const daemon: RunningTelegramDaemon = { bot, typing: em?.typing, unsubscribeChat: undefined };
+    running = daemon;
+
+    daemon.unsubscribeChat = await ctx.chat.subscribe(
+        { channelId: TELEGRAM_CHANNEL, role: "assistant" },
+        async (m) => {
+            if (authorizedUserId === null) {
+                ctx.logger.info("dropping telegram assistant msg: no telegram.authorizedUserId");
+                return true;
             }
-        } catch (err) {
-            // Ack anyway: returning false would replay forever on
-            // permanent failures (user blocked the bot, etc.).
-            // Bounded retry is a future enhancement.
-            ctx.logger.info(`telegram send failed: ${formatError(err)}`);
-        }
-        return true;
-    });
+            try {
+                for (const chunk of splitForTelegram(m.textContent)) {
+                    await sendWithMarkdownFallback(bot, authorizedUserId, chunk, (msg) =>
+                        ctx.logger.info(msg),
+                    );
+                }
+            } catch (err) {
+                // Ack anyway: returning false would replay forever on
+                // permanent failures (user blocked the bot, etc.).
+                // Bounded retry is a future enhancement.
+                ctx.logger.info(`telegram send failed: ${formatError(err)}`);
+            }
+            return true;
+        },
+    );
 
     // Don't await: bot.start() long-polls forever and only resolves on
     // bot.stop(). Errors propagate via the .catch below.
@@ -394,11 +428,13 @@ interface TypingTracker {
      * Telegram clears the indicator a few seconds later.
      */
     untrack(eventId: string): void;
+    /** Stop the refresh ticker (daemon stop). */
+    dispose(): void;
 }
 
 /**
  * Build a {@link TypingTracker} bound to the given chat. The refresh
- * interval is started here and runs for the daemon's lifetime; it
+ * interval is started here and runs until {@link TypingTracker.dispose}; it
  * issues no API calls when the in-flight set is empty, so the cost
  * while idle is one timer tick every {@link TYPING_REFRESH_MS}.
  */
@@ -413,12 +449,16 @@ function createTypingTracker(
             log(`telegram typing action failed: ${formatError(err)}`);
         });
     };
-    setInterval(() => {
+    const ticker = setInterval(() => {
         if (inFlight.size > 0) {
             ping();
         }
     }, TYPING_REFRESH_MS);
     return {
+        dispose(): void {
+            clearInterval(ticker);
+            inFlight.clear();
+        },
         track(eventId: string): void {
             inFlight.add(eventId);
             ping();

@@ -110,6 +110,27 @@ export class PluginMcpService {
     }
 
     /**
+     * Drop and close the cached clients of the given MCP ids after a
+     * reload rebuilt or removed their transports. Proxies handed out
+     * earlier stay usable: they look the client up per call, so the
+     * next call reconnects (and re-runs `initialize` against the new
+     * transport) or fails cleanly for a removed id.
+     *
+     * @param keys MCP ids whose sessions are stale.
+     */
+    async invalidate(keys: readonly string[]): Promise<void> {
+        const stale: Promise<Client>[] = [];
+        for (const key of keys) {
+            const client = this.clients.get(key);
+            if (client !== undefined) {
+                stale.push(client);
+                this.clients.delete(key);
+            }
+        }
+        await this.closeClients(stale);
+    }
+
+    /**
      * Close every cached client in parallel. Per-client errors are
      * logged and swallowed so one stuck close doesn't block the
      * rest. Safe to call multiple times.
@@ -117,6 +138,15 @@ export class PluginMcpService {
     async close(): Promise<void> {
         const pending = [...this.clients.values()];
         this.clients.clear();
+        await this.closeClients(pending);
+    }
+
+    /**
+     * Close the given client promises in parallel, logging failures.
+     *
+     * @param pending Cached connect promises to close.
+     */
+    private async closeClients(pending: readonly Promise<Client>[]): Promise<void> {
         await Promise.allSettled(
             pending.map(async (clientPromise) => {
                 try {

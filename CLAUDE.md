@@ -172,8 +172,7 @@ Skills grant no privileges — preloaded tools only save a discovery step, every
 
 ### 3. Configuration and secrets (host, YAML)
 
-All configuration — sensitive and non-sensitive — lives in `config/config.yml` (gitignored;
-`config/config.example.yml` is the tracked sample). The host accesses it via two services:
+All configuration — sensitive and non-sensitive — lives in `config/config.yml` (gitignored; `config/config.example.yml` is the tracked sample). User-facing reference: `docs/config.md` — keep it in sync when key conventions, restart-only keys or the reload behavior change. The host accesses it via two services:
 
 - **`ConfigService`** (interface in `shared/src/Config.ts`, implementation in
   `host/src/utils/ConfigService.ts`) is the runtime read/write surface. Plugin-agnostic; exposes
@@ -195,13 +194,13 @@ Top-level groups in `config/config.yml`:
 - `storage` — cloud-storage mounts and policy (`allowWrite`, `searchTimeoutMs`, `runQuotaMb`, `mounts.<alias>` with `plugin` / `account` / `drive` / `access` / `writeRoots` / `searchByDefault`). Parsed and statically linted by `host/src/storage/StorageConfig.ts` (also part of `config lint` and the daemon boot; plugin-aware checks run after `prepare`). Managed via `familiar storage list|add|remove|lint`; `add` / `remove` splice the file textually (`host/src/utils/ConfigDocument.ts`) so comments survive. Storage providers implement the `StorageProvider` SPI (`shared/src/Storage.ts`) and register via `ctx.storage.registerProvider` in **`prepare()`** (not `start()`) so the CLI reaches them without the daemon; the host `StorageService` owns refs, policy, search fan-out, cross-mount copy and the per-run byte quota, and the core `storage_*` tools are always registered — policy is enforced per call.
 - per-plugin (`telegram`, `whatsapp`, …) — owned by the plugin; plugin parses its own subtree and self-disables when absent.
 
-Container-side env stays explicit: `Start.ts` reads from the config service and hand-picks which
-values become container env vars. **Proxy-placeholder API keys** (e.g. `FEATHERLESS_API_KEY=via-proxy`
-inside `familiar-agent`) are hardcoded in the container launcher (`AgentContainer.ts`); the real upstream
-key only flows from config → `ReverseProxyContainer.upstreamApiKey`.
+Container-side config stays explicit: `buildAgentContainerConfig` (`host/src/container-bridge/ContainerConfig.ts`) hand-picks the values the container reads through `PassedConfig` — forwarded `config.yml` keys plus computed ones (`bastionUrl`, resolved providers, …). The map is passed as `FAMILIAR_CONTAINER_CONFIG` at container start and re-published after every config reload on the bastion's `/container-config/` endpoint (`ContainerConfigGateway`); the container fetches it at the start of every fresh agentrun (`refreshPassedConfig`) and overlays it, so container code must read settings per use, never into module-level constants. The real upstream API keys never enter the container; the reverse proxy injects them.
 
-CLI: `familiar config lint` validates the file. `familiar start` runs the linter implicitly before
-bringing the daemon up.
+**Hot reload.** `DaemonReloader` (`host/src/reload/`) applies `config.yml` and `mcp.yml` to the running daemon, triggered by `familiar config reload` (bastion `POST /config-reload/`) or the privileged agent tool `config_reload` — never by a file watcher. It validates both files completely and aborts without changes on errors; then it swaps the `HostConfigService` state (restart-only keys — `RESTART_ONLY_CONFIG_KEYS`: postgres password, bastion token, `writablePaths`, log retention, `python.packages` — stay pinned and are reported), rebuilds the reverse-proxy provider table, restarts plugins whose `<plugin-id>.*` group (or a `restartOnConfigChange` key) changed via `PluginHost.reloadPluginsForConfigChange`, applies the `mcp.yml` diff (`McpRegistry.reload` → `McpGateway.applyDiff` → `PluginMcpService.invalidate`; the container's `McpClientPool.refreshIfChanged` reconnects ids whose catalog `generation` changed, once per agentrun), and publishes the container config. Host code must therefore read reloadable config per use (or accept a restart-only key); boot-time captures need an explicit apply step in the reloader.
+
+**Agent config tools** (`host/src/config/`, core tools in group `config`, all `privileged`): `config_get` / `config_set` / `config_unset` / `config_reload` and `mcp_list` / `mcp_add` / `mcp_remove` / `mcp_set_env`. They edit the files (lint + rollback) and never apply anything themselves. Secrets never pass through the agent: `isSecretConfigKey` (`host/src/config/SecretKeys.ts`) flags every path segment containing `key` / `token` / `password` / `secret`; reads mask such values, writes refuse them (the user enters them via `familiar config set` with a hidden prompt).
+
+CLI: `familiar config lint` validates the file, `familiar config set <key> [value]` writes one value (secrets prompted hidden), `familiar config reload` applies both files to the running daemon. `familiar start` runs the linter implicitly before bringing the daemon up.
 
 Note that `config/mcp.yml` contains the configuration for MCP tools and likely contains sensitive information like API keys as well.
 
@@ -310,7 +309,8 @@ CLI: `familiar prompt placeholders` lists every placeholder (works without the d
 - **Cronjobs** — stateless, idempotent. On exception: log and continue at next schedule. Use `node-cron` or `bullmq`.
 - **Daemons** (long-running processes like IMAP IDLE, Telegram bot) — exponential backoff on restart (1s → 2s → 4s → ... up to 5min cap).
 - **Graceful shutdown** — SIGTERM with 10s grace period; plugins should drain in-flight operations and persist any pending state.
-- **Failure isolation** — a plugin whose `prepare`, `start` or `tools` hook throws is logged and disabled instead of taking the daemon down (`PluginHost.failedPlugins`); a summary line lists every disabled plugin at boot. Its tools stay registered but every call fails with the original error, and its own CLI commands rethrow a `prepare` failure. Restart the daemon after fixing the cause — there is no automatic retry.
+- **Failure isolation** — a plugin whose `prepare`, `start` or `tools` hook throws is logged and disabled instead of taking the daemon down (`PluginHost.failedPlugins`); a summary line lists every disabled plugin at boot. Its tools stay registered but every call fails with the original error, and its own CLI commands rethrow a `prepare` failure. After fixing the cause in its config group, `familiar config reload` restarts the plugin (or restart the daemon) — there is no automatic retry.
+- **Restart on config reload** — a plugin can be restarted in-process: `stop` → unregister its tools, mail / calendar / storage providers and prompt appenders / placeholders → `prepare` → `start` → `tools`. So `stop` must release everything `start` set up (timers, poll loops, sockets, chat / workspace subscriptions) and reset module state. A plugin with a `start` but no `stop` is reported as "daemon restart required" instead. Foreign config keys captured in `prepare` / `start` go into the manifest's `restartOnConfigChange`.
 - **Never as root** — the CLI refuses to run with uid 0: a root run leaves root-owned files under `data/` that the next normal start can't read.
 
 ### Logging

@@ -30,6 +30,17 @@ export class MailRegistry implements Pick<MailApi, "registerProvider"> {
     }
 
     /**
+     * Drop whatever `pluginId` registered here, so the plugin can
+     * register again after a restart (config reload). No-op when it
+     * registered nothing.
+     *
+     * @param pluginId The restarting plugin.
+     */
+    unregisterPlugin(pluginId: string): void {
+        this.providers.delete(pluginId);
+    }
+
+    /**
      * Look up the provider that owns a given mail id's plugin prefix.
      * Throws with an agent-readable message when no provider is
      * registered for the prefix — the alternative (silent fallthrough)

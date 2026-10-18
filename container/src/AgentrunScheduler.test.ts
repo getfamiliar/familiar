@@ -84,6 +84,7 @@ function buildHarness(opts: HarnessOptions): Harness {
     const mcpPool = {
         tools: () => ({}),
         mcpKeysById: () => new Map<string, ReadonlySet<string>>(),
+        refreshIfChanged: async () => {},
     };
     const hostToolsClient = {
         tools: async () => ({
@@ -123,7 +124,6 @@ function buildHarness(opts: HarnessOptions): Harness {
         } as unknown as SchedulerDeps["toolCallBus"],
         scheduledSubagentBus:
             scheduledSubagentBus as unknown as SchedulerDeps["scheduledSubagentBus"],
-        timezone: "UTC",
         log,
         clock,
         runnerFactory: buildRunnerFactory(opts.behaviors),
@@ -131,8 +131,11 @@ function buildHarness(opts: HarnessOptions): Harness {
         hostToolsClient,
         chat,
         recovery,
-        stepTimeoutMs: opts.stepTimeoutMs ?? 60_000,
-        retryCap: opts.retryCap ?? 3,
+        settings: () => ({
+            timezone: "UTC",
+            stepTimeoutMs: opts.stepTimeoutMs ?? 60_000,
+            retryCap: opts.retryCap ?? 3,
+        }),
         maxConcurrentExecuting: opts.maxConcurrentExecuting ?? 1,
         subscribeChanges: (handler) => agentRunBus.subscribe(() => handler()),
     };
@@ -846,6 +849,7 @@ describe("AgentrunScheduler — disaster recovery", () => {
             mcpPool: {
                 tools: () => ({}),
                 mcpKeysById: () => new Map(),
+                refreshIfChanged: async () => {},
             },
             hostToolsClient: {
                 tools: async () => ({
@@ -860,8 +864,7 @@ describe("AgentrunScheduler — disaster recovery", () => {
                 },
             },
             recovery,
-            stepTimeoutMs: 60_000,
-            retryCap: 3,
+            settings: () => ({ timezone: "UTC", stepTimeoutMs: 60_000, retryCap: 3 }),
             maxConcurrentExecuting: 1,
             subscribeChanges: (handler) => agentRunBus.subscribe(() => handler()),
         };
