@@ -111,6 +111,14 @@ core:
   # when unset.
   # writablePaths: ["wiki/**", "files/**"]
 
+# User-facing web UI served by the daemon (Hono). Off unless enabled.
+# No authentication yet — only enable it on a trusted network.
+# Changes apply with `familiar config reload` (the server restarts).
+# webserver:
+#   enabled: true
+#   port: 8080        # default 8080; ports below 1024 fail (familiar never runs as root)
+#   host: 0.0.0.0     # default 0.0.0.0 (all interfaces); 127.0.0.1 for local only
+
 inference:
   # Provider key used when a handler does not put a provider prefix on
   # its `model` frontmatter field. Must match an entry under `apiKeys`.

@@ -73,6 +73,7 @@ import { HostConfigService } from "../utils/ConfigService.js";
 import { ensureNetwork, ISOLATED_NETWORK_NAME, SHARED_NETWORK_NAME } from "../utils/DockerTools.js";
 import { rollingFileStream } from "../utils/LogRetentionTools.js";
 import { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
+import { WebServer } from "../web/WebServer.js";
 import { acquirePidFile, removePidFile } from "./pidfile.js";
 
 /**
@@ -307,6 +308,10 @@ export const startCommand = defineCommand({
             log: log.child({ component: "container-config-gateway" }),
         });
 
+        // User-facing web UI; started after the plugin daemons, applied
+        // on reload when a `webserver.*` key changed.
+        const webServer = new WebServer({ config, log: log.child({ component: "webserver" }) });
+
         // Applies config.yml / mcp.yml edits to the running daemon
         // (agent tool `config_reload`, `familiar config reload`).
         const reloader = new DaemonReloader({
@@ -327,6 +332,7 @@ export const startCommand = defineCommand({
                     ),
                 });
             },
+            applyWebServer: () => webServer.reload(),
             publishContainerConfig: async () => {
                 containerConfigGateway.publish(buildContainerConfigValues());
             },
@@ -454,6 +460,15 @@ export const startCommand = defineCommand({
             }),
         );
         log.info("plugin daemons started");
+
+        // Optional: a bind failure (port in use, privileged port) is
+        // logged and the daemon keeps running; fix webserver.* and run
+        // `familiar config reload` to retry.
+        try {
+            await webServer.start();
+        } catch (err) {
+            log.error(err instanceof Error ? err.message : String(err));
+        }
 
         // Cron-fired events go through HostContextImpl, not raw
         // EventBus.add. The host-side ctx.events.emit path is where
@@ -585,6 +600,7 @@ export const startCommand = defineCommand({
                 await safeStop(log, "cron scheduler", () => cronScheduler.stop());
                 await safeStop(log, "workspace watcher", () => workspaceWatcher.stop());
                 await safeStop(log, "mcp one-shot commands", () => mcpCommandRunner.stopAll());
+                await safeStop(log, "webserver", () => webServer.stop());
                 await safeStop(log, "plugin host", () => pluginHost.close());
                 await safeStop(log, "agent container", () => container.stop());
                 await safeStop(log, "bastion bridge", () => bridge.stop());

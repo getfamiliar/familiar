@@ -373,3 +373,40 @@ inference:
         );
     });
 });
+
+describe("ConfigLinter — webserver", () => {
+    const base = `
+core:
+  postgresPassword: secret
+  defaultChatChannel: cli
+inference:
+  defaultProvider: openai
+  defaultModel: gpt-5
+  apiKeys:
+    openai: REAL_KEY
+`;
+
+    it("accepts a valid webserver group", () => {
+        const result = lintConfigFile(
+            write(`${base}webserver:\n  enabled: true\n  port: 8080\n  host: 0.0.0.0\n`),
+        );
+        assert.deepEqual(result.errors, []);
+        assert.deepEqual(result.warnings, []);
+    });
+
+    it("rejects wrong types and out-of-range ports", () => {
+        const result = lintConfigFile(
+            write(`${base}webserver:\n  enabled: "yes"\n  port: 70000\n  host: ""\n`),
+        );
+        assert.equal(result.ok, false);
+        assert.ok(result.errors.some((e) => e.startsWith("webserver.enabled")));
+        assert.ok(result.errors.some((e) => e.startsWith("webserver.port")));
+        assert.ok(result.errors.some((e) => e.startsWith("webserver.host")));
+    });
+
+    it("warns about privileged ports", () => {
+        const result = lintConfigFile(write(`${base}webserver:\n  enabled: true\n  port: 80\n`));
+        assert.equal(result.ok, true);
+        assert.ok(result.warnings.some((w) => w.includes("webserver.port 80")));
+    });
+});

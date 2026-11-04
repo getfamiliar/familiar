@@ -86,6 +86,9 @@ function buildReloader(calls: string[]) {
         applyInference: async () => {
             calls.push("inference");
         },
+        applyWebServer: async () => {
+            calls.push("webserver");
+        },
         publishContainerConfig: async () => {
             calls.push("container-config");
         },
@@ -148,6 +151,24 @@ describe("DaemonReloader", () => {
         assert.deepEqual(calls, []);
         assert.equal(config.getBool("mail.allowSend", false), false);
         assert.match(renderReloadReport(report), /Nothing was applied/);
+    });
+
+    it("restarts the webserver only when a webserver key changed", async () => {
+        writeFileSync(configFile, configYaml());
+        const calls: string[] = [];
+        const { reloader } = buildReloader(calls);
+
+        writeFileSync(configFile, configYaml("mail:\n  allowSend: true\n"));
+        await reloader.reload();
+        assert.ok(!calls.includes("webserver"), "unrelated change leaves the webserver alone");
+
+        writeFileSync(
+            configFile,
+            configYaml("mail:\n  allowSend: true\nwebserver:\n  enabled: true\n"),
+        );
+        const report = await reloader.reload();
+        assert.deepEqual(report.appliedKeys, ["webserver.enabled"]);
+        assert.ok(calls.includes("webserver"));
     });
 
     it("refuses an MCP id that clashes with a plugin's tool group", async () => {

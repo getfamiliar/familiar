@@ -99,6 +99,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
         warnings,
     );
     lintChatCompaction(config, errors);
+    lintWebServer(config, errors, warnings);
     // Storage is a core group like `inference`; plugin-aware checks
     // (unknown `plugin:`) need the loaded providers and run separately.
     for (const finding of lintStorageStatic(config.storage)) {
@@ -339,6 +340,50 @@ function optionalString(root: Record<string, unknown>, path: string, warnings: s
     }
     if (typeof value !== "string" || value.length === 0) {
         warnings.push(`${path} should be a non-empty string (got ${describe(value)}).`);
+    }
+}
+
+/** Lowest port a non-root process can bind without `cap_net_bind_service`. */
+const FIRST_UNPRIVILEGED_PORT = 1024;
+
+/**
+ * Validate the optional `webserver` group: `enabled` must be a boolean,
+ * `port` an integer in 1–65535, `host` a non-empty string. Wrong types
+ * are errors (the server could not start with them); a port below
+ * {@link FIRST_UNPRIVILEGED_PORT} is a warning because familiar never
+ * runs as root, so binding it fails with EACCES unless the node binary
+ * has `cap_net_bind_service`.
+ *
+ * @param root Parsed config root.
+ * @param errors Error sink.
+ * @param warnings Warning sink.
+ */
+function lintWebServer(root: Record<string, unknown>, errors: string[], warnings: string[]): void {
+    const group = readPath(root, "webserver");
+    if (group === undefined || group === null) {
+        return;
+    }
+    if (!isPlainObject(group)) {
+        errors.push(`webserver must be a mapping (got ${describe(group)}).`);
+        return;
+    }
+    if (group.enabled !== undefined && typeof group.enabled !== "boolean") {
+        errors.push(`webserver.enabled must be true or false (got ${describe(group.enabled)}).`);
+    }
+    const port = group.port;
+    if (port !== undefined) {
+        if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
+            errors.push(
+                `webserver.port must be an integer between 1 and 65535 (got ${String(port)}).`,
+            );
+        } else if (port < FIRST_UNPRIVILEGED_PORT) {
+            warnings.push(
+                `webserver.port ${port} is below ${FIRST_UNPRIVILEGED_PORT}: familiar never runs as root, so binding fails with EACCES unless node has cap_net_bind_service.`,
+            );
+        }
+    }
+    if (group.host !== undefined && (typeof group.host !== "string" || group.host.length === 0)) {
+        errors.push(`webserver.host must be a non-empty string (got ${describe(group.host)}).`);
     }
 }
 

@@ -49,6 +49,11 @@ export interface DaemonReloaderDeps {
      */
     readonly applyInference: () => Promise<void>;
     /**
+     * Restart the user-facing webserver with the (already reloaded)
+     * `webserver.*` settings. Called only when a `webserver` key changed.
+     */
+    readonly applyWebServer: () => Promise<void>;
+    /**
      * Rebuild the agent container's passed config from the reloaded
      * config and publish it for the container's next agentrun.
      */
@@ -163,6 +168,9 @@ export class DaemonReloader {
             await deps.mcpGateway.applyDiff(mcp);
             await deps.pluginHost.mcp.invalidate([...mcp.removed, ...mcp.changed]);
         });
+        if (appliedKeys.some((key) => isConfigKeyOverlapping(key, "webserver"))) {
+            await this.step("webserver", warnings, () => deps.applyWebServer());
+        }
         await this.step("container config", warnings, () => deps.publishContainerConfig());
         warnings.push(...this.lintStorageAgainstProviders());
 

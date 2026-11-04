@@ -14,6 +14,7 @@ The file is a YAML mapping of top-level groups:
 | `chat` | platform | `chat.compaction.thresholdBytes` / `keepUncompactedBytes`. |
 | `storage` | platform | Cloud-storage mounts and policy (managed with `familiar storage …`). |
 | `python` | platform | `python.packages` baked into the agent image. |
+| `webserver` | platform | The user-facing web UI: `enabled`, `port`, `host` (see [Webserver](#webserver)). |
 | `<plugin-id>` | plugin | One group per plugin, named exactly like the plugin id (`telegram`, `ms365`, `memory`, `tesla`, …). |
 
 The platform minimum (`core.postgresPassword`, `core.defaultChatChannel`, `inference.defaultProvider`, `inference.defaultModel`, `inference.apiKeys`) is checked by the linter; plugin groups are validated by their plugins. Unknown top-level groups are ignored.
@@ -48,7 +49,8 @@ The platform minimum (`core.postgresPassword`, `core.defaultChatChannel`, `infer
 3. **Rebuilds the inference provider table** of the LLM reverse proxy (`inference.apiKeys`, `inference.captureModelHttpRequestBodies`).
 4. **Restarts affected plugins**: every plugin whose own group changed (or one of its declared `restartOnConfigChange` keys) is stopped, its tools / providers / prompt contributions are unregistered, and it runs `prepare` → `start` → `tools` again. A plugin that was disabled at boot (e.g. missing token) starts this way once its config is fixed. A plugin that has background work but no `stop` hook cannot be restarted in place and is reported as "daemon restart required".
 5. **Applies the `mcp.yml` diff** — see [`docs/mcp.md`](mcp.md#reloading-mcpyml).
-6. **Publishes the agent settings.** The container fetches its passed config from the bastion at the start of every agentrun, so `inference.defaultModel`, `inference.aliases`, `inference.maxRetries`, `core.agentStepTimeout`, `core.timezone`, the tool knobs and the debug captures apply from the next run on. Runs in progress keep their snapshot.
+6. **Restarts the webserver** when a `webserver.*` key changed (stop, then start with the new settings — or stay stopped when `enabled` is now off).
+7. **Publishes the agent settings.** The container fetches its passed config from the bastion at the start of every agentrun, so `inference.defaultModel`, `inference.aliases`, `inference.maxRetries`, `core.agentStepTimeout`, `core.timezone`, the tool knobs and the debug captures apply from the next run on. Runs in progress keep their snapshot.
 
 ### Restart-only keys
 
@@ -61,6 +63,18 @@ These keys are baked in at daemon start. A reload reports a change to them as "d
 | `core.writablePaths` | Applied by the agent container's root entrypoint (file permissions). |
 | `core.logRetentionDays` | Bound into the open log streams. |
 | `python.packages` | Baked into the agent image. |
+
+## Webserver
+
+The daemon can serve a user-facing web UI (for now a hello-world page; later the web chat and plugin pages). It is separate from the bastion on port 8788, which only serves the agent container and requires the bastion token.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `webserver.enabled` | `false` | Start the webserver only when `true`. |
+| `webserver.port` | `8080` | TCP port. Ports below 1024 fail with EACCES, because familiar never runs as root (the linter warns). |
+| `webserver.host` | `0.0.0.0` | Bind address; `127.0.0.1` keeps it local to the machine. |
+
+There is no authentication yet, so only enable the webserver on a trusted network. A bind failure (port in use, privileged port) is logged and the daemon keeps running; fix the key and run `familiar config reload`.
 
 ## Validation
 
