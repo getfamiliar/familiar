@@ -226,7 +226,7 @@ For scoped packages npm reports missing authorization as `404 Not Found` on the 
 
 - The package isn't on npm yet (step 3 was skipped).
 - The package has no trusted publisher, or the publisher's repository or workflow file name doesn't match exactly (step 4).
-- The workflow's npm is older than 11.5.1. The `publish-npm` job upgrades npm for this reason; don't remove that step.
+- The workflow's npm is older than 11.5.1. The `publish-npm` job installs `npm@^11.5.1` for this reason; don't remove that step, and don't bump it to `latest`: npm 12 refuses git dependencies by default (`EALLOWGIT`), which breaks `npm ci` on the whatsapp plugin's `libsignal`.
 
 A successful "Signed provenance statement" line before the error proves nothing: provenance signing uses OIDC against Sigstore and is independent of the publish authorization.
 
