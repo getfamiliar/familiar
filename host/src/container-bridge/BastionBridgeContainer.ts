@@ -1,5 +1,4 @@
 import type { Logger } from "@getfamiliar/shared";
-import type { Bootstrap } from "../Bootstrap.js";
 import {
     connectNetwork,
     dockerExec,
@@ -8,7 +7,8 @@ import {
     removeContainer,
     SHARED_NETWORK_NAME,
     stopContainer,
-} from "../utils/DockerTools.js";
+} from "@getfamiliar/shared";
+import type { Bootstrap } from "../Bootstrap.js";
 import { pullImageIfNeeded } from "./Images.js";
 
 /**

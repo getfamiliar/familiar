@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { dockerExec } from "@getfamiliar/shared";
 import { maskSecretSlice } from "../config/SecretOutputMasking.js";
-import { dockerExec } from "../utils/DockerTools.js";
 
 /** Container-name prefix of one-shot calls, distinct from the bastion's `familiar-mcp-<id>`. */
 export const MCP_EXEC_CONTAINER_PREFIX = "familiar-mcp-exec-";

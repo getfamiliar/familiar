@@ -1,11 +1,10 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { markdownTable, writeMarkdown } from "@getfamiliar/shared";
+import { dockerCapture, markdownTable, writeMarkdown } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { parse } from "yaml";
 import { bootstrap } from "../../Bootstrap.js";
 import { lintMcpConfigFile } from "../../mcp/McpConfigLoader.js";
 import { mcpMountDirFor } from "../../mcp/RuntimeImages.js";
-import { dockerCapture } from "../../utils/DockerTools.js";
 
 /**
  * `familiar tools list-mcps` — print every MCP declared in `config/mcp.yml`,

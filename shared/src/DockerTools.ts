@@ -207,9 +207,8 @@ export function dockerInteractive(args: readonly string[]): number {
  * On Linux, `host.docker.internal` isn't built-in and must be mapped to
  * the host gateway explicitly. macOS and Windows resolve it natively.
  *
- * Currently unused but kept available — the Featherless integration
- * (next step) will likely route via a host-side helper that the agent
- * container reaches over `host.docker.internal`.
+ * Used by sidecars that dial a host-side listener (the bastion bridge,
+ * the tailscale plugin's serve proxy to the webserver).
  *
  * @returns Extra `docker run` args, or an empty array on macOS/Windows.
  */

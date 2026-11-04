@@ -1,20 +1,18 @@
 import { chownSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import {
+    connectNetwork,
+    dockerCapture,
+    dockerExec,
+    ISOLATED_NETWORK_NAME,
     POSTGRES_DB,
     POSTGRES_HOST,
     POSTGRES_PORT,
     POSTGRES_USER,
     PostgresConnection,
-} from "@getfamiliar/shared";
-import {
-    connectNetwork,
-    dockerCapture,
-    dockerExec,
-    ISOLATED_NETWORK_NAME,
     removeContainer,
     SHARED_NETWORK_NAME,
     stopContainer,
-} from "../utils/DockerTools.js";
+} from "@getfamiliar/shared";
 import { pickFreeLoopbackPort } from "../utils/PortTools.js";
 
 const IMAGE_NAME = "postgres:16-alpine";

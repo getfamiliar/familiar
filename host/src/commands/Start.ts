@@ -6,11 +6,14 @@ import {
     createLogger,
     DEFAULT_WRITABLE_PATHS,
     EventBus,
+    ensureNetwork,
+    ISOLATED_NETWORK_NAME,
     jsonStdoutStream,
     type Logger,
     type LogStream,
     prettyStdoutStream,
     ScheduledSubagentBus,
+    SHARED_NETWORK_NAME,
     ToolCallBus,
 } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
@@ -70,7 +73,6 @@ import { ReloadGateway } from "../reload/ReloadGateway.js";
 import { lintStorageStatic } from "../storage/StorageConfig.js";
 import { lintOrThrow } from "../utils/ConfigLinter.js";
 import { HostConfigService } from "../utils/ConfigService.js";
-import { ensureNetwork, ISOLATED_NETWORK_NAME, SHARED_NETWORK_NAME } from "../utils/DockerTools.js";
 import { rollingFileStream } from "../utils/LogRetentionTools.js";
 import { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
 import { WebServer } from "../web/WebServer.js";

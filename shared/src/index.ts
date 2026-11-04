@@ -34,6 +34,25 @@ export { type ChatHandler, ChatMessageBus, type ChatUnsubscribe } from "./ChatMe
 export { type ConfigService, DEFAULT_WRITABLE_PATHS } from "./Config.js";
 export type { ContainerToolInfo } from "./ContainerTool.js";
 export { type ParsedCron, parseCron } from "./CronExpression.js";
+export {
+    buildNetworkCreateArgs,
+    connectNetwork,
+    type DockerCaptureResult,
+    type DockerExecOptions,
+    dockerCapture,
+    dockerExec,
+    dockerInteractive,
+    ensureNetwork,
+    hostGatewayArgs,
+    ISOLATED_NETWORK_NAME,
+    isContainerRunning,
+    isImagePresent,
+    isNetworkPresent,
+    type NetworkCreateOptions,
+    removeContainer,
+    SHARED_NETWORK_NAME,
+    stopContainer,
+} from "./DockerTools.js";
 export type {
     EventFile,
     EventFilter,

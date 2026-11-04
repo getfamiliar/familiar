@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import {
     CORE_PROMPT_PLACEHOLDERS,
+    isContainerRunning,
     markdownTable,
     PROMPT_TEMPLATE_FILE,
     type PromptPlaceholderKind,
@@ -9,7 +10,6 @@ import {
 import { defineCommand } from "citty";
 import { AGENT_CONTAINER_NAME } from "../container-bridge/AgentContainer.js";
 import type { PluginHost } from "../plugins/PluginHost.js";
-import { isContainerRunning } from "../utils/DockerTools.js";
 
 const RAW_ARG = {
     type: "boolean",

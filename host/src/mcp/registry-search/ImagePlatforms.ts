@@ -1,4 +1,4 @@
-import { dockerCapture } from "../../utils/DockerTools.js";
+import { dockerCapture } from "@getfamiliar/shared";
 import {
     fetchJson,
     fetchWithTimeout,

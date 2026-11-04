@@ -1,5 +1,10 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { createLogger, prettyStdoutStream } from "@getfamiliar/shared";
+import {
+    createLogger,
+    dockerCapture,
+    dockerInteractive,
+    prettyStdoutStream,
+} from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { bootstrap } from "../../Bootstrap.js";
 import type {
@@ -10,7 +15,6 @@ import { lintMcpConfigFile } from "../../mcp/McpConfigLoader.js";
 import type { McpEntry } from "../../mcp/McpEntry.js";
 import { buildMcpOneShotDockerArgs, loadMcpEntryFromFile } from "../../mcp/McpOneShot.js";
 import { ensureRuntimeImage, mcpMountDirFor } from "../../mcp/RuntimeImages.js";
-import { dockerCapture, dockerInteractive } from "../../utils/DockerTools.js";
 
 /**
  * `familiar tools call-mcp <id> -- <args...>` — one-shot interactive
