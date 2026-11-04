@@ -1,14 +1,13 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ConfigService, Logger } from "@getfamiliar/shared";
+import {
+    type ConfigService,
+    DEFAULT_WEBSERVER_HOST,
+    DEFAULT_WEBSERVER_PORT,
+    type Logger,
+} from "@getfamiliar/shared";
 import { createAdaptorServer } from "@hono/node-server";
 import { Hono } from "hono";
-
-/** Port the webserver listens on when `webserver.port` is unset. */
-export const DEFAULT_WEBSERVER_PORT = 8080;
-
-/** Address the webserver binds on when `webserver.host` is unset. */
-export const DEFAULT_WEBSERVER_HOST = "0.0.0.0";
 
 /** Dependencies of the {@link WebServer}. */
 export interface WebServerDeps {

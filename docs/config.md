@@ -74,7 +74,7 @@ The daemon can serve a user-facing web UI (for now a hello-world page; later the
 | `webserver.port` | `8080` | TCP port. Ports below 1024 fail with EACCES, because familiar never runs as root (the linter warns). |
 | `webserver.host` | `0.0.0.0` | Bind address; `127.0.0.1` keeps it local to the machine. |
 
-There is no authentication yet, so only enable the webserver on a trusted network. A bind failure (port in use, privileged port) is logged and the daemon keeps running; fix the key and run `familiar config reload`.
+There is no authentication yet, so only enable the webserver on a trusted network. To reach it from your other devices without exposing anything else, use the optional tailscale plugin ([`plugins/tailscale/README.md`](../plugins/tailscale/README.md)). A bind failure (port in use, privileged port) is logged and the daemon keeps running; fix the key and run `familiar config reload`.
 
 ## Validation
 

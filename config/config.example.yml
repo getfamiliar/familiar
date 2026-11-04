@@ -407,3 +407,13 @@ inference:
 #   # stale app version here rather than a broken login.
 #   teslaAppUserAgent: "TeslaApp/4.28.3-2167"
 #   userAgent: "Tesla/1195 CFNetwork/1388 Darwin/22.0.0"
+
+# Tailscale plugin (optional; add @getfamiliar/plugin-tailscale to
+# config/plugins). Publishes the web UI — and nothing else of this
+# machine — in your tailnet via a dedicated userspace node, HTTPS only.
+# Needs webserver.enabled: true and MagicDNS + HTTPS certificates in the
+# tailnet. Log in with `familiar tailscale login`. See
+# plugins/tailscale/README.md.
+# tailscale:
+#   hostname: familiar          # device name → https://familiar.<tailnet>.ts.net
+#   # authKey: set with `familiar config set tailscale.authKey` (optional, unattended first login)

@@ -231,3 +231,4 @@ export type {
     WorkspaceFileFilter,
     WorkspaceWatcherApi,
 } from "./WorkspaceFile.js";
+export { DEFAULT_WEBSERVER_HOST, DEFAULT_WEBSERVER_PORT } from "./WebServerDefaults.js";
