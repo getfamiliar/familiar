@@ -27,4 +27,4 @@ API keys, tokens and passwords never go through you. Every key or env var whose 
 ## Recipes
 
 - Settings in `config.yml` (models, mail/calendar safety, chat, plugins): read `skills/configuration/config.md`.
-- MCP servers in `mcp.yml` (add, remove, env vars, tool gating): read `skills/configuration/mcp.md`. To add a server, follow its "Adding a server" steps: purpose first, then `mcp_registry_search` / `mcp_registry_details`, fit check and tool-gating proposal before `mcp_add`.
+- MCP servers in `mcp.yml` (add, remove, env vars, tool gating, where a server keeps its login): read `skills/configuration/mcp.md`. To add a server, follow its "Adding a server" steps: purpose first, then `mcp_registry_search` / `mcp_registry_details`, fit check and tool-gating proposal before `mcp_add`.
