@@ -53,7 +53,11 @@ jobs:
     needs: version
     runs-on: ubuntu-24.04
     permissions:
-      id-token: write # npm provenance via GitHub OIDC
+      # npm Trusted Publishing: the publish authenticates via GitHub OIDC,
+      # no NPM_TOKEN. Each package must list this repo + release.yml as a
+      # trusted publisher on npmjs.com (a brand-new package needs one
+      # token-based first publish before it can be configured).
+      id-token: write
       contents: read
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -64,6 +68,8 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
           cache: npm
+      # Trusted Publishing needs npm >= 11.5.1; don't rely on the bundled one.
+      - run: npm install -g npm@latest
       - run: npm ci
       # Vendor the init templates into host/, then stamp VERSION across all
       # packages (versions, internal-dep pins, meta bundled-plugin deps).
@@ -71,8 +77,6 @@ jobs:
       - run: node scripts/ci-stamp.mjs "$VERSION"
       - run: npm run build
       - name: Publish (shared → plugins → host → meta)
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -e
           npm publish -w @getfamiliar/shared --provenance --access public

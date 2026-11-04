@@ -116,7 +116,7 @@ The current split:
 
 | Core (bundled, always on) | Optional (install + whitelist) |
 | --- | --- |
-| `cli-chat`, `memory`, `telegram`, `whatsapp`, `transcribe-whisper` | `featherless`, `ms365`, `tesla` |
+| `cli-chat`, `memory`, `telegram`, `whatsapp`, `transcribe-whisper` | `featherless`, `ms365`, `tesla`, `tailscale` |
 
 ### `config/plugins`
 
@@ -191,7 +191,7 @@ test ──▶ version ──┬──▶ publish-npm ────┐
 
 1. **test** — `npm ci`, full build, `format:check`, `lint`, and the workspace test suites. Gates everything else.
 2. **version** — computes the release version (see below) and exposes it as an output.
-3. **publish-npm** — vendors the `init` templates into the host package, stamps the version across all packages, builds, and publishes to npm in dependency order (`shared` → plugins → `host` → `@getfamiliar/cli`) with npm provenance. Every workspace under `plugins/` is published automatically (the root `build` script builds them via `npm run build -w plugins`), so a new plugin needs no pipeline edit; set `"private": true` in its `package.json` to keep it off npm.
+3. **publish-npm** — vendors the `init` templates into the host package, stamps the version across all packages, builds, and publishes to npm in dependency order (`shared` → plugins → `host` → `@getfamiliar/cli`) with npm provenance, authenticated via npm Trusted Publishing (OIDC, no token). Every workspace under `plugins/` is published automatically (the root `build` script builds them via `npm run build -w plugins`), so a new plugin needs no pipeline edit; set `"private": true` in its `package.json` to keep it off npm. Its very first version must be published by hand before CI can take over ([create-plugins.md](create-plugins.md#first-release-to-npm)).
 4. **publish-images** — a matrix over the four images. Each is **built only when its own inputs change**; otherwise the release tag is re-pointed at the existing image (see below). Multi-arch (`linux/amd64,linux/arm64`), tagged with the version and `latest`, with a per-image GitHub Actions layer cache.
 5. **release** — creates the annotated git tag `v<version>` and a GitHub release with generated notes.
 
@@ -249,7 +249,7 @@ In this mode the core plugin set is read directly from each `plugins/*/package.j
 
 ## One-time operational setup
 
-- **`NPM_TOKEN`** — a repository secret (npm automation token) with publish rights to the `@getfamiliar` scope. GHCR uses the automatic `GITHUB_TOKEN` (the workflow requests `packages: write`).
+- **npm Trusted Publishing** — `publish-npm` authenticates via GitHub OIDC; there is no npm token secret. Every published package must list `getfamiliar/familiar` + `release.yml` as its trusted publisher on npmjs.com. A new package has to exist before it can be configured, so its first version is published by hand — see [create-plugins.md](create-plugins.md#first-release-to-npm). GHCR uses the automatic `GITHUB_TOKEN` (the workflow requests `packages: write`).
 - **GHCR visibility** — the first publish creates the image packages as private. Make them public so instances can pull anonymously.
 - **npm provenance** — requires the workflow's `id-token: write` permission (already set) and the `repository` field that `ci-stamp` injects.
 
