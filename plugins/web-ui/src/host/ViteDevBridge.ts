@@ -1,8 +1,12 @@
 import path from "node:path";
-import type { Logger, WebUiEnv } from "@getfamiliar/shared";
+import type { Logger, WebAuthPageView, WebUiEnv } from "@getfamiliar/shared";
 import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 import type { Context } from "hono";
 import type { ViteDevServer, Logger as ViteLogger } from "vite";
+import type { RenderAuthPage } from "./BuiltAuthPages.js";
+
+/** Vite module id of the login-page renderer (also the SSR build entry). */
+const AUTH_PAGE_MODULE = "/src/ssr/render-auth-page.tsx";
 
 /** Port of Vite's HMR websocket; it listens on loopback only. */
 export const HMR_PORT = 24678;
@@ -87,6 +91,25 @@ export class ViteDevBridge {
             });
         });
         return isHandled ? RESPONSE_ALREADY_SENT : c.notFound();
+    }
+
+    /**
+     * Render a login-flow page from the current sources via Vite's SSR
+     * module loader; edits apply on the next page load (these pages have
+     * no script, so there is no hot reload for them).
+     *
+     * @param view The page the core decided to show.
+     * @returns The HTML document.
+     * @throws {Error} When the module fails to load or lacks `renderAuthPage`.
+     */
+    async renderAuthPage(view: WebAuthPageView): Promise<string> {
+        const module = (await this.server.ssrLoadModule(AUTH_PAGE_MODULE)) as {
+            renderAuthPage?: RenderAuthPage;
+        };
+        if (typeof module.renderAuthPage !== "function") {
+            throw new Error(`web-ui: ${AUTH_PAGE_MODULE} does not export renderAuthPage`);
+        }
+        return module.renderAuthPage(view);
     }
 
     /** Shut the Vite server (watchers, HMR websocket) down. */

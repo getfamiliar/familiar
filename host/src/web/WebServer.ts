@@ -55,7 +55,8 @@ interface WebServerSettings {
  * {@link reload} picks up edits after `familiar config reload`.
  *
  * The pages themselves come from a web UI plugin: its `webUi(ctx)`
- * root controller (selected by {@link WebUiRegistry.select}, pinned via
+ * root controller (plus, optionally, the markup of the login pages, whose
+ * logic stays here) (selected by {@link WebUiRegistry.select}, pinned via
  * `webserver.uiPlugin`) is mounted at `/` behind the auth middleware and
  * the login routes. Without one, a plain page asks to install a web UI
  * plugin. When the registered controllers change (plugin restart), the
@@ -206,8 +207,9 @@ export class WebServer {
 
     /**
      * Build the Hono application served by this server: the auth
-     * middleware in front of everything, the login routes, then the
-     * selected web UI's root controller (or the plain fallback page).
+     * middleware in front of everything, the login routes (rendered by
+     * the selected web UI when it can), then its root controller (or the
+     * plain fallback page).
      *
      * @param auth Auth settings and stores for this start.
      * @returns A fresh Hono app.
@@ -215,10 +217,11 @@ export class WebServer {
     private buildApp(auth: WebAuthDeps): Hono<WebEnv> {
         const app = new Hono<WebEnv>();
         app.use(createAuthMiddleware(auth));
-        mountLoginRoutes(app, auth);
         const selection = this.selectWebUi();
-        if (selection.kind === "selected") {
-            app.route("/", selection.app as unknown as Hono<WebEnv>);
+        const ui = selection.kind === "selected" ? selection.ui : undefined;
+        mountLoginRoutes(app, auth, ui?.renderAuthPage);
+        if (ui !== undefined) {
+            app.route("/", ui.controller as unknown as Hono<WebEnv>);
         } else {
             mountNoWebUiFallback(app, selection);
         }

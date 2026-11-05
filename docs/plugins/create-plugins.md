@@ -166,10 +166,11 @@ Shared how-to knowledge goes into `workspace-template/skills/<name>/SKILL.md` in
 
 ## Providing the web UI
 
-The core webserver only authenticates; the pages come from a plugin whose `webUi(ctx)` hook returns a root controller: a `Hono<WebUiEnv>` app (types from `@getfamiliar/shared`) mounted at `/`. `plugins/web-ui` is the reference implementation.
+The core webserver only authenticates; the pages come from a plugin whose `webUi(ctx)` hook returns a `WebUi` (types from `@getfamiliar/shared`): a root `controller`, a `Hono<WebUiEnv>` app mounted at `/`, and optionally `renderAuthPage`. `plugins/web-ui` is the reference implementation.
 
 - **Auth is done before your routes run.** Every request reaching the controller passed the core auth middleware; `c.get("principal")` is the signed-in, allowlisted user (`login`, `displayName`, `via`). Don't add your own login.
 - **Core routes win.** `/login`, `/login/:token` and `/logout` are registered before the controller; a catch-all in the controller cannot shadow them. Sign out with a `POST /logout`.
+- **Login pages: markup only.** `renderAuthPage(view)` turns a `WebAuthPageView` (`signedIn`, `signedOut`, `confirmLoginLink`, `invalidLoginLink`) into a complete HTML document. The core decides which page, the status code, the form actions and everything a form submission does. The page is served under a strict CSP (no scripts, no external resources, inline styles and `data:` fonts / images only, forms to the same origin), so it must be self-contained: these pages are reachable without a session, so the UI's (authenticated) assets aren't available to them. Escape all text. If the renderer is missing or throws, the core serves its plain page and logs the error.
 - **Node bindings.** `c.env.incoming` / `c.env.outgoing` are the raw node request and response, e.g. to hand a request to connect-style middleware and answer with `RESPONSE_ALREADY_SENT` (`@hono/node-server/utils/response`).
 - **Swapped on restart.** The hook runs after `start`; on a plugin restart the old controller is dropped and the new one is mounted without rebinding the socket. A disabled plugin provides no UI.
 - **One UI at a time.** With several providers, `webserver.uiPlugin` picks one; with none (or an ambiguous choice) the webserver serves a plain page saying what to install or configure.

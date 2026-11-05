@@ -1,6 +1,7 @@
 import {
     type Logger,
     PROXY_SECRET_HEADER,
+    type WebAuthPageView,
     type WebPrincipal,
     type WebUiEnv,
 } from "@getfamiliar/shared";
@@ -224,6 +225,21 @@ async function resolveIdentity(
     return fromSession === null ? { kind: "none" } : { kind: "allowed", principal: fromSession };
 }
 
+/** Renders a login-flow page as a full HTML document (from the selected web UI). */
+export type AuthPageRenderer = (view: WebAuthPageView) => Promise<string>;
+
+/** CLI command that prints a login link, as shown on the login pages. */
+const LOGIN_COMMAND = "familiar web login";
+
+/**
+ * Content-Security-Policy of every login-flow page: no scripts and no
+ * external resources at all, only inline styles and `data:` fonts /
+ * images, forms posting to this origin only, no framing. The pages
+ * stay inert even when a web UI renders them.
+ */
+export const AUTH_PAGE_CSP =
+    "default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+
 /**
  * Mount the login flow: `GET /login` (who is signed in, or how to get a
  * link), `GET /login/:token`
@@ -231,56 +247,43 @@ async function resolveIdentity(
  * the token), `POST /login/:token` (redeem → session cookie) and
  * `POST /logout`.
  *
+ * The core decides every page, status and redirect; only the markup of
+ * the pages may come from the selected web UI's `renderer`. Without a
+ * renderer, or when it throws, the plain built-in pages are served.
+ *
  * @param app The webserver app.
  * @param deps Settings, session store, logger.
+ * @param renderer Auth-page renderer of the selected web UI, if any.
  */
-export function mountLoginRoutes(app: Hono<WebEnv>, deps: WebAuthDeps): void {
+export function mountLoginRoutes(
+    app: Hono<WebEnv>,
+    deps: WebAuthDeps,
+    renderer?: AuthPageRenderer,
+): void {
+    const render = (c: Context<WebEnv>, view: WebAuthPageView, status: 200 | 401 = 200) =>
+        renderAuthPage(c, deps, renderer, view, status);
     app.get("/login", (c) => {
         const principal = c.get("signedInAs");
         if (principal !== null) {
-            return c.html(
-                page(
-                    "Signed in",
-                    html`<p>
-                            You are signed in as ${principal.displayName} (${principal.login}, via
-                            ${principal.via}).
-                        </p>
-                        <p><a href="/">Continue to familiar</a></p>`,
-                ),
-            );
+            return render(c, {
+                kind: "signedIn",
+                principal,
+                continueUrl: "/",
+                logoutAction: "/logout",
+            });
         }
-        return c.html(
-            page(
-                "Sign in",
-                html`<p>You are not signed in.</p>
-                    <p>
-                        On the machine running familiar, run <code>familiar web login</code> and open
-                        the printed link here, or ask familiar in chat for a login link.
-                    </p>`,
-            ),
-        );
+        return render(c, { kind: "signedOut", loginCommand: LOGIN_COMMAND });
     });
     app.get("/login/:token", (c) =>
-        c.html(
-            page(
-                "Sign in",
-                html`<form method="post" action="/login/${c.req.param("token")}">
-                    <button type="submit">Sign in to familiar</button>
-                </form>`,
-            ),
-        ),
+        render(c, {
+            kind: "confirmLoginLink",
+            formAction: `/login/${encodeURIComponent(c.req.param("token"))}`,
+        }),
     );
     app.post("/login/:token", async (c) => {
         const login = await deps.sessions.redeemLoginToken(c.req.param("token"));
         if (login === null) {
-            return c.html(
-                page(
-                    "Sign in",
-                    html`<p>This login link is invalid, already used or expired.</p>
-                        <p>Run <code>familiar web login</code> for a new one.</p>`,
-                ),
-                401,
-            );
+            return render(c, { kind: "invalidLoginLink", loginCommand: LOGIN_COMMAND }, 401);
         }
         if (!isAllowedLogin(deps.settings, login)) {
             return forbidden(c, deps, login, "login link");
@@ -308,6 +311,80 @@ export function mountLoginRoutes(app: Hono<WebEnv>, deps: WebAuthDeps): void {
         deleteCookie(c, SESSION_COOKIE, { path: "/" });
         return c.redirect("/login", 303);
     });
+}
+
+/**
+ * Answer with a login-flow page under {@link AUTH_PAGE_CSP}: the web UI's
+ * markup when it renders one, else (or when it throws) the plain page.
+ *
+ * @param c Request context.
+ * @param deps Auth deps (for the log line).
+ * @param renderer The web UI's renderer, if any.
+ * @param view The page to show.
+ * @param status HTTP status.
+ * @returns The response.
+ */
+async function renderAuthPage(
+    c: Context<WebEnv>,
+    deps: WebAuthDeps,
+    renderer: AuthPageRenderer | undefined,
+    view: WebAuthPageView,
+    status: 200 | 401,
+): Promise<Response> {
+    const headers = { "content-security-policy": AUTH_PAGE_CSP, "cache-control": "no-store" };
+    if (renderer !== undefined) {
+        try {
+            return c.html(await renderer(view), status, headers);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            deps.log.error(
+                `webserver: the web UI failed to render the "${view.kind}" login page: ${message} — serving the plain page`,
+            );
+        }
+    }
+    return c.html(plainAuthPage(view), status, headers);
+}
+
+/**
+ * The built-in, unstyled login-flow pages.
+ *
+ * @param view The page to show.
+ * @returns The page markup.
+ */
+function plainAuthPage(view: WebAuthPageView): ReturnType<typeof html> {
+    switch (view.kind) {
+        case "signedIn":
+            return page(
+                "Signed in",
+                html`<p>
+                        You are signed in as ${view.principal.displayName} (${view.principal.login}, via
+                        ${view.principal.via}).
+                    </p>
+                    <p><a href="${view.continueUrl}">Continue to familiar</a></p>`,
+            );
+        case "signedOut":
+            return page(
+                "Sign in",
+                html`<p>You are not signed in.</p>
+                    <p>
+                        On the machine running familiar, run <code>${view.loginCommand}</code> and open
+                        the printed link here, or ask familiar in chat for a login link.
+                    </p>`,
+            );
+        case "confirmLoginLink":
+            return page(
+                "Sign in",
+                html`<form method="post" action="${view.formAction}">
+                    <button type="submit">Sign in to familiar</button>
+                </form>`,
+            );
+        case "invalidLoginLink":
+            return page(
+                "Sign in",
+                html`<p>This login link is invalid, already used or expired.</p>
+                    <p>Run <code>${view.loginCommand}</code> for a new one.</p>`,
+            );
+    }
 }
 
 /**

@@ -1,9 +1,28 @@
-import type { WebUiEnv } from "@getfamiliar/shared";
+import type { WebAuthPageView, WebUi, WebUiEnv } from "@getfamiliar/shared";
 import { type Context, Hono } from "hono";
 
 /** Serves everything that is not an API route: the UI pages and their assets. */
 export interface UiAssetHandler {
     handle(c: Context<WebUiEnv>): Promise<Response>;
+}
+
+/** Renders the login-flow pages the core webserver asks for. */
+export interface AuthPageSource {
+    renderAuthPage(view: WebAuthPageView): Promise<string>;
+}
+
+/**
+ * Assemble what the plugin's `webUi` hook hands the core.
+ *
+ * @param assets Page / asset handler.
+ * @param authPages Login-page renderer.
+ * @returns Root controller plus login-page renderer.
+ */
+export function buildWebUi(assets: UiAssetHandler, authPages: AuthPageSource): WebUi {
+    return {
+        controller: buildWebUiController(assets),
+        renderAuthPage: (view) => authPages.renderAuthPage(view),
+    };
 }
 
 /**

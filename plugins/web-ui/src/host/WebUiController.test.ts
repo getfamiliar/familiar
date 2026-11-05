@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import type { WebUiEnv } from "@getfamiliar/shared";
 import { Hono } from "hono";
-import { buildWebUiController } from "./WebUiController.js";
+import { buildWebUi, buildWebUiController } from "./WebUiController.js";
 
 /**
  * Mount the controller below a stand-in for the core auth middleware.
@@ -35,5 +35,17 @@ describe("buildWebUiController", () => {
         assert.equal(unknown.status, 404);
         assert.match((await unknown.json()).error, /POST \/api\/nope/);
         assert.equal(await (await app.request("/settings")).text(), "asset /settings");
+    });
+
+    it("hands the core the controller and the login-page renderer", async () => {
+        const ui = buildWebUi(
+            { handle: async (c) => c.text("asset") },
+            { renderAuthPage: async (view) => `rendered ${view.kind}` },
+        );
+        assert.equal(await (await ui.controller.request("/x")).text(), "asset");
+        assert.equal(
+            await ui.renderAuthPage?.({ kind: "signedOut", loginCommand: "familiar web login" }),
+            "rendered signedOut",
+        );
     });
 });

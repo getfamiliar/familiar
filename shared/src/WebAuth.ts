@@ -14,6 +14,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Hono } from "hono";
 
 /** Request header carrying a trusted proxy's shared secret (lowercase, as Hono / node normalize it). */
 export const PROXY_SECRET_HEADER = "x-familiar-proxy-secret";
@@ -95,4 +96,62 @@ export interface WebUiEnv {
         /** Whether the browser talks HTTPS (directly, or to a trusted proxy that says so). */
         isHttps: boolean;
     };
+}
+
+/**
+ * One of the core login-flow pages, described as data. The core decides
+ * which page is shown, with which status code, and handles every form
+ * submission itself; a web UI only turns the view into markup
+ * ({@link WebUi.renderAuthPage}).
+ */
+export type WebAuthPageView =
+    /** `GET /login` with an allowed identity: who is signed in, link to the app. */
+    | {
+          readonly kind: "signedIn";
+          readonly principal: WebPrincipal;
+          /** Where "continue" leads (`/`). */
+          readonly continueUrl: string;
+          /** Form action of the sign-out button (`POST`, `/logout`). */
+          readonly logoutAction: string;
+      }
+    /** `GET /login` without identity: how to get a login link. */
+    | {
+          readonly kind: "signedOut";
+          /** CLI command that prints a login link (`familiar web login`). */
+          readonly loginCommand: string;
+      }
+    /** `GET /login/:token`: confirm before the one-time token is redeemed. */
+    | {
+          readonly kind: "confirmLoginLink";
+          /** Form action redeeming the token (`POST`, `/login/<token>`). */
+          readonly formAction: string;
+      }
+    /** `POST /login/:token` with an invalid, used or expired token. */
+    | {
+          readonly kind: "invalidLoginLink";
+          /** CLI command that prints a new login link. */
+          readonly loginCommand: string;
+      };
+
+/**
+ * What a web UI plugin hands the core webserver from its `webUi(ctx)` hook.
+ */
+export interface WebUi {
+    /**
+     * Root controller mounted at `/`, behind the core auth middleware and
+     * after the core login routes.
+     */
+    readonly controller: Hono<WebUiEnv>;
+    /**
+     * Optional: render a login-flow page as a complete HTML document.
+     * The page is served under a strict Content-Security-Policy (no
+     * scripts, no external resources; inline styles and `data:` fonts /
+     * images only; forms may post to the same origin only), so it must
+     * be self-contained. Text content must be escaped by the renderer.
+     * When it is absent or throws, the core serves its plain page.
+     *
+     * @param view The page the core decided to show.
+     * @returns The HTML document.
+     */
+    readonly renderAuthPage?: (view: WebAuthPageView) => Promise<string>;
 }

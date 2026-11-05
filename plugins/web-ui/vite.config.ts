@@ -4,19 +4,36 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 /**
- * Vite config of the web UI. `vite build` writes the client bundle to
- * `build/client`, which the plugin's host side serves in production; in
- * dev mode the host side runs Vite in middleware mode with this config.
+ * Vite config of the web UI, with two builds:
+ *
+ * - client (`vite build`): the SPA bundle in `build/client`, served by
+ *   the plugin's host side in production;
+ * - ssr (`vite build --ssr src/ssr/render-auth-page.tsx`): the login-page
+ *   renderer in `build/ssr`, fully bundled (no runtime npm deps) and with
+ *   every asset inlined as a `data:` URI, because those pages are served
+ *   without authentication under a CSP that allows no external resources.
+ *
+ * In dev mode the host side runs Vite in middleware mode with this config.
  */
-export default defineConfig({
+export default defineConfig(({ isSsrBuild }) => ({
     plugins: [react(), tailwindcss()],
     resolve: {
         alias: {
             "@": path.resolve(import.meta.dirname, "./src"),
         },
     },
-    build: {
-        outDir: "build/client",
-        emptyOutDir: true,
+    ssr: {
+        noExternal: isSsrBuild ? true : undefined,
     },
-});
+    build: isSsrBuild
+        ? {
+              outDir: "build/ssr",
+              emptyOutDir: true,
+              assetsInlineLimit: () => true,
+              rollupOptions: { output: { entryFileNames: "[name].js" } },
+          }
+        : {
+              outDir: "build/client",
+              emptyOutDir: true,
+          },
+}));

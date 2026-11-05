@@ -1,9 +1,8 @@
-import type { WebUiEnv } from "@getfamiliar/shared";
-import type { Hono } from "hono";
+import type { WebUi } from "@getfamiliar/shared";
 
 /** Outcome of {@link WebUiRegistry.select}. */
 export type WebUiSelection =
-    | { readonly kind: "selected"; readonly pluginId: string; readonly app: Hono<WebUiEnv> }
+    | { readonly kind: "selected"; readonly pluginId: string; readonly ui: WebUi }
     | { readonly kind: "none" }
     | {
           readonly kind: "notProvided";
@@ -13,28 +12,28 @@ export type WebUiSelection =
     | { readonly kind: "ambiguous"; readonly available: readonly string[] };
 
 /**
- * The web UI root controllers plugins returned from their `webUi(ctx)`
+ * The web UIs (root controller + optional auth-page renderer) plugins returned from their `webUi(ctx)`
  * hook, keyed by plugin id. One instance per host process; the webserver
  * picks one per app build ({@link select}) and rebuilds its app whenever
  * the set changes ({@link onChange}), e.g. after a plugin restart.
  */
 export class WebUiRegistry {
-    private readonly controllers = new Map<string, Hono<WebUiEnv>>();
+    private readonly controllers = new Map<string, WebUi>();
     private readonly listeners = new Set<() => void>();
 
     /**
-     * Register (or replace) a plugin's root controller.
+     * Register (or replace) a plugin's web UI.
      *
      * @param pluginId Providing plugin.
-     * @param app Its root controller.
+     * @param ui Its web UI.
      */
-    set(pluginId: string, app: Hono<WebUiEnv>): void {
-        this.controllers.set(pluginId, app);
+    set(pluginId: string, ui: WebUi): void {
+        this.controllers.set(pluginId, ui);
         this.notify();
     }
 
     /**
-     * Drop a plugin's controller (plugin restart). No-op when it has none.
+     * Drop a plugin's web UI (plugin restart). No-op when it has none.
      *
      * @param pluginId The restarting plugin.
      */
@@ -64,10 +63,10 @@ export class WebUiRegistry {
     select(preferredId: string | undefined): WebUiSelection {
         const available = this.listPluginIds();
         if (preferredId !== undefined) {
-            const app = this.controllers.get(preferredId);
-            return app === undefined
+            const ui = this.controllers.get(preferredId);
+            return ui === undefined
                 ? { kind: "notProvided", preferredId, available }
-                : { kind: "selected", pluginId: preferredId, app };
+                : { kind: "selected", pluginId: preferredId, ui };
         }
         if (available.length === 0) {
             return { kind: "none" };
@@ -79,7 +78,7 @@ export class WebUiRegistry {
         return {
             kind: "selected",
             pluginId,
-            app: this.controllers.get(pluginId) as Hono<WebUiEnv>,
+            ui: this.controllers.get(pluginId) as WebUi,
         };
     }
 

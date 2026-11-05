@@ -1,6 +1,5 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CommandDef } from "citty";
-import type { Hono } from "hono";
 import type { AgentRunRow } from "./AgentRun.js";
 import type { CalendarApi } from "./Calendar.js";
 import type { ChatFilter } from "./ChatMessage.js";
@@ -15,7 +14,7 @@ import type { StepResultRow } from "./StepResult.js";
 import type { StorageApi } from "./Storage.js";
 import type { ToolLevel } from "./ToolLevel.js";
 import type { ToolRunContext } from "./ToolRunner.js";
-import type { WebApi, WebUiEnv } from "./WebAuth.js";
+import type { WebApi, WebUi } from "./WebAuth.js";
 import type { WorkspaceWatcherApi } from "./WorkspaceFile.js";
 
 export type { ChatHandler, Client as McpClient };
@@ -735,8 +734,9 @@ export interface PluginHostManifest {
      */
     tools?(ctx: HostContext): readonly PluginTool[];
     /**
-     * Provide the web UI: return the root controller, a Hono app mounted
-     * at `/` of the core webserver. Called after `start()` resolves (at
+     * Provide the web UI: return its root controller, a Hono app mounted
+     * at `/` of the core webserver, and optionally a renderer for the
+     * login-flow pages ({@link WebUi.renderAuthPage}). Called after `start()` resolves (at
      * boot and after every restart), so closures over `start`-time state
      * (e.g. a dev server) are safe; a restart swaps the controller
      * without rebinding the socket.
@@ -744,7 +744,8 @@ export interface PluginHostManifest {
      * Authentication stays in the core: every request reaching the
      * controller passed the auth middleware, `c.get("principal")` is the
      * signed-in user. The core routes `/login`, `/login/:token` and
-     * `/logout` take precedence over the controller's routes.
+     * `/logout` take precedence over the controller's routes; the core
+     * decides what they do and only lets the UI render their markup.
      *
      * When several plugins provide a UI, `webserver.uiPlugin` picks one;
      * without any, the webserver serves a plain page asking to install
@@ -752,7 +753,7 @@ export interface PluginHostManifest {
      *
      * Synchronous, side-effect-free: just build and return the app.
      */
-    webUi?(ctx: HostContext): Hono<WebUiEnv>;
+    webUi?(ctx: HostContext): WebUi;
     /**
      * Supply {@link ModelMetaData} for a model the default (models.dev)
      * database does not cover. The host calls this on every plugin that

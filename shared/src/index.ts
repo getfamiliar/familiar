@@ -231,7 +231,9 @@ export {
     PROXY_SECRET_HEADER,
     type TrustedProxyRegistration,
     type WebApi,
+    type WebAuthPageView,
     type WebPrincipal,
+    type WebUi,
     type WebUiBindings,
     type WebUiEnv,
 } from "./WebAuth.js";

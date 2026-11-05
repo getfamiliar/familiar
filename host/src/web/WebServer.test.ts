@@ -5,7 +5,12 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { PROXY_SECRET_HEADER, type WebUiEnv } from "@getfamiliar/shared";
+import {
+    PROXY_SECRET_HEADER,
+    type WebAuthPageView,
+    type WebUi,
+    type WebUiEnv,
+} from "@getfamiliar/shared";
 import { MockLogger } from "@getfamiliar/shared/testing";
 import { Hono } from "hono";
 import { HostConfigService } from "../utils/ConfigService.js";
@@ -109,11 +114,11 @@ const SIGNED_IN = {
  * @param label Text identifying this controller in responses.
  * @returns The controller.
  */
-function fakeWebUi(label: string): Hono<WebUiEnv> {
-    const ui = new Hono<WebUiEnv>();
-    ui.get("/api/me", (c) => c.json({ label, ...c.get("principal") }));
-    ui.get("*", (c) => c.text(`${label} page`));
-    return ui;
+function fakeWebUi(label: string, renderAuthPage?: WebUi["renderAuthPage"]): WebUi {
+    const controller = new Hono<WebUiEnv>();
+    controller.get("/api/me", (c) => c.json({ label, ...c.get("principal") }));
+    controller.get("*", (c) => c.text(`${label} page`));
+    return { controller, renderAuthPage };
 }
 
 /**
@@ -403,6 +408,72 @@ describe("WebServer", () => {
             /Signed in/,
         );
         assert.equal((await fetch(`${url}/api/me`)).status, 401);
+    });
+
+    it("lets the web UI render the login pages, under the core's CSP and logic", async () => {
+        const { url, webUis, sessions } = await startWithAuth();
+        const views: WebAuthPageView[] = [];
+        webUis.set(
+            "web-ui",
+            fakeWebUi("A", async (view) => {
+                views.push(view);
+                return `<!doctype html><p>pretty ${view.kind}</p>`;
+            }),
+        );
+
+        const signedOut = await fetch(`${url}/login`);
+        assert.equal(await signedOut.text(), "<!doctype html><p>pretty signedOut</p>");
+        assert.match(signedOut.headers.get("content-security-policy") ?? "", /default-src 'none'/);
+        assert.equal(signedOut.headers.get("cache-control"), "no-store");
+
+        await fetch(`${url}/login`, { headers: SIGNED_IN });
+        const token = await sessions.createLoginToken("me@example.com", 60_000);
+        await fetch(`${url}/login/${token}`);
+        assert.equal(sessions.loginTokens.size, 1);
+        const invalid = await fetch(`${url}/login/bogus`, {
+            method: "POST",
+            headers: { origin: url },
+        });
+        assert.equal(invalid.status, 401);
+
+        assert.deepEqual(views, [
+            { kind: "signedOut", loginCommand: "familiar web login" },
+            {
+                kind: "signedIn",
+                principal: {
+                    login: "me@example.com",
+                    displayName: "me@example.com",
+                    via: "plugin:tailscale",
+                },
+                continueUrl: "/",
+                logoutAction: "/logout",
+            },
+            { kind: "confirmLoginLink", formAction: `/login/${token}` },
+            { kind: "invalidLoginLink", loginCommand: "familiar web login" },
+        ]);
+
+        // Redeeming stays core logic: cookie + redirect, no page rendered.
+        const redeem = await fetch(`${url}/login/${token}`, {
+            method: "POST",
+            headers: { origin: url },
+            redirect: "manual",
+        });
+        assert.equal(redeem.status, 303);
+        assert.equal(views.length, 4);
+    });
+
+    it("falls back to the plain login page when the web UI's renderer throws", async () => {
+        const { url, webUis } = await startWithAuth();
+        webUis.set(
+            "web-ui",
+            fakeWebUi("A", async () => {
+                throw new Error("boom");
+            }),
+        );
+        const res = await fetch(`${url}/login`);
+        assert.equal(res.status, 200);
+        assert.match(await res.text(), /You are not signed in/);
+        assert.match(res.headers.get("content-security-policy") ?? "", /form-action 'self'/);
     });
 
     it("swaps the web UI in place when the registry changes", async () => {

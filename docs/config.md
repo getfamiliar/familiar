@@ -66,7 +66,7 @@ These keys are baked in at daemon start. A reload reports a change to them as "d
 
 ## Webserver
 
-The daemon can serve a user-facing web UI. The core webserver handles authentication; the pages come from a web UI plugin — the `web-ui` plugin ([`plugins/web-ui/README.md`](../plugins/web-ui/README.md)). Without a web UI plugin, every page is a plain notice saying who is signed in and that a web UI plugin such as `@getfamiliar/plugin-web-ui` should be installed. It is separate from the bastion on port 8788, which only serves the agent container and requires the bastion token.
+The daemon can serve a user-facing web UI. The core webserver handles authentication; the pages come from a web UI plugin — the `web-ui` plugin ([`plugins/web-ui/README.md`](../plugins/web-ui/README.md)). The web UI also renders the login pages (`/login`, the confirmation page of a login link, the "link not valid" page), while what they do stays in the core. Without a web UI plugin, the login pages are plain HTML and every other page is a plain notice saying who is signed in and that a web UI plugin such as `@getfamiliar/plugin-web-ui` should be installed. It is separate from the bastion on port 8788, which only serves the agent container and requires the bastion token.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
