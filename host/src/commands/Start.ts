@@ -321,6 +321,7 @@ export const startCommand = defineCommand({
             trustedProxies: pluginHost.trustedProxies,
             sessions: webSessions,
             webUis: pluginHost.webUis,
+            webPlugins: pluginHost.webPlugins,
         });
 
         // Applies config.yml / mcp.yml edits to the running daemon
@@ -512,6 +513,7 @@ export const startCommand = defineCommand({
             promptPlaceholderRegistry: pluginHost.promptPlaceholders,
             trustedProxyRegistry: pluginHost.trustedProxies,
             webMenuRegistry: pluginHost.webMenu,
+            webPluginRegistry: pluginHost.webPlugins,
             resolveProvider: (key) => pluginHost.resolveProvider(key),
             workspaceWatcher,
             // Daemon-internal context: the daemon owns its own shutdown,

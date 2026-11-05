@@ -1,6 +1,11 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { DEFAULT_WEBSERVER_HOST, DEFAULT_WEBSERVER_PORT, type Logger } from "@getfamiliar/shared";
+import {
+    DEFAULT_WEBSERVER_HOST,
+    DEFAULT_WEBSERVER_PORT,
+    type Logger,
+    webPluginBasePath,
+} from "@getfamiliar/shared";
 import { createAdaptorServer, type Http2Bindings, type HttpBindings } from "@hono/node-server";
 import { Hono } from "hono";
 import { html } from "hono/html";
@@ -15,6 +20,7 @@ import {
     type WebEnv,
 } from "./auth/WebAuth.js";
 import type { WebSessionStore } from "./auth/WebSessionStore.js";
+import type { WebPluginRegistry } from "./WebPluginRegistry.js";
 import type { WebUiRegistry, WebUiSelection } from "./WebUiRegistry.js";
 
 /** Dependencies of the {@link WebServer}. */
@@ -29,6 +35,8 @@ export interface WebServerDeps {
     readonly sessions: WebSessionStore;
     /** Web UI root controllers provided by plugins; a change rebuilds the app. */
     readonly webUis: WebUiRegistry;
+    /** Plugin controllers mounted at `/plugins/<plugin-id>`; a change rebuilds the app. */
+    readonly webPlugins: WebPluginRegistry;
 }
 
 /** Effective `webserver.*` settings for one start. */
@@ -54,6 +62,7 @@ interface WebServerSettings {
  * (default {@link DEFAULT_WEBSERVER_HOST}) are read per start, so
  * {@link reload} picks up edits after `familiar config reload`.
  *
+ * Plugin controllers (`webPlugin(ctx)`) are mounted at `/plugins/<plugin-id>`.
  * The pages themselves come from a web UI plugin: its `webUi(ctx)`
  * root controller (plus, optionally, the markup of the login pages, whose
  * logic stays here) (selected by {@link WebUiRegistry.select}, pinned via
@@ -69,8 +78,8 @@ export class WebServer {
     private app: Hono<WebEnv> | null = null;
     /** Auth deps of the current start, reused by {@link rebuildApp}. */
     private authDeps: WebAuthDeps | null = null;
-    /** Unsubscribe from {@link WebServerDeps.webUis} changes. */
-    private unsubscribeWebUis: (() => void) | null = null;
+    /** Unsubscribe from {@link WebServerDeps.webUis} and {@link WebServerDeps.webPlugins} changes. */
+    private unsubscribeRegistries: (() => void) | null = null;
 
     /**
      * @param deps Config and logger.
@@ -143,7 +152,12 @@ export class WebServer {
             this.deps.log.error(`webserver socket error: ${err.message}`);
         });
         this.server = server;
-        this.unsubscribeWebUis = this.deps.webUis.onChange(() => this.rebuildApp());
+        const unsubscribeUis = this.deps.webUis.onChange(() => this.rebuildApp());
+        const unsubscribePlugins = this.deps.webPlugins.onChange(() => this.rebuildApp());
+        this.unsubscribeRegistries = () => {
+            unsubscribeUis();
+            unsubscribePlugins();
+        };
         const proxyIds = this.deps.trustedProxies.listIds();
         this.deps.log.info(
             `webserver listening on ${this.listeningUrl} — allowed users: ${auth.users.join(", ")}; trusted proxies: ${proxyIds.length === 0 ? "none" : proxyIds.join(", ")}`,
@@ -161,8 +175,8 @@ export class WebServer {
         }
         const server = this.server;
         this.server = null;
-        this.unsubscribeWebUis?.();
-        this.unsubscribeWebUis = null;
+        this.unsubscribeRegistries?.();
+        this.unsubscribeRegistries = null;
         this.app = null;
         this.authDeps = null;
         server.closeAllConnections();
@@ -220,6 +234,11 @@ export class WebServer {
         const selection = this.selectWebUi();
         const ui = selection.kind === "selected" ? selection.ui : undefined;
         mountLoginRoutes(app, auth, ui?.renderAuthPage);
+        // Plugin controllers before the UI root: they register concrete
+        // routes only, so their page routes fall through to the web UI.
+        for (const { pluginId, ui: plugin } of this.deps.webPlugins.listControllers()) {
+            app.route(webPluginBasePath(pluginId), plugin.controller as unknown as Hono<WebEnv>);
+        }
         if (ui !== undefined) {
             app.route("/", ui.controller as unknown as Hono<WebEnv>);
         } else {

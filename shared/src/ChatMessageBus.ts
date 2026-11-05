@@ -1,4 +1,10 @@
-import type { ChatFilter, ChatMessage, ChatRole, NewChatMessage } from "./ChatMessage.js";
+import type {
+    ChatFilter,
+    ChatHistoryQuery,
+    ChatMessage,
+    ChatRole,
+    NewChatMessage,
+} from "./ChatMessage.js";
 import type { Logger } from "./logging/Logger.js";
 import type { NotificationHandler, PostgresConnection } from "./PostgresConnection.js";
 import { CHATMESSAGES_NEW_CHANNEL } from "./Schema.js";
@@ -123,6 +129,36 @@ export class ChatMessageBus {
              )
              ORDER BY cm.created_at ASC, cm.id ASC`,
             [eventId],
+        );
+        return result.rows.map(mapRow);
+    }
+
+    /**
+     * One page of a channel's chat history: the newest `limit` messages
+     * on `channelId` (joined via `events.preferred_chat_channel_id`)
+     * older than `beforeId`, returned oldest first. Page backwards by
+     * passing the first returned id as the next `beforeId`.
+     *
+     * @param query Channel, optional cursor and page size.
+     * @returns Up to `limit` messages in chronological order.
+     */
+    async listByChannel(query: ChatHistoryQuery): Promise<ChatMessage[]> {
+        const values: unknown[] = [query.channelId, query.limit];
+        const cursor = query.beforeId === undefined ? "" : "AND cm.id < $3";
+        if (query.beforeId !== undefined) {
+            values.push(query.beforeId);
+        }
+        const result = await this.connection.getPool().query<RawChatMessageRow>(
+            `SELECT * FROM (
+               SELECT cm.*
+               FROM chatmessages cm
+               JOIN events e ON e.id = cm.event_id
+               WHERE e.preferred_chat_channel_id = $1 ${cursor}
+               ORDER BY cm.id DESC
+               LIMIT $2
+             ) page
+             ORDER BY page.id ASC`,
+            values,
         );
         return result.rows.map(mapRow);
     }

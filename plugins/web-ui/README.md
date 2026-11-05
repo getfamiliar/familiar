@@ -42,18 +42,23 @@ The CLI adds new npm packages to `dependencies`. Move them to `devDependencies`,
 
 ## API
 
-The controller serves JSON under `/api`. Right now there is only `GET /api/shell`, which returns what the app shell needs: the signed-in user (`user`: `login`, `displayName`, `via`), the familiar `version` and the sidebar `menu`. Unknown `/api/*` routes get a JSON 404. Every other path is served as UI.
+The controller serves JSON under `/api`. Right now there is only `GET /api/shell`, which returns what the app shell needs: the signed-in user (`user`: `login`, `displayName`, `via`), the familiar `version`, the sidebar `menu` and the plugin `pages`. Unknown `/api/*` routes get a JSON 404. Every other path is served as UI.
 
 ## Menu
 
 The sidebar holds no menu items of its own. Every plugin can contribute some through its `webMenu(ctx)` hook ([`docs/plugins/create-plugins.md`](../../docs/plugins/create-plugins.md#web-ui-menu-items)). The core sorts them by plugin weight and the controller passes them on in `/api/shell`. `GET /` redirects to the first route of the menu, and with an empty menu it stays on the start page. Icons are lucide ids, loaded on demand via `DynamicIcon`. Each icon is its own small chunk in `build/client/assets`, and unknown ids show a dot. The menu links are plain links, so each page is a full page load that comes back through the SPA fallback.
 
+## Plugin pages
+
+Routes under `/plugins/<id>` belong to the page of that plugin (its `webPlugin` hook, see [`docs/plugins/create-plugins.md`](../../docs/plugins/create-plugins.md#plugin-pages-and-controllers)). `src/components/plugin-page.tsx` imports the page module and mounts it into the content area. While it loads you see a spinner, and if it fails, an error card. In production that is the plugin's built module. In dev mode, when the plugin names its `sourceFile`, it is the source through this plugin's Vite server.
+
 ## Development
 
 In a dev run (`npm run dev -- start`, i.e. `FAMILIAR_DEV=1`) the plugin starts Vite in middleware mode inside the daemon. Pages and modules go through the core webserver and its authentication, so you sign in as usual (`npm run dev -- web login`). Edits to `.tsx` and `.css` files show up immediately through hot module replacement, with no daemon restart.
 
-- The HMR websocket listens separately, on `127.0.0.1:24678`. Live reload therefore works when the UI is opened via `localhost`. Through the tailnet or another proxy the page works, but you have to reload it by hand.
+- The HMR websocket listens separately, on the first free port from `127.0.0.1:24678`, so a second dev instance takes the next one. Live reload therefore works when the UI is opened via `localhost`. Through the tailnet or another proxy the page works, but you have to reload it by hand.
 - The login pages are rendered from source via Vite's `ssrLoadModule`. Changes show up on the next page load (they have no script, so there is no HMR). In dev mode their fonts are not inlined and the CSP blocks them, so they render in the fallback font.
+- Plugin pages with a `sourceFile` go through this same Vite server, so they get the same hot reload. `vite.config.ts` resolves `@/` per package (`packageSourceAlias`), and `server.fs.deny` keeps `config/`, `data/` and `tmp/` out of `/@fs/`.
 - Changes to the host side (`src/host/`) still need a daemon restart.
 
 ## Production

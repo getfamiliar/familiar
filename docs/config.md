@@ -94,6 +94,10 @@ Every request needs an identity whose login is listed in `webserver.auth.users`.
 
 State-changing requests must come from the web UI's own origin (CSRF check on the `Origin` header). Over plain HTTP on your LAN, link and cookie travel unencrypted; prefer the tailnet (HTTPS) or a TLS-terminating proxy for access from other devices. To reach the web UI from your other devices without exposing anything else, use the optional tailscale plugin ([`plugins/tailscale/README.md`](../plugins/tailscale/README.md)).
 
+### Web chat
+
+The `web-chat` plugin is the chat with familiar in the web UI. It talks on the chat channel `web`: the model sees the history of that channel for web messages, the same as for `cli` or `telegram`. Proactive messages (cron handlers, `send_chat` without a conversation) go to `core.defaultChatChannel`. Set it to `web` so they show up in the web chat. Messages sent from the web UI run `privileged`, like those from cli-chat and your allowlisted Telegram chat, because only logins in `webserver.auth.users` get in.
+
 ## Validation
 
 - `familiar config lint` — structure, platform minimum, provider resolution, `python.packages` on PyPI.

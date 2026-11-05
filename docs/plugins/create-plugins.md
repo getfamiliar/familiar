@@ -123,6 +123,7 @@ All hooks are optional and receive the plugin-scoped `HostContext`.
 | `stop(ctx)` | Daemon shutdown (LIFO) and before a restart | Release **everything** `start` set up (timers, poll loops, sockets, chat / workspace subscriptions) and reset module state. Must fit the shared drain budget. |
 | `tools(ctx)` | After `start`, at boot and after every restart | Synchronous and side-effect-free; just build the list. |
 | `webMenu(ctx)` | After `start`, at boot and after every restart | Returns menu items for the web UI's sidebar (see [Web UI menu items](#web-ui-menu-items)). Synchronous and side-effect-free. |
+| `webPlugin(ctx)` | After `start`, at boot and after every restart | Returns an HTTP controller (mounted at `/plugins/<id>/`) and an optional page for the web UI (see [Plugin pages and controllers](#plugin-pages-and-controllers)). Synchronous; just build and return. |
 | `webUi(ctx)` | After `start`, at boot and after every restart | Returns the web UI's root controller (see [Providing the web UI](#providing-the-web-ui)). Synchronous; just build the Hono app. |
 | `getEmittedEvents(ctx)` | `familiar events list-topics`, also without the daemon | Synchronous. Derive the list from constants and `ctx.config`. |
 | `commands(ctx)` / `main(ctx)` | CLI dispatch | citty commands under `familiar <id>`. `main` runs when no subcommand is given. |
@@ -204,6 +205,36 @@ webMenu: () => ({
 - The core validates the items. A malformed item disables the plugin in phase `webMenu`, with a message naming the item.
 - The web UI opens the first route of the sorted menu instead of its start page. With no items it stays on the start page.
 - The web UI reads the sorted list with `ctx.web.listMenuItems()`.
+
+## Plugin pages and controllers
+
+A plugin that needs HTTP routes or a page in the web UI returns a `WebPluginUi` from `webPlugin(ctx)` (types from `@getfamiliar/shared`). `plugins/web-chat` is the reference implementation.
+
+```ts
+webPlugin: (ctx) => ({
+    controller, // Hono<WebUiEnv>, mounted at /plugins/<id>/ behind the core auth
+    page: {
+        module: "page/page.js", // built ES module, served by your own controller
+        sourceFile: ctx.isDevMode ? path.join(root, "src", "page.tsx") : undefined,
+    },
+}),
+```
+
+- **Controller.**
+  - Mounted at `/plugins/<plugin-id>/`, behind the core authentication (`c.get("principal")` is set), after the login routes and before the web UI.
+  - Register concrete routes only (`/api/*`, `/page/*`, …), **no catch-all**: every path the controller doesn't match falls through to the web UI. That is how the browser routes of your page (`/plugins/<id>`, `/plugins/<id>/…`) reach it.
+  - It is swapped without a restart of the webserver when the plugin restarts.
+- **Page.**
+  - The web UI loads the page for every route under `/plugins/<plugin-id>`.
+  - It imports the module and calls its default export, `MountWebPage`: `mount(container, { basePath, pathname, user, navigate })` renders into the content area next to the sidebar and returns an unmount function.
+  - The contract is framework-agnostic. A React page creates its own root and brings its own React in production.
+  - Add a menu entry that links to the page via `webMenu`.
+- **Styles.** Import your CSS as `?inline` and inject it as a `<style>` while mounted. The web UI already loads the Geist font and the shadcn theme tokens, so a shadcn page looks native.
+- **Dev mode.**
+  - With `sourceFile` set, the web UI's Vite server loads the page from source (`/@fs/…`): one React, and Fast Refresh across all plugins.
+  - `@/` resolves to the `src/` of the package the importing file belongs to.
+  - Keep component files free of non-component exports, and accept your own `?inline` CSS in the entry (`import.meta.hot.accept("./index.css?inline", …)`). Otherwise an edit falls back to a full reload.
+- **Build.** A Vite library build (`build.lib`, format `es`) into a directory your controller serves with `WebStaticAssets` from shared (`spaFallback: false`, `urlPrefix: "/plugins/<id>/page"`).
 
 ## CLI commands
 

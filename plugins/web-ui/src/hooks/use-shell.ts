@@ -1,4 +1,4 @@
-import type { WebMenuEntry, WebPrincipal } from "@getfamiliar/shared";
+import type { WebMenuEntry, WebPageEntry, WebPrincipal } from "@getfamiliar/shared";
 import { useEffect, useState } from "react";
 
 /** What the app shell needs from the server (`GET /api/shell`). */
@@ -9,6 +9,8 @@ export interface Shell {
     readonly version: string;
     /** Sidebar menu contributed by the plugins, already sorted. */
     readonly menu: readonly WebMenuEntry[];
+    /** Pages plugins provide, each owning the routes under its `basePath`. */
+    readonly pages: readonly WebPageEntry[];
 }
 
 /**

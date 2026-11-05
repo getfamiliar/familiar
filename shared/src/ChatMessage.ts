@@ -45,6 +45,19 @@ export interface NewChatMessage {
     readonly textContent: string;
 }
 
+/** Largest page {@link ChatHistoryQuery.limit} accepts. */
+export const MAX_CHAT_HISTORY_PAGE = 200;
+
+/** Query for one page of a channel's chat history (`ctx.chat.listMessages`). */
+export interface ChatHistoryQuery {
+    /** Channel id (matched against the parent event's `preferred_chat_channel_id`). */
+    readonly channelId: string;
+    /** Only messages with a smaller id (cursor for paging backwards); omit for the newest page. */
+    readonly beforeId?: string;
+    /** Page size, 1 … {@link MAX_CHAT_HISTORY_PAGE}. */
+    readonly limit: number;
+}
+
 /** Filter for {@link import("./ChatMessageBus").ChatMessageBus.subscribe}. */
 export interface ChatFilter {
     /**

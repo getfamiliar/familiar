@@ -1,3 +1,4 @@
+import { createServer } from "node:net";
 import path from "node:path";
 import type { Logger, WebAuthPageView, WebUiEnv } from "@getfamiliar/shared";
 import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
@@ -8,8 +9,11 @@ import type { RenderAuthPage } from "./BuiltAuthPages.js";
 /** Vite module id of the login-page renderer (also the SSR build entry). */
 const AUTH_PAGE_MODULE = "/src/ssr/render-auth-page.tsx";
 
-/** Port of Vite's HMR websocket; it listens on loopback only. */
-export const HMR_PORT = 24678;
+/** First port tried for Vite's HMR websocket (Vite's default); it listens on loopback only. */
+export const HMR_BASE_PORT = 24678;
+
+/** How many ports above {@link HMR_BASE_PORT} are tried. */
+const HMR_PORT_ATTEMPTS = 20;
 
 /**
  * Vite dev server in middleware mode, embedded in the daemon for dev
@@ -19,10 +23,11 @@ export const HMR_PORT = 24678;
  *
  * Page and module requests come through the core webserver (behind its
  * authentication) and are handed to Vite's connect middleware via the
- * node bindings. Only the HMR websocket listens separately, on
- * `127.0.0.1:{@link HMR_PORT}`, so live reload works when the UI is
- * opened via localhost; through a proxy (tailnet) the page works but
- * does not reload by itself.
+ * node bindings. Only the HMR websocket listens separately, on the first
+ * free loopback port from {@link HMR_BASE_PORT} (a second dev instance
+ * gets the next one), so live reload works when the UI is opened via
+ * localhost; through a proxy (tailnet) the page works but does not
+ * reload by itself.
  */
 export class ViteDevBridge {
     private readonly server: ViteDevServer;
@@ -53,6 +58,7 @@ export class ViteDevBridge {
                 `web-ui: dev mode needs the dev dependency "vite" (run npm install in the checkout): ${message}`,
             );
         }
+        const hmrPort = await findFreeLoopbackPort(HMR_BASE_PORT, HMR_PORT_ATTEMPTS);
         const server = await vite.createServer({
             root: pluginRoot,
             configFile: path.join(pluginRoot, "vite.config.ts"),
@@ -63,11 +69,11 @@ export class ViteDevBridge {
                 // The core webserver authenticates every request before it
                 // reaches Vite, under whatever host the browser used.
                 allowedHosts: true,
-                hmr: { host: "127.0.0.1", port: HMR_PORT },
+                ws: { host: "127.0.0.1", port: hmrPort },
             },
         });
         log.info(
-            `web-ui: dev mode — serving sources from ${pluginRoot} with hot reload (HMR websocket on 127.0.0.1:${HMR_PORT})`,
+            `web-ui: dev mode — serving sources from ${pluginRoot} with hot reload (HMR websocket on 127.0.0.1:${hmrPort})`,
         );
         return new ViteDevBridge(server);
     }
@@ -148,4 +154,40 @@ function forwardingLogger(log: Logger): ViteLogger {
         clearScreen: () => {},
         hasErrorLogged: () => hasErrorLogged,
     };
+}
+
+/**
+ * The first port in `[base, base + attempts)` that can be bound on
+ * 127.0.0.1 right now.
+ *
+ * @param base First port to try.
+ * @param attempts Number of ports to try.
+ * @returns A free port.
+ * @throws {Error} When every port in the range is taken.
+ */
+async function findFreeLoopbackPort(base: number, attempts: number): Promise<number> {
+    for (let port = base; port < base + attempts; port++) {
+        if (await isLoopbackPortFree(port)) {
+            return port;
+        }
+    }
+    throw new Error(
+        `web-ui: no free port for the HMR websocket in 127.0.0.1:${base}-${base + attempts - 1}`,
+    );
+}
+
+/**
+ * Whether `port` can be bound on 127.0.0.1.
+ *
+ * @param port Port to probe.
+ * @returns True when a listen succeeded (the probe socket is closed again).
+ */
+function isLoopbackPortFree(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+        const probe = createServer();
+        probe.once("error", () => resolve(false));
+        probe.listen(port, "127.0.0.1", () => {
+            probe.close(() => resolve(true));
+        });
+    });
 }

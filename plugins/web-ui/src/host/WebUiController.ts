@@ -2,6 +2,7 @@ import {
     firstMenuRoute,
     type WebAuthPageView,
     type WebMenuEntry,
+    type WebPageEntry,
     type WebUi,
     type WebUiEnv,
 } from "@getfamiliar/shared";
@@ -18,6 +19,8 @@ export interface ShellSource {
     readonly familiarVersion: string;
     /** The plugins' menu items, sorted. */
     listMenuItems(): readonly WebMenuEntry[];
+    /** The plugin pages. */
+    listPages(): readonly WebPageEntry[];
 }
 
 /** Renders the login-flow pages the core webserver asks for. */
@@ -67,6 +70,7 @@ export function buildWebUiController(assets: UiAssetHandler, shell: ShellSource)
             user: { login, displayName, via },
             version: shell.familiarVersion,
             menu: shell.listMenuItems(),
+            pages: shell.listPages(),
         });
     });
     app.all("/api/*", (c) =>

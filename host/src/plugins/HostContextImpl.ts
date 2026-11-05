@@ -6,6 +6,8 @@ import {
     type CalendarApi,
     type ChatFilter,
     type ChatHandler,
+    type ChatHistoryQuery,
+    type ChatMessage,
     ChatMessageBus,
     type ChatUnsubscribe,
     type ConfigService,
@@ -18,6 +20,7 @@ import {
     type EventRow,
     type HostContext,
     type Logger,
+    MAX_CHAT_HISTORY_PAGE,
     type MailApi,
     type MailStyleTemplate,
     type McpClient,
@@ -33,6 +36,7 @@ import {
     type TrustedProxyRegistration,
     type WebApi,
     type WebMenuEntry,
+    type WebPageEntry,
     type WorkspaceFile,
     type WorkspaceFileFilter,
     type WorkspaceWatcherApi,
@@ -46,6 +50,7 @@ import { readFamiliarVersion } from "../utils/FamiliarVersion.js";
 import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
 import type { TrustedProxyRegistry } from "../web/auth/TrustedProxyRegistry.js";
 import type { WebMenuRegistry } from "../web/WebMenuRegistry.js";
+import type { WebPluginRegistry } from "../web/WebPluginRegistry.js";
 import type { PromptAppenderRegistry } from "./PromptAppenderRegistry.js";
 import type { PromptPlaceholderRegistry } from "./PromptPlaceholderRegistry.js";
 
@@ -175,6 +180,11 @@ export interface HostContextImplDeps {
      */
     webMenuRegistry: WebMenuRegistry;
     /**
+     * Shared registry of the plugins' `webPlugin` controllers and pages,
+     * read by `ctx.web.listPages`.
+     */
+    webPluginRegistry: WebPluginRegistry;
+    /**
      * Resolve a configured provider key into `{ apiKey, npmPackage,
      * apiEndpoint }`, backing `ctx.inference.resolveProvider`. Wired to
      * `PluginHost.resolveProvider`.
@@ -236,6 +246,8 @@ export class HostContextImpl implements HostContext {
             this.subscribeChat(filter, handler),
         appendAssistantMessage: (eventId: string, text: string): Promise<void> =>
             this.appendChatMessage(eventId, "assistant", text),
+        listMessages: (query: ChatHistoryQuery): Promise<readonly ChatMessage[]> =>
+            this.listChatMessages(query),
     };
 
     readonly mcp = {
@@ -263,6 +275,7 @@ export class HostContextImpl implements HostContext {
             this.deps.trustedProxyRegistry.registerPluginProxy(this.deps.pluginId, registration);
         },
         listMenuItems: (): readonly WebMenuEntry[] => this.deps.webMenuRegistry.list(),
+        listPages: (): readonly WebPageEntry[] => this.deps.webPluginRegistry.listPages(),
     };
 
     getMailStyleTemplate = (
@@ -379,6 +392,33 @@ export class HostContextImpl implements HostContext {
         const conn = await this.deps.ensureConnection();
         const bus = new ChatMessageBus(conn);
         await bus.insert({ eventId, role, textContent: text });
+    }
+
+    /**
+     * Backs `ctx.chat.listMessages`: one page of a channel's history.
+     *
+     * @param query Channel, cursor, page size.
+     * @returns The page, oldest first.
+     * @throws {Error} When the limit is outside 1 … {@link MAX_CHAT_HISTORY_PAGE}
+     *   or the cursor is not a numeric message id.
+     */
+    private async listChatMessages(query: ChatHistoryQuery): Promise<readonly ChatMessage[]> {
+        if (
+            !Number.isInteger(query.limit) ||
+            query.limit < 1 ||
+            query.limit > MAX_CHAT_HISTORY_PAGE
+        ) {
+            throw new Error(
+                `ctx.chat.listMessages: limit must be an integer between 1 and ${MAX_CHAT_HISTORY_PAGE}, got ${query.limit}`,
+            );
+        }
+        if (query.beforeId !== undefined && !/^\d+$/.test(query.beforeId)) {
+            throw new Error(
+                `ctx.chat.listMessages: beforeId must be a message id, got "${query.beforeId}"`,
+            );
+        }
+        const conn = await this.deps.ensureConnection();
+        return new ChatMessageBus(conn).listByChannel(query);
     }
 
     /**

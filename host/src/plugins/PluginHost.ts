@@ -43,6 +43,7 @@ import { type DevEventDomain, isEventEmissionAllowed } from "../utils/DevEventGa
 import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
 import { TrustedProxyRegistry } from "../web/auth/TrustedProxyRegistry.js";
 import { WebMenuRegistry } from "../web/WebMenuRegistry.js";
+import { WebPluginRegistry } from "../web/WebPluginRegistry.js";
 import { WebUiRegistry } from "../web/WebUiRegistry.js";
 import { HostContextImpl } from "./HostContextImpl.js";
 import { PromptAppenderRegistry } from "./PromptAppenderRegistry.js";
@@ -75,7 +76,7 @@ export interface PluginEmittedEvent extends EmittedEventDescriptor {
 }
 
 /** Lifecycle hook a plugin failed in; see {@link PluginHost.failedPlugins}. */
-type PluginFailurePhase = "prepare" | "start" | "tools" | "webUi" | "webMenu";
+type PluginFailurePhase = "prepare" | "start" | "tools" | "webUi" | "webMenu" | "webPlugin";
 
 /** Outcome of reloading the plugins after a config change. */
 export interface PluginReloadReport {
@@ -128,6 +129,7 @@ export class PluginHost {
     private readonly trustedProxyRegistry: TrustedProxyRegistry;
     private readonly webUiRegistry: WebUiRegistry;
     private readonly webMenuRegistry: WebMenuRegistry;
+    private readonly webPluginRegistry: WebPluginRegistry;
     private readonly modelMetadataService: ModelMetadataService;
     private toolsRegistry: PluginToolsRegistry | undefined;
     private workspaceWatcher: WorkspaceWatcher | undefined;
@@ -201,6 +203,7 @@ export class PluginHost {
         this.trustedProxyRegistry = new TrustedProxyRegistry();
         this.webUiRegistry = new WebUiRegistry();
         this.webMenuRegistry = new WebMenuRegistry();
+        this.webPluginRegistry = new WebPluginRegistry();
         this.modelMetadataService = new ModelMetadataService({
             tmpDir: boot.tmpDir,
             lookupPluginMeta: (provider, model) => this.lookupModelMetaData(provider, model),
@@ -370,6 +373,11 @@ export class PluginHost {
     /** Menu items from the plugins' `webMenu(ctx)` hooks, behind `ctx.web.listMenuItems`. */
     get webMenu(): WebMenuRegistry {
         return this.webMenuRegistry;
+    }
+
+    /** Controllers and pages from the plugins' `webPlugin(ctx)` hooks, mounted by the webserver. */
+    get webPlugins(): WebPluginRegistry {
+        return this.webPluginRegistry;
     }
 
     /**
@@ -699,7 +707,13 @@ export class PluginHost {
         this.logSuppressedDevEvents();
         for (const plugin of this.plugins) {
             const host = plugin.host;
-            if (!host?.start && !host?.tools && !host?.webUi && !host?.webMenu) {
+            if (
+                !host?.start &&
+                !host?.tools &&
+                !host?.webUi &&
+                !host?.webMenu &&
+                !host?.webPlugin
+            ) {
                 continue;
             }
             const ctx = this.context(plugin.id);
@@ -715,6 +729,7 @@ export class PluginHost {
             this.registerPluginTools(plugin, ctx);
             this.registerPluginWebUi(plugin, ctx);
             this.registerPluginWebMenu(plugin, ctx);
+            this.registerPluginWebPlugin(plugin, ctx);
         }
         // Core tools (`cal_*`, `mail_*`, future approval-gate prompts)
         // land after every plugin's `start` so any provider that
@@ -862,6 +877,7 @@ export class PluginHost {
         this.trustedProxyRegistry.unregisterPlugin(plugin.id);
         this.webUiRegistry.unregisterPlugin(plugin.id);
         this.webMenuRegistry.unregisterPlugin(plugin.id);
+        this.webPluginRegistry.unregisterPlugin(plugin.id);
         this.storageService.resetCaches();
         this.failedPlugins.delete(plugin.id);
 
@@ -883,6 +899,7 @@ export class PluginHost {
         this.registerPluginTools(plugin, ctx);
         this.registerPluginWebUi(plugin, ctx);
         this.registerPluginWebMenu(plugin, ctx);
+        this.registerPluginWebPlugin(plugin, ctx);
         if (!this.failedPlugins.has(plugin.id)) {
             this.log.info(`plugin "${plugin.id}" restarted after config change`);
         }
@@ -969,6 +986,27 @@ export class PluginHost {
     }
 
     /**
+     * Register a plugin's `webPlugin(ctx)` controller and page. Skipped for
+     * plugins without the hook and for disabled plugins. A throw from the
+     * hook or an invalid page module path disables the plugin in phase
+     * `webPlugin`.
+     *
+     * @param plugin The plugin whose controller to register.
+     * @param ctx The plugin's host context.
+     */
+    private registerPluginWebPlugin(plugin: PluginManifest, ctx: HostContext): void {
+        const hook = plugin.host?.webPlugin;
+        if (!hook || this.failedPlugins.has(plugin.id)) {
+            return;
+        }
+        try {
+            this.webPluginRegistry.set(plugin.id, hook(ctx));
+        } catch (err) {
+            this.disablePlugin(plugin.id, "webPlugin", err);
+        }
+    }
+
+    /**
      * Tear down host-side resources held by plugins:
      *  1. Each plugin's `stop(ctx)` hook, in reverse registration order
      *     (LIFO of `start`). Failures are logged and the drain
@@ -1041,6 +1079,7 @@ export class PluginHost {
             promptPlaceholderRegistry: this.promptPlaceholderRegistry,
             trustedProxyRegistry: this.trustedProxyRegistry,
             webMenuRegistry: this.webMenuRegistry,
+            webPluginRegistry: this.webPluginRegistry,
             resolveProvider: (key) => this.resolveProvider(key),
             workspaceWatcher: this.workspaceWatcher,
             daemonDownSignal: this.daemonDownController.signal,

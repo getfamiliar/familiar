@@ -29,7 +29,15 @@ export {
     type UpdateEventInput,
     type UpsertCalendarInput,
 } from "./Calendar.js";
-export type { ChatFilter, ChatMessage, ChatRole, NewChatMessage } from "./ChatMessage.js";
+export { type ParsedChatInput, parseChatInput } from "./ChatInput.js";
+export {
+    type ChatFilter,
+    type ChatHistoryQuery,
+    type ChatMessage,
+    type ChatRole,
+    MAX_CHAT_HISTORY_PAGE,
+    type NewChatMessage,
+} from "./ChatMessage.js";
 export { type ChatHandler, ChatMessageBus, type ChatUnsubscribe } from "./ChatMessageBus.js";
 export { type ConfigService, DEFAULT_WRITABLE_PATHS } from "./Config.js";
 export type { ContainerToolInfo } from "./ContainerTool.js";
@@ -245,7 +253,16 @@ export {
     type WebMenuItem,
     type WebMenuSubItem,
 } from "./WebMenu.js";
+export {
+    type MountWebPage,
+    type WebPageContext,
+    type WebPageEntry,
+    type WebPageModule,
+    type WebPluginUi,
+    webPluginBasePath,
+} from "./WebPlugin.js";
 export { DEFAULT_WEBSERVER_HOST, DEFAULT_WEBSERVER_PORT } from "./WebServerDefaults.js";
+export { WebStaticAssets, type WebStaticAssetsOptions } from "./WebStaticAssets.js";
 export type {
     WorkspaceFile,
     WorkspaceFileFilter,

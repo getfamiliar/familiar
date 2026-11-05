@@ -1,4 +1,5 @@
 import { AppSidebar } from "@/components/app-sidebar";
+import { findPluginPage, PluginPage } from "@/components/plugin-page";
 import {
     Breadcrumb,
     BreadcrumbItem,
@@ -15,8 +16,9 @@ import { findActiveMenuPath } from "@/lib/menu";
 
 /**
  * Root of the web UI: the collapsible-to-icons sidebar (shadcn block
- * `sidebar-07`) with the plugins' menu, and placeholder content. The
- * breadcrumb names the menu entry of the current page.
+ * `sidebar-07`) with the plugins' menu; the content area shows the
+ * plugin page owning the current route (placeholder content otherwise).
+ * The breadcrumb names the menu entry of the current page.
  *
  * @returns The app shell.
  */
@@ -24,11 +26,14 @@ export default function App() {
     const shell = useShell();
     const pathname = window.location.pathname;
     const active = shell === null ? null : findActiveMenuPath(shell.menu, pathname);
+    const page = shell === null ? null : findPluginPage(shell.pages, pathname);
     return (
         <TooltipProvider>
             <SidebarProvider>
                 <AppSidebar shell={shell} pathname={pathname} />
-                <SidebarInset>
+                <SidebarInset
+                    className={page === null ? undefined : "h-svh min-h-0 overflow-hidden"}
+                >
                     <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
                         <div className="flex items-center gap-2 px-4">
                             <SidebarTrigger className="-ml-1" />
@@ -67,14 +72,18 @@ export default function App() {
                             </Breadcrumb>
                         </div>
                     </header>
-                    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-                        <div className="grid auto-rows-min gap-4 md:grid-cols-3">
-                            <div className="aspect-video rounded-xl bg-muted/50" />
-                            <div className="aspect-video rounded-xl bg-muted/50" />
-                            <div className="aspect-video rounded-xl bg-muted/50" />
+                    {shell !== null && page !== null ? (
+                        <PluginPage page={page} pathname={pathname} user={shell.user} />
+                    ) : (
+                        <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+                            <div className="grid auto-rows-min gap-4 md:grid-cols-3">
+                                <div className="aspect-video rounded-xl bg-muted/50" />
+                                <div className="aspect-video rounded-xl bg-muted/50" />
+                                <div className="aspect-video rounded-xl bg-muted/50" />
+                            </div>
+                            <div className="min-h-screen flex-1 rounded-xl bg-muted/50 md:min-h-min" />
                         </div>
-                        <div className="min-h-screen flex-1 rounded-xl bg-muted/50 md:min-h-min" />
-                    </div>
+                    )}
                 </SidebarInset>
             </SidebarProvider>
         </TooltipProvider>

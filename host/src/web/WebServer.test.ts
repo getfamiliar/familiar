@@ -17,6 +17,7 @@ import { HostConfigService } from "../utils/ConfigService.js";
 import { MemoryWebSessionStore } from "./auth/MemoryWebSessionStore.js";
 import { TrustedProxyRegistry } from "./auth/TrustedProxyRegistry.js";
 import { SESSION_COOKIE } from "./auth/WebAuth.js";
+import { WebPluginRegistry } from "./WebPluginRegistry.js";
 import { WebServer } from "./WebServer.js";
 import { WebUiRegistry } from "./WebUiRegistry.js";
 
@@ -54,6 +55,7 @@ function build(webserverYaml: string): {
     sessions: MemoryWebSessionStore;
     proxies: TrustedProxyRegistry;
     webUis: WebUiRegistry;
+    webPlugins: WebPluginRegistry;
 } {
     const configFile = path.join(scratch, "config.yml");
     writeFileSync(configFile, configYaml(webserverYaml));
@@ -65,15 +67,17 @@ function build(webserverYaml: string): {
         nameHeader: "Tailscale-User-Name",
     });
     const webUis = new WebUiRegistry();
+    const webPlugins = new WebPluginRegistry();
     const server = new WebServer({
         config: new HostConfigService(configFile),
         log: new MockLogger(),
         trustedProxies: proxies,
         sessions,
         webUis,
+        webPlugins,
     });
     servers.push(server);
-    return { server, configFile, sessions, proxies, webUis };
+    return { server, configFile, sessions, proxies, webUis, webPlugins };
 }
 
 /**
@@ -87,6 +91,7 @@ async function startWithAuth(extraYaml = ""): Promise<{
     sessions: MemoryWebSessionStore;
     proxies: TrustedProxyRegistry;
     webUis: WebUiRegistry;
+    webPlugins: WebPluginRegistry;
 }> {
     const built = build(`  enabled: true\n  port: 0\n  host: 127.0.0.1\n${extraYaml}${AUTH_YAML}`);
     await built.server.start();
@@ -98,6 +103,7 @@ async function startWithAuth(extraYaml = ""): Promise<{
         sessions: built.sessions,
         proxies: built.proxies,
         webUis: built.webUis,
+        webPlugins: built.webPlugins,
     };
 }
 
@@ -476,6 +482,34 @@ describe("WebServer", () => {
         assert.match(res.headers.get("content-security-policy") ?? "", /form-action 'self'/);
     });
 
+    it("mounts plugin controllers at /plugins/<id> behind auth; page routes fall through to the UI", async () => {
+        const { url, webUis, webPlugins } = await startWithAuth();
+        webUis.set("web-ui", fakeWebUi("A"));
+        const controller = new Hono<WebUiEnv>();
+        controller.get("/api/hello", (c) => c.json({ hello: c.get("principal").login }));
+        webPlugins.set("web-chat", { controller, page: { module: "page/page.js" } });
+
+        const hello = await fetch(`${url}/plugins/web-chat/api/hello`, { headers: SIGNED_IN });
+        assert.deepEqual(await hello.json(), { hello: "me@example.com" });
+        assert.equal((await fetch(`${url}/plugins/web-chat/api/hello`)).status, 401);
+        assert.equal(
+            await (await fetch(`${url}/plugins/web-chat`, { headers: SIGNED_IN })).text(),
+            "A page",
+        );
+        assert.equal(
+            await (
+                await fetch(`${url}/plugins/web-chat/some/route`, { headers: SIGNED_IN })
+            ).text(),
+            "A page",
+        );
+
+        webPlugins.unregisterPlugin("web-chat");
+        assert.equal(
+            await (await fetch(`${url}/plugins/web-chat/api/hello`, { headers: SIGNED_IN })).text(),
+            "A page",
+        );
+    });
+
     it("swaps the web UI in place when the registry changes", async () => {
         const { url, webUis } = await startWithAuth();
         webUis.set("web-ui", fakeWebUi("A"));
@@ -543,6 +577,7 @@ describe("WebServer", () => {
             trustedProxies: proxies,
             sessions,
             webUis: new WebUiRegistry(),
+            webPlugins: new WebPluginRegistry(),
         });
         servers.push(reloadable);
         await reloadable.start();

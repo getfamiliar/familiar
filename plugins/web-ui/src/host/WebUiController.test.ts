@@ -17,7 +17,7 @@ const ASSETS = {
  * @returns The source.
  */
 function shellWith(menu: WebMenuEntry[]): ShellSource {
-    return { familiarVersion: "1.2.3", listMenuItems: () => menu };
+    return { familiarVersion: "1.2.3", listMenuItems: () => menu, listPages: () => [] };
 }
 
 /**
@@ -46,6 +46,7 @@ describe("buildWebUiController", () => {
             user: { login: "me@example.com", displayName: "Jürgen Weiß", via: "session" },
             version: "1.2.3",
             menu,
+            pages: [],
         });
     });
 

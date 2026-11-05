@@ -2,7 +2,7 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CommandDef } from "citty";
 import type { AgentRunRow } from "./AgentRun.js";
 import type { CalendarApi } from "./Calendar.js";
-import type { ChatFilter } from "./ChatMessage.js";
+import type { ChatFilter, ChatHistoryQuery, ChatMessage } from "./ChatMessage.js";
 import type { ChatHandler, ChatUnsubscribe } from "./ChatMessageBus.js";
 import type { ConfigService } from "./Config.js";
 import type { EventFile, EventRow, NewEvent } from "./Event.js";
@@ -16,6 +16,7 @@ import type { ToolLevel } from "./ToolLevel.js";
 import type { ToolRunContext } from "./ToolRunner.js";
 import type { WebApi, WebUi } from "./WebAuth.js";
 import type { WebMenuContribution } from "./WebMenu.js";
+import type { WebPluginUi } from "./WebPlugin.js";
 import type { WorkspaceWatcherApi } from "./WorkspaceFile.js";
 
 export type { ChatHandler, Client as McpClient };
@@ -251,6 +252,15 @@ export interface HostContext {
          * can deadlock the input-event watcher's claim.
          */
         appendAssistantMessage(eventId: string, text: string): Promise<void>;
+        /**
+         * Read one page of a channel's history (both roles), oldest first:
+         * the newest `limit` messages before `beforeId`. For chat UIs that
+         * show scrollback; the same per-channel history the model sees for
+         * that channel's chat events.
+         *
+         * @throws {Error} When `limit` is outside 1 … `MAX_CHAT_HISTORY_PAGE`.
+         */
+        listMessages(query: ChatHistoryQuery): Promise<readonly ChatMessage[]>;
     };
     /**
      * Per-event scratch directory operations. Each event the bus
@@ -770,6 +780,18 @@ export interface PluginHostManifest {
      * `ctx.config`.
      */
     webMenu?(ctx: HostContext): WebMenuContribution;
+    /**
+     * Serve HTTP routes and, optionally, a page in the web UI: return a
+     * controller (mounted at `/plugins/<plugin-id>/` behind the core
+     * authentication, concrete routes only, no catch-all) and an optional
+     * page module the web UI loads for browser routes under
+     * `/plugins/<plugin-id>` (see {@link WebPluginUi}). Called after
+     * `start()` (at boot and after every restart); a throw disables the
+     * plugin in phase `webPlugin`.
+     *
+     * Synchronous, side-effect-free: just build and return.
+     */
+    webPlugin?(ctx: HostContext): WebPluginUi;
     /**
      * Supply {@link ModelMetaData} for a model the default (models.dev)
      * database does not cover. The host calls this on every plugin that

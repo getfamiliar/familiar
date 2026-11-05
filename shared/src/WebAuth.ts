@@ -16,6 +16,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Hono } from "hono";
 import type { WebMenuEntry } from "./WebMenu.js";
+import type { WebPageEntry } from "./WebPlugin.js";
 
 /** Request header carrying a trusted proxy's shared secret (lowercase, as Hono / node normalize it). */
 export const PROXY_SECRET_HEADER = "x-familiar-proxy-secret";
@@ -70,6 +71,14 @@ export interface WebApi {
      * @returns The flat, sorted item list (empty when nobody contributes).
      */
     listMenuItems(): readonly WebMenuEntry[];
+    /**
+     * The plugin pages (`webPlugin(ctx)` hooks with a `page`), one per
+     * plugin, sorted by plugin id. Read it per request. For the web UI
+     * plugin, which loads the page owning the current route.
+     *
+     * @returns The pages.
+     */
+    listPages(): readonly WebPageEntry[];
 }
 
 /** Who a request belongs to, as resolved by the core auth middleware. */

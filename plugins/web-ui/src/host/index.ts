@@ -1,8 +1,7 @@
 import path from "node:path";
-import { definePlugin, type HostContext } from "@getfamiliar/shared";
+import { definePlugin, type HostContext, WebStaticAssets } from "@getfamiliar/shared";
 import { BuiltAuthPages } from "./BuiltAuthPages.js";
 import { findPluginRoot } from "./PluginRoot.js";
-import { StaticAssets } from "./StaticAssets.js";
 import { ViteDevBridge } from "./ViteDevBridge.js";
 import { type AuthPageSource, buildWebUi, type UiAssetHandler } from "./WebUiController.js";
 
@@ -28,7 +27,10 @@ async function start(ctx: HostContext): Promise<void> {
         authPages = devBridge;
         return;
     }
-    assets = new StaticAssets(path.join(pluginRoot, "build", "client"));
+    assets = new WebStaticAssets(path.join(pluginRoot, "build", "client"), {
+        spaFallback: true,
+        missingBuildHint: "run `npm run build` in plugins/web-ui",
+    });
     authPages = new BuiltAuthPages(path.join(pluginRoot, "build", "ssr", "render-auth-page.js"));
 }
 
@@ -59,6 +61,7 @@ export default definePlugin({
             return buildWebUi(assets, authPages, {
                 familiarVersion: ctx.familiarVersion,
                 listMenuItems: () => ctx.web.listMenuItems(),
+                listPages: () => ctx.web.listPages(),
             });
         },
     },
