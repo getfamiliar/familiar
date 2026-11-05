@@ -119,6 +119,7 @@ core:
 #   port: 8080        # default 8080; ports below 1024 fail (familiar never runs as root)
 #   host: 0.0.0.0     # default 0.0.0.0 (all interfaces); 127.0.0.1 for local only
 #   lanUrls: [http://my-pc:8080]   # optional: confirmed LAN addresses, offered in login links
+#   uiPlugin: web-ui  # optional: which plugin's web UI to serve when several provide one
 #   auth:
 #     users: [you@example.com]   # required: logins allowed in (e.g. your Tailscale login)
 #     sessionDays: 30            # lifetime of a session from `familiar web login`

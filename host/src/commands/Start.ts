@@ -320,6 +320,7 @@ export const startCommand = defineCommand({
             log: log.child({ component: "webserver" }),
             trustedProxies: pluginHost.trustedProxies,
             sessions: webSessions,
+            webUis: pluginHost.webUis,
         });
 
         // Applies config.yml / mcp.yml edits to the running daemon

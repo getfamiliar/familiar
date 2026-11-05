@@ -1,7 +1,7 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { DEFAULT_WEBSERVER_HOST, DEFAULT_WEBSERVER_PORT, type Logger } from "@getfamiliar/shared";
-import { createAdaptorServer } from "@hono/node-server";
+import { createAdaptorServer, type Http2Bindings, type HttpBindings } from "@hono/node-server";
 import { Hono } from "hono";
 import { html } from "hono/html";
 import type { HostConfigService } from "../utils/ConfigService.js";
@@ -15,6 +15,7 @@ import {
     type WebEnv,
 } from "./auth/WebAuth.js";
 import type { WebSessionStore } from "./auth/WebSessionStore.js";
+import type { WebUiRegistry, WebUiSelection } from "./WebUiRegistry.js";
 
 /** Dependencies of the {@link WebServer}. */
 export interface WebServerDeps {
@@ -26,6 +27,8 @@ export interface WebServerDeps {
     readonly trustedProxies: TrustedProxyRegistry;
     /** Login tokens and sessions. */
     readonly sessions: WebSessionStore;
+    /** Web UI root controllers provided by plugins; a change rebuilds the app. */
+    readonly webUis: WebUiRegistry;
 }
 
 /** Effective `webserver.*` settings for one start. */
@@ -51,13 +54,22 @@ interface WebServerSettings {
  * (default {@link DEFAULT_WEBSERVER_HOST}) are read per start, so
  * {@link reload} picks up edits after `familiar config reload`.
  *
- * Planned extension: plugins hand in whole controllers as Hono
- * sub-apps (`ctx.web.registerController(app)`); {@link buildApp}
- * will mount each under `/plugins/<plugin-id>` via `app.route(...)`.
+ * The pages themselves come from a web UI plugin: its `webUi(ctx)`
+ * root controller (selected by {@link WebUiRegistry.select}, pinned via
+ * `webserver.uiPlugin`) is mounted at `/` behind the auth middleware and
+ * the login routes. Without one, a plain page asks to install a web UI
+ * plugin. When the registered controllers change (plugin restart), the
+ * app is rebuilt in place without rebinding the socket.
  */
 export class WebServer {
     private readonly deps: WebServerDeps;
     private server: Server | null = null;
+    /** App currently answering requests; swapped by {@link rebuildApp}. */
+    private app: Hono<WebEnv> | null = null;
+    /** Auth deps of the current start, reused by {@link rebuildApp}. */
+    private authDeps: WebAuthDeps | null = null;
+    /** Unsubscribe from {@link WebServerDeps.webUis} changes. */
+    private unsubscribeWebUis: (() => void) | null = null;
 
     /**
      * @param deps Config and logger.
@@ -99,13 +111,24 @@ export class WebServer {
         }
         const auth = readWebAuthSettings(this.deps.config);
         this.deps.trustedProxies.setConfigProxies(auth.configProxies);
-        const app = this.buildApp({
+        const authDeps: WebAuthDeps = {
             settings: auth,
             proxies: this.deps.trustedProxies,
             sessions: this.deps.sessions,
             log: this.deps.log,
-        });
-        const server = createAdaptorServer({ fetch: app.fetch }) as Server;
+        };
+        this.authDeps = authDeps;
+        this.app = this.buildApp(authDeps);
+        const server = createAdaptorServer({
+            // `createAdaptorServer` without `createServer` builds an
+            // HTTP/1 server, so the bindings are always node's `HttpBindings`.
+            fetch: (request: Request, env: HttpBindings | Http2Bindings) => {
+                const app = this.app;
+                return app === null
+                    ? new Response("Service Unavailable", { status: 503 })
+                    : app.fetch(request, env as WebEnv["Bindings"]);
+            },
+        }) as Server;
         await new Promise<void>((resolve, reject) => {
             server.once("error", (err: NodeJS.ErrnoException) => {
                 reject(new Error(describeListenError(err, settings)));
@@ -119,6 +142,7 @@ export class WebServer {
             this.deps.log.error(`webserver socket error: ${err.message}`);
         });
         this.server = server;
+        this.unsubscribeWebUis = this.deps.webUis.onChange(() => this.rebuildApp());
         const proxyIds = this.deps.trustedProxies.listIds();
         this.deps.log.info(
             `webserver listening on ${this.listeningUrl} — allowed users: ${auth.users.join(", ")}; trusted proxies: ${proxyIds.length === 0 ? "none" : proxyIds.join(", ")}`,
@@ -136,6 +160,10 @@ export class WebServer {
         }
         const server = this.server;
         this.server = null;
+        this.unsubscribeWebUis?.();
+        this.unsubscribeWebUis = null;
+        this.app = null;
+        this.authDeps = null;
         server.closeAllConnections();
         await new Promise<void>((resolve) => {
             server.close(() => resolve());
@@ -155,8 +183,31 @@ export class WebServer {
     }
 
     /**
+     * Rebuild the app after the web UI controllers changed. No-op while
+     * stopped; the next {@link start} builds a fresh app anyway.
+     */
+    private rebuildApp(): void {
+        if (this.server === null || this.authDeps === null) {
+            return;
+        }
+        this.app = this.buildApp(this.authDeps);
+        this.deps.log.info(`webserver: web UI changed — ${describeSelection(this.selectWebUi())}`);
+    }
+
+    /**
+     * Pick the web UI controller per `webserver.uiPlugin` (read per build).
+     *
+     * @returns The registry's selection.
+     */
+    private selectWebUi(): WebUiSelection {
+        const preferred = this.deps.config.getString("webserver.uiPlugin", "").trim();
+        return this.deps.webUis.select(preferred === "" ? undefined : preferred);
+    }
+
+    /**
      * Build the Hono application served by this server: the auth
-     * middleware in front of everything, the login routes, then the pages.
+     * middleware in front of everything, the login routes, then the
+     * selected web UI's root controller (or the plain fallback page).
      *
      * @param auth Auth settings and stores for this start.
      * @returns A fresh Hono app.
@@ -165,16 +216,12 @@ export class WebServer {
         const app = new Hono<WebEnv>();
         app.use(createAuthMiddleware(auth));
         mountLoginRoutes(app, auth);
-        app.get("/", (c) => {
-            const principal = c.get("principal");
-            return c.html(
-                page(
-                    "Hello World",
-                    html`<p>Signed in as ${principal.displayName} (${principal.login}, via ${principal.via}).</p>
-                        <form method="post" action="/logout"><button type="submit">Sign out</button></form>`,
-                ),
-            );
-        });
+        const selection = this.selectWebUi();
+        if (selection.kind === "selected") {
+            app.route("/", selection.app as unknown as Hono<WebEnv>);
+        } else {
+            mountNoWebUiFallback(app, selection);
+        }
         return app;
     }
 
@@ -190,6 +237,47 @@ export class WebServer {
             port: config.getNumber("webserver.port", DEFAULT_WEBSERVER_PORT),
             host: config.getString("webserver.host", DEFAULT_WEBSERVER_HOST),
         };
+    }
+}
+
+/**
+ * Serve the plain page shown when no web UI controller is selected: who
+ * is signed in, a sign-out button, and what to install or configure.
+ * Non-GET requests get 404.
+ *
+ * @param app The webserver app.
+ * @param selection Why no controller was selected.
+ */
+function mountNoWebUiFallback(app: Hono<WebEnv>, selection: WebUiSelection): void {
+    app.get("*", (c) => {
+        const principal = c.get("principal");
+        return c.html(
+            page(
+                "No web UI installed",
+                html`<p>Signed in as ${principal.displayName} (${principal.login}, via ${principal.via}).</p>
+                    <p>${describeSelection(selection)}</p>
+                    <form method="post" action="/logout"><button type="submit">Sign out</button></form>`,
+            ),
+        );
+    });
+}
+
+/**
+ * Explain a web UI selection for the fallback page and the log.
+ *
+ * @param selection The registry's selection.
+ * @returns One human-readable sentence.
+ */
+function describeSelection(selection: WebUiSelection): string {
+    switch (selection.kind) {
+        case "selected":
+            return `serving the web UI of plugin "${selection.pluginId}"`;
+        case "none":
+            return "No plugin provides a web UI. Install a web UI plugin such as @getfamiliar/plugin-web-ui (id web-ui) and restart the daemon.";
+        case "notProvided":
+            return `webserver.uiPlugin names "${selection.preferredId}", but that plugin provides no web UI (loaded, healthy providers: ${selection.available.length === 0 ? "none" : selection.available.join(", ")}). Fix webserver.uiPlugin and run familiar config reload.`;
+        case "ambiguous":
+            return `Several plugins provide a web UI (${selection.available.join(", ")}). Pick one with webserver.uiPlugin and run familiar config reload.`;
     }
 }
 

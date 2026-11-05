@@ -122,6 +122,7 @@ All hooks are optional and receive the plugin-scoped `HostContext`.
 | `start(ctx)` | Daemon boot, after every plugin's `prepare` | Resolve once setup is done. Long-lived work runs on background promises the plugin owns. |
 | `stop(ctx)` | Daemon shutdown (LIFO) and before a restart | Release **everything** `start` set up (timers, poll loops, sockets, chat / workspace subscriptions) and reset module state. Must fit the shared drain budget. |
 | `tools(ctx)` | After `start`, at boot and after every restart | Synchronous and side-effect-free; just build the list. |
+| `webUi(ctx)` | After `start`, at boot and after every restart | Returns the web UI's root controller (see [Providing the web UI](#providing-the-web-ui)). Synchronous; just build the Hono app. |
 | `getEmittedEvents(ctx)` | `familiar events list-topics`, also without the daemon | Synchronous. Derive the list from constants and `ctx.config`. |
 | `commands(ctx)` / `main(ctx)` | CLI dispatch | citty commands under `familiar <id>`. `main` runs when no subcommand is given. |
 | `getModelProviders` / `getModelMetaData` | Inference provider resolution | Only for plugins that own an inference provider (see `plugins/featherless`). |
@@ -136,6 +137,7 @@ A plugin that has a `start` but no `stop` can't be restarted in-process, so a co
 - **`ctx.logger`** is a scoped structured logger. Put every key identifier into the message text itself.
 - **`ctx.chat`**, **`ctx.prompt`**, **`ctx.mail`** / **`ctx.calendar`** / **`ctx.storage`**, **`ctx.mcp`**, **`ctx.workspace`** and **`ctx.inference`** are the host services. See the JSDoc in `shared/src/Plugin.ts`.
 - **`ctx.web.registerTrustedProxy(...)`** makes the plugin a trusted reverse proxy of the core webserver; see [proxy-plugins.md](proxy-plugins.md).
+- **`ctx.isDevMode`** is `true` in a monorepo dev run (`npm run dev`, `FAMILIAR_DEV=1`), for developer conveniences such as hot reloading.
 - **`ctx.dataDir`** / **`ctx.workspaceDir`** / **`ctx.tmpDir`** hold the instance paths. Persistent plugin state goes under `dataDir`.
 - **`ctx.daemonDownSignal`** / **`ctx.isDaemonRunning()`** tell long-running loops whether the daemon is still up.
 
@@ -161,6 +163,16 @@ The full guide to designing and implementing agent tools (naming, groups, levels
 Files under `workspace-template/` are copied into `workspace/` on every daemon start, but only those that are missing; user edits are never overwritten. Ship a default handler for each topic the plugin emits. Handler paths follow the topic: `chat:telegram` → `workspace-template/chat/telegram.md`. Every path segment must be a valid topic word (`[\w-]+`). See CLAUDE.md, sections "Handler resolution" and "Prompt template", plus [prompting.md](../prompting.md), for frontmatter (`model`, `tools`, `skills`, `cron`, …).
 
 Shared how-to knowledge goes into `workspace-template/skills/<name>/SKILL.md` instead of being duplicated across handlers.
+
+## Providing the web UI
+
+The core webserver only authenticates; the pages come from a plugin whose `webUi(ctx)` hook returns a root controller: a `Hono<WebUiEnv>` app (types from `@getfamiliar/shared`) mounted at `/`. `plugins/web-ui` is the reference implementation.
+
+- **Auth is done before your routes run.** Every request reaching the controller passed the core auth middleware; `c.get("principal")` is the signed-in, allowlisted user (`login`, `displayName`, `via`). Don't add your own login.
+- **Core routes win.** `/login`, `/login/:token` and `/logout` are registered before the controller; a catch-all in the controller cannot shadow them. Sign out with a `POST /logout`.
+- **Node bindings.** `c.env.incoming` / `c.env.outgoing` are the raw node request and response, e.g. to hand a request to connect-style middleware and answer with `RESPONSE_ALREADY_SENT` (`@hono/node-server/utils/response`).
+- **Swapped on restart.** The hook runs after `start`; on a plugin restart the old controller is dropped and the new one is mounted without rebinding the socket. A disabled plugin provides no UI.
+- **One UI at a time.** With several providers, `webserver.uiPlugin` picks one; with none (or an ambiguous choice) the webserver serves a plain page saying what to install or configure.
 
 ## CLI commands
 

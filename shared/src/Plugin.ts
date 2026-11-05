@@ -1,5 +1,6 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CommandDef } from "citty";
+import type { Hono } from "hono";
 import type { AgentRunRow } from "./AgentRun.js";
 import type { CalendarApi } from "./Calendar.js";
 import type { ChatFilter } from "./ChatMessage.js";
@@ -14,7 +15,7 @@ import type { StepResultRow } from "./StepResult.js";
 import type { StorageApi } from "./Storage.js";
 import type { ToolLevel } from "./ToolLevel.js";
 import type { ToolRunContext } from "./ToolRunner.js";
-import type { WebApi } from "./WebAuth.js";
+import type { WebApi, WebUiEnv } from "./WebAuth.js";
 import type { WorkspaceWatcherApi } from "./WorkspaceFile.js";
 
 export type { ChatHandler, Client as McpClient };
@@ -287,6 +288,12 @@ export interface HostContext {
      * plugin doing anything.
      */
     readonly logger: Logger;
+    /**
+     * Whether the daemon runs in dev mode (`FAMILIAR_DEV=1`, set by the
+     * monorepo's `npm run dev` launcher). Lets plugins enable developer
+     * conveniences such as the web UI's hot module reloading.
+     */
+    readonly isDevMode: boolean;
     /**
      * Absolute host path of the project's `data/` directory.
      *
@@ -727,6 +734,25 @@ export interface PluginHostManifest {
      * call.
      */
     tools?(ctx: HostContext): readonly PluginTool[];
+    /**
+     * Provide the web UI: return the root controller, a Hono app mounted
+     * at `/` of the core webserver. Called after `start()` resolves (at
+     * boot and after every restart), so closures over `start`-time state
+     * (e.g. a dev server) are safe; a restart swaps the controller
+     * without rebinding the socket.
+     *
+     * Authentication stays in the core: every request reaching the
+     * controller passed the auth middleware, `c.get("principal")` is the
+     * signed-in user. The core routes `/login`, `/login/:token` and
+     * `/logout` take precedence over the controller's routes.
+     *
+     * When several plugins provide a UI, `webserver.uiPlugin` picks one;
+     * without any, the webserver serves a plain page asking to install
+     * one (e.g. `@getfamiliar/plugin-web-ui`).
+     *
+     * Synchronous, side-effect-free: just build and return the app.
+     */
+    webUi?(ctx: HostContext): Hono<WebUiEnv>;
     /**
      * Supply {@link ModelMetaData} for a model the default (models.dev)
      * database does not cover. The host calls this on every plugin that

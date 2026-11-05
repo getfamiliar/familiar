@@ -41,11 +41,12 @@ import { buildStorageTools } from "../storage/StorageTools.js";
 import { HostConfigService } from "../utils/ConfigService.js";
 import { type DevEventDomain, isEventEmissionAllowed } from "../utils/DevEventGate.js";
 import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
+import { TrustedProxyRegistry } from "../web/auth/TrustedProxyRegistry.js";
+import { WebUiRegistry } from "../web/WebUiRegistry.js";
 import { HostContextImpl } from "./HostContextImpl.js";
 import { PromptAppenderRegistry } from "./PromptAppenderRegistry.js";
 import { PromptPlaceholderRegistry } from "./PromptPlaceholderRegistry.js";
 import type { PluginToolsRegistry } from "./ToolsRegistry.js";
-import { TrustedProxyRegistry } from "../web/auth/TrustedProxyRegistry.js";
 
 /**
  * Poll cadence for the daemon-pidfile watcher in CLI mode. Has to be
@@ -73,7 +74,7 @@ export interface PluginEmittedEvent extends EmittedEventDescriptor {
 }
 
 /** Lifecycle hook a plugin failed in; see {@link PluginHost.failedPlugins}. */
-type PluginFailurePhase = "prepare" | "start" | "tools";
+type PluginFailurePhase = "prepare" | "start" | "tools" | "webUi";
 
 /** Outcome of reloading the plugins after a config change. */
 export interface PluginReloadReport {
@@ -124,6 +125,7 @@ export class PluginHost {
     private readonly promptAppenderRegistry: PromptAppenderRegistry;
     private readonly promptPlaceholderRegistry: PromptPlaceholderRegistry;
     private readonly trustedProxyRegistry: TrustedProxyRegistry;
+    private readonly webUiRegistry: WebUiRegistry;
     private readonly modelMetadataService: ModelMetadataService;
     private toolsRegistry: PluginToolsRegistry | undefined;
     private workspaceWatcher: WorkspaceWatcher | undefined;
@@ -195,6 +197,7 @@ export class PluginHost {
         this.promptAppenderRegistry = new PromptAppenderRegistry();
         this.promptPlaceholderRegistry = new PromptPlaceholderRegistry();
         this.trustedProxyRegistry = new TrustedProxyRegistry();
+        this.webUiRegistry = new WebUiRegistry();
         this.modelMetadataService = new ModelMetadataService({
             tmpDir: boot.tmpDir,
             lookupPluginMeta: (provider, model) => this.lookupModelMetaData(provider, model),
@@ -351,6 +354,14 @@ export class PluginHost {
      */
     get trustedProxies(): TrustedProxyRegistry {
         return this.trustedProxyRegistry;
+    }
+
+    /**
+     * Web UI root controllers returned by the plugins' `webUi(ctx)`
+     * hooks; the webserver mounts the selected one at `/`.
+     */
+    get webUis(): WebUiRegistry {
+        return this.webUiRegistry;
     }
 
     /**
@@ -680,7 +691,7 @@ export class PluginHost {
         this.logSuppressedDevEvents();
         for (const plugin of this.plugins) {
             const host = plugin.host;
-            if (!host?.start && !host?.tools) {
+            if (!host?.start && !host?.tools && !host?.webUi) {
                 continue;
             }
             const ctx = this.context(plugin.id);
@@ -692,8 +703,9 @@ export class PluginHost {
                 }
             }
             // `tools(ctx)` runs after `start()` resolves so closures
-            // over start-time state are safe.
+            // over start-time state are safe; same for `webUi(ctx)`.
             this.registerPluginTools(plugin, ctx);
+            this.registerPluginWebUi(plugin, ctx);
         }
         // Core tools (`cal_*`, `mail_*`, future approval-gate prompts)
         // land after every plugin's `start` so any provider that
@@ -839,6 +851,7 @@ export class PluginHost {
         this.promptAppenderRegistry.unregisterPlugin(plugin.id);
         this.promptPlaceholderRegistry.unregisterPlugin(plugin.id);
         this.trustedProxyRegistry.unregisterPlugin(plugin.id);
+        this.webUiRegistry.unregisterPlugin(plugin.id);
         this.storageService.resetCaches();
         this.failedPlugins.delete(plugin.id);
 
@@ -858,6 +871,7 @@ export class PluginHost {
             }
         }
         this.registerPluginTools(plugin, ctx);
+        this.registerPluginWebUi(plugin, ctx);
         if (!this.failedPlugins.has(plugin.id)) {
             this.log.info(`plugin "${plugin.id}" restarted after config change`);
         }
@@ -898,6 +912,28 @@ export class PluginHost {
                 { plugin: plugin.id, err: message },
                 `plugin "${plugin.id}" (already disabled in ${failure.phase}) could not register its tools either: ${message}`,
             );
+        }
+    }
+
+    /**
+     * Register a plugin's `webUi(ctx)` root controller with the web UI
+     * registry. Skipped for plugins without the hook and for disabled
+     * plugins (a UI whose daemon failed would serve a broken page; the
+     * webserver's fallback page shows instead). A throw from the hook
+     * disables the plugin in phase `webUi`.
+     *
+     * @param plugin The plugin whose web UI to register.
+     * @param ctx The plugin's host context.
+     */
+    private registerPluginWebUi(plugin: PluginManifest, ctx: HostContext): void {
+        const hook = plugin.host?.webUi;
+        if (!hook || this.failedPlugins.has(plugin.id)) {
+            return;
+        }
+        try {
+            this.webUiRegistry.set(plugin.id, hook(ctx));
+        } catch (err) {
+            this.disablePlugin(plugin.id, "webUi", err);
         }
     }
 

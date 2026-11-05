@@ -5,13 +5,15 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { PROXY_SECRET_HEADER } from "@getfamiliar/shared";
+import { PROXY_SECRET_HEADER, type WebUiEnv } from "@getfamiliar/shared";
 import { MockLogger } from "@getfamiliar/shared/testing";
+import { Hono } from "hono";
 import { HostConfigService } from "../utils/ConfigService.js";
+import { MemoryWebSessionStore } from "./auth/MemoryWebSessionStore.js";
 import { TrustedProxyRegistry } from "./auth/TrustedProxyRegistry.js";
 import { SESSION_COOKIE } from "./auth/WebAuth.js";
-import { MemoryWebSessionStore } from "./auth/MemoryWebSessionStore.js";
 import { WebServer } from "./WebServer.js";
+import { WebUiRegistry } from "./WebUiRegistry.js";
 
 /** Auth block every enabled test server gets unless a test overrides it. */
 const AUTH_YAML =
@@ -46,6 +48,7 @@ function build(webserverYaml: string): {
     configFile: string;
     sessions: MemoryWebSessionStore;
     proxies: TrustedProxyRegistry;
+    webUis: WebUiRegistry;
 } {
     const configFile = path.join(scratch, "config.yml");
     writeFileSync(configFile, configYaml(webserverYaml));
@@ -56,14 +59,16 @@ function build(webserverYaml: string): {
         userHeader: "Tailscale-User-Login",
         nameHeader: "Tailscale-User-Name",
     });
+    const webUis = new WebUiRegistry();
     const server = new WebServer({
         config: new HostConfigService(configFile),
         log: new MockLogger(),
         trustedProxies: proxies,
         sessions,
+        webUis,
     });
     servers.push(server);
-    return { server, configFile, sessions, proxies };
+    return { server, configFile, sessions, proxies, webUis };
 }
 
 /**
@@ -71,17 +76,44 @@ function build(webserverYaml: string): {
  *
  * @returns The listening URL plus the stores.
  */
-async function startWithAuth(): Promise<{
+async function startWithAuth(extraYaml = ""): Promise<{
     url: string;
     server: WebServer;
     sessions: MemoryWebSessionStore;
     proxies: TrustedProxyRegistry;
+    webUis: WebUiRegistry;
 }> {
-    const built = build(`  enabled: true\n  port: 0\n  host: 127.0.0.1\n${AUTH_YAML}`);
+    const built = build(`  enabled: true\n  port: 0\n  host: 127.0.0.1\n${extraYaml}${AUTH_YAML}`);
     await built.server.start();
     const url = built.server.listeningUrl;
     assert.ok(url !== null);
-    return { url, server: built.server, sessions: built.sessions, proxies: built.proxies };
+    return {
+        url,
+        server: built.server,
+        sessions: built.sessions,
+        proxies: built.proxies,
+        webUis: built.webUis,
+    };
+}
+
+/** Headers of an allowlisted user vouched for by the plugin proxy. */
+const SIGNED_IN = {
+    [PROXY_SECRET_HEADER]: PLUGIN_SECRET,
+    "tailscale-user-login": "me@example.com",
+};
+
+/**
+ * A minimal web UI root controller that echoes the principal and has a
+ * catch-all, as a SPA controller would.
+ *
+ * @param label Text identifying this controller in responses.
+ * @returns The controller.
+ */
+function fakeWebUi(label: string): Hono<WebUiEnv> {
+    const ui = new Hono<WebUiEnv>();
+    ui.get("/api/me", (c) => c.json({ label, ...c.get("principal") }));
+    ui.get("*", (c) => c.text(`${label} page`));
+    return ui;
 }
 
 /**
@@ -202,7 +234,7 @@ describe("WebServer", () => {
         });
         assert.equal(ok.status, 200);
         const body = await ok.text();
-        assert.match(body, /<h1>Hello World<\/h1>/);
+        assert.match(body, /<h1>No web UI installed<\/h1>/);
         assert.match(body, /Mü &lt;b&gt;/);
         assert.match(body, /via plugin:tailscale/);
 
@@ -338,15 +370,72 @@ describe("WebServer", () => {
         assert.match(res.headers.get("set-cookie") ?? "", /Secure/);
     });
 
-    it("404s unknown routes for a signed-in user", async () => {
+    it("serves the fallback page on every GET and 404s other methods without a web UI", async () => {
         const { url } = await startWithAuth();
-        const res = await fetch(`${url}/nope`, {
-            headers: {
-                [PROXY_SECRET_HEADER]: PLUGIN_SECRET,
-                "tailscale-user-login": "me@example.com",
-            },
+        const res = await fetch(`${url}/nope`, { headers: SIGNED_IN });
+        assert.equal(res.status, 200);
+        assert.match(await res.text(), /@getfamiliar\/plugin-web-ui/);
+        const post = await fetch(`${url}/nope`, {
+            method: "POST",
+            headers: { ...SIGNED_IN, origin: url },
         });
-        assert.equal(res.status, 404);
+        assert.equal(post.status, 404);
+    });
+
+    it("mounts the web UI controller behind auth, with the core login routes first", async () => {
+        const { url, webUis } = await startWithAuth();
+        webUis.set("web-ui", fakeWebUi("A"));
+
+        const me = await fetch(`${url}/api/me`, { headers: SIGNED_IN });
+        assert.equal(me.status, 200);
+        assert.deepEqual(await me.json(), {
+            label: "A",
+            login: "me@example.com",
+            displayName: "me@example.com",
+            via: "plugin:tailscale",
+        });
+        assert.equal(
+            await (await fetch(`${url}/deep/link`, { headers: SIGNED_IN })).text(),
+            "A page",
+        );
+        assert.match(
+            await (await fetch(`${url}/login`, { headers: SIGNED_IN })).text(),
+            /Signed in/,
+        );
+        assert.equal((await fetch(`${url}/api/me`)).status, 401);
+    });
+
+    it("swaps the web UI in place when the registry changes", async () => {
+        const { url, webUis } = await startWithAuth();
+        webUis.set("web-ui", fakeWebUi("A"));
+        assert.equal(await (await fetch(`${url}/`, { headers: SIGNED_IN })).text(), "A page");
+        webUis.unregisterPlugin("web-ui");
+        assert.match(
+            await (await fetch(`${url}/`, { headers: SIGNED_IN })).text(),
+            /No web UI installed/,
+        );
+        webUis.set("web-ui", fakeWebUi("B"));
+        assert.equal(await (await fetch(`${url}/`, { headers: SIGNED_IN })).text(), "B page");
+    });
+
+    it("asks for webserver.uiPlugin when several plugins provide a web UI", async () => {
+        const { url, webUis } = await startWithAuth();
+        webUis.set("one", fakeWebUi("one"));
+        webUis.set("two", fakeWebUi("two"));
+        const ambiguous = await (await fetch(`${url}/`, { headers: SIGNED_IN })).text();
+        assert.match(ambiguous, /Several plugins provide a web UI \(one, two\)/);
+        assert.match(ambiguous, /webserver\.uiPlugin/);
+    });
+
+    it("serves the web UI named by webserver.uiPlugin, or says it is missing", async () => {
+        const { url, webUis } = await startWithAuth("  uiPlugin: two\n");
+        webUis.set("one", fakeWebUi("one"));
+        assert.match(
+            await (await fetch(`${url}/`, { headers: SIGNED_IN })).text(),
+            /names &quot;two&quot;, but that plugin provides no web UI/,
+        );
+        webUis.set("two", fakeWebUi("two"));
+        assert.equal(await (await fetch(`${url}/`, { headers: SIGNED_IN })).text(), "two page");
     });
 
     it("fails with a message naming the port when it is in use", async () => {
@@ -382,6 +471,7 @@ describe("WebServer", () => {
             log: new MockLogger(),
             trustedProxies: proxies,
             sessions,
+            webUis: new WebUiRegistry(),
         });
         servers.push(reloadable);
         await reloadable.start();

@@ -66,13 +66,14 @@ These keys are baked in at daemon start. A reload reports a change to them as "d
 
 ## Webserver
 
-The daemon can serve a user-facing web UI (for now a hello-world page that shows who is signed in; later the web chat and plugin pages). It is separate from the bastion on port 8788, which only serves the agent container and requires the bastion token.
+The daemon can serve a user-facing web UI. The core webserver handles authentication; the pages come from a web UI plugin — the `web-ui` plugin ([`plugins/web-ui/README.md`](../plugins/web-ui/README.md)). Without a web UI plugin, every page is a plain notice saying who is signed in and that a web UI plugin such as `@getfamiliar/plugin-web-ui` should be installed. It is separate from the bastion on port 8788, which only serves the agent container and requires the bastion token.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `webserver.enabled` | `false` | Start the webserver only when `true`. |
 | `webserver.port` | `8080` | TCP port. Ports below 1024 fail with EACCES, because familiar never runs as root (the linter warns). |
 | `webserver.host` | `0.0.0.0` | Bind address; `127.0.0.1` keeps it local to the machine. |
+| `webserver.uiPlugin` | – | Id of the plugin whose web UI is served. Only needed when several plugins provide one; with a single provider it is picked automatically. A name that provides no UI shows a notice instead. |
 | `webserver.lanUrls` | – | Base URLs (string or list) under which other devices reach the web UI directly, e.g. `http://my-pc:8080`. Login links are offered under them first. The agent adds an address here once you confirmed it works. |
 | `webserver.auth.users` | – | **Required when enabled.** Logins allowed to use the web UI (a string or a list, compared case-insensitively), e.g. your Tailscale login. Without it the webserver does not start. |
 | `webserver.auth.sessionDays` | `30` | Lifetime of a browser session created from a login link. |

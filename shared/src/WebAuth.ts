@@ -8,7 +8,12 @@
  * webserver read the proxy's user header; without a matching secret,
  * identity headers are ignored. Shared because plugins register such
  * proxies through `ctx.web.registerTrustedProxy`.
+ *
+ * Also the contract of a web UI plugin's root controller
+ * ({@link WebUiEnv}, see `PluginHostManifest.webUi`).
  */
+
+import type { IncomingMessage, ServerResponse } from "node:http";
 
 /** Request header carrying a trusted proxy's shared secret (lowercase, as Hono / node normalize it). */
 export const PROXY_SECRET_HEADER = "x-familiar-proxy-secret";
@@ -54,4 +59,40 @@ export interface WebApi {
      *   plugin already registered a proxy.
      */
     registerTrustedProxy(registration: TrustedProxyRegistration): void;
+}
+
+/** Who a request belongs to, as resolved by the core auth middleware. */
+export interface WebPrincipal {
+    /** Login as listed in `webserver.auth.users`. */
+    readonly login: string;
+    /** Display name from the proxy's name header, else the login. */
+    readonly displayName: string;
+    /** `session`, or the id of the trusted proxy that vouched for the login (`plugin:tailscale`, `config:authelia`). */
+    readonly via: string;
+}
+
+/**
+ * Node bindings the webserver passes on every request (`c.env`), the same
+ * shape as `HttpBindings` of `@hono/node-server`. A UI controller may
+ * hand them to node-style middleware (e.g. Vite's dev server) and answer
+ * with `RESPONSE_ALREADY_SENT`.
+ */
+export interface WebUiBindings {
+    readonly incoming: IncomingMessage;
+    readonly outgoing: ServerResponse;
+}
+
+/**
+ * Hono environment of a web UI plugin's root controller. Every request
+ * reaching the controller passed the core auth middleware, so
+ * `c.get("principal")` is always set.
+ */
+export interface WebUiEnv {
+    Bindings: WebUiBindings;
+    Variables: {
+        /** The signed-in, allowlisted user. */
+        principal: WebPrincipal;
+        /** Whether the browser talks HTTPS (directly, or to a trusted proxy that says so). */
+        isHttps: boolean;
+    };
 }

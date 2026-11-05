@@ -226,15 +226,18 @@ export {
     toolPatternMatches,
     validateGroupName,
 } from "./ToolsExpressionUtils.js";
-export type {
-    WorkspaceFile,
-    WorkspaceFileFilter,
-    WorkspaceWatcherApi,
-} from "./WorkspaceFile.js";
 export {
     MIN_PROXY_SECRET_LENGTH,
     PROXY_SECRET_HEADER,
     type TrustedProxyRegistration,
     type WebApi,
+    type WebPrincipal,
+    type WebUiBindings,
+    type WebUiEnv,
 } from "./WebAuth.js";
 export { DEFAULT_WEBSERVER_HOST, DEFAULT_WEBSERVER_PORT } from "./WebServerDefaults.js";
+export type {
+    WorkspaceFile,
+    WorkspaceFileFilter,
+    WorkspaceWatcherApi,
+} from "./WorkspaceFile.js";

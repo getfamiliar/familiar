@@ -294,6 +294,10 @@ export class HostContextImpl implements HostContext {
         return this.deps.log;
     }
 
+    get isDevMode(): boolean {
+        return this.deps.devMode;
+    }
+
     get dataDir(): string {
         return this.deps.dataDir;
     }

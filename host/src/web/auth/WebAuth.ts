@@ -1,4 +1,9 @@
-import { type Logger, PROXY_SECRET_HEADER } from "@getfamiliar/shared";
+import {
+    type Logger,
+    PROXY_SECRET_HEADER,
+    type WebPrincipal,
+    type WebUiEnv,
+} from "@getfamiliar/shared";
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { html } from "hono/html";
@@ -7,28 +12,20 @@ import { decodeMimeEncodedWords } from "./MimeEncodedWord.js";
 import type { TrustedProxy, TrustedProxyRegistry } from "./TrustedProxyRegistry.js";
 import type { WebSessionStore } from "./WebSessionStore.js";
 
-/** Who a request belongs to. */
-export interface WebPrincipal {
-    /** Login as listed in `webserver.auth.users`. */
-    readonly login: string;
-    /** Display name from the proxy's name header, else the login. */
-    readonly displayName: string;
-    /** `session`, or the id of the trusted proxy that vouched for the login (`plugin:tailscale`, `config:authelia`). */
-    readonly via: string;
-}
+export type { WebPrincipal };
 
-/** Hono environment of the webserver app. */
+/**
+ * Hono environment of the webserver app: the web UI contract
+ * ({@link WebUiEnv}) plus `signedInAs` for the public login routes.
+ */
 export interface WebEnv {
-    Variables: {
-        /** Set by the auth middleware on every non-public route. */
-        principal: WebPrincipal;
+    Bindings: WebUiEnv["Bindings"];
+    Variables: WebUiEnv["Variables"] & {
         /**
          * Set on the public login routes: who is signed in already (an
          * allowed proxy login or a live session), or null.
          */
         signedInAs: WebPrincipal | null;
-        /** Whether the browser talks HTTPS (directly, or to a trusted proxy that says so). */
-        isHttps: boolean;
     };
 }
 
