@@ -140,6 +140,11 @@ A plugin that has a `start` but no `stop` can't be restarted in-process, so a co
 - **`ctx.chat`**, **`ctx.prompt`**, **`ctx.mail`** / **`ctx.calendar`** / **`ctx.storage`**, **`ctx.mcp`**, **`ctx.workspace`** and **`ctx.inference`** are the host services. See the JSDoc in `shared/src/Plugin.ts`.
 - **`ctx.web.registerTrustedProxy(...)`** makes the plugin a trusted reverse proxy of the core webserver; see [proxy-plugins.md](proxy-plugins.md).
 - **`ctx.familiarVersion`** is the version of the running familiar host.
+- **`ctx.scratch`** gives access to an event's scratch folder (`/scratch/<event-id>/` in the containers):
+  - `addFiles` stages files.
+  - `listFiles` lists the files.
+  - `resolveFile` returns a file's host path for reading or streaming.
+  - Files whose name starts with `.` are internal (spilled tool results, plugin bookkeeping). Leave them out wherever you show files to the user (`isHiddenScratchFile`).
 - **`ctx.isDevMode`** is `true` in a monorepo dev run (`npm run dev`, `FAMILIAR_DEV=1`), for developer conveniences such as hot reloading.
 - **`ctx.dataDir`** / **`ctx.workspaceDir`** / **`ctx.tmpDir`** hold the instance paths. Persistent plugin state goes under `dataDir`.
 - **`ctx.daemonDownSignal`** / **`ctx.isDaemonRunning()`** tell long-running loops whether the daemon is still up.
@@ -229,7 +234,10 @@ webPlugin: (ctx) => ({
   - It imports the module and calls its default export, `MountWebPage`: `mount(container, { basePath, pathname, user, navigate })` renders into the content area next to the sidebar and returns an unmount function.
   - The contract is framework-agnostic. A React page creates its own root and brings its own React in production.
   - Add a menu entry that links to the page via `webMenu`.
-- **Styles.** Import your CSS as `?inline` and inject it as a `<style>` while mounted. The web UI already loads the Geist font and the shadcn theme tokens, so a shadcn page looks native.
+- **Styles.**
+  - Import your CSS as `?inline` and inject it as a `<style>` while mounted. The web UI already loads the Geist font and the shadcn theme tokens, so a shadcn page looks native.
+  - **Scope it to your container.** Two Tailwind builds on one page override each other's utilities and variants, for example your `.hidden` beating the sidebar's `md:block`. web-chat's `scopeStylesheet` (`plugins/web-chat/src/lib/scoped-style.ts`) wraps the sheet in `@scope ([data-familiar-page="<id>"])`, keeps `@property` / `@keyframes` / `@font-face` top-level and moves Tailwind's theme variables from `:root` to `:scope`. Copy it.
+  - Don't render portals (Radix tooltips, popovers, dialogs into `document.body`). They end up outside the scope, so use `title` or inline elements.
 - **Dev mode.**
   - With `sourceFile` set, the web UI's Vite server loads the page from source (`/@fs/…`): one React, and Fast Refresh across all plugins.
   - `@/` resolves to the `src/` of the package the importing file belongs to.

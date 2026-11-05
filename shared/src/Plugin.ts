@@ -10,6 +10,7 @@ import type { Logger } from "./logging/Logger.js";
 import type { MailApi } from "./Mail.js";
 import type { MailStyleTemplate } from "./MailStyleTemplate.js";
 import type { ModelMetaData, ModelProviderDescriptor } from "./ModelMetaData.js";
+import type { ScratchFile } from "./Scratch.js";
 import type { StepResultRow } from "./StepResult.js";
 import type { StorageApi } from "./Storage.js";
 import type { ToolLevel } from "./ToolLevel.js";
@@ -289,6 +290,23 @@ export interface HostContext {
          * caller is responsible for unique names.
          */
         addFiles(eventId: string, files: readonly EventFile[]): Promise<readonly string[]>;
+        /**
+         * The regular files directly in `/scratch/<eventId>/` (no
+         * subdirectories), hidden ones included — filter them with
+         * `isHiddenScratchFile` before showing files to users. Sorted
+         * by name; empty when the folder does not exist.
+         *
+         * @throws {Error} When `eventId` is not a numeric event id.
+         */
+        listFiles(eventId: string): Promise<readonly ScratchFile[]>;
+        /**
+         * Host path of `/scratch/<eventId>/<name>`, for reading or
+         * streaming the file. The file may not exist.
+         *
+         * @throws {Error} When `eventId` is not a numeric event id or
+         *   `name` is not a plain basename (same rules as `addFiles`).
+         */
+        resolveFile(eventId: string, name: string): string;
     };
     /**
      * The pino-style {@link Logger} for the plugin. Use `.info` for the

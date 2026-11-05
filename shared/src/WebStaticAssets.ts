@@ -23,7 +23,32 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
     ".txt": "text/plain; charset=utf-8",
     ".wasm": "application/wasm",
     ".webmanifest": "application/manifest+json",
+    ".avif": "image/avif",
+    ".pdf": "application/pdf",
+    ".csv": "text/csv; charset=utf-8",
+    ".md": "text/markdown; charset=utf-8",
+    ".xml": "application/xml",
+    ".zip": "application/zip",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".wav": "audio/wav",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".ics": "text/calendar; charset=utf-8",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 };
+
+/**
+ * Content type for a file name, by extension.
+ *
+ * @param fileName File name or path.
+ * @returns The media type, `application/octet-stream` when unknown.
+ */
+export function contentTypeForFile(fileName: string): string {
+    return CONTENT_TYPES[path.extname(fileName).toLowerCase()] ?? "application/octet-stream";
+}
 
 /** Options of {@link WebStaticAssets}. */
 export interface WebStaticAssetsOptions {
@@ -151,8 +176,7 @@ export class WebStaticAssets {
         return new Response(c.req.method === "HEAD" ? null : new Uint8Array(body), {
             status: 200,
             headers: {
-                "content-type":
-                    CONTENT_TYPES[path.extname(file).toLowerCase()] ?? "application/octet-stream",
+                "content-type": contentTypeForFile(file),
                 "cache-control": cacheControl,
             },
         });

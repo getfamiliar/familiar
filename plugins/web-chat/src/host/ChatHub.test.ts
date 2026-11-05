@@ -1,4 +1,7 @@
 import { strict as assert } from "node:assert";
+import { mkdirSync, mkdtempSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
 import type {
     AgentRunRow,
@@ -27,6 +30,12 @@ function fakeHost(history: ChatMessage[] = []) {
     const queries: ChatHistoryQuery[] = [];
     let handler: ChatHandler | null = null;
     let nextEventId = 100;
+    const scratchDir = mkdtempSync(path.join(tmpdir(), "web-chat-scratch-"));
+    /** Write a file into an event's scratch folder, as emit / the agent would. */
+    const writeScratch = (eventId: string, name: string, contents: string | Buffer) => {
+        mkdirSync(path.join(scratchDir, eventId), { recursive: true });
+        writeFileSync(path.join(scratchDir, eventId, name), contents);
+    };
     const deps = {
         chat: {
             subscribe: async (_filter: unknown, h: ChatHandler) => {
@@ -58,6 +67,24 @@ function fakeHost(history: ChatMessage[] = []) {
             list: async () => [{ slashPath: "/chat/web" }, { slashPath: "/mail/draft" }],
             resolve: async (topic: string) => (topic === "mail:draft" ? {} : null),
         },
+        scratch: {
+            listFiles: async (eventId: string) => {
+                const dir = path.join(scratchDir, eventId);
+                try {
+                    return readdirSync(dir)
+                        .sort()
+                        .map((name) => ({
+                            name,
+                            size: statSync(path.join(dir, name)).size,
+                            modifiedAt: new Date(),
+                        }));
+                } catch {
+                    return [];
+                }
+            },
+            resolveFile: (eventId: string, name: string) => path.join(scratchDir, eventId, name),
+        },
+        apiBase: "/plugins/web-chat/api",
         log: new MockLogger(),
     };
     return {
@@ -65,6 +92,7 @@ function fakeHost(history: ChatMessage[] = []) {
         emitted,
         appended,
         queries,
+        writeScratch,
         deliver: (message: ChatMessage) => {
             if (handler === null) {
                 throw new Error("not subscribed");
@@ -242,7 +270,7 @@ describe("ChatHub", () => {
         await hub.send("hi");
         host.emitted[0]?.settle.reject(new Error("model exploded"));
         await flush();
-        const last = events.at(-1);
+        const last = events.filter((event) => event.type === "turn").at(-1);
         assert.equal(last?.type === "turn" ? last.turn.error : null, "model exploded");
         assert.deepEqual(host.appended, []);
         await hub.stop();
@@ -254,6 +282,8 @@ describe("ChatHub", () => {
             message("2", "1", "assistant"),
             message("3", "2", "user"),
         ]);
+        host.writeScratch("1", "report.pdf", "pdf");
+        host.writeScratch("1", ".result-abcd1234.json", "{}");
         const hub = new ChatHub(host.deps);
         const page = await hub.history(undefined, 2);
         assert.deepEqual(
@@ -261,7 +291,102 @@ describe("ChatHub", () => {
             ["2", "3"],
         );
         assert.equal(page.hasMore, true);
+        assert.deepEqual(page.files, {
+            "1": [
+                {
+                    name: "report.pdf",
+                    size: 3,
+                    url: "/plugins/web-chat/api/files/1/report.pdf",
+                    isImage: false,
+                    isUpload: false,
+                },
+            ],
+        });
         assert.deepEqual(host.queries, [{ channelId: "web", beforeId: undefined, limit: 3 }]);
+    });
+});
+
+describe("ChatHub files", () => {
+    it("stages attachments with de-duplicated safe names, a manifest and a note in the text", async () => {
+        const host = fakeHost();
+        const hub = new ChatHub(host.deps);
+        await hub.send("", [
+            { name: "../../etc/photo.jpg", contents: Buffer.from("a") },
+            { name: "photo.jpg", contents: Buffer.from("b") },
+            { name: ".hidden", contents: Buffer.from("c") },
+        ]);
+        const event = host.emitted[0]?.event;
+        assert.equal(event?.prompt, "[Attached: photo.jpg, photo-2.jpg, hidden]");
+        assert.deepEqual(
+            event?.files?.map((file) => file.name),
+            ["photo.jpg", "photo-2.jpg", "hidden", ".web-chat-uploads.json"],
+        );
+        const manifest = event?.files?.at(-1);
+        assert.deepEqual(
+            JSON.parse(
+                String(manifest !== undefined && "contents" in manifest ? manifest.contents : ""),
+            ),
+            { uploads: ["photo.jpg", "photo-2.jpg", "hidden"] },
+        );
+
+        await hub.send("/mail/draft with this", [{ name: "a.txt", contents: Buffer.from("x") }]);
+        assert.equal(
+            host.emitted[1]?.event.userChatMessage,
+            "/mail/draft with this\n\n[Attached: a.txt]",
+        );
+    });
+
+    it("refuses too many or too large attachments", async () => {
+        const hub = new ChatHub(fakeHost().deps);
+        const many = Array.from({ length: 21 }, (_, index) => ({
+            name: `f${index}.txt`,
+            contents: Buffer.from("x"),
+        }));
+        await assert.rejects(hub.send("hi", many), /at most 20 files/);
+        await assert.rejects(
+            hub.send("hi", [{ name: "big.bin", contents: Buffer.alloc(51 * 1024 * 1024) }]),
+            /at most 50 MB/,
+        );
+    });
+
+    it("marks uploads, offers produced files and refuses hidden ones for download", async () => {
+        const host = fakeHost();
+        host.writeScratch("7", "photo.jpg", "img");
+        host.writeScratch(
+            "7",
+            ".web-chat-uploads.json",
+            JSON.stringify({ uploads: ["photo.jpg"] }),
+        );
+        host.writeScratch("7", "summary.md", "# hi");
+        host.writeScratch("7", ".result-1234abcd.json", "{}");
+        const hub = new ChatHub(host.deps);
+        assert.deepEqual(
+            (await hub.filesOf("7")).map((file) => [file.name, file.isUpload, file.isImage]),
+            [
+                ["photo.jpg", true, true],
+                ["summary.md", false, false],
+            ],
+        );
+        assert.equal((await hub.download("7", "summary.md"))?.isInline, false);
+        assert.equal(await hub.download("7", ".result-1234abcd.json"), null);
+        assert.equal(await hub.download("7", "missing.txt"), null);
+        assert.equal(await hub.download("../7", "summary.md"), null);
+    });
+
+    it("broadcasts the files of an event when a reply arrives", async () => {
+        const host = fakeHost();
+        const hub = new ChatHub(host.deps);
+        await hub.start();
+        const events: ChatServerEvent[] = [];
+        hub.addClient((event) => events.push(event));
+        host.writeScratch("9", "chart.png", "png");
+        await host.deliver(message("1", "9", "assistant"));
+        await flush();
+        const files = events.find((event) => event.type === "files");
+        assert.deepEqual(files?.type === "files" ? files.files.map((file) => file.name) : [], [
+            "chart.png",
+        ]);
+        await hub.stop();
     });
 });
 
@@ -293,6 +418,37 @@ describe("buildChatController", () => {
         });
         assert.equal(await (await app.request("/page/page.js")).text(), "page");
         await hub.stop();
+    });
+
+    it("accepts multipart messages with files and serves downloads safely", async () => {
+        const host = fakeHost();
+        const hub = new ChatHub(host.deps);
+        const app = buildChatController(() => hub, { handle: async (c) => c.text("page") });
+        const form = new FormData();
+        form.append("text", "look");
+        form.append("files", new File(["abc"], "notes.html", { type: "text/html" }));
+        const res = await app.request("/api/messages", { method: "POST", body: form });
+        assert.equal(res.status, 202);
+        assert.deepEqual(
+            host.emitted[0]?.event.files?.map((file) => file.name),
+            ["notes.html", ".web-chat-uploads.json"],
+        );
+
+        host.writeScratch("5", "notes.html", "<script>alert(1)</script>");
+        host.writeScratch("5", "photo.png", "png");
+        const html = await app.request("/api/files/5/notes.html");
+        assert.equal(html.headers.get("content-type"), "application/octet-stream");
+        assert.match(
+            html.headers.get("content-disposition") ?? "",
+            /^attachment; filename="notes.html"/,
+        );
+        assert.equal(html.headers.get("x-content-type-options"), "nosniff");
+        assert.match(html.headers.get("content-security-policy") ?? "", /sandbox/);
+        assert.equal(await html.text(), "<script>alert(1)</script>");
+        const png = await app.request("/api/files/5/photo.png");
+        assert.equal(png.headers.get("content-type"), "image/png");
+        assert.match(png.headers.get("content-disposition") ?? "", /^inline/);
+        assert.equal((await app.request("/api/files/5/missing.txt")).status, 404);
     });
 
     it("streams a snapshot and live events over SSE", async () => {

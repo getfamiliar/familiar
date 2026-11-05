@@ -13,6 +13,25 @@ export const WEB_CHAT_TOPIC = "chat:web";
 /** Commands the page handles itself (not sent to the server). */
 export const WEB_CHAT_BUILTINS = ["/clear"] as const;
 
+/** Largest total size of the files attached to one message. */
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+/** Most files attached to one message. */
+export const MAX_UPLOAD_FILES = 20;
+
+/** A file in a chat event's scratch folder. */
+export interface ChatFileDto {
+    readonly name: string;
+    /** Size in bytes. */
+    readonly size: number;
+    /** Download URL (same origin, behind the web UI authentication). */
+    readonly url: string;
+    /** Whether the browser may show it inline as an image (thumbnail / preview). */
+    readonly isImage: boolean;
+    /** Whether the user attached it (shown at the user's message) or the assistant produced it (shown under the reply). */
+    readonly isUpload: boolean;
+}
+
 /** One stored chat message. */
 export interface ChatMessageDto {
     /** Message id (bigint as string); increases with insertion order. */
@@ -73,6 +92,8 @@ export interface ChatHistoryDto {
     readonly messages: readonly ChatMessageDto[];
     /** Whether older messages exist (pass the first id as `before`). */
     readonly hasMore: boolean;
+    /** Files of the events of these messages, by event id (events without files are left out). */
+    readonly files: Readonly<Record<string, readonly ChatFileDto[]>>;
 }
 
 /** Answer of `GET /api/handlers`. */
@@ -93,4 +114,6 @@ export type ChatServerEvent =
     /** A message was stored on the web channel (both roles). */
     | { readonly type: "message"; readonly message: ChatMessageDto }
     /** A turn changed (full state). */
-    | { readonly type: "turn"; readonly turn: ChatTurnDto };
+    | { readonly type: "turn"; readonly turn: ChatTurnDto }
+    /** The files of an event changed (after a reply or when its turn finished). */
+    | { readonly type: "files"; readonly eventId: string; readonly files: readonly ChatFileDto[] };

@@ -1,8 +1,16 @@
-import type { WebUiEnv } from "@getfamiliar/shared";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { Readable } from "node:stream";
+import { contentTypeForFile, type WebUiEnv } from "@getfamiliar/shared";
 import { type Context, Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
-import { type ChatHub, ChatInputError, MAX_HISTORY_PAGE } from "./ChatHub.js";
-import type { ChatServerEvent } from "./ChatProtocol.js";
+import type { ChatUpload } from "./ChatFiles.js";
+import { type ChatDownload, type ChatHub, ChatInputError, MAX_HISTORY_PAGE } from "./ChatHub.js";
+import { type ChatServerEvent, MAX_UPLOAD_BYTES } from "./ChatProtocol.js";
+
+/** Room for the multipart framing and the text on top of the attachments. */
+const BODY_OVERHEAD_BYTES = 1024 * 1024;
 
 /** Default history page size. */
 const DEFAULT_HISTORY_PAGE = 50;
@@ -21,7 +29,9 @@ export interface PageAssetHandler {
  * routes (`/plugins/web-chat`) fall through to the web UI.
  *
  * - `GET  /api/messages?before=<id>&limit=<n>` — history page of the web channel
- * - `POST /api/messages` `{ text }` — send a line (`{ eventId }`, or 400 `{ error }`)
+ * - `POST /api/messages` — send a line: JSON `{ text }`, or `multipart/form-data`
+ *   with `text` and any number of `files` (`{ eventId }`, or 400 / 413 `{ error }`)
+ * - `GET  /api/files/:eventId/:name` — download a file of an event's scratch folder
  * - `GET  /api/handlers` — slash paths for autocompletion
  * - `GET  /api/events` — server-sent events (`snapshot`, `message`, `turn`)
  * - `GET  /page/*` — the page module
@@ -45,24 +55,40 @@ export function buildChatController(hub: () => ChatHub, page: PageAssetHandler):
         return c.json(await hub().history(before, limit));
     });
 
-    app.post("/api/messages", async (c) => {
-        let text: unknown;
-        try {
-            text = ((await c.req.json()) as { text?: unknown }).text;
-        } catch {
-            return c.json({ error: "expected a JSON body { text }" }, 400);
-        }
-        if (typeof text !== "string") {
-            return c.json({ error: "text must be a string" }, 400);
-        }
-        try {
-            return c.json({ eventId: await hub().send(text) }, 202);
-        } catch (err) {
-            if (err instanceof ChatInputError) {
-                return c.json({ error: err.message }, 400);
+    app.post(
+        "/api/messages",
+        bodyLimit({
+            maxSize: MAX_UPLOAD_BYTES + BODY_OVERHEAD_BYTES,
+            onError: (c) =>
+                c.json(
+                    {
+                        error: `the message is too large; at most ${MAX_UPLOAD_BYTES / 1024 / 1024} MB of attachments`,
+                    },
+                    413,
+                ),
+        }),
+        async (c) => {
+            const input = await readSendInput(c);
+            if ("error" in input) {
+                return c.json({ error: input.error }, 400);
             }
-            throw err;
+            try {
+                return c.json({ eventId: await hub().send(input.text, input.uploads) }, 202);
+            } catch (err) {
+                if (err instanceof ChatInputError) {
+                    return c.json({ error: err.message }, 400);
+                }
+                throw err;
+            }
+        },
+    );
+
+    app.get("/api/files/:eventId/:name", async (c) => {
+        const file = await hub().download(c.req.param("eventId"), c.req.param("name"));
+        if (file === null) {
+            return c.json({ error: "no such file" }, 404);
         }
+        return sendDownload(file);
     });
 
     app.get("/api/handlers", async (c) => c.json(await hub().handlerPaths()));
@@ -93,4 +119,81 @@ export function buildChatController(hub: () => ChatHub, page: PageAssetHandler):
 
     app.get("/page/*", (c) => page.handle(c));
     return app;
+}
+
+/**
+ * Read the text and attachments of a send request (JSON or multipart).
+ *
+ * @param c Request context.
+ * @returns The input, or an error message for a malformed request.
+ */
+async function readSendInput(
+    c: Context<WebUiEnv>,
+): Promise<{ text: string; uploads: ChatUpload[] } | { error: string }> {
+    const contentType = c.req.header("content-type") ?? "";
+    if (contentType.startsWith("multipart/form-data")) {
+        let body: Record<string, unknown>;
+        try {
+            body = await c.req.parseBody({ all: true });
+        } catch {
+            return { error: "malformed multipart body" };
+        }
+        const text = typeof body.text === "string" ? body.text : "";
+        const rawFiles = body.files === undefined ? [] : [body.files].flat();
+        const uploads: ChatUpload[] = [];
+        for (const file of rawFiles) {
+            if (!(file instanceof File)) {
+                return { error: "files must be file parts" };
+            }
+            uploads.push({ name: file.name, contents: Buffer.from(await file.arrayBuffer()) });
+        }
+        return { text, uploads };
+    }
+    let text: unknown;
+    try {
+        text = ((await c.req.json()) as { text?: unknown }).text;
+    } catch {
+        return { error: "expected a JSON body { text } or multipart/form-data" };
+    }
+    if (typeof text !== "string") {
+        return { error: "text must be a string" };
+    }
+    return { text, uploads: [] };
+}
+
+/**
+ * Stream a scratch file. Only raster images are shown inline; everything
+ * else is a download, served with `nosniff` and a sandboxing CSP, so a
+ * file the assistant or the user put there (HTML, SVG, …) can never run
+ * as a page of this origin.
+ *
+ * @param file The file.
+ * @returns The response (404 when it vanished meanwhile).
+ */
+async function sendDownload(file: ChatDownload): Promise<Response> {
+    let size: number;
+    try {
+        size = (await stat(file.path)).size;
+    } catch {
+        return new Response(JSON.stringify({ error: "no such file" }), {
+            status: 404,
+            headers: { "content-type": "application/json" },
+        });
+    }
+    const disposition = file.isInline ? "inline" : "attachment";
+    const asciiName = file.name.replace(/[^\x20-\x7e]|["\\]/g, "_");
+    const stream = Readable.toWeb(createReadStream(file.path)) as ReadableStream<Uint8Array>;
+    return new Response(stream, {
+        status: 200,
+        headers: {
+            "content-type": file.isInline
+                ? contentTypeForFile(file.name)
+                : "application/octet-stream",
+            "content-length": String(size),
+            "content-disposition": `${disposition}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+            "x-content-type-options": "nosniff",
+            "content-security-policy": "default-src 'none'; sandbox",
+            "cache-control": "private, max-age=3600",
+        },
+    });
 }

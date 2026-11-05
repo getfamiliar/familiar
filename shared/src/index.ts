@@ -179,6 +179,7 @@ export {
     STEPRESULTS_NEW_CHANNEL,
     TOPIC_PATTERN,
 } from "./Schema.js";
+export { isHiddenScratchFile, type ScratchFile, scratchSpillFileName } from "./Scratch.js";
 export type { NewStepResult, StepResultRow } from "./StepResult.js";
 export { StepResultBus, type StepResultUnsubscribe } from "./StepResultBus.js";
 export {
@@ -262,7 +263,11 @@ export {
     webPluginBasePath,
 } from "./WebPlugin.js";
 export { DEFAULT_WEBSERVER_HOST, DEFAULT_WEBSERVER_PORT } from "./WebServerDefaults.js";
-export { WebStaticAssets, type WebStaticAssetsOptions } from "./WebStaticAssets.js";
+export {
+    contentTypeForFile,
+    WebStaticAssets,
+    type WebStaticAssetsOptions,
+} from "./WebStaticAssets.js";
 export type {
     WorkspaceFile,
     WorkspaceFileFilter,

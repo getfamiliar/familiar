@@ -1,5 +1,4 @@
 import { Buffer } from "node:buffer";
-import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
     AgentRunBus,
@@ -7,6 +6,7 @@ import {
     EventBus,
     type Logger,
     type PostgresConnection,
+    scratchSpillFileName,
     ToolError,
     type ToolRunContext,
 } from "@getfamiliar/shared";
@@ -306,24 +306,11 @@ function buildHostToolRunContext(
     return {
         limit,
         spill: async (suggestedName, contents) => {
-            const filename = withRandomSuffix(suggestedName);
+            const filename = scratchSpillFileName(suggestedName);
             const [absPath] = await host.scratch.addFiles(eventId, [{ name: filename, contents }]);
             return absPath;
         },
     };
-}
-
-/**
- * Splice a 4-byte hex token into the basename so two concurrent spills
- * with the same `suggestedName` never collide on disk.
- */
-function withRandomSuffix(suggestedName: string): string {
-    const suffix = randomBytes(4).toString("hex");
-    const dotIdx = suggestedName.lastIndexOf(".");
-    if (dotIdx <= 0) {
-        return `${suggestedName}-${suffix}`;
-    }
-    return `${suggestedName.slice(0, dotIdx)}-${suffix}${suggestedName.slice(dotIdx)}`;
 }
 
 function asMessage(err: unknown): string {

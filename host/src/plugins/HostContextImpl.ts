@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { type Dirent, promises as fs } from "node:fs";
 import path from "node:path";
 import {
     AgentRunBus,
@@ -30,6 +30,7 @@ import {
     type PostgresConnection,
     type PromptAppender,
     type PromptPlaceholderRegistration,
+    type ScratchFile,
     StepResultBus,
     type StepResultUnsubscribe,
     type StorageApi,
@@ -286,6 +287,10 @@ export class HostContextImpl implements HostContext {
     readonly scratch = {
         addFiles: (eventId: string, files: readonly EventFile[]): Promise<readonly string[]> =>
             this.addScratchFiles(eventId, files),
+        listFiles: (eventId: string): Promise<readonly ScratchFile[]> =>
+            this.listScratchFiles(eventId),
+        resolveFile: (eventId: string, name: string): string =>
+            path.join(this.scratchDirOf(eventId), validateEventFileName(name)),
     };
 
     readonly workspace: WorkspaceWatcherApi = {
@@ -693,6 +698,57 @@ export class HostContextImpl implements HostContext {
      * validation matches the emit path. Same-name collisions overwrite
      * — callers must pick unique names.
      */
+    /**
+     * Host directory of an event's scratch folder.
+     *
+     * @param eventId Event id.
+     * @returns `<scratchDir>/<eventId>`.
+     * @throws {Error} When the id is not numeric (no path tricks via ids).
+     */
+    private scratchDirOf(eventId: string): string {
+        if (!/^\d+$/.test(eventId)) {
+            throw new Error(`scratch: eventId must be a numeric event id, got "${eventId}"`);
+        }
+        return path.join(this.deps.scratchDir, eventId);
+    }
+
+    /**
+     * Backs `ctx.scratch.listFiles`: the regular files directly in the
+     * event's scratch folder, sorted by name.
+     *
+     * @param eventId Event id.
+     * @returns The files (empty when the folder is missing).
+     * @throws {Error} For a non-numeric id or I/O errors other than a missing folder.
+     */
+    private async listScratchFiles(eventId: string): Promise<readonly ScratchFile[]> {
+        const dir = this.scratchDirOf(eventId);
+        let entries: Dirent[];
+        try {
+            entries = await fs.readdir(dir, { withFileTypes: true });
+        } catch (err) {
+            if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+                return [];
+            }
+            throw err;
+        }
+        const files: ScratchFile[] = [];
+        for (const entry of entries) {
+            if (!entry.isFile()) {
+                continue;
+            }
+            try {
+                const stat = await fs.stat(path.join(dir, entry.name));
+                files.push({ name: entry.name, size: stat.size, modifiedAt: stat.mtime });
+            } catch (err) {
+                // Removed between readdir and stat: not there any more.
+                if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+                    throw err;
+                }
+            }
+        }
+        return files.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
     private async addScratchFiles(
         eventId: string,
         files: readonly EventFile[],

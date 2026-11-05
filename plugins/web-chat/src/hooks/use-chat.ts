@@ -1,5 +1,6 @@
 import * as React from "react";
 import type {
+    ChatFileDto,
     ChatHandlersDto,
     ChatHistoryDto,
     ChatMessageDto,
@@ -17,6 +18,8 @@ export interface ChatState {
     readonly messages: readonly ChatMessageDto[];
     /** Turns sent from this browser session or still in flight, by event id. */
     readonly turns: ReadonlyMap<string, ChatTurnDto>;
+    /** Files of the loaded events (attachments and produced files), by event id. */
+    readonly files: ReadonlyMap<string, readonly ChatFileDto[]>;
     /** Whether the initial history is loaded. */
     readonly isLoaded: boolean;
     /** Whether older messages exist on the server. */
@@ -31,7 +34,7 @@ export interface ChatState {
     readonly commands: ChatHandlersDto;
     /** Your own earlier messages, oldest first (for ↑ / ↓ in the input). */
     readonly inputHistory: readonly string[];
-    send(text: string): Promise<boolean>;
+    send(text: string, attachments?: readonly File[]): Promise<boolean>;
     loadOlder(): Promise<void>;
     clear(): void;
     dismissError(): void;
@@ -98,6 +101,19 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<{ status: 
 export function useChat(apiBase: string): ChatState {
     const [messages, setMessages] = React.useState<ReadonlyMap<string, ChatMessageDto>>(new Map());
     const [turns, setTurns] = React.useState<ReadonlyMap<string, ChatTurnDto>>(new Map());
+    const [files, setFiles] = React.useState<ReadonlyMap<string, readonly ChatFileDto[]>>(
+        new Map(),
+    );
+    /** Merge the per-event files of a history page. */
+    const mergeFiles = React.useCallback((page: ChatHistoryDto) => {
+        setFiles((current) => {
+            const next = new Map(current);
+            for (const [eventId, eventFiles] of Object.entries(page.files)) {
+                next.set(eventId, eventFiles);
+            }
+            return next;
+        });
+    }, []);
     const [isLoaded, setIsLoaded] = React.useState(false);
     const [hasMore, setHasMore] = React.useState(false);
     const [isConnected, setIsConnected] = React.useState(false);
@@ -112,12 +128,13 @@ export function useChat(apiBase: string): ChatState {
                 `${apiBase}/messages?limit=${PAGE_SIZE}`,
             );
             setMessages((current) => mergeMessages(current, body.messages));
+            mergeFiles(body);
             if (isInitial) {
                 setHasMore(body.hasMore);
                 setIsLoaded(true);
             }
         },
-        [apiBase],
+        [apiBase, mergeFiles],
     );
 
     React.useEffect(() => {
@@ -153,11 +170,13 @@ export function useChat(apiBase: string): ChatState {
                 });
             } else if (event.type === "turn") {
                 setTurns((current) => new Map(current).set(event.turn.eventId, event.turn));
+            } else if (event.type === "files") {
+                setFiles((current) => new Map(current).set(event.eventId, event.files));
             } else {
                 setMessages((current) => mergeMessages(current, [event.message]));
             }
         };
-        for (const type of ["snapshot", "turn", "message"]) {
+        for (const type of ["snapshot", "turn", "message", "files"]) {
             source.addEventListener(type, onEvent as EventListener);
         }
         return () => source.close();
@@ -184,13 +203,27 @@ export function useChat(apiBase: string): ChatState {
     );
 
     const send = React.useCallback(
-        async (text: string): Promise<boolean> => {
+        async (text: string, attachments: readonly File[] = []): Promise<boolean> => {
             try {
-                const { status, body } = await fetchJson<ChatSendResultDto>(`${apiBase}/messages`, {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ text }),
-                });
+                let init: RequestInit;
+                if (attachments.length > 0) {
+                    const form = new FormData();
+                    form.append("text", text);
+                    for (const file of attachments) {
+                        form.append("files", file, file.name);
+                    }
+                    init = { method: "POST", body: form };
+                } else {
+                    init = {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ text }),
+                    };
+                }
+                const { status, body } = await fetchJson<ChatSendResultDto>(
+                    `${apiBase}/messages`,
+                    init,
+                );
                 if ("error" in body) {
                     setError(body.error);
                     return false;
@@ -230,11 +263,12 @@ export function useChat(apiBase: string): ChatState {
                 `${apiBase}/messages?limit=${PAGE_SIZE}&before=${oldest.id}`,
             );
             setMessages((current) => mergeMessages(current, body.messages));
+            mergeFiles(body);
             setHasMore(body.hasMore);
         } catch (err) {
             setError(`Could not load earlier messages: ${String(err)}`);
         }
-    }, [apiBase, sorted]);
+    }, [apiBase, sorted, mergeFiles]);
 
     const clear = React.useCallback(() => {
         const newest = sorted.at(-1);
@@ -246,6 +280,7 @@ export function useChat(apiBase: string): ChatState {
     return {
         messages: visible,
         turns,
+        files,
         isLoaded,
         hasMore: hasMore && clearedThrough === null,
         isConnected,

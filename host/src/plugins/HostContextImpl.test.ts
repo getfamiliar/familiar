@@ -1,4 +1,7 @@
 import { strict as assert } from "node:assert";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
 import type { ConfigService, Logger, NewEvent } from "@getfamiliar/shared";
 import { HostContextImpl, type HostContextImplDeps, isUsableChannelId } from "./HostContextImpl.js";
@@ -103,3 +106,39 @@ function buildContext(opts: { devMode: boolean; bools: Record<string, boolean> }
     } as unknown as HostContextImplDeps;
     return new HostContextImpl(deps);
 }
+
+describe("HostContextImpl ctx.scratch listing", () => {
+    it("lists the regular top-level files and resolves basenames only", async () => {
+        const scratchDir = mkdtempSync(path.join(tmpdir(), "familiar-scratch-"));
+        try {
+            const eventDir = path.join(scratchDir, "42");
+            mkdirSync(path.join(eventDir, "nested"), { recursive: true });
+            writeFileSync(path.join(eventDir, "report.pdf"), "pdf");
+            writeFileSync(path.join(eventDir, ".result-abcd1234.json"), "{}");
+            writeFileSync(path.join(eventDir, "nested", "deep.txt"), "x");
+            const ctx = new HostContextImpl({
+                pluginId: "web-chat",
+                scratchDir,
+            } as unknown as HostContextImplDeps);
+
+            const files = await ctx.scratch.listFiles("42");
+            assert.deepEqual(
+                files.map((file) => [file.name, file.size]),
+                [
+                    [".result-abcd1234.json", 2],
+                    ["report.pdf", 3],
+                ],
+            );
+            assert.deepEqual(await ctx.scratch.listFiles("43"), []);
+            assert.equal(
+                ctx.scratch.resolveFile("42", "report.pdf"),
+                path.join(eventDir, "report.pdf"),
+            );
+            assert.throws(() => ctx.scratch.resolveFile("42", "../x"), /basename/);
+            assert.throws(() => ctx.scratch.resolveFile("../42", "x"), /numeric event id/);
+            await assert.rejects(ctx.scratch.listFiles("4/2"), /numeric event id/);
+        } finally {
+            rmSync(scratchDir, { recursive: true, force: true });
+        }
+    });
+});

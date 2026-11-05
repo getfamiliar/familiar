@@ -7,6 +7,7 @@ import {
     HandlerCatalog,
     type HostContext,
     WebStaticAssets,
+    webPluginBasePath,
 } from "@getfamiliar/shared";
 import { buildChatController } from "./ChatController.js";
 import { ChatHub } from "./ChatHub.js";
@@ -60,6 +61,8 @@ async function start(ctx: HostContext): Promise<void> {
         chat: ctx.chat,
         events: ctx.events,
         handlers: new HandlerCatalog(ctx.workspaceDir, writablePaths),
+        scratch: ctx.scratch,
+        apiBase: `${webPluginBasePath("web-chat")}/api`,
         log: ctx.logger,
     });
     await started.start();

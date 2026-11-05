@@ -4,18 +4,23 @@ import {
     DaemonStoppedError,
     EVENT_PRIORITY,
     type HostContext,
+    isHiddenScratchFile,
     type Logger,
     type NewEvent,
     type ParsedChatInput,
     parseChatInput,
     type StepResultRow,
 } from "@getfamiliar/shared";
+import { buildUploadFiles, type ChatUpload, isInlineImage, listChatFiles } from "./ChatFiles.js";
 import {
+    type ChatFileDto,
     type ChatHistoryDto,
     type ChatRunDto,
     type ChatServerEvent,
     type ChatStepDto,
     type ChatTurnDto,
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_FILES,
     WEB_CHAT_BUILTINS,
     WEB_CHAT_CHANNEL,
     WEB_CHAT_TOPIC,
@@ -39,7 +44,19 @@ export interface ChatHubDeps {
     readonly chat: HostContext["chat"];
     readonly events: HostContext["events"];
     readonly handlers: ChatHandlerCatalog;
+    readonly scratch: Pick<HostContext["scratch"], "listFiles" | "resolveFile">;
+    /** Mount of the chat API (`/plugins/web-chat/api`), for download URLs. */
+    readonly apiBase: string;
     readonly log: Logger;
+}
+
+/** A file to stream to the browser. */
+export interface ChatDownload {
+    /** Host path. */
+    readonly path: string;
+    readonly name: string;
+    /** Whether it may be shown inline (raster image). */
+    readonly isInline: boolean;
 }
 
 /** A browser connection receiving server events. */
@@ -73,6 +90,11 @@ interface TurnState {
  * `privileged` (only allowlisted users reach the web UI), failures are
  * written to the chat, and a direct call that produced no chat reply gets
  * its result text appended as the reply.
+ *
+ * Files: attachments of a message are staged into the event's scratch
+ * folder (with a hidden manifest marking them as uploads); every visible
+ * file in that folder is offered for download in the chat — the
+ * attachments at the user's message, everything else under the reply.
  */
 export class ChatHub {
     private readonly deps: ChatHubDeps;
@@ -146,7 +168,14 @@ export class ChatHub {
         });
         const hasMore = page.length > limit;
         const messages = (hasMore ? page.slice(1) : page).map(toMessageDto);
-        return { messages, hasMore };
+        const files: Record<string, ChatFileDto[]> = {};
+        for (const eventId of new Set(messages.map((message) => message.eventId))) {
+            const eventFiles = await this.filesOf(eventId);
+            if (eventFiles.length > 0) {
+                files[eventId] = eventFiles;
+            }
+        }
+        return { messages, hasMore, files };
     }
 
     /**
@@ -160,19 +189,22 @@ export class ChatHub {
     }
 
     /**
-     * Send one typed line as an event.
+     * Send one typed line, with optional attachments, as an event.
      *
-     * @param text The line.
+     * @param text The line (may be empty when files are attached).
+     * @param uploads Attached files, staged into the event's scratch folder.
      * @returns The event id.
-     * @throws {ChatInputError} For an empty line, a builtin (handled by the
-     *   page) or an unknown handler path.
+     * @throws {ChatInputError} For an empty message, a builtin (handled by
+     *   the page), an unknown handler path or too many / too large files.
      */
-    async send(text: string): Promise<string> {
+    async send(text: string, uploads: readonly ChatUpload[] = []): Promise<string> {
+        validateUploads(uploads);
+        const { files, names } = buildUploadFiles(uploads);
         const parsed = parseChatInput(text, WEB_CHAT_BUILTINS);
         if (parsed.kind === "builtin") {
             throw new ChatInputError(`${parsed.command} is handled by the chat page, not sent`);
         }
-        if (parsed.prompt === "" && parsed.topic === undefined) {
+        if (parsed.prompt === "" && parsed.topic === undefined && names.length === 0) {
             throw new ChatInputError("empty message");
         }
         if (parsed.topic !== undefined) {
@@ -190,7 +222,8 @@ export class ChatHub {
             steps: [],
             error: null,
         };
-        const handle = await this.deps.events.emit(buildNewEvent(parsed), {
+        const event = buildNewEvent(parsed, names);
+        const handle = await this.deps.events.emit(files.length > 0 ? { ...event, files } : event, {
             onAgentRun: (row) => this.onAgentRun(turn, row),
             onStep: (step) => this.onStep(turn, step),
         });
@@ -205,6 +238,60 @@ export class ChatHub {
     }
 
     /**
+     * The visible files of an event (see {@link listChatFiles}).
+     *
+     * @param eventId Event id.
+     * @returns The files; empty when listing fails (logged).
+     */
+    async filesOf(eventId: string): Promise<ChatFileDto[]> {
+        try {
+            return await listChatFiles(this.deps.scratch, this.deps.apiBase, eventId);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.deps.log.warn(
+                `web-chat: could not list the files of event ${eventId}: ${message}`,
+            );
+            return [];
+        }
+    }
+
+    /**
+     * Locate a visible file of an event for download.
+     *
+     * @param eventId Event id (digits).
+     * @param name File name.
+     * @returns The file, or null when it is unknown, hidden or not a file.
+     */
+    async download(eventId: string, name: string): Promise<ChatDownload | null> {
+        if (!/^\d+$/.test(eventId)) {
+            return null;
+        }
+        const files = await this.deps.scratch.listFiles(eventId);
+        const file = files.find((entry) => entry.name === name && !isHiddenScratchFile(entry.name));
+        if (file === undefined) {
+            return null;
+        }
+        return {
+            path: this.deps.scratch.resolveFile(eventId, file.name),
+            name: file.name,
+            isInline: isInlineImage(file.name),
+        };
+    }
+
+    /**
+     * List an event's files and broadcast them (after a reply or when its
+     * turn finished — the assistant may have produced files).
+     *
+     * @param eventId Event id.
+     */
+    private async broadcastFiles(eventId: string): Promise<void> {
+        if (this.clients.size === 0) {
+            return;
+        }
+        this.broadcast({ type: "files", eventId, files: await this.filesOf(eventId) });
+    }
+
+    /**
      * Bus handler: broadcast the message. User rows count as delivered
      * (they came from the user); assistant rows only when a tab shows them.
      *
@@ -216,6 +303,7 @@ export class ChatHub {
             this.answeredEvents.add(message.eventId);
         }
         this.broadcast({ type: "message", message: toMessageDto(message) });
+        void this.broadcastFiles(message.eventId);
         return message.role === "user" || this.clients.size > 0;
     }
 
@@ -291,6 +379,7 @@ export class ChatHub {
         turn.error = error;
         this.answeredEvents.delete(turn.eventId);
         this.broadcastTurn(turn);
+        void this.broadcastFiles(turn.eventId);
         const timer = setTimeout(() => {
             this.retentionTimers.delete(timer);
             this.turns.delete(turn.eventId);
@@ -335,10 +424,21 @@ export class ChatHub {
  * chat events on `chat:web`; direct handler calls are exact-topic runs
  * whose typed line is stored as the user message.
  *
+ * Attachments are named in the text, so the transcript (and the model's
+ * chat history) records them even when the line itself is empty.
+ *
  * @param parsed The parsed line.
- * @returns The event.
+ * @param attachmentNames Names of the attached files (staged separately).
+ * @returns The event (without `files`).
  */
-export function buildNewEvent(parsed: Extract<ParsedChatInput, { kind: "handler" }>): NewEvent {
+export function buildNewEvent(
+    parsed: Extract<ParsedChatInput, { kind: "handler" }>,
+    attachmentNames: readonly string[] = [],
+): NewEvent {
+    const attached =
+        attachmentNames.length === 0 ? "" : `[Attached: ${attachmentNames.join(", ")}]`;
+    const withAttachments = (text: string) =>
+        attached === "" ? text : text === "" ? attached : `${text}\n\n${attached}`;
     const common = {
         priority: EVENT_PRIORITY.CHAT,
         preferredChatChannelId: WEB_CHAT_CHANNEL,
@@ -346,15 +446,22 @@ export function buildNewEvent(parsed: Extract<ParsedChatInput, { kind: "handler"
         outputChatOnFailure: true,
     } as const;
     if (parsed.topic === undefined) {
-        return { ...common, topic: WEB_CHAT_TOPIC, isChat: true, prompt: parsed.prompt };
+        return {
+            ...common,
+            topic: WEB_CHAT_TOPIC,
+            isChat: true,
+            prompt: withAttachments(parsed.prompt),
+        };
     }
     return {
         ...common,
         topic: parsed.topic,
         isExactTopic: true,
         isChat: false,
-        prompt: parsed.prompt.length > 0 ? parsed.prompt : "(handler invoked from web-chat)",
-        userChatMessage: parsed.rawInput,
+        prompt: withAttachments(
+            parsed.prompt.length > 0 ? parsed.prompt : "(handler invoked from web-chat)",
+        ),
+        userChatMessage: withAttachments(parsed.rawInput),
     };
 }
 
@@ -372,4 +479,23 @@ function toTurnDto(turn: TurnState): ChatTurnDto {
         steps: [...turn.steps],
         error: turn.error,
     };
+}
+
+/**
+ * Enforce the attachment limits.
+ *
+ * @param uploads The attached files.
+ * @throws {ChatInputError} For more than {@link MAX_UPLOAD_FILES} files or
+ *   more than {@link MAX_UPLOAD_BYTES} in total.
+ */
+function validateUploads(uploads: readonly ChatUpload[]): void {
+    if (uploads.length > MAX_UPLOAD_FILES) {
+        throw new ChatInputError(`at most ${MAX_UPLOAD_FILES} files per message`);
+    }
+    const total = uploads.reduce((sum, upload) => sum + upload.contents.length, 0);
+    if (total > MAX_UPLOAD_BYTES) {
+        throw new ChatInputError(
+            `the attachments are ${Math.ceil(total / 1024 / 1024)} MB; at most ${MAX_UPLOAD_BYTES / 1024 / 1024} MB per message`,
+        );
+    }
 }

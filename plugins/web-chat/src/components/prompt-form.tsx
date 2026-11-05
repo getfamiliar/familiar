@@ -1,5 +1,6 @@
-import { ArrowUpIcon, SlashIcon } from "lucide-react";
+import { ArrowUpIcon, PaperclipIcon, SlashIcon } from "lucide-react";
 import * as React from "react";
+import { PendingFileChip } from "@/components/file-chip";
 import {
     InputGroup,
     InputGroupAddon,
@@ -13,20 +14,31 @@ import { suggestCommands } from "@/lib/commands";
  * sends, Shift+Enter breaks the line. Typing `/` suggests builtins and
  * handler paths (↑/↓ to pick, Tab or Enter to complete, Esc to close),
  * like cli-chat's tab completion; ↑ / ↓ on a single-line input walk
- * through your earlier messages.
+ * through your earlier messages. Attached files show as removable
+ * thumbnails above the text; add them with the paperclip, by pasting, or
+ * by dropping them anywhere on the chat.
  *
  * @param props.commands Builtins and handler slash paths.
  * @param props.history Your earlier messages, oldest first.
+ * @param props.attachments Files attached to the next message.
+ * @param props.onAddFiles Attach files.
+ * @param props.onRemoveAttachment Detach the file at an index.
  * @param props.onSubmit Called with the trimmed text; resolves false to keep the input.
  * @returns The form.
  */
 export function PromptForm({
     commands,
     history,
+    attachments,
+    onAddFiles,
+    onRemoveAttachment,
     onSubmit,
 }: {
     readonly commands: readonly string[];
     readonly history: readonly string[];
+    readonly attachments: readonly File[];
+    readonly onAddFiles: (files: readonly File[]) => void;
+    readonly onRemoveAttachment: (index: number) => void;
     readonly onSubmit: (text: string) => Promise<boolean>;
 }) {
     const [input, setInput] = React.useState("");
@@ -37,6 +49,7 @@ export function PromptForm({
     const [historyIndex, setHistoryIndex] = React.useState<number | null>(null);
     const draft = React.useRef("");
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     const suggestions = isDismissed ? [] : suggestCommands(input, commands);
     const activeSuggestion = suggestions[Math.min(selected, suggestions.length - 1)];
@@ -50,7 +63,7 @@ export function PromptForm({
 
     const submit = async () => {
         const text = input.trim();
-        if (text === "" || isSending) {
+        if ((text === "" && attachments.length === 0) || isSending) {
             return;
         }
         setIsSending(true);
@@ -160,6 +173,18 @@ export function PromptForm({
                 </div>
             )}
             <InputGroup>
+                {attachments.length > 0 && (
+                    <InputGroupAddon align="block-start" className="flex-wrap gap-2">
+                        {attachments.map((file, index) => (
+                            <PendingFileChip
+                                // biome-ignore lint/suspicious/noArrayIndexKey: two attachments may share name and size; the position identifies them
+                                key={`${index}:${file.name}:${file.size}`}
+                                file={file}
+                                onRemove={() => onRemoveAttachment(index)}
+                            />
+                        ))}
+                    </InputGroupAddon>
+                )}
                 <InputGroupTextarea
                     ref={textareaRef}
                     autoFocus
@@ -168,8 +193,34 @@ export function PromptForm({
                     value={input}
                     onChange={(event) => updateInput(event.target.value)}
                     onKeyDown={onKeyDown}
+                    onPaste={(event) => {
+                        const pasted = [...event.clipboardData.files];
+                        if (pasted.length > 0) {
+                            event.preventDefault();
+                            onAddFiles(pasted);
+                        }
+                    }}
                 />
                 <InputGroupAddon align="block-end">
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        hidden
+                        onChange={(event) => {
+                            onAddFiles([...(event.target.files ?? [])]);
+                            event.target.value = "";
+                        }}
+                    />
+                    <InputGroupButton
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Attach files"
+                        onClick={() => fileInputRef.current?.click()}
+                    >
+                        <PaperclipIcon />
+                    </InputGroupButton>
                     <span className="text-xs text-muted-foreground">
                         Enter to send · Shift+Enter for a new line
                     </span>
@@ -179,7 +230,7 @@ export function PromptForm({
                         variant="default"
                         aria-label="Send message"
                         className="ml-auto"
-                        disabled={input.trim() === "" || isSending}
+                        disabled={(input.trim() === "" && attachments.length === 0) || isSending}
                     >
                         <ArrowUpIcon />
                     </InputGroupButton>
