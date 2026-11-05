@@ -154,17 +154,20 @@ describe("DaemonReloader", () => {
     });
 
     it("restarts the webserver only when a webserver key changed", async () => {
-        writeFileSync(configFile, configYaml());
+        const auth = "webserver:\n  auth:\n    users: [me@example.com]\n";
+        writeFileSync(configFile, configYaml(auth));
         const calls: string[] = [];
         const { reloader } = buildReloader(calls);
 
-        writeFileSync(configFile, configYaml("mail:\n  allowSend: true\n"));
+        writeFileSync(configFile, configYaml(`mail:\n  allowSend: true\n${auth}`));
         await reloader.reload();
         assert.ok(!calls.includes("webserver"), "unrelated change leaves the webserver alone");
 
         writeFileSync(
             configFile,
-            configYaml("mail:\n  allowSend: true\nwebserver:\n  enabled: true\n"),
+            configYaml(
+                "mail:\n  allowSend: true\nwebserver:\n  enabled: true\n  auth:\n    users: [me@example.com]\n",
+            ),
         );
         const report = await reloader.reload();
         assert.deepEqual(report.appliedKeys, ["webserver.enabled"]);

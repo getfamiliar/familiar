@@ -1,20 +1,31 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import {
-    type ConfigService,
-    DEFAULT_WEBSERVER_HOST,
-    DEFAULT_WEBSERVER_PORT,
-    type Logger,
-} from "@getfamiliar/shared";
+import { DEFAULT_WEBSERVER_HOST, DEFAULT_WEBSERVER_PORT, type Logger } from "@getfamiliar/shared";
 import { createAdaptorServer } from "@hono/node-server";
 import { Hono } from "hono";
+import { html } from "hono/html";
+import type { HostConfigService } from "../utils/ConfigService.js";
+import type { TrustedProxyRegistry } from "./auth/TrustedProxyRegistry.js";
+import {
+    createAuthMiddleware,
+    mountLoginRoutes,
+    page,
+    readWebAuthSettings,
+    type WebAuthDeps,
+    type WebEnv,
+} from "./auth/WebAuth.js";
+import type { WebSessionStore } from "./auth/WebSessionStore.js";
 
 /** Dependencies of the {@link WebServer}. */
 export interface WebServerDeps {
     /** Daemon config; `webserver.*` is read on every {@link WebServer.start}. */
-    readonly config: ConfigService;
+    readonly config: HostConfigService;
     /** Logger for lifecycle lines. */
     readonly log: Logger;
+    /** Trusted proxies; the config-defined ones are replaced on every start. */
+    readonly trustedProxies: TrustedProxyRegistry;
+    /** Login tokens and sessions. */
+    readonly sessions: WebSessionStore;
 }
 
 /** Effective `webserver.*` settings for one start. */
@@ -30,8 +41,10 @@ interface WebServerSettings {
  *
  * Deliberately separate from the bastion (`host/src/bastion/HttpServer.ts`):
  * the bastion is the token-gated trust-zone gateway for the agent
- * container, while this server faces the user's browser and will get
- * its own authentication (e.g. Tailscale identity).
+ * container, while this server faces the user's browser. Every route
+ * sits behind the auth middleware (`./auth/WebAuth.ts`): a trusted
+ * proxy's user header (proven by its shared secret) or a session from a
+ * `familiar web login` link, checked against `webserver.auth.users`.
  *
  * It starts only when `webserver.enabled` is `true`; `webserver.port`
  * (default {@link DEFAULT_WEBSERVER_PORT}) and `webserver.host`
@@ -71,8 +84,9 @@ export class WebServer {
      * Start listening when `webserver.enabled` is true; otherwise log
      * that the server is disabled and return. No-op when already running.
      *
-     * @throws {Error} When the socket cannot be bound (port in use,
-     *   privileged port, bad host); the message names host, port and cause.
+     * @throws {Error} When `webserver.auth` is unusable (no allowed users,
+     *   malformed trusted proxy) or the socket cannot be bound (port in
+     *   use, privileged port, bad host); the message names the cause.
      */
     async start(): Promise<void> {
         if (this.server !== null) {
@@ -83,7 +97,15 @@ export class WebServer {
             this.deps.log.info("webserver disabled (webserver.enabled is not true)");
             return;
         }
-        const server = createAdaptorServer({ fetch: this.buildApp().fetch }) as Server;
+        const auth = readWebAuthSettings(this.deps.config);
+        this.deps.trustedProxies.setConfigProxies(auth.configProxies);
+        const app = this.buildApp({
+            settings: auth,
+            proxies: this.deps.trustedProxies,
+            sessions: this.deps.sessions,
+            log: this.deps.log,
+        });
+        const server = createAdaptorServer({ fetch: app.fetch }) as Server;
         await new Promise<void>((resolve, reject) => {
             server.once("error", (err: NodeJS.ErrnoException) => {
                 reject(new Error(describeListenError(err, settings)));
@@ -97,7 +119,10 @@ export class WebServer {
             this.deps.log.error(`webserver socket error: ${err.message}`);
         });
         this.server = server;
-        this.deps.log.info(`webserver listening on ${this.listeningUrl}`);
+        const proxyIds = this.deps.trustedProxies.listIds();
+        this.deps.log.info(
+            `webserver listening on ${this.listeningUrl} — allowed users: ${auth.users.join(", ")}; trusted proxies: ${proxyIds.length === 0 ? "none" : proxyIds.join(", ")}`,
+        );
     }
 
     /**
@@ -130,17 +155,26 @@ export class WebServer {
     }
 
     /**
-     * Build the Hono application served by this server.
+     * Build the Hono application served by this server: the auth
+     * middleware in front of everything, the login routes, then the pages.
      *
+     * @param auth Auth settings and stores for this start.
      * @returns A fresh Hono app.
      */
-    private buildApp(): Hono {
-        const app = new Hono();
-        app.get("/", (c) =>
-            c.html(
-                '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Familiar</title></head><body><h1>Hello World</h1></body></html>',
-            ),
-        );
+    private buildApp(auth: WebAuthDeps): Hono<WebEnv> {
+        const app = new Hono<WebEnv>();
+        app.use(createAuthMiddleware(auth));
+        mountLoginRoutes(app, auth);
+        app.get("/", (c) => {
+            const principal = c.get("principal");
+            return c.html(
+                page(
+                    "Hello World",
+                    html`<p>Signed in as ${principal.displayName} (${principal.login}, via ${principal.via}).</p>
+                        <form method="post" action="/logout"><button type="submit">Sign out</button></form>`,
+                ),
+            );
+        });
         return app;
     }
 

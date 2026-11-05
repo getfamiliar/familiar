@@ -68,14 +68,14 @@ function setColumns(columns: number): void {
 const md = [
     "| File | Score | Description |",
     "| --- | --- | --- |",
-    "| people/alex.md | 80 | Organises the check-in for Steffen. Contact: <alex@aauer.de>. |",
+    "| people/alex.md | 80 | Organises the check-in for Jürgen. Contact: <alex@example.com>. |",
 ].join("\n");
 
 test("a hyperlinked email in a table cell renders intact, not as OSC 8 bytes", () => {
     setColumns(120); // wide enough that the cell does not wrap
     const rendered = renderMarkdown(md);
     assert.ok(!hasOsc8(rendered), "OSC 8 hyperlink leaked into a table cell");
-    assert.ok(stripAllAnsi(rendered).includes("alex@aauer.de"), "email text was corrupted");
+    assert.ok(stripAllAnsi(rendered).includes("alex@example.com"), "email text was corrupted");
 });
 
 test("table borders stay aligned when a hyperlinked cell wraps at a narrow width", () => {

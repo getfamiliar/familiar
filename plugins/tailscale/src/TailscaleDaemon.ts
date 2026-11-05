@@ -5,6 +5,12 @@ import {
     type HostContext,
 } from "@getfamiliar/shared";
 import {
+    PROXY_LISTEN_PORT,
+    readOrCreateProxySecret,
+    startProxy,
+    stopProxy,
+} from "./TailscaleProxy.js";
+import {
     applyServe,
     type LoginOptions,
     readStatus,
@@ -38,6 +44,8 @@ interface MonitorState {
     timer: NodeJS.Timeout | null;
     hasRequestedLogin: boolean;
     isServing: boolean;
+    /** `https://<node>.<tailnet>.ts.net` while serving, else null. */
+    servedUrl: string | null;
     lastLoggedAuthUrl: string | null;
     hasLoggedLoggedOut: boolean;
     hasLoggedStartupFailure: boolean;
@@ -69,7 +77,36 @@ export function readLoginOptions(ctx: HostContext): LoginOptions {
 }
 
 /**
- * Start the tailscale sidecar when the webserver is enabled, then run a
+ * Register the plugin's header proxy as a trusted proxy of the webserver
+ * (`prepare` hook). The webserver then believes `Tailscale-User-Login` /
+ * `-Name` only on requests carrying this plugin's secret, which only the
+ * Caddy inside the sidecar's network namespace sends.
+ *
+ * @param ctx Host context.
+ */
+export function registerTrustedProxy(ctx: HostContext): void {
+    ctx.web.registerTrustedProxy({
+        secret: readOrCreateProxySecret(tailscaleDataDir(ctx)),
+        userHeader: "Tailscale-User-Login",
+        nameHeader: "Tailscale-User-Name",
+        publicBaseUrl: () => currentTailnetUrl(),
+        // Serve sets the caller's Tailscale login; allowed users are signed in on arrival.
+        hasBuiltInAuth: true,
+    });
+}
+
+/**
+ * The web UI's tailnet URL while the node is logged in and serving.
+ *
+ * @returns `https://<node>.<tailnet>.ts.net`, or null.
+ */
+export function currentTailnetUrl(): string | null {
+    return monitor?.servedUrl ?? null;
+}
+
+/**
+ * Start the tailscale sidecar and its header proxy when the webserver is
+ * enabled, then run a
  * background monitor that requests the login, applies the serve config
  * once the node is logged in and logs the login / tailnet URLs.
  *
@@ -92,12 +129,12 @@ export async function startTailscaleDaemon(ctx: HostContext): Promise<void> {
     }
     const webServerPort = ctx.config.getNumber("webserver.port", DEFAULT_WEBSERVER_PORT);
     const login = readLoginOptions(ctx);
-    await startSidecar(tailscaleDataDir(ctx), {
-        uid: process.getuid?.() ?? 1000,
-        gid: process.getgid?.() ?? 1000,
-    });
+    const ids = { uid: process.getuid?.() ?? 1000, gid: process.getgid?.() ?? 1000 };
+    const dataDir = tailscaleDataDir(ctx);
+    await startSidecar(dataDir, ids);
+    await startProxy(dataDir, readOrCreateProxySecret(dataDir), webServerPort, ids);
     log.info(
-        `tailscale: sidecar started as tailnet device "${login.hostname}", will serve HTTPS :443 → webserver port ${webServerPort}`,
+        `tailscale: sidecar started as tailnet device "${login.hostname}", will serve HTTPS :443 → header proxy 127.0.0.1:${PROXY_LISTEN_PORT} → webserver port ${webServerPort}`,
     );
     monitor = {
         ctx,
@@ -107,6 +144,7 @@ export async function startTailscaleDaemon(ctx: HostContext): Promise<void> {
         timer: null,
         hasRequestedLogin: false,
         isServing: false,
+        servedUrl: null,
         lastLoggedAuthUrl: null,
         hasLoggedLoggedOut: false,
         hasLoggedStartupFailure: false,
@@ -114,7 +152,7 @@ export async function startTailscaleDaemon(ctx: HostContext): Promise<void> {
     schedule(monitor, PENDING_POLL_INTERVAL_MS);
 }
 
-/** Stop the monitor and the sidecar container. */
+/** Stop the monitor, the header proxy and the sidecar container. */
 export async function stopTailscaleDaemon(): Promise<void> {
     if (monitor === null) {
         return;
@@ -124,6 +162,7 @@ export async function stopTailscaleDaemon(): Promise<void> {
     if (state.timer !== null) {
         clearTimeout(state.timer);
     }
+    await stopProxy();
     await stopSidecar();
 }
 
@@ -170,8 +209,9 @@ async function tick(state: MonitorState): Promise<number> {
         if (status.backendState === "Running") {
             state.hasLoggedLoggedOut = false;
             if (!state.isServing) {
-                await applyServe(state.webServerPort);
+                await applyServe(PROXY_LISTEN_PORT);
                 state.isServing = true;
+                state.servedUrl = status.dnsName === null ? null : `https://${status.dnsName}`;
                 log.info(
                     `tailscale: familiar web UI reachable in your tailnet at https://${status.dnsName ?? `${state.login.hostname}.<tailnet>.ts.net`}/`,
                 );
@@ -179,6 +219,7 @@ async function tick(state: MonitorState): Promise<number> {
             return RUNNING_POLL_INTERVAL_MS;
         }
         state.isServing = false;
+        state.servedUrl = null;
         if (status.backendState === "NeedsLogin") {
             if (status.authUrl !== null && status.authUrl !== state.lastLoggedAuthUrl) {
                 state.lastLoggedAuthUrl = status.authUrl;

@@ -45,6 +45,7 @@ import { HostContextImpl } from "./HostContextImpl.js";
 import { PromptAppenderRegistry } from "./PromptAppenderRegistry.js";
 import { PromptPlaceholderRegistry } from "./PromptPlaceholderRegistry.js";
 import type { PluginToolsRegistry } from "./ToolsRegistry.js";
+import { TrustedProxyRegistry } from "../web/auth/TrustedProxyRegistry.js";
 
 /**
  * Poll cadence for the daemon-pidfile watcher in CLI mode. Has to be
@@ -122,6 +123,7 @@ export class PluginHost {
     private readonly storageService: StorageService;
     private readonly promptAppenderRegistry: PromptAppenderRegistry;
     private readonly promptPlaceholderRegistry: PromptPlaceholderRegistry;
+    private readonly trustedProxyRegistry: TrustedProxyRegistry;
     private readonly modelMetadataService: ModelMetadataService;
     private toolsRegistry: PluginToolsRegistry | undefined;
     private workspaceWatcher: WorkspaceWatcher | undefined;
@@ -192,6 +194,7 @@ export class PluginHost {
         });
         this.promptAppenderRegistry = new PromptAppenderRegistry();
         this.promptPlaceholderRegistry = new PromptPlaceholderRegistry();
+        this.trustedProxyRegistry = new TrustedProxyRegistry();
         this.modelMetadataService = new ModelMetadataService({
             tmpDir: boot.tmpDir,
             lookupPluginMeta: (provider, model) => this.lookupModelMetaData(provider, model),
@@ -340,6 +343,14 @@ export class PluginHost {
      */
     get promptPlaceholders(): PromptPlaceholderRegistry {
         return this.promptPlaceholderRegistry;
+    }
+
+    /**
+     * Shared registry behind `ctx.web.registerTrustedProxy`; the
+     * webserver adds the `webserver.auth.trustedProxies` entries to it.
+     */
+    get trustedProxies(): TrustedProxyRegistry {
+        return this.trustedProxyRegistry;
     }
 
     /**
@@ -827,6 +838,7 @@ export class PluginHost {
         this.storageRegistry.unregisterPlugin(plugin.id);
         this.promptAppenderRegistry.unregisterPlugin(plugin.id);
         this.promptPlaceholderRegistry.unregisterPlugin(plugin.id);
+        this.trustedProxyRegistry.unregisterPlugin(plugin.id);
         this.storageService.resetCaches();
         this.failedPlugins.delete(plugin.id);
 
@@ -960,6 +972,7 @@ export class PluginHost {
             mailStyleStore: this.mailStyleStore,
             promptAppenderRegistry: this.promptAppenderRegistry,
             promptPlaceholderRegistry: this.promptPlaceholderRegistry,
+            trustedProxyRegistry: this.trustedProxyRegistry,
             resolveProvider: (key) => this.resolveProvider(key),
             workspaceWatcher: this.workspaceWatcher,
             daemonDownSignal: this.daemonDownController.signal,

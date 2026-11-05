@@ -41,10 +41,10 @@ describe("buildUpArgs", () => {
 });
 
 describe("buildServeArgs", () => {
-    it("serves HTTPS on :443 only, proxied to the webserver", () => {
-        const args = buildServeArgs(8080);
+    it("serves HTTPS on :443 only, proxied to the local header proxy", () => {
+        const args = buildServeArgs(18080);
         assert.ok(args.includes("--https=443"));
-        assert.equal(args.at(-1), "http://host.docker.internal:8080");
+        assert.equal(args.at(-1), "http://127.0.0.1:18080");
         assert.ok(!args.some((arg) => arg.startsWith("--http=") || arg.startsWith("--tcp")));
     });
 });

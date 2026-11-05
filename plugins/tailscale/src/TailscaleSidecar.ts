@@ -122,20 +122,15 @@ export function buildUpArgs(options: LoginOptions): string[] {
 
 /**
  * Build the `tailscale serve` arguments: HTTPS on :443 only, proxied to
- * the familiar webserver on the host. There is deliberately no HTTP /
- * :80 listener.
+ * the header-injecting Caddy on 127.0.0.1 of the shared network
+ * namespace (`TailscaleProxy.ts`), which forwards to the webserver with
+ * the trusted-proxy secret. There is deliberately no HTTP / :80 listener.
  *
- * @param webServerPort Port the host webserver listens on.
+ * @param proxyPort Port Caddy listens on (`PROXY_LISTEN_PORT`).
  * @returns Arguments after `tailscale`.
  */
-export function buildServeArgs(webServerPort: number): string[] {
-    return [
-        "serve",
-        "--bg",
-        "--yes",
-        "--https=443",
-        `http://host.docker.internal:${webServerPort}`,
-    ];
+export function buildServeArgs(proxyPort: number): string[] {
+    return ["serve", "--bg", "--yes", "--https=443", `http://127.0.0.1:${proxyPort}`];
 }
 
 /**
@@ -238,17 +233,17 @@ export async function requestLogin(options: LoginOptions): Promise<void> {
 }
 
 /**
- * Replace the node's serve config with HTTPS :443 → the webserver.
+ * Replace the node's serve config with HTTPS :443 → the local proxy.
  * Needs a logged-in node (the certificate domain must be known).
  *
- * @param webServerPort Port the host webserver listens on.
+ * @param proxyPort Port the proxy listens on.
  * @throws {Error} When serve fails or times out (HTTPS certificates not
  *   enabled in the tailnet is the usual cause).
  */
-export async function applyServe(webServerPort: number): Promise<void> {
+export async function applyServe(proxyPort: number): Promise<void> {
     await runTailscaleCli(["serve", "reset"]);
     try {
-        await runTailscaleCli(buildServeArgs(webServerPort), SERVE_TIMEOUT_SECONDS);
+        await runTailscaleCli(buildServeArgs(proxyPort), SERVE_TIMEOUT_SECONDS);
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         throw new Error(

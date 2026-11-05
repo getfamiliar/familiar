@@ -1,0 +1,453 @@
+import { type Logger, PROXY_SECRET_HEADER } from "@getfamiliar/shared";
+import type { Context, Hono, MiddlewareHandler } from "hono";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { html } from "hono/html";
+import type { HostConfigService } from "../../utils/ConfigService.js";
+import { decodeMimeEncodedWords } from "./MimeEncodedWord.js";
+import type { TrustedProxy, TrustedProxyRegistry } from "./TrustedProxyRegistry.js";
+import type { WebSessionStore } from "./WebSessionStore.js";
+
+/** Who a request belongs to. */
+export interface WebPrincipal {
+    /** Login as listed in `webserver.auth.users`. */
+    readonly login: string;
+    /** Display name from the proxy's name header, else the login. */
+    readonly displayName: string;
+    /** `session`, or the id of the trusted proxy that vouched for the login (`plugin:tailscale`, `config:authelia`). */
+    readonly via: string;
+}
+
+/** Hono environment of the webserver app. */
+export interface WebEnv {
+    Variables: {
+        /** Set by the auth middleware on every non-public route. */
+        principal: WebPrincipal;
+        /**
+         * Set on the public login routes: who is signed in already (an
+         * allowed proxy login or a live session), or null.
+         */
+        signedInAs: WebPrincipal | null;
+        /** Whether the browser talks HTTPS (directly, or to a trusted proxy that says so). */
+        isHttps: boolean;
+    };
+}
+
+/** Effective `webserver.auth.*` settings. */
+export interface WebAuthSettings {
+    /** Allowed logins, lowercased. */
+    readonly users: readonly string[];
+    /** Session lifetime. */
+    readonly sessionTtlMs: number;
+    /** Proxies from `webserver.auth.trustedProxies`. */
+    readonly configProxies: readonly TrustedProxy[];
+}
+
+/** Dependencies of the auth middleware and routes. */
+export interface WebAuthDeps {
+    readonly settings: WebAuthSettings;
+    readonly proxies: TrustedProxyRegistry;
+    readonly sessions: WebSessionStore;
+    readonly log: Logger;
+}
+
+/** Name of the session cookie. */
+export const SESSION_COOKIE = "familiar_session";
+
+/** Default of `webserver.auth.sessionDays`. */
+export const DEFAULT_SESSION_DAYS = 30;
+
+/** Lifetime of a login link minted by `familiar web login`. */
+export const LOGIN_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+/** Paths reachable without a principal (login flow). */
+const PUBLIC_PATHS = /^\/(login(\/[^/]+)?|logout)$/;
+
+/** Methods that never change state and skip the origin check. */
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** Milliseconds per day. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Read `webserver.auth.*` with defaults. Logins are lowercased so the
+ * allowlist check is case-insensitive.
+ *
+ * @param config Host config.
+ * @returns The settings.
+ * @throws {Error} When `users` is empty (the webserver must not run
+ *   open) or a trusted-proxy entry is malformed.
+ */
+export function readWebAuthSettings(config: HostConfigService): WebAuthSettings {
+    const users = config
+        .getStringList("webserver.auth.users", [])
+        .map((login) => login.trim().toLowerCase())
+        .filter((login) => login !== "");
+    if (users.length === 0) {
+        throw new Error(
+            "webserver not started: webserver.auth.users is empty — list the logins allowed to use the web UI (e.g. your Tailscale login / e-mail)",
+        );
+    }
+    const sessionDays = config.getNumber("webserver.auth.sessionDays", DEFAULT_SESSION_DAYS);
+    const proxiesGroup = config.getMapping("webserver.auth.trustedProxies", {});
+    const configProxies = Object.entries(proxiesGroup).map(([name, raw]) =>
+        parseConfigProxy(name, raw),
+    );
+    return { users, sessionTtlMs: sessionDays * DAY_MS, configProxies };
+}
+
+/**
+ * Parse one `webserver.auth.trustedProxies.<name>` entry.
+ *
+ * @param name Entry name.
+ * @param raw Raw YAML value.
+ * @returns The proxy with id `config:<name>`.
+ * @throws {Error} When the entry is not a mapping or lacks `secret` / `userHeader`.
+ */
+function parseConfigProxy(name: string, raw: unknown): TrustedProxy {
+    const key = `webserver.auth.trustedProxies.${name}`;
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+        throw new Error(`${key} must be a mapping with userHeader and secret`);
+    }
+    const entry = raw as Record<string, unknown>;
+    if (typeof entry.userHeader !== "string" || entry.userHeader.trim() === "") {
+        throw new Error(`${key}.userHeader must be a non-empty header name`);
+    }
+    if (typeof entry.secret !== "string") {
+        throw new Error(
+            `${key}.secret is missing — set it with \`familiar config set ${key}.secret\``,
+        );
+    }
+    if (entry.nameHeader !== undefined && typeof entry.nameHeader !== "string") {
+        throw new Error(`${key}.nameHeader must be a header name`);
+    }
+    if (entry.publicUrl !== undefined && typeof entry.publicUrl !== "string") {
+        throw new Error(`${key}.publicUrl must be a URL`);
+    }
+    if (entry.hasBuiltInAuth !== undefined && typeof entry.hasBuiltInAuth !== "boolean") {
+        throw new Error(`${key}.hasBuiltInAuth must be true or false`);
+    }
+    const publicUrl = entry.publicUrl;
+    return {
+        id: `config:${name}`,
+        secret: entry.secret,
+        userHeader: entry.userHeader,
+        nameHeader: entry.nameHeader,
+        publicBaseUrl: publicUrl === undefined ? undefined : () => publicUrl,
+        hasBuiltInAuth: entry.hasBuiltInAuth === true,
+    };
+}
+
+/**
+ * Whether `login` is on the allowlist.
+ *
+ * @param settings Auth settings.
+ * @param login Login to check.
+ * @returns True when allowed (case-insensitive).
+ */
+export function isAllowedLogin(settings: WebAuthSettings, login: string): boolean {
+    return settings.users.includes(login.trim().toLowerCase());
+}
+
+/**
+ * The auth middleware: run before every route. It
+ *
+ * 1. matches a {@link PROXY_SECRET_HEADER} against the trusted proxies
+ *    (unknown secret → 401; identity headers are only read for a match),
+ * 2. rejects state-changing requests whose `Origin` is not this host (CSRF),
+ * 3. resolves the identity from the proxy's user header or the session
+ *    cookie, and
+ * 4. on the login routes sets `signedInAs` (allowed principal or null) and
+ *    lets them through; elsewhere sets `principal`, answering 403 for a
+ *    login not on the allowlist and 401 / a redirect to `/login` when
+ *    there is no identity at all.
+ *
+ * @param deps Settings, proxy registry, session store, logger.
+ * @returns The middleware.
+ */
+export function createAuthMiddleware(deps: WebAuthDeps): MiddlewareHandler<WebEnv> {
+    return async (c, next) => {
+        const secret = c.req.header(PROXY_SECRET_HEADER);
+        let proxy: TrustedProxy | null = null;
+        if (secret !== undefined) {
+            proxy = deps.proxies.match(secret);
+            if (proxy === null) {
+                deps.log.warn(
+                    `webserver: rejected ${c.req.method} ${c.req.path} — ${PROXY_SECRET_HEADER} matches no trusted proxy`,
+                );
+                return c.text("Unauthorized: unknown trusted-proxy secret", 401);
+            }
+        }
+        c.set("isHttps", isHttpsRequest(c, proxy));
+        if (!SAFE_METHODS.has(c.req.method) && !isSameOrigin(c, proxy)) {
+            return c.text("Forbidden: cross-origin request", 403);
+        }
+        const identity = await resolveIdentity(c, deps, proxy);
+        if (PUBLIC_PATHS.test(c.req.path)) {
+            c.set("signedInAs", identity.kind === "allowed" ? identity.principal : null);
+            return next();
+        }
+        if (identity.kind === "forbidden") {
+            return forbidden(c, deps, identity.login, identity.via);
+        }
+        if (identity.kind === "none") {
+            return unauthenticated(c);
+        }
+        c.set("principal", identity.principal);
+        return next();
+    };
+}
+
+/** Outcome of {@link resolveIdentity}. */
+type Identity =
+    | { readonly kind: "allowed"; readonly principal: WebPrincipal }
+    | { readonly kind: "forbidden"; readonly login: string; readonly via: string }
+    | { readonly kind: "none" };
+
+/**
+ * Determine who sent the request: the matched proxy's login first, else
+ * the session cookie.
+ *
+ * @param c Request context.
+ * @param deps Auth deps.
+ * @param proxy Matched proxy, or null.
+ * @returns Allowed principal, a login not on the allowlist, or nothing.
+ */
+async function resolveIdentity(
+    c: Context<WebEnv>,
+    deps: WebAuthDeps,
+    proxy: TrustedProxy | null,
+): Promise<Identity> {
+    const fromProxy = proxy === null ? null : principalFromProxy(c, proxy);
+    if (fromProxy !== null) {
+        return isAllowedLogin(deps.settings, fromProxy.login)
+            ? { kind: "allowed", principal: fromProxy }
+            : { kind: "forbidden", login: fromProxy.login, via: fromProxy.via };
+    }
+    const fromSession = await principalFromSession(c, deps);
+    return fromSession === null ? { kind: "none" } : { kind: "allowed", principal: fromSession };
+}
+
+/**
+ * Mount the login flow: `GET /login` (who is signed in, or how to get a
+ * link), `GET /login/:token`
+ * (confirmation page; GET has no side effect so link previews cannot burn
+ * the token), `POST /login/:token` (redeem → session cookie) and
+ * `POST /logout`.
+ *
+ * @param app The webserver app.
+ * @param deps Settings, session store, logger.
+ */
+export function mountLoginRoutes(app: Hono<WebEnv>, deps: WebAuthDeps): void {
+    app.get("/login", (c) => {
+        const principal = c.get("signedInAs");
+        if (principal !== null) {
+            return c.html(
+                page(
+                    "Signed in",
+                    html`<p>
+                            You are signed in as ${principal.displayName} (${principal.login}, via
+                            ${principal.via}).
+                        </p>
+                        <p><a href="/">Continue to familiar</a></p>`,
+                ),
+            );
+        }
+        return c.html(
+            page(
+                "Sign in",
+                html`<p>You are not signed in.</p>
+                    <p>
+                        On the machine running familiar, run <code>familiar web login</code> and open
+                        the printed link here, or ask familiar in chat for a login link.
+                    </p>`,
+            ),
+        );
+    });
+    app.get("/login/:token", (c) =>
+        c.html(
+            page(
+                "Sign in",
+                html`<form method="post" action="/login/${c.req.param("token")}">
+                    <button type="submit">Sign in to familiar</button>
+                </form>`,
+            ),
+        ),
+    );
+    app.post("/login/:token", async (c) => {
+        const login = await deps.sessions.redeemLoginToken(c.req.param("token"));
+        if (login === null) {
+            return c.html(
+                page(
+                    "Sign in",
+                    html`<p>This login link is invalid, already used or expired.</p>
+                        <p>Run <code>familiar web login</code> for a new one.</p>`,
+                ),
+                401,
+            );
+        }
+        if (!isAllowedLogin(deps.settings, login)) {
+            return forbidden(c, deps, login, "login link");
+        }
+        const token = await deps.sessions.createSession(
+            login,
+            c.req.header("user-agent") ?? null,
+            deps.settings.sessionTtlMs,
+        );
+        setCookie(c, SESSION_COOKIE, token, {
+            path: "/",
+            httpOnly: true,
+            sameSite: "Lax",
+            secure: c.get("isHttps"),
+            maxAge: Math.floor(deps.settings.sessionTtlMs / 1000),
+        });
+        deps.log.info(`webserver: "${login}" signed in with a login link`);
+        return c.redirect("/", 303);
+    });
+    app.post("/logout", async (c) => {
+        const token = getCookie(c, SESSION_COOKIE);
+        if (token !== undefined) {
+            await deps.sessions.deleteSessionByToken(token);
+        }
+        deleteCookie(c, SESSION_COOKIE, { path: "/" });
+        return c.redirect("/login", 303);
+    });
+}
+
+/**
+ * Read the login a matched proxy vouches for. Both headers may carry
+ * RFC 2047 encoded words for non-ASCII text (Tailscale does this), which
+ * are decoded.
+ *
+ * @param c Request context.
+ * @param proxy The matched proxy.
+ * @returns The principal, or null when the proxy sent no login (e.g. a
+ *   tagged tailnet device) and the session cookie has to decide.
+ */
+function principalFromProxy(c: Context<WebEnv>, proxy: TrustedProxy): WebPrincipal | null {
+    const login = decodeMimeEncodedWords(c.req.header(proxy.userHeader) ?? "").trim();
+    if (login === "") {
+        return null;
+    }
+    const rawName = proxy.nameHeader === undefined ? "" : (c.req.header(proxy.nameHeader) ?? "");
+    const name = decodeMimeEncodedWords(rawName).trim();
+    return { login, displayName: name === "" ? login : name, via: proxy.id };
+}
+
+/**
+ * Resolve the session cookie. A session whose login was removed from the
+ * allowlist no longer counts.
+ *
+ * @param c Request context.
+ * @param deps Auth deps.
+ * @returns The principal, or null.
+ */
+async function principalFromSession(
+    c: Context<WebEnv>,
+    deps: WebAuthDeps,
+): Promise<WebPrincipal | null> {
+    const token = getCookie(c, SESSION_COOKIE);
+    if (token === undefined) {
+        return null;
+    }
+    const session = await deps.sessions.findSession(token);
+    if (session === null || !isAllowedLogin(deps.settings, session.login)) {
+        return null;
+    }
+    return { login: session.login, displayName: session.login, via: "session" };
+}
+
+/**
+ * Whether the browser side of the connection is HTTPS. Behind a trusted
+ * proxy that is the proxy's `X-Forwarded-Proto`; otherwise the request URL.
+ *
+ * @param c Request context.
+ * @param proxy Matched proxy, or null.
+ * @returns True for HTTPS.
+ */
+function isHttpsRequest(c: Context<WebEnv>, proxy: TrustedProxy | null): boolean {
+    if (proxy !== null) {
+        return c.req.header("x-forwarded-proto")?.split(",")[0]?.trim() === "https";
+    }
+    return new URL(c.req.url).protocol === "https:";
+}
+
+/**
+ * CSRF check for state-changing requests: the `Origin` host must equal
+ * the host the browser addressed (scheme is ignored, a TLS-terminating
+ * proxy changes it). That is the `Host` header, or behind a trusted
+ * proxy its `X-Forwarded-Host` when set (a proxy may rewrite `Host` to
+ * its upstream). Without `Origin`, `Sec-Fetch-Site: same-origin` is
+ * accepted.
+ *
+ * @param c Request context.
+ * @param proxy Matched proxy, or null.
+ * @returns True when the request comes from this site.
+ */
+function isSameOrigin(c: Context<WebEnv>, proxy: TrustedProxy | null): boolean {
+    const origin = c.req.header("origin");
+    const forwardedHost =
+        proxy === null ? undefined : c.req.header("x-forwarded-host")?.split(",")[0]?.trim();
+    const host = forwardedHost || c.req.header("host");
+    if (origin === undefined || origin === "null") {
+        return c.req.header("sec-fetch-site") === "same-origin";
+    }
+    try {
+        return host !== undefined && new URL(origin).host === host;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Answer a request without identity: browsers navigating to a page are
+ * redirected to `/login`, everything else gets 401.
+ *
+ * @param c Request context.
+ * @returns The response.
+ */
+function unauthenticated(c: Context<WebEnv>): Response {
+    const isPageNavigation =
+        c.req.method === "GET" && (c.req.header("accept") ?? "").includes("text/html");
+    if (isPageNavigation) {
+        return c.redirect("/login", 302);
+    }
+    return c.text("Unauthorized", 401);
+}
+
+/**
+ * Answer a known login that is not on the allowlist.
+ *
+ * @param c Request context.
+ * @param deps Auth deps (for the log line).
+ * @param login The rejected login.
+ * @param via Where the login came from.
+ * @returns A 403 response.
+ */
+function forbidden(c: Context<WebEnv>, deps: WebAuthDeps, login: string, via: string): Response {
+    deps.log.warn(
+        `webserver: rejected "${login}" (via ${via}) — not listed in webserver.auth.users`,
+    );
+    return c.text(`Forbidden: "${login}" is not listed in webserver.auth.users`, 403);
+}
+
+/**
+ * Minimal HTML page shell.
+ *
+ * @param title Page title.
+ * @param body Escaped body markup.
+ * @returns The page.
+ */
+export function page(title: string, body: ReturnType<typeof html>): ReturnType<typeof html> {
+    return html`<!doctype html>
+        <html lang="en">
+            <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <title>${title} · Familiar</title>
+            </head>
+            <body>
+                <h1>${title}</h1>
+                ${body}
+            </body>
+        </html>`;
+}

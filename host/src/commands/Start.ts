@@ -75,7 +75,9 @@ import { lintOrThrow } from "../utils/ConfigLinter.js";
 import { HostConfigService } from "../utils/ConfigService.js";
 import { rollingFileStream } from "../utils/LogRetentionTools.js";
 import { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
+import { PostgresWebSessionStore } from "../web/auth/WebSessionStore.js";
 import { WebServer } from "../web/WebServer.js";
+import { buildWebTools } from "../web/WebTools.js";
 import { acquirePidFile, removePidFile } from "./pidfile.js";
 
 /**
@@ -312,7 +314,13 @@ export const startCommand = defineCommand({
 
         // User-facing web UI; started after the plugin daemons, applied
         // on reload when a `webserver.*` key changed.
-        const webServer = new WebServer({ config, log: log.child({ component: "webserver" }) });
+        const webSessions = new PostgresWebSessionStore(() => pluginHost.ensureConnection());
+        const webServer = new WebServer({
+            config,
+            log: log.child({ component: "webserver" }),
+            trustedProxies: pluginHost.trustedProxies,
+            sessions: webSessions,
+        });
 
         // Applies config.yml / mcp.yml edits to the running daemon
         // (agent tool `config_reload`, `familiar config reload`).
@@ -448,8 +456,8 @@ export const startCommand = defineCommand({
         pluginHost.setWorkspaceWatcher(workspaceWatcher);
 
         const mcpCommandRunner = new McpCommandRunner();
-        await pluginHost.startDaemons(
-            buildConfigTools({
+        await pluginHost.startDaemons([
+            ...buildConfigTools({
                 configFile: boot.configFile,
                 mcpConfigFile: boot.mcpConfigFile,
                 config,
@@ -460,7 +468,12 @@ export const startCommand = defineCommand({
                 log: log.child({ component: "config-tools" }),
                 mcpCommandRunner,
             }),
-        );
+            ...buildWebTools({
+                config,
+                sessions: webSessions,
+                proxies: pluginHost.trustedProxies,
+            }),
+        ]);
         log.info("plugin daemons started");
 
         // Optional: a bind failure (port in use, privileged port) is
@@ -496,6 +509,7 @@ export const startCommand = defineCommand({
             mailStyleStore: pluginHost.mailStyle,
             promptAppenderRegistry: pluginHost.promptAppenders,
             promptPlaceholderRegistry: pluginHost.promptPlaceholders,
+            trustedProxyRegistry: pluginHost.trustedProxies,
             resolveProvider: (key) => pluginHost.resolveProvider(key),
             workspaceWatcher,
             // Daemon-internal context: the daemon owns its own shutdown,

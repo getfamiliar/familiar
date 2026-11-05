@@ -1,6 +1,6 @@
 # Creating Plugins
 
-This guide covers how to write a first-party Familiar plugin in this monorepo and how to get it onto npm the first time. How plugins are loaded and enabled on an instance is in [ci-cd.md](ci-cd.md#plugins); the config file conventions are in [config.md](config.md).
+This guide covers how to write a first-party Familiar plugin in this monorepo and how to get it onto npm the first time. How plugins are loaded and enabled on an instance is in [ci-cd.md](../ci-cd.md#plugins); the config file conventions are in [config.md](../config.md).
 
 ## What a plugin is
 
@@ -118,7 +118,7 @@ All hooks are optional and receive the plugin-scoped `HostContext`.
 
 | Hook | When | Rules |
 | --- | --- | --- |
-| `prepare(ctx)` | Once per process start and on every plugin restart, before any `start` and before plugin CLI commands | Synchronous. No network, no DB, no daemons. Register storage providers and prompt placeholders here so the CLI sees them without the daemon. |
+| `prepare(ctx)` | Once per process start and on every plugin restart, before any `start` and before plugin CLI commands | Synchronous. No network, no DB, no daemons. Register storage providers, prompt placeholders and trusted proxies here so the CLI sees them without the daemon. |
 | `start(ctx)` | Daemon boot, after every plugin's `prepare` | Resolve once setup is done. Long-lived work runs on background promises the plugin owns. |
 | `stop(ctx)` | Daemon shutdown (LIFO) and before a restart | Release **everything** `start` set up (timers, poll loops, sockets, chat / workspace subscriptions) and reset module state. Must fit the shared drain budget. |
 | `tools(ctx)` | After `start`, at boot and after every restart | Synchronous and side-effect-free; just build the list. |
@@ -135,6 +135,7 @@ A plugin that has a `start` but no `stop` can't be restarted in-process, so a co
 - **`ctx.events.emit({ topic, prompt, payload, idempotencyKey, … })`** writes an event to the bus. Always pass a stable `idempotencyKey` derived from the source (e.g. `telegram:<update_id>`). If you use the returned `settled` promise, attach a `.catch` to it.
 - **`ctx.logger`** is a scoped structured logger. Put every key identifier into the message text itself.
 - **`ctx.chat`**, **`ctx.prompt`**, **`ctx.mail`** / **`ctx.calendar`** / **`ctx.storage`**, **`ctx.mcp`**, **`ctx.workspace`** and **`ctx.inference`** are the host services. See the JSDoc in `shared/src/Plugin.ts`.
+- **`ctx.web.registerTrustedProxy(...)`** makes the plugin a trusted reverse proxy of the core webserver; see [proxy-plugins.md](proxy-plugins.md).
 - **`ctx.dataDir`** / **`ctx.workspaceDir`** / **`ctx.tmpDir`** hold the instance paths. Persistent plugin state goes under `dataDir`.
 - **`ctx.daemonDownSignal`** / **`ctx.isDaemonRunning()`** tell long-running loops whether the daemon is still up.
 
@@ -157,7 +158,7 @@ A `PluginTool` has `name` (bare, without prefix), `description` (what the model 
 
 ## Workspace template and handlers
 
-Files under `workspace-template/` are copied into `workspace/` on every daemon start, but only those that are missing; user edits are never overwritten. Ship a default handler for each topic the plugin emits. Handler paths follow the topic: `chat:telegram` → `workspace-template/chat/telegram.md`. Every path segment must be a valid topic word (`[\w-]+`). See CLAUDE.md, sections "Handler resolution" and "Prompt template", plus [prompting.md](prompting.md), for frontmatter (`model`, `tools`, `skills`, `cron`, …).
+Files under `workspace-template/` are copied into `workspace/` on every daemon start, but only those that are missing; user edits are never overwritten. Ship a default handler for each topic the plugin emits. Handler paths follow the topic: `chat:telegram` → `workspace-template/chat/telegram.md`. Every path segment must be a valid topic word (`[\w-]+`). See CLAUDE.md, sections "Handler resolution" and "Prompt template", plus [prompting.md](../prompting.md), for frontmatter (`model`, `tools`, `skills`, `cron`, …).
 
 Shared how-to knowledge goes into `workspace-template/skills/<name>/SKILL.md` instead of being duplicated across handlers.
 
@@ -238,5 +239,5 @@ A successful "Signed provenance statement" line before the error proves nothing:
 - [ ] Config keys documented in `config/config.example.yml` and `docs/config.md`
 - [ ] Default handlers for every emitted topic in `workspace-template/`
 - [ ] Tests, `format:check` and `lint` pass
-- [ ] Core vs. optional split updated in [ci-cd.md](ci-cd.md#core-vs-optional)
+- [ ] Core vs. optional split updated in [ci-cd.md](../ci-cd.md#core-vs-optional)
 - [ ] First release: placeholder published by hand, trusted publisher configured, *then* pushed to `main` (and only then `familiar.bundled`)

@@ -30,6 +30,8 @@ import {
     StepResultBus,
     type StepResultUnsubscribe,
     type StorageApi,
+    type TrustedProxyRegistration,
+    type WebApi,
     type WorkspaceFile,
     type WorkspaceFileFilter,
     type WorkspaceWatcherApi,
@@ -40,6 +42,7 @@ import type { PluginMcpService } from "../mcp/PluginMcpService.js";
 import type { ResolvedProvider } from "../models/ProviderResolution.js";
 import { isEventEmissionAllowed } from "../utils/DevEventGate.js";
 import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
+import type { TrustedProxyRegistry } from "../web/auth/TrustedProxyRegistry.js";
 import type { PromptAppenderRegistry } from "./PromptAppenderRegistry.js";
 import type { PromptPlaceholderRegistry } from "./PromptPlaceholderRegistry.js";
 
@@ -159,6 +162,11 @@ export interface HostContextImplDeps {
      */
     promptPlaceholderRegistry: PromptPlaceholderRegistry;
     /**
+     * Shared registry backing `ctx.web.registerTrustedProxy`, read by the
+     * webserver's auth middleware on every request.
+     */
+    trustedProxyRegistry: TrustedProxyRegistry;
+    /**
      * Resolve a configured provider key into `{ apiKey, npmPackage,
      * apiEndpoint }`, backing `ctx.inference.resolveProvider`. Wired to
      * `PluginHost.resolveProvider`.
@@ -240,6 +248,12 @@ export class HostContextImpl implements HostContext {
 
     readonly storage: StorageApi = {
         registerProvider: (provider) => this.deps.storage.registerProvider(provider),
+    };
+
+    readonly web: WebApi = {
+        registerTrustedProxy: (registration: TrustedProxyRegistration): void => {
+            this.deps.trustedProxyRegistry.registerPluginProxy(this.deps.pluginId, registration);
+        },
     };
 
     getMailStyleTemplate = (

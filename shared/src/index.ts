@@ -231,4 +231,10 @@ export type {
     WorkspaceFileFilter,
     WorkspaceWatcherApi,
 } from "./WorkspaceFile.js";
+export {
+    MIN_PROXY_SECRET_LENGTH,
+    PROXY_SECRET_HEADER,
+    type TrustedProxyRegistration,
+    type WebApi,
+} from "./WebAuth.js";
 export { DEFAULT_WEBSERVER_HOST, DEFAULT_WEBSERVER_PORT } from "./WebServerDefaults.js";

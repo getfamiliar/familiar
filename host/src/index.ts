@@ -12,6 +12,7 @@ import { startCommand } from "./commands/Start.js";
 import { stopCommand } from "./commands/Stop.js";
 import { buildStorageCommand } from "./commands/Storage.js";
 import { toolsCommand } from "./commands/Tools.js";
+import { webCommand } from "./commands/Web.js";
 import { PluginHost } from "./plugins/PluginHost.js";
 import { loadPlugins } from "./plugins/PluginLoader.js";
 
@@ -54,7 +55,7 @@ const PLUGINS_GROUP_TITLE = "Plugins";
 /** Grouping of the root subcommands in `familiar --help`. */
 const ROOT_COMMAND_GROUPS: readonly CommandGroup[] = [
     { title: "Start / Stop / Init", commands: ["init", "start", "stop"] },
-    { title: "Configuration", commands: ["config", "storage", "tools"] },
+    { title: "Configuration", commands: ["config", "storage", "tools", "web"] },
     { title: "Maintenance & Audit", commands: ["events", "prompt", "psql"] },
     { title: PLUGINS_GROUP_TITLE, commands: ["plugins"] },
 ];
@@ -100,6 +101,7 @@ async function main(): Promise<void> {
             plugins: pluginsCommand,
             prompt: buildPromptCommand(pluginHost),
             storage: buildStorageCommand(pluginHost),
+            web: webCommand,
             ...pluginHost.buildSubCommands(),
         },
     });

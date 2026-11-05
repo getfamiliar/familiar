@@ -552,6 +552,29 @@ CREATE INDEX IF NOT EXISTS tool_calls_handler_run_idx
   ON tool_calls (handler_path, agent_run_id DESC);
 CREATE INDEX IF NOT EXISTS tool_calls_created_at_idx
   ON tool_calls (created_at DESC);
+
+-- ───────── web_login_tokens / web_sessions ─────────
+--
+-- Authentication state of the host webserver (host-only; the container
+-- never reads these). A login token is a one-time link minted by
+-- \`familiar web login\`; redeeming it deletes the row and creates a
+-- session. Only sha256 hashes of tokens are stored, never the tokens.
+CREATE TABLE IF NOT EXISTS web_login_tokens (
+  token_hash  text PRIMARY KEY,
+  login       text NOT NULL,
+  expires_at  timestamptz NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS web_sessions (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  token_hash    text NOT NULL UNIQUE,
+  login         text NOT NULL,
+  user_agent    text,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  last_seen_at  timestamptz NOT NULL DEFAULT now(),
+  expires_at    timestamptz NOT NULL
+);
 `;
 
 /**

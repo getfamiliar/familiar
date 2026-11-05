@@ -14,6 +14,7 @@ import type { StepResultRow } from "./StepResult.js";
 import type { StorageApi } from "./Storage.js";
 import type { ToolLevel } from "./ToolLevel.js";
 import type { ToolRunContext } from "./ToolRunner.js";
+import type { WebApi } from "./WebAuth.js";
 import type { WorkspaceWatcherApi } from "./WorkspaceFile.js";
 
 export type { ChatHandler, Client as McpClient };
@@ -412,6 +413,14 @@ export interface HostContext {
      * which maps the user's configured mounts onto providers.
      */
     readonly storage: StorageApi;
+    /**
+     * Core webserver hooks. A plugin that fronts the webserver with its
+     * own reverse proxy registers it during **`prepare()`** via
+     * `ctx.web.registerTrustedProxy({ secret, userHeader })`, the same
+     * contract a user-configured `webserver.auth.trustedProxies` entry
+     * follows (see {@link WebApi}).
+     */
+    readonly web: WebApi;
     /**
      * Read the per-mailbox style template the user (or the
      * extract-style handler) wrote at `data/mail/templates/<mailbox>/<name>.json`.

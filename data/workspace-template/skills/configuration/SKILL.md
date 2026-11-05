@@ -1,6 +1,6 @@
 ---
 name: configuration
-description: Change Familiar's own configuration (config.yml settings, plugins, MCP servers) with the user, and apply it without a daemon restart.
+description: Change Familiar's own configuration (config.yml settings, plugins, MCP servers) with the user, apply it without a daemon restart, and give the user access to the web interface.
 tools: config_reload
 ---
 
@@ -27,4 +27,5 @@ API keys, tokens and passwords never go through you. Every key or env var whose 
 ## Recipes
 
 - Settings in `config.yml` (models, mail/calendar safety, chat, plugins): read `skills/configuration/config.md`.
+- Web interface access (the user asks for a login link or how to reach the web UI; `web_login_link`, `webserver.*` settings, LAN / Tailscale addresses): read `skills/configuration/web-interface.md`.
 - MCP servers in `mcp.yml` (add, remove, env vars, tool gating, where a server keeps its login): read `skills/configuration/mcp.md`. To add a server, follow its "Adding a server" steps: purpose first, then `mcp_registry_search` / `mcp_registry_details`, fit check and tool-gating proposal before `mcp_add`.

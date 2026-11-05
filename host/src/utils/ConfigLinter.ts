@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import type { Logger } from "@getfamiliar/shared";
+import { type Logger, MIN_PROXY_SECRET_LENGTH } from "@getfamiliar/shared";
 import { parse, YAMLParseError } from "yaml";
 import {
     DEFAULT_COMPACTION_THRESHOLD_BYTES,
@@ -348,7 +348,9 @@ const FIRST_UNPRIVILEGED_PORT = 1024;
 
 /**
  * Validate the optional `webserver` group: `enabled` must be a boolean,
- * `port` an integer in 1–65535, `host` a non-empty string. Wrong types
+ * `port` an integer in 1–65535, `host` a non-empty string, and an
+ * enabled server needs a usable `auth` subtree (see {@link lintWebAuth}).
+ * Wrong types
  * are errors (the server could not start with them); a port below
  * {@link FIRST_UNPRIVILEGED_PORT} is a warning because familiar never
  * runs as root, so binding it fails with EACCES unless the node binary
@@ -384,6 +386,93 @@ function lintWebServer(root: Record<string, unknown>, errors: string[], warnings
     }
     if (group.host !== undefined && (typeof group.host !== "string" || group.host.length === 0)) {
         errors.push(`webserver.host must be a non-empty string (got ${describe(group.host)}).`);
+    }
+    if (group.lanUrls !== undefined) {
+        const urls = typeof group.lanUrls === "string" ? [group.lanUrls] : group.lanUrls;
+        const isValid =
+            Array.isArray(urls) &&
+            urls.every((url) => typeof url === "string" && /^https?:\/\/\S+$/.test(url));
+        if (!isValid) {
+            errors.push(
+                `webserver.lanUrls must be an http(s) URL or a list of them (got ${describe(group.lanUrls)}).`,
+            );
+        }
+    }
+    if (group.enabled === true || group.auth !== undefined) {
+        lintWebAuth(group.auth, group.enabled === true, errors);
+    }
+}
+
+/**
+ * Validate `webserver.auth`. An enabled webserver without allowed users
+ * is an error: it refuses to start rather than run open. Every
+ * `trustedProxies.<name>` entry needs a `userHeader` and a `secret` of at
+ * least {@link MIN_PROXY_SECRET_LENGTH} characters.
+ *
+ * @param auth Raw `webserver.auth` value.
+ * @param isEnabled Whether `webserver.enabled` is true.
+ * @param errors Error sink.
+ */
+function lintWebAuth(auth: unknown, isEnabled: boolean, errors: string[]): void {
+    if (auth !== undefined && !isPlainObject(auth)) {
+        errors.push(`webserver.auth must be a mapping (got ${describe(auth)}).`);
+        return;
+    }
+    const group = (auth ?? {}) as Record<string, unknown>;
+    const users = typeof group.users === "string" ? [group.users] : group.users;
+    const hasUsers =
+        Array.isArray(users) &&
+        users.some((user) => typeof user === "string" && user.trim() !== "");
+    if (isEnabled && !hasUsers) {
+        errors.push(
+            "webserver.auth.users must list at least one login allowed to use the web UI (e.g. your Tailscale login / e-mail); the webserver does not start without it.",
+        );
+    }
+    const days = group.sessionDays;
+    if (days !== undefined && (typeof days !== "number" || !(days > 0))) {
+        errors.push(
+            `webserver.auth.sessionDays must be a positive number (got ${describe(days)}).`,
+        );
+    }
+    const proxies = group.trustedProxies;
+    if (proxies === undefined) {
+        return;
+    }
+    if (!isPlainObject(proxies)) {
+        errors.push(`webserver.auth.trustedProxies must be a mapping (got ${describe(proxies)}).`);
+        return;
+    }
+    for (const [name, entry] of Object.entries(proxies)) {
+        const key = `webserver.auth.trustedProxies.${name}`;
+        if (!isPlainObject(entry)) {
+            errors.push(
+                `${key} must be a mapping with userHeader and secret (got ${describe(entry)}).`,
+            );
+            continue;
+        }
+        if (typeof entry.userHeader !== "string" || entry.userHeader.trim() === "") {
+            errors.push(
+                `${key}.userHeader must be a non-empty header name (got ${describe(entry.userHeader)}).`,
+            );
+        }
+        if (
+            entry.publicUrl !== undefined &&
+            (typeof entry.publicUrl !== "string" || !/^https?:\/\/\S+$/.test(entry.publicUrl))
+        ) {
+            errors.push(
+                `${key}.publicUrl must be an http(s) URL (got ${describe(entry.publicUrl)}).`,
+            );
+        }
+        if (entry.hasBuiltInAuth !== undefined && typeof entry.hasBuiltInAuth !== "boolean") {
+            errors.push(
+                `${key}.hasBuiltInAuth must be true or false (got ${describe(entry.hasBuiltInAuth)}).`,
+            );
+        }
+        if (typeof entry.secret !== "string" || entry.secret.length < MIN_PROXY_SECRET_LENGTH) {
+            errors.push(
+                `${key}.secret must be a string of at least ${MIN_PROXY_SECRET_LENGTH} characters — set it with \`familiar config set ${key}.secret\`.`,
+            );
+        }
     }
 }
 

@@ -12,6 +12,7 @@
 | `calendar` | `allowAttendees`, `emitEventsInDev`. |
 | `chat` | `compaction.thresholdBytes`, `compaction.keepUncompactedBytes` (keep must stay below threshold). |
 | `storage` | Cloud-storage mounts and policy. |
+| `webserver` | Web UI: `enabled`, `port`, `host`, `lanUrls` (confirmed LAN addresses), `auth.users` (allowed logins), `auth.sessionDays`, `auth.trustedProxies`. Access and login links: `skills/configuration/web-interface.md`. |
 | `<plugin-id>` | One group per plugin: `telegram`, `whatsapp`, `ms365`, `memory`, `tesla`, … |
 
 ## Typical changes

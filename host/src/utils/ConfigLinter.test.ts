@@ -388,7 +388,9 @@ inference:
 
     it("accepts a valid webserver group", () => {
         const result = lintConfigFile(
-            write(`${base}webserver:\n  enabled: true\n  port: 8080\n  host: 0.0.0.0\n`),
+            write(
+                `${base}webserver:\n  enabled: true\n  port: 8080\n  host: 0.0.0.0\n  auth:\n    users: [me@example.com]\n`,
+            ),
         );
         assert.deepEqual(result.errors, []);
         assert.deepEqual(result.warnings, []);
@@ -405,8 +407,39 @@ inference:
     });
 
     it("warns about privileged ports", () => {
-        const result = lintConfigFile(write(`${base}webserver:\n  enabled: true\n  port: 80\n`));
+        const result = lintConfigFile(
+            write(
+                `${base}webserver:\n  enabled: true\n  port: 80\n  auth:\n    users: me@example.com\n`,
+            ),
+        );
         assert.equal(result.ok, true);
         assert.ok(result.warnings.some((w) => w.includes("webserver.port 80")));
+    });
+
+    it("requires allowed users when the webserver is enabled", () => {
+        const result = lintConfigFile(write(`${base}webserver:\n  enabled: true\n`));
+        assert.equal(result.ok, false);
+        assert.ok(result.errors.some((e) => e.startsWith("webserver.auth.users")));
+        const disabled = lintConfigFile(write(`${base}webserver:\n  enabled: false\n`));
+        assert.deepEqual(disabled.errors, []);
+    });
+
+    it("validates trusted proxies and the session lifetime", () => {
+        const result = lintConfigFile(
+            write(
+                `${base}webserver:\n  enabled: true\n  auth:\n    users: [me@example.com]\n    sessionDays: 0\n    trustedProxies:\n      good:\n        userHeader: Remote-User\n        secret: ${"s".repeat(32)}\n      short:\n        userHeader: Remote-User\n        secret: tooshort\n      noheader:\n        secret: ${"s".repeat(32)}\n`,
+            ),
+        );
+        assert.equal(result.ok, false);
+        assert.ok(result.errors.some((e) => e.startsWith("webserver.auth.sessionDays")));
+        assert.ok(
+            result.errors.some((e) => e.startsWith("webserver.auth.trustedProxies.short.secret")),
+        );
+        assert.ok(
+            result.errors.some((e) =>
+                e.startsWith("webserver.auth.trustedProxies.noheader.userHeader"),
+            ),
+        );
+        assert.ok(!result.errors.some((e) => e.includes("trustedProxies.good")));
     });
 });
