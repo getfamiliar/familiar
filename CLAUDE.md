@@ -430,6 +430,10 @@ Every command that lists, tabulates, or reports for a human exposes `--raw` and 
 
 **Exceptions** (and why): the `start` daemon streams through the structured logger (ordering and flush matter); interactive prompts/wizards (`tools add-mcp`) write directly; machine-readable output stays literal (`events emit` prints JSON). The rule of thumb: *if it's a table, list, report, or prose status for a human to read, render it; if it's a stream, a prompt, or data for a machine, don't.*
 
+## Agent tools
+
+How to implement a tool the agent calls (container built-in vs. host core vs. plugin tool, registration, naming, groups, `level`, schema, description, `runJsonTool` & co., `ToolError`, tests) is described in `docs/agent-tools.md`. Read it before adding or changing a tool.
+
 ## Code Style
 
 All TypeScript code is auto-formatted by [Biome](https://biomejs.dev/) on every edit (via a PostToolUse hook in `.claude/settings.json`). Do not manually adjust formatting.

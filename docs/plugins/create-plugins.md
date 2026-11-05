@@ -149,7 +149,7 @@ A plugin that has a `start` but no `stop` can't be restarted in-process, so a co
 
 ## Tools
 
-A `PluginTool` has `name` (bare, without prefix), `description` (what the model sees), `inputSchema` (raw JSON Schema), `execute(args, callCtx)`, and optionally `groups` and `level`.
+The full guide to designing and implementing agent tools (naming, groups, levels, schema, description, results, errors, tests) is [agent-tools.md](../agent-tools.md). In short: a `PluginTool` has `name` (bare, without prefix), `description` (what the model sees), `inputSchema` (raw JSON Schema), `execute(args, callCtx)`, and optionally `groups` and `level`.
 
 - **`level`** is `default` (anyone), `approval` (external mutations such as sending mail) or `privileged` (trusted-input runs only). It's enforced container-side.
 - **`groups`** opts the tool into curated sets. Use `core` only for genuinely ambient capabilities. The plugin id is already an auto-group; don't list it.
