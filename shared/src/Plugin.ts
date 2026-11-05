@@ -15,6 +15,7 @@ import type { StorageApi } from "./Storage.js";
 import type { ToolLevel } from "./ToolLevel.js";
 import type { ToolRunContext } from "./ToolRunner.js";
 import type { WebApi, WebUi } from "./WebAuth.js";
+import type { WebMenuContribution } from "./WebMenu.js";
 import type { WorkspaceWatcherApi } from "./WorkspaceFile.js";
 
 export type { ChatHandler, Client as McpClient };
@@ -293,6 +294,8 @@ export interface HostContext {
      * conveniences such as the web UI's hot module reloading.
      */
     readonly isDevMode: boolean;
+    /** Version of the running familiar host (the `@getfamiliar/host` package version, e.g. `0.4.2`). */
+    readonly familiarVersion: string;
     /**
      * Absolute host path of the project's `data/` directory.
      *
@@ -754,6 +757,19 @@ export interface PluginHostManifest {
      * Synchronous, side-effect-free: just build and return the app.
      */
     webUi?(ctx: HostContext): WebUi;
+    /**
+     * Contribute items to the web UI's sidebar menu: direct links or
+     * collapsible groups with sub-entries (icon, label, routes), plus a
+     * weight positioning this plugin's items among the others. Called
+     * after `start()` (at boot and after every restart); a disabled
+     * plugin contributes nothing. The core validates the items (lucide
+     * icon id, non-empty labels, routes starting with `/`) and disables
+     * the plugin in phase `webMenu` when they are malformed.
+     *
+     * Synchronous, side-effect-free: derive the items from constants and
+     * `ctx.config`.
+     */
+    webMenu?(ctx: HostContext): WebMenuContribution;
     /**
      * Supply {@link ModelMetaData} for a model the default (models.dev)
      * database does not cover. The host calls this on every plugin that

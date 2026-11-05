@@ -122,6 +122,7 @@ All hooks are optional and receive the plugin-scoped `HostContext`.
 | `start(ctx)` | Daemon boot, after every plugin's `prepare` | Resolve once setup is done. Long-lived work runs on background promises the plugin owns. |
 | `stop(ctx)` | Daemon shutdown (LIFO) and before a restart | Release **everything** `start` set up (timers, poll loops, sockets, chat / workspace subscriptions) and reset module state. Must fit the shared drain budget. |
 | `tools(ctx)` | After `start`, at boot and after every restart | Synchronous and side-effect-free; just build the list. |
+| `webMenu(ctx)` | After `start`, at boot and after every restart | Returns menu items for the web UI's sidebar (see [Web UI menu items](#web-ui-menu-items)). Synchronous and side-effect-free. |
 | `webUi(ctx)` | After `start`, at boot and after every restart | Returns the web UI's root controller (see [Providing the web UI](#providing-the-web-ui)). Synchronous; just build the Hono app. |
 | `getEmittedEvents(ctx)` | `familiar events list-topics`, also without the daemon | Synchronous. Derive the list from constants and `ctx.config`. |
 | `commands(ctx)` / `main(ctx)` | CLI dispatch | citty commands under `familiar <id>`. `main` runs when no subcommand is given. |
@@ -137,6 +138,7 @@ A plugin that has a `start` but no `stop` can't be restarted in-process, so a co
 - **`ctx.logger`** is a scoped structured logger. Put every key identifier into the message text itself.
 - **`ctx.chat`**, **`ctx.prompt`**, **`ctx.mail`** / **`ctx.calendar`** / **`ctx.storage`**, **`ctx.mcp`**, **`ctx.workspace`** and **`ctx.inference`** are the host services. See the JSDoc in `shared/src/Plugin.ts`.
 - **`ctx.web.registerTrustedProxy(...)`** makes the plugin a trusted reverse proxy of the core webserver; see [proxy-plugins.md](proxy-plugins.md).
+- **`ctx.familiarVersion`** is the version of the running familiar host.
 - **`ctx.isDevMode`** is `true` in a monorepo dev run (`npm run dev`, `FAMILIAR_DEV=1`), for developer conveniences such as hot reloading.
 - **`ctx.dataDir`** / **`ctx.workspaceDir`** / **`ctx.tmpDir`** hold the instance paths. Persistent plugin state goes under `dataDir`.
 - **`ctx.daemonDownSignal`** / **`ctx.isDaemonRunning()`** tell long-running loops whether the daemon is still up.
@@ -174,6 +176,34 @@ The core webserver only authenticates; the pages come from a plugin whose `webUi
 - **Node bindings.** `c.env.incoming` / `c.env.outgoing` are the raw node request and response, e.g. to hand a request to connect-style middleware and answer with `RESPONSE_ALREADY_SENT` (`@hono/node-server/utils/response`).
 - **Swapped on restart.** The hook runs after `start`; on a plugin restart the old controller is dropped and the new one is mounted without rebinding the socket. A disabled plugin provides no UI.
 - **One UI at a time.** With several providers, `webserver.uiPlugin` picks one; with none (or an ambiguous choice) the webserver serves a plain page saying what to install or configure.
+
+## Web UI menu items
+
+Any plugin can put entries into the web UI's sidebar by returning a `WebMenuContribution` from `webMenu(ctx)`:
+
+```ts
+webMenu: () => ({
+    weight: 10, // position among the plugins: lower comes first (default 0, ties by plugin id)
+    items: [
+        { icon: "calendar-days", label: "Calendar", route: "/plugins/my-plugin/calendar" },
+        {
+            icon: "mail",
+            label: "Mail",
+            route: "/plugins/my-plugin", // optional for a group: the label then links here
+            children: [
+                { label: "Inbox", route: "/plugins/my-plugin/inbox" },
+                { label: "Drafts", route: "/plugins/my-plugin/drafts" },
+            ],
+        },
+    ],
+}),
+```
+
+- An item is a direct link (`route`, no `children`) or a collapsible group (`children`, optionally with its own `route`). A plugin may return as many items as it wants; they keep their order.
+- `icon` is a [lucide](https://lucide.dev/icons) icon id in kebab-case. Routes are paths inside the web UI, starting with `/`.
+- The core validates the items. A malformed item disables the plugin in phase `webMenu`, with a message naming the item.
+- The web UI opens the first route of the sorted menu instead of its start page. With no items it stays on the start page.
+- The web UI reads the sorted list with `ctx.web.listMenuItems()`.
 
 ## CLI commands
 

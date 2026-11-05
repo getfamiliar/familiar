@@ -32,6 +32,7 @@ import {
     type StorageApi,
     type TrustedProxyRegistration,
     type WebApi,
+    type WebMenuEntry,
     type WorkspaceFile,
     type WorkspaceFileFilter,
     type WorkspaceWatcherApi,
@@ -41,8 +42,10 @@ import type { MailStyleStore } from "../mail/MailStyleStore.js";
 import type { PluginMcpService } from "../mcp/PluginMcpService.js";
 import type { ResolvedProvider } from "../models/ProviderResolution.js";
 import { isEventEmissionAllowed } from "../utils/DevEventGate.js";
+import { readFamiliarVersion } from "../utils/FamiliarVersion.js";
 import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
 import type { TrustedProxyRegistry } from "../web/auth/TrustedProxyRegistry.js";
+import type { WebMenuRegistry } from "../web/WebMenuRegistry.js";
 import type { PromptAppenderRegistry } from "./PromptAppenderRegistry.js";
 import type { PromptPlaceholderRegistry } from "./PromptPlaceholderRegistry.js";
 
@@ -167,6 +170,11 @@ export interface HostContextImplDeps {
      */
     trustedProxyRegistry: TrustedProxyRegistry;
     /**
+     * Shared registry of the plugins' `webMenu` contributions, read by
+     * `ctx.web.listMenuItems`.
+     */
+    webMenuRegistry: WebMenuRegistry;
+    /**
      * Resolve a configured provider key into `{ apiKey, npmPackage,
      * apiEndpoint }`, backing `ctx.inference.resolveProvider`. Wired to
      * `PluginHost.resolveProvider`.
@@ -254,6 +262,7 @@ export class HostContextImpl implements HostContext {
         registerTrustedProxy: (registration: TrustedProxyRegistration): void => {
             this.deps.trustedProxyRegistry.registerPluginProxy(this.deps.pluginId, registration);
         },
+        listMenuItems: (): readonly WebMenuEntry[] => this.deps.webMenuRegistry.list(),
     };
 
     getMailStyleTemplate = (
@@ -296,6 +305,10 @@ export class HostContextImpl implements HostContext {
 
     get isDevMode(): boolean {
         return this.deps.devMode;
+    }
+
+    get familiarVersion(): string {
+        return readFamiliarVersion();
     }
 
     get dataDir(): string {

@@ -15,6 +15,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Hono } from "hono";
+import type { WebMenuEntry } from "./WebMenu.js";
 
 /** Request header carrying a trusted proxy's shared secret (lowercase, as Hono / node normalize it). */
 export const PROXY_SECRET_HEADER = "x-familiar-proxy-secret";
@@ -60,6 +61,15 @@ export interface WebApi {
      *   plugin already registered a proxy.
      */
     registerTrustedProxy(registration: TrustedProxyRegistration): void;
+    /**
+     * The web UI menu: every running plugin's `webMenu(ctx)` items, sorted
+     * by plugin weight (then plugin id), each plugin's items in its own
+     * order. Read it per request; it changes when plugins restart. For
+     * the web UI plugin; others contribute through their `webMenu` hook.
+     *
+     * @returns The flat, sorted item list (empty when nobody contributes).
+     */
+    listMenuItems(): readonly WebMenuEntry[];
 }
 
 /** Who a request belongs to, as resolved by the core auth middleware. */

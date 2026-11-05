@@ -237,6 +237,14 @@ export {
     type WebUiBindings,
     type WebUiEnv,
 } from "./WebAuth.js";
+export {
+    firstMenuRoute,
+    WEB_MENU_ICON_PATTERN,
+    type WebMenuContribution,
+    type WebMenuEntry,
+    type WebMenuItem,
+    type WebMenuSubItem,
+} from "./WebMenu.js";
 export { DEFAULT_WEBSERVER_HOST, DEFAULT_WEBSERVER_PORT } from "./WebServerDefaults.js";
 export type {
     WorkspaceFile,

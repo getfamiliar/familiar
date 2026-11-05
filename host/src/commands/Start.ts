@@ -511,6 +511,7 @@ export const startCommand = defineCommand({
             promptAppenderRegistry: pluginHost.promptAppenders,
             promptPlaceholderRegistry: pluginHost.promptPlaceholders,
             trustedProxyRegistry: pluginHost.trustedProxies,
+            webMenuRegistry: pluginHost.webMenu,
             resolveProvider: (key) => pluginHost.resolveProvider(key),
             workspaceWatcher,
             // Daemon-internal context: the daemon owns its own shutdown,

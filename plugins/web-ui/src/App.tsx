@@ -10,18 +10,24 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useShell } from "@/hooks/use-shell";
+import { findActiveMenuPath } from "@/lib/menu";
 
 /**
  * Root of the web UI: the collapsible-to-icons sidebar (shadcn block
- * `sidebar-07`) with placeholder content.
+ * `sidebar-07`) with the plugins' menu, and placeholder content. The
+ * breadcrumb names the menu entry of the current page.
  *
  * @returns The app shell.
  */
 export default function App() {
+    const shell = useShell();
+    const pathname = window.location.pathname;
+    const active = shell === null ? null : findActiveMenuPath(shell.menu, pathname);
     return (
         <TooltipProvider>
             <SidebarProvider>
-                <AppSidebar />
+                <AppSidebar shell={shell} pathname={pathname} />
                 <SidebarInset>
                     <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
                         <div className="flex items-center gap-2 px-4">
@@ -33,12 +39,30 @@ export default function App() {
                             <Breadcrumb>
                                 <BreadcrumbList>
                                     <BreadcrumbItem className="hidden md:block">
-                                        <BreadcrumbLink href="#">Familiar</BreadcrumbLink>
+                                        <BreadcrumbLink href="/">Familiar</BreadcrumbLink>
                                     </BreadcrumbItem>
-                                    <BreadcrumbSeparator className="hidden md:block" />
-                                    <BreadcrumbItem>
-                                        <BreadcrumbPage>Dashboard</BreadcrumbPage>
-                                    </BreadcrumbItem>
+                                    {active !== null && (
+                                        <>
+                                            <BreadcrumbSeparator className="hidden md:block" />
+                                            {active.child === undefined ? (
+                                                <BreadcrumbItem>
+                                                    <BreadcrumbPage>{active.item}</BreadcrumbPage>
+                                                </BreadcrumbItem>
+                                            ) : (
+                                                <>
+                                                    <BreadcrumbItem className="hidden md:block">
+                                                        {active.item}
+                                                    </BreadcrumbItem>
+                                                    <BreadcrumbSeparator className="hidden md:block" />
+                                                    <BreadcrumbItem>
+                                                        <BreadcrumbPage>
+                                                            {active.child}
+                                                        </BreadcrumbPage>
+                                                    </BreadcrumbItem>
+                                                </>
+                                            )}
+                                        </>
+                                    )}
                                 </BreadcrumbList>
                             </Breadcrumb>
                         </div>

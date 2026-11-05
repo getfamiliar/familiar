@@ -52,11 +52,14 @@ export default definePlugin({
     host: {
         start,
         stop,
-        webUi: () => {
+        webUi: (ctx) => {
             if (assets === null || authPages === null) {
                 throw new Error("web-ui: webUi called before start");
             }
-            return buildWebUi(assets, authPages);
+            return buildWebUi(assets, authPages, {
+                familiarVersion: ctx.familiarVersion,
+                listMenuItems: () => ctx.web.listMenuItems(),
+            });
         },
     },
 });

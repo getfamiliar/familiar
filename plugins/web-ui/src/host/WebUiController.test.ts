@@ -1,32 +1,73 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import type { WebUiEnv } from "@getfamiliar/shared";
+import type { WebMenuEntry, WebUiEnv } from "@getfamiliar/shared";
 import { Hono } from "hono";
-import { buildWebUi, buildWebUiController } from "./WebUiController.js";
+import { buildWebUi, buildWebUiController, type ShellSource } from "./WebUiController.js";
+
+/** Asset handler that names the path it was asked for. */
+const ASSETS = {
+    handle: async (c: { req: { path: string }; text: (t: string) => Response }) =>
+        c.text(`asset ${c.req.path}`),
+};
+
+/**
+ * A shell source with a fixed menu.
+ *
+ * @param menu Menu items.
+ * @returns The source.
+ */
+function shellWith(menu: WebMenuEntry[]): ShellSource {
+    return { familiarVersion: "1.2.3", listMenuItems: () => menu };
+}
 
 /**
  * Mount the controller below a stand-in for the core auth middleware.
  *
+ * @param shell Version and menu.
  * @returns The app.
  */
-function mounted(): Hono<WebUiEnv> {
+function mounted(shell: ShellSource = shellWith([])): Hono<WebUiEnv> {
     const app = new Hono<WebUiEnv>();
     app.use(async (c, next) => {
         c.set("principal", { login: "me@example.com", displayName: "Jürgen Weiß", via: "session" });
         await next();
     });
-    app.route("/", buildWebUiController({ handle: async (c) => c.text(`asset ${c.req.path}`) }));
+    app.route("/", buildWebUiController(ASSETS as never, shell));
     return app;
 }
 
 describe("buildWebUiController", () => {
-    it("answers /api/me with the principal the core resolved", async () => {
-        const res = await mounted().request("/api/me");
+    it("answers /api/shell with the principal, the version and the menu", async () => {
+        const menu: WebMenuEntry[] = [
+            { pluginId: "mail", icon: "mail", label: "Mail", route: "/mail" },
+        ];
+        const res = await mounted(shellWith(menu)).request("/api/shell");
         assert.deepEqual(await res.json(), {
-            login: "me@example.com",
-            displayName: "Jürgen Weiß",
-            via: "session",
+            user: { login: "me@example.com", displayName: "Jürgen Weiß", via: "session" },
+            version: "1.2.3",
+            menu,
         });
+    });
+
+    it("opens the first menu route on /, and the start page without a menu", async () => {
+        const empty = await mounted().request("/");
+        assert.equal(await empty.text(), "asset /");
+
+        const withMenu = mounted(
+            shellWith([
+                {
+                    pluginId: "mail",
+                    icon: "mail",
+                    label: "Mail",
+                    children: [{ label: "Inbox", route: "/mail/inbox" }],
+                },
+                { pluginId: "chat", icon: "message-circle", label: "Chat", route: "/chat" },
+            ]),
+        );
+        const redirect = await withMenu.request("/");
+        assert.equal(redirect.status, 302);
+        assert.equal(redirect.headers.get("location"), "/mail/inbox");
+        assert.equal(await (await withMenu.request("/mail/inbox")).text(), "asset /mail/inbox");
     });
 
     it("404s unknown API routes as JSON and hands everything else to the assets", async () => {
@@ -39,10 +80,11 @@ describe("buildWebUiController", () => {
 
     it("hands the core the controller and the login-page renderer", async () => {
         const ui = buildWebUi(
-            { handle: async (c) => c.text("asset") },
+            ASSETS as never,
             { renderAuthPage: async (view) => `rendered ${view.kind}` },
+            shellWith([]),
         );
-        assert.equal(await (await ui.controller.request("/x")).text(), "asset");
+        assert.equal(await (await ui.controller.request("/x")).text(), "asset /x");
         assert.equal(
             await ui.renderAuthPage?.({ kind: "signedOut", loginCommand: "familiar web login" }),
             "rendered signedOut",

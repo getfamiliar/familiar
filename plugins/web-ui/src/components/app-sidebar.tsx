@@ -1,20 +1,7 @@
-import {
-    AudioLinesIcon,
-    BookOpenIcon,
-    BotIcon,
-    FrameIcon,
-    GalleryVerticalEndIcon,
-    MapIcon,
-    PieChartIcon,
-    Settings2Icon,
-    TerminalIcon,
-    TerminalSquareIcon,
-} from "lucide-react";
 import type * as React from "react";
+import { AppBrand } from "@/components/app-brand";
 import { NavMain } from "@/components/nav-main";
-import { NavProjects } from "@/components/nav-projects";
 import { NavUser } from "@/components/nav-user";
-import { TeamSwitcher } from "@/components/team-switcher";
 import {
     Sidebar,
     SidebarContent,
@@ -22,149 +9,33 @@ import {
     SidebarHeader,
     SidebarRail,
 } from "@/components/ui/sidebar";
-import { usePrincipal } from "@/hooks/use-principal";
+import type { Shell } from "@/hooks/use-shell";
 
-// Sample navigation data; the user comes from the core webserver.
-const data = {
-    teams: [
-        {
-            name: "Acme Inc",
-            logo: <GalleryVerticalEndIcon />,
-            plan: "Enterprise",
-        },
-        {
-            name: "Acme Corp.",
-            logo: <AudioLinesIcon />,
-            plan: "Startup",
-        },
-        {
-            name: "Evil Corp.",
-            logo: <TerminalIcon />,
-            plan: "Free",
-        },
-    ],
-    navMain: [
-        {
-            title: "Playground",
-            url: "#",
-            icon: <TerminalSquareIcon />,
-            isActive: true,
-            items: [
-                {
-                    title: "History",
-                    url: "#",
-                },
-                {
-                    title: "Starred",
-                    url: "#",
-                },
-                {
-                    title: "Settings",
-                    url: "#",
-                },
-            ],
-        },
-        {
-            title: "Models",
-            url: "#",
-            icon: <BotIcon />,
-            items: [
-                {
-                    title: "Genesis",
-                    url: "#",
-                },
-                {
-                    title: "Explorer",
-                    url: "#",
-                },
-                {
-                    title: "Quantum",
-                    url: "#",
-                },
-            ],
-        },
-        {
-            title: "Documentation",
-            url: "#",
-            icon: <BookOpenIcon />,
-            items: [
-                {
-                    title: "Introduction",
-                    url: "#",
-                },
-                {
-                    title: "Get Started",
-                    url: "#",
-                },
-                {
-                    title: "Tutorials",
-                    url: "#",
-                },
-                {
-                    title: "Changelog",
-                    url: "#",
-                },
-            ],
-        },
-        {
-            title: "Settings",
-            url: "#",
-            icon: <Settings2Icon />,
-            items: [
-                {
-                    title: "General",
-                    url: "#",
-                },
-                {
-                    title: "Team",
-                    url: "#",
-                },
-                {
-                    title: "Billing",
-                    url: "#",
-                },
-                {
-                    title: "Limits",
-                    url: "#",
-                },
-            ],
-        },
-    ],
-    projects: [
-        {
-            name: "Design Engineering",
-            url: "#",
-            icon: <FrameIcon />,
-        },
-        {
-            name: "Sales & Marketing",
-            url: "#",
-            icon: <PieChartIcon />,
-        },
-        {
-            name: "Travel",
-            url: "#",
-            icon: <MapIcon />,
-        },
-    ],
-};
-
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-    const principal = usePrincipal();
+/**
+ * The app sidebar (collapses to icons): brand and version on top, the
+ * plugins' menu in the middle, the signed-in user at the bottom.
+ *
+ * @param props.shell Shell data, or null while loading.
+ * @param props.pathname Current page path.
+ * @returns The sidebar.
+ */
+export function AppSidebar({
+    shell,
+    pathname,
+    ...props
+}: React.ComponentProps<typeof Sidebar> & {
+    readonly shell: Shell | null;
+    readonly pathname: string;
+}) {
     return (
         <Sidebar collapsible="icon" {...props}>
             <SidebarHeader>
-                <TeamSwitcher teams={data.teams} />
+                <AppBrand version={shell?.version ?? null} />
             </SidebarHeader>
             <SidebarContent>
-                <NavMain items={data.navMain} />
-                <NavProjects projects={data.projects} />
+                <NavMain items={shell?.menu ?? []} pathname={pathname} />
             </SidebarContent>
-            <SidebarFooter>
-                {principal !== null && (
-                    <NavUser user={{ name: principal.displayName, email: principal.login }} />
-                )}
-            </SidebarFooter>
+            <SidebarFooter>{shell !== null && <NavUser user={shell.user} />}</SidebarFooter>
             <SidebarRail />
         </Sidebar>
     );
