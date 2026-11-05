@@ -6,6 +6,7 @@ import { after, before, describe, it } from "node:test";
 import type { ToolLevel, ToolRunContext } from "@getfamiliar/shared";
 import { jsonSchema, type Tool, type ToolSet, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
+import type { NoToolContext } from "./NoToolContext.js";
 import { buildToolDescribeTool } from "./toolDescribe.js";
 
 /** A run context with a huge budget so results are never spilled. */
@@ -25,7 +26,7 @@ const LONG_DESCRIPTION = `${"lorem ipsum ".repeat(40)}END-MARKER`;
 /** Build a small unwrapped pool with real AI-SDK tools for describe tests. */
 function buildPool(): ToolSet {
     return {
-        jira_create_issue: tool<{ project: string; summary: string }, string>({
+        jira_create_issue: tool<{ project: string; summary: string }, string, NoToolContext>({
             description: LONG_DESCRIPTION,
             inputSchema: jsonSchema({
                 type: "object",
@@ -38,7 +39,7 @@ function buildPool(): ToolSet {
             }),
             execute: async () => "unused",
         }),
-        lonely_tool: tool<Record<string, never>, string>({
+        lonely_tool: tool<Record<string, never>, string, NoToolContext>({
             description: "a tool no skill mentions",
             inputSchema: jsonSchema({
                 type: "object",

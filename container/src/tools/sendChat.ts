@@ -2,6 +2,7 @@ import { runJsonTool, type ToolRunContext } from "@getfamiliar/shared";
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
+import type { NoToolContext } from "./NoToolContext.js";
 
 /** Schema validated by the AI SDK before `execute` is called. */
 interface SendChatInput {
@@ -23,7 +24,7 @@ export function buildSendChatTool(
     eventId: string,
     ctx: ToolRunContext,
 ): Tool<SendChatInput, object> {
-    return tool<SendChatInput, object>({
+    return tool<SendChatInput, object, NoToolContext>({
         description:
             "Send a chat message to the user. Use it to reply, ask follow-up questions, or proactively notify." +
             'Use like that: `send_chat({text: "Hi there!"})`.',

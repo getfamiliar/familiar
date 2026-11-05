@@ -9,6 +9,7 @@ import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
 import { parseHandlerTopic } from "../utils/HandlerSpecParser.js";
+import type { NoToolContext } from "./NoToolContext.js";
 
 interface StartSubagentInput {
     readonly topic: string;
@@ -59,7 +60,7 @@ export function buildStartSubagentTool(
     waitForSubagent: WaitForSubagent,
     ctx: ToolRunContext,
 ): Tool<StartSubagentInput, string> {
-    return tool<StartSubagentInput, string>({
+    return tool<StartSubagentInput, string, NoToolContext>({
         description:
             "Start a subagent to run a target handler in its own fresh context, and WAIT for its " +
             "result. The current agentrun suspends; once the subagent settles, this tool returns " +

@@ -19,6 +19,7 @@ import { buildGetScheduledSubagentsTool } from "./getScheduledSubagents.js";
 import { buildScheduleSubagentTool } from "./scheduleSubagent.js";
 import { buildSendChatTool } from "./sendChat.js";
 import { buildStartSubagentTool, type WaitForSubagent } from "./startSubagent.js";
+import { toolDescriptionText } from "./ToolDescription.js";
 import { MCP_GROUP_NAME, resolveTools } from "./ToolsExpressionParser.js";
 import { buildToolCallTool } from "./toolCall.js";
 import { buildToolDescribeTool } from "./toolDescribe.js";
@@ -441,7 +442,7 @@ export class ToolsFactory {
         const loaded = new Set(Object.keys(out));
         const catalog: ToolCatalogEntry[] = Object.entries(allTools).map(([name, t]) => ({
             name,
-            description: t.description ?? "",
+            description: toolDescriptionText(t) ?? "",
             level: levelsByKey.get(name) ?? DEFAULT_TOOL_LEVEL,
         }));
         const metaToolRunContext = context.toolRunContext ?? FALLBACK_TOOL_RUN_CONTEXT;
@@ -494,7 +495,7 @@ export class ToolsFactory {
         for (const [name, t] of Object.entries(tools)) {
             out.push({
                 name,
-                description: t.description ?? "",
+                description: toolDescriptionText(t) ?? "",
                 inputSchema: await readRawInputSchema(t),
                 groups: CONTAINER_TOOL_GROUPS[name] ?? [],
                 level: CONTAINER_TOOL_LEVELS[name] ?? DEFAULT_TOOL_LEVEL,
@@ -618,7 +619,7 @@ function wrapTool(
     level: ToolLevel,
     privileged: boolean,
 ): Tool {
-    const description = clampDescription(original.description, maxDescriptionChars);
+    const description = clampDescription(toolDescriptionText(original), maxDescriptionChars);
     const originalExecute = original.execute as
         | ((input: unknown, options: unknown) => unknown)
         | undefined;

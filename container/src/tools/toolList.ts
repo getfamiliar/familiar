@@ -1,5 +1,6 @@
 import { runJsonLinesTool, type ToolLevel, type ToolRunContext } from "@getfamiliar/shared";
 import { jsonSchema, type Tool, tool } from "ai";
+import type { NoToolContext } from "./NoToolContext.js";
 
 /** Metadata the `tool_list` tool searches and renders. */
 export interface ToolCatalogEntry {
@@ -42,7 +43,7 @@ export function buildToolListTool(
     loaded: ReadonlySet<string>,
     ctx: ToolRunContext,
 ): Tool<ToolListInput, string> {
-    return tool<ToolListInput, string>({
+    return tool<ToolListInput, string, NoToolContext>({
         description:
             "Discover tools beyond the ones already loaded. Every handler run can reach every " +
             "tool; only a subset is preloaded into your toolset. Call this to search the full " +

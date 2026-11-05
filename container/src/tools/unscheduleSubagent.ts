@@ -1,5 +1,6 @@
 import { runJsonTool, type ScheduledSubagentBus, type ToolRunContext } from "@getfamiliar/shared";
 import { jsonSchema, type Tool, tool } from "ai";
+import type { NoToolContext } from "./NoToolContext.js";
 
 interface UnscheduleSubagentInput {
     readonly key: string;
@@ -15,7 +16,7 @@ export function buildUnscheduleSubagentTool(
     bus: ScheduledSubagentBus,
     ctx: ToolRunContext,
 ): Tool<UnscheduleSubagentInput, object> {
-    return tool<UnscheduleSubagentInput, object>({
+    return tool<UnscheduleSubagentInput, object, NoToolContext>({
         description:
             "Cancel a previously scheduled subagent by its `key`. Returns `removed: false` when " +
             "no schedule exists for that key (already fired or never scheduled).",

@@ -9,6 +9,8 @@ import {
 } from "@getfamiliar/shared";
 import { asSchema, jsonSchema, type Tool, type ToolSet, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
+import type { NoToolContext } from "./NoToolContext.js";
+import { toolDescriptionText } from "./ToolDescription.js";
 import { unknownToolMessage } from "./toolCall.js";
 
 interface ToolDescribeInput {
@@ -60,7 +62,7 @@ export function buildToolDescribeTool(
     loaded: ReadonlySet<string>,
     ctx: ToolRunContext,
 ): Tool<ToolDescribeInput, string> {
-    return tool<ToolDescribeInput, string>({
+    return tool<ToolDescribeInput, string, NoToolContext>({
         description:
             "Get a tool's full detail before calling it: its complete (untruncated) " +
             "description, its raw input JSON Schema, and any skills that mention it. " +
@@ -90,7 +92,7 @@ export function buildToolDescribeTool(
                 const loadedNote = loaded.has(name)
                     ? "loaded — callable directly"
                     : "not loaded — invoke via `tool_call`";
-                const description = (target.description ?? "").trim();
+                const description = (toolDescriptionText(target) ?? "").trim();
                 const schemaBlock = await renderSchemaBlock(target);
                 const skills = await findSkillsMentioning(name);
 

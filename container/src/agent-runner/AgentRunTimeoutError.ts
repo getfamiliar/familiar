@@ -7,7 +7,7 @@
  * AbortController, arms `clock.setTimeout` for the configured per-step
  * budget, resets the timer on every completed step (via the
  * `onStepFinished` callback the runner fires from the SDK's
- * `onStepFinish`), and pauses the timer while the runner is parked on
+ * `onStepEnd`), and pauses the timer while the runner is parked on
  * `waitForSubagent` (so a slow child handler does not consume the
  * parent's step budget). When the budget is exhausted, the Scheduler
  * aborts via the signal; the runner converts the abort into this typed

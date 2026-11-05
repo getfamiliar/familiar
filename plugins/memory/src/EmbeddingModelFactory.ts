@@ -1,4 +1,4 @@
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGoogle } from "@ai-sdk/google";
 import { createMistral } from "@ai-sdk/mistral";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -40,7 +40,7 @@ export function buildEmbeddingModel(opts: BuildEmbeddingModelOptions): Embedding
             return client.textEmbeddingModel(opts.model);
         }
         case "@ai-sdk/google": {
-            const client = createGoogleGenerativeAI({
+            const client = createGoogle({
                 apiKey: opts.apiKey,
                 baseURL: opts.baseUrl,
             });

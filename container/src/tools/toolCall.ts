@@ -1,6 +1,7 @@
 import type { JSONValue } from "@ai-sdk/provider";
 import { ToolError } from "@getfamiliar/shared";
-import { jsonSchema, type Tool, type ToolCallOptions, type ToolSet, tool } from "ai";
+import { jsonSchema, type Tool, type ToolExecutionOptions, type ToolSet, tool } from "ai";
+import type { NoToolContext } from "./NoToolContext.js";
 
 interface ToolCallInput {
     readonly name: string;
@@ -32,7 +33,7 @@ const SUGGESTION_LIMIT = 8;
  * @param pool The wrapped tool pool (built-ins ∪ MCP ∪ plugin tools).
  */
 export function buildToolCallTool(pool: ToolSet): Tool<ToolCallInput, unknown> {
-    return tool<ToolCallInput, unknown>({
+    return tool<ToolCallInput, unknown, NoToolContext>({
         description:
             "Invoke any available tool by name, including tools not currently in your toolset. " +
             "Use `tool_list` to discover names first. Pass {name} (the exact tool key) and " +
@@ -56,7 +57,7 @@ export function buildToolCallTool(pool: ToolSet): Tool<ToolCallInput, unknown> {
                 },
             },
         }),
-        execute: (input, options: ToolCallOptions) => {
+        execute: (input, options: ToolExecutionOptions<NoToolContext>) => {
             const target = pool[input.name];
             if (target === undefined) {
                 throw new ToolError("UnknownTool", unknownToolMessage(input.name, pool));

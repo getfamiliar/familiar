@@ -11,6 +11,7 @@ import {
 import type { Tool } from "ai";
 import { jsonSchema, tool } from "ai";
 import { PassedConfig } from "../utils/PassedConfig.js";
+import type { NoToolContext } from "./NoToolContext.js";
 
 /**
  * The `bash` tool: run an arbitrary shell command inside the offline agent
@@ -332,7 +333,7 @@ export function buildBashTool(
     ctx: ToolRunContext,
     log?: Logger,
 ): Tool<BashInput, string> {
-    return tool<BashInput, string>({
+    return tool<BashInput, string, NoToolContext>({
         description:
             "Execute a bash command. Each call is a fresh `bash -c` shell — no state (cwd, env, " +
             "variables) persists between calls. Use absolute paths or set working_directory. " +

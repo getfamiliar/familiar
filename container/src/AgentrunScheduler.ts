@@ -39,7 +39,7 @@ export interface SchedulerSettings {
      * The Scheduler arms a single timer with this budget at start,
      * resets it on every completed SDK step (via the
      * `onStepFinished` callback the runner fires from the SDK's
-     * `onStepFinish`), and pauses it while a runner is parked on
+     * `onStepEnd`), and pauses it while a runner is parked on
      * `waitForSubagent` (so a slow child handler does not consume
      * the parent's step budget). The cap catches a single wedged
      * step (hung tool call, stuck model) without penalising
@@ -404,7 +404,7 @@ export class AgentrunScheduler {
      * settled), arms a fresh full per-step timeout for the resumed
      * step (the tool call that triggered `waitForSubagent` is about
      * to return; the SDK continues that step until its next
-     * `onStepFinish`), marks the entry executing, and resolves every
+     * `onStepEnd`), marks the entry executing, and resolves every
      * parked waiter with its corresponding child's settled row. Tool
      * callbacks unblock; the runner's `agent.generate` continues from
      * the next step.

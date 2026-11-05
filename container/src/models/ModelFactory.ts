@@ -1,6 +1,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createDeepSeek } from "@ai-sdk/deepseek";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGoogle } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
 import { createMistral } from "@ai-sdk/mistral";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -55,7 +55,7 @@ const NPM_MODEL_BUILDERS: Readonly<
         return (id) => client.languageModel(id);
     },
     "@ai-sdk/google": (_id, baseURL, headers) => {
-        const client = createGoogleGenerativeAI({ apiKey: PLACEHOLDER_API_KEY, baseURL, headers });
+        const client = createGoogle({ apiKey: PLACEHOLDER_API_KEY, baseURL, headers });
         return (id) => client.languageModel(id);
     },
     "@ai-sdk/groq": (_id, baseURL, headers) => {

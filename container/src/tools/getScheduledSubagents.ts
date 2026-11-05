@@ -8,6 +8,7 @@ import {
     type ToolRunContext,
 } from "@getfamiliar/shared";
 import { jsonSchema, type Tool, tool } from "ai";
+import type { NoToolContext } from "./NoToolContext.js";
 
 interface GetScheduledSubagentsInput {
     readonly from?: string;
@@ -30,7 +31,7 @@ export function buildGetScheduledSubagentsTool(
     timezone: string,
     ctx: ToolRunContext,
 ): Tool<GetScheduledSubagentsInput, string> {
-    return tool<GetScheduledSubagentsInput, string>({
+    return tool<GetScheduledSubagentsInput, string, NoToolContext>({
         description:
             "List scheduled one-off subagents. Pass either {day: 'YYYY-MM-DD'} for one local " +
             "calendar day, or {from?, to?} for a range (each a wall-clock ISO in the user's " +

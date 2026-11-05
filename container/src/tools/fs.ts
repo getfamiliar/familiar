@@ -13,6 +13,7 @@ import type { Tool, ToolSet } from "ai";
 import { jsonSchema, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
 import { PassedConfig } from "../utils/PassedConfig.js";
+import type { NoToolContext } from "./NoToolContext.js";
 
 /**
  * Hard caps for the search-shaped tools. Picked to keep tool results
@@ -270,7 +271,7 @@ const FILE_READ_HEADER_OVERHEAD = 200;
  * natural cut boundary are kept whole.
  */
 function buildFsReadTool(ctx: ToolRunContext): Tool<FileReadInput, string> {
-    return tool<FileReadInput, string>({
+    return tool<FileReadInput, string, NoToolContext>({
         description:
             "Read a chunk of a file as UTF-8. Paths are workspace-relative " +
             "(`SOUL.md`, `people/anna.md`); absolute paths under " +
@@ -391,7 +392,7 @@ interface FileWriteInput {
  * write scratch files inside its own event dir.
  */
 function buildFsWriteTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FileWriteInput, object> {
-    return tool<FileWriteInput, object>({
+    return tool<FileWriteInput, object, NoToolContext>({
         description:
             "Write or overwrite a file with the given content. Creates missing " +
             "parent directories. Non-privileged runs may only write under " +
@@ -444,7 +445,7 @@ function buildFsStrReplaceTool(
     parent: AgentRunRow,
     ctx: ToolRunContext,
 ): Tool<FileStrReplaceInput, object> {
-    return tool<FileStrReplaceInput, object>({
+    return tool<FileStrReplaceInput, object, NoToolContext>({
         description:
             "Replace exactly one occurrence of `old_string` with `new_string` " +
             "in the file. Errors if `old_string` is missing or appears more " +
@@ -537,7 +538,7 @@ function buildFsAppendTool(
     parent: AgentRunRow,
     ctx: ToolRunContext,
 ): Tool<FileAppendInput, object> {
-    return tool<FileAppendInput, object>({
+    return tool<FileAppendInput, object, NoToolContext>({
         description:
             "Append content to the end of a file. Creates the file (and any " +
             "missing parent directories) if it does not exist. If the existing " +
@@ -619,7 +620,7 @@ interface LsInput {
  * of a workspace directory. Pass `.` for the workspace root.
  */
 function buildLsTool(ctx: ToolRunContext): Tool<LsInput, object> {
-    return tool<LsInput, object>({
+    return tool<LsInput, object, NoToolContext>({
         description:
             "List immediate entries of a workspace directory (non-recursive). " +
             "Pass `.` for the workspace root. Returns one entry per child with " +
@@ -673,7 +674,7 @@ interface GlobInput {
  * hit. Capped at {@link GLOB_MAX_RESULTS} hits.
  */
 function buildGlobTool(ctx: ToolRunContext): Tool<GlobInput, string> {
-    return tool<GlobInput, string>({
+    return tool<GlobInput, string, NoToolContext>({
         description:
             "Match files in the workspace against a glob pattern (e.g. " +
             "`chat/*.md`, `**/*.json`, `people/*.md`). Returns workspace-" +
@@ -738,7 +739,7 @@ interface GrepMatch {
  * ...}` marker line when the cap fires.
  */
 function buildGrepTool(ctx: ToolRunContext): Tool<GrepInput, string> {
-    return tool<GrepInput, string>({
+    return tool<GrepInput, string, NoToolContext>({
         description:
             "Search workspace files for a regex pattern (JavaScript regex syntax). " +
             "Optional `path` (file or subdirectory; default: workspace root) " +
@@ -940,7 +941,7 @@ function classifyRemovePattern(
  *   refusal.
  */
 function buildFsRemoveTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FsRemoveInput, object> {
-    return tool<FsRemoveInput, object>({
+    return tool<FsRemoveInput, object, NoToolContext>({
         description:
             "Remove a file from the workspace. The `path` may be a single " +
             "workspace-relative file (e.g. `chat/digests/2026-05.jsonl`), or " +

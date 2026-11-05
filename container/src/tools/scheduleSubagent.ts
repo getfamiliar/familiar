@@ -12,6 +12,7 @@ import {
 import { jsonSchema, type Tool, tool } from "ai";
 import { HandlerFile } from "../HandlerFile.js";
 import { parseHandlerTopic } from "../utils/HandlerSpecParser.js";
+import type { NoToolContext } from "./NoToolContext.js";
 
 interface ScheduleSubagentInput {
     readonly topic: string;
@@ -61,7 +62,7 @@ export function buildScheduleSubagentTool(
     timezone: string,
     ctx: ToolRunContext,
 ): Tool<ScheduleSubagentInput, object> {
-    return tool<ScheduleSubagentInput, object>({
+    return tool<ScheduleSubagentInput, object, NoToolContext>({
         description:
             "Schedule a subagent to run later, or spawn one now fire-and-forget. Provide a future " +
             "`when` (ISO-8601 wall-clock in the user's local timezone, e.g. `2026-05-22T13:55:00`) " +

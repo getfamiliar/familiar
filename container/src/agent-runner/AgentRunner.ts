@@ -9,7 +9,7 @@ import {
     type NewInferenceEvent,
     type NewStepResult,
 } from "@getfamiliar/shared";
-import { type ModelMessage, stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
+import { isStepCount, type ModelMessage, ToolLoopAgent, type ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
 import { HandlerFile } from "../HandlerFile.js";
 import { ModelFactory } from "../models/ModelFactory.js";
@@ -31,7 +31,7 @@ import { formatInferenceError } from "./formatInferenceError.js";
 import { mergeToolErrorsIntoResults } from "./mergeToolErrorsIntoResults.js";
 import { RetryableModelException } from "./RetryableModelException.js";
 import { StepLimitReachedError } from "./StepLimitReachedError.js";
-import { buildStepBudgetNotice } from "./stepBudgetNotice.js";
+import { buildStepMessages } from "./StepMessages.js";
 import { synthesizeResultText } from "./synthesizeResultText.js";
 
 /**
@@ -269,7 +269,7 @@ export interface AgentRunnerContext {
     /** Chat-history facade for prompt assembly and `outputChat` reply. */
     readonly chat: Pick<ChatManager, "fetchHistory" | "appendAssistantMessage">;
     /**
-     * Persist one step. Called from the SDK's `onStepFinish`. The
+     * Persist one step. Called from the SDK's `onStepEnd`. The
      * Scheduler's implementation forwards to `StepResultBus.add`.
      */
     readonly recordStep: (step: NewStepResult) => Promise<void>;
@@ -513,36 +513,16 @@ export class AgentRunner {
             // throw + postpone/settle decision. Disable the SDK's own
             // retry loop so a multi-minute backoff doesn't park us.
             maxRetries: 0,
-            stopWhen: stepCountIs(MAX_STEPS_PER_RUN),
-            prepareStep: async ({ stepNumber, messages }) => {
-                const managed = await contextManager.prepare(messages);
-                // Tell the agent when it keeps re-issuing the same call, and
-                // how many steps it has left as it nears the cap (forcing a
-                // final answer on the last step). Appended after context
-                // management so the sliding window can never evict them;
-                // ephemeral per step, so they stay live and nothing lands in
-                // the persisted history.
-                const repeatedCallNotice = contextManager.buildRepeatedCallNotice(messages);
-                const budgetNotice = buildStepBudgetNotice(stepNumber, MAX_STEPS_PER_RUN);
-                const notices = [repeatedCallNotice, budgetNotice].filter(
-                    (notice): notice is string => notice !== null,
-                );
-                const stepMessages: ModelMessage[] = [
-                    ...managed,
-                    ...notices.map((content): ModelMessage => ({ role: "user", content })),
-                ];
-                ctx.log.debug(
-                    {
-                        stepNumber,
-                        messageCount: messages.length,
-                        managedMessageCount: managed.length,
-                        repeatedCallNotice,
-                        budgetNotice,
-                    },
-                    "step starting",
-                );
-                return { messages: stepMessages };
-            },
+            stopWhen: isStepCount(MAX_STEPS_PER_RUN),
+            // Rebuilt from the untouched history every step (see
+            // `buildStepMessages`): the context-managed messages plus the
+            // repeated-call and step-budget notices stay ephemeral.
+            prepareStep: async ({ stepNumber, initialMessages, responseMessages }) => ({
+                messages: await buildStepMessages(
+                    { stepNumber, initialMessages, responseMessages },
+                    { contextManager, maxSteps: MAX_STEPS_PER_RUN, log: ctx.log },
+                ),
+            }),
         });
 
         // Gate context assembly on the originating event's `isChat`
@@ -646,7 +626,7 @@ export class AgentRunner {
             result = await agent.generate({
                 messages,
                 abortSignal: ctx.signal,
-                onStepFinish: (step) =>
+                onStepEnd: (step) =>
                     this.recordStep(ctx, step as Parameters<AgentRunner["recordStep"]>[1]),
             });
         } catch (err) {
@@ -707,7 +687,7 @@ export class AgentRunner {
             outcome: "success",
         });
 
-        // Step-budget cut-off. `stopWhen: stepCountIs(MAX_STEPS_PER_RUN)`
+        // Step-budget cut-off. `stopWhen: isStepCount(MAX_STEPS_PER_RUN)`
         // is a stop *condition*, not an error — the SDK resolves
         // normally when it fires. Since that is the loop's only stop
         // condition, an aggregate `tool-calls` finish reason means the
@@ -725,8 +705,8 @@ export class AgentRunner {
                 durationMs: Date.now() - runStartedAt,
                 steps: result.steps.length,
                 finishReason: result.finishReason,
-                inputTokens: result.usage?.inputTokens,
-                outputTokens: result.usage?.outputTokens,
+                totalInputTokens: result.usage?.inputTokens,
+                totalOutputTokens: result.usage?.outputTokens,
                 resultTextLength: result.text.length,
                 synthesized: finalText !== result.text,
             },
@@ -749,7 +729,7 @@ export class AgentRunner {
     /**
      * Translate one SDK step into a {@link NewStepResult} and hand it
      * to the Scheduler-provided callback. Awaited inside the SDK's
-     * `onStepFinish` so any failure in the recording path aborts the
+     * `onStepEnd` so any failure in the recording path aborts the
      * current `generate` call.
      */
     private async recordStep(

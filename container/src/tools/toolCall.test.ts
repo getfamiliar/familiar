@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import { jsonSchema, type ToolSet, tool } from "ai";
+import type { NoToolContext } from "./NoToolContext.js";
 import { buildToolCallTool } from "./toolCall.js";
 
 /** An MCP-style raw result: text content plus a duplicated `structuredContent`. */
@@ -13,7 +14,7 @@ const MCP_RESULT = {
 /** Build a pool with one MCP-like tool (own `toModelOutput`) and one plain tool. */
 function buildPool(): ToolSet {
     return {
-        at_jira_search: tool<{ jql: string }, typeof MCP_RESULT>({
+        at_jira_search: tool<{ jql: string }, typeof MCP_RESULT, NoToolContext>({
             description: "search",
             inputSchema: jsonSchema({ type: "object", properties: { jql: { type: "string" } } }),
             execute: async () => MCP_RESULT,
@@ -22,12 +23,12 @@ function buildPool(): ToolSet {
                 value: [{ type: "text", text: `${input.jql}:${output.content[0].text}` }],
             }),
         }),
-        plain_object: tool<Record<string, never>, { ok: boolean }>({
+        plain_object: tool<Record<string, never>, { ok: boolean }, NoToolContext>({
             description: "plain",
             inputSchema: jsonSchema({ type: "object" }),
             execute: async () => ({ ok: true }),
         }),
-        plain_string: tool<Record<string, never>, string>({
+        plain_string: tool<Record<string, never>, string, NoToolContext>({
             description: "plain",
             inputSchema: jsonSchema({ type: "object" }),
             execute: async () => "hello",

@@ -5,10 +5,11 @@
  * exists — it plans as if it had unlimited turns and gets cut off
  * mid-work with no chance to produce a final answer.
  *
- * The notice is built fresh every step (in {@link AgentRunner}'s
- * `prepareStep` hook) so the remaining-step count is always live, and
- * it is ephemeral — the SDK applies `prepareStep`'s messages only to
- * the current step, so nothing is persisted into the conversation.
+ * The notice is built fresh every step (in `buildStepMessages`, called
+ * from {@link AgentRunner}'s `prepareStep` hook) so the remaining-step
+ * count is always live, and it is ephemeral — each step's messages are
+ * rebuilt from the SDK's untouched history, so nothing is persisted into
+ * the conversation.
  */
 
 /** Remaining-step threshold at or below which the countdown notice is injected. */

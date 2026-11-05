@@ -4,7 +4,7 @@
  * final reply.
  *
  * The budget is enforced through the AI SDK's
- * `stopWhen: stepCountIs(MAX_STEPS_PER_RUN)`, which is a *stop
+ * `stopWhen: isStepCount(MAX_STEPS_PER_RUN)`, which is a *stop
  * condition* rather than an error — `agent.generate()` resolves
  * normally when it fires. The runner detects the cut-off (aggregate
  * `finishReason === "tool-calls"`: the model still wanted to call tools

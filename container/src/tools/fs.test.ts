@@ -41,7 +41,7 @@ function fileReadTool(ctx: ToolRunContext) {
 
 /**
  * Invoke fs_read with the typed input shape; cast through the SDK's
- * (input, options) signature without faking a real ToolCallOptions.
+ * (input, options) signature without faking a real ToolExecutionOptions.
  */
 async function readFile(
     ctx: ToolRunContext,
