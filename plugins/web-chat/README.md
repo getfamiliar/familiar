@@ -2,7 +2,7 @@
 
 Chat with familiar in the web UI. The page opens as the start page of the web UI (menu entry "Chat", weight -100) and runs on the chat channel `web`.
 
-Until its first npm release the plugin is `private` and not `familiar.bundled`; enable it by adding `@getfamiliar/plugin-web-chat` to `config/plugins`. It needs the web UI (`web-ui` plugin, `webserver.enabled: true`).
+It is a core plugin (`familiar.bundled`, always loaded). It needs the web UI (`web-ui` plugin, `webserver.enabled: true`).
 
 ## Features
 

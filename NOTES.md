@@ -1,6 +1,8 @@
 NEXT:
 
-* Next step: build web chat interface with https://ui.shadcn.com/docs/ai-elements
+* Voice Enhancements: Maximaler Kontext im Gesprächsbeginn - Kalender für heute, letzte Unterhaltung, offene Fragen...
+
+* Faster Event Processing und (!) 
 
 * Memory enhancements:
   - List of questions.md in the wiki that can be used to ask the user for more information about uncertainties in the memories.

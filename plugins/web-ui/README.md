@@ -1,6 +1,6 @@
 # Web UI plugin
 
-The familiar web interface: a React app built with [shadcn/ui](https://ui.shadcn.com/), Tailwind CSS v4 and Vite. It is meant to be bundled (always on). Until its first npm release it is `private` and not yet `familiar.bundled`, so enable it by adding `@getfamiliar/plugin-web-ui` to `config/plugins`. It needs `webserver.enabled: true` and at least one login in `webserver.auth.users` (see [`docs/config.md`](../../docs/config.md#webserver)).
+The familiar web interface: a React app built with [shadcn/ui](https://ui.shadcn.com/), Tailwind CSS v4 and Vite. It is a core plugin (`familiar.bundled`, always loaded). It needs `webserver.enabled: true` and at least one login in `webserver.auth.users` (see [`docs/config.md`](../../docs/config.md#webserver)).
 
 The plugin does no authentication. Its `webUi` hook returns the root controller, which the core webserver mounts at `/` behind its auth middleware, so every request it sees comes from a signed-in, allowlisted user (`c.get("principal")`). Login and logout (`/login`, `POST /logout`) stay core routes.
 

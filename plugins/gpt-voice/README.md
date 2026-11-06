@@ -2,7 +2,7 @@
 
 Talk to familiar by voice. The web UI gets a menu entry "Voice" (weight -90) with a call screen in the style of a video-call app: call, mute, hang up, and an avatar that pulses while the assistant speaks (a face comes later). The voice is OpenAI's full-duplex model **GPT-Live** (`gpt-live-1`): you can interrupt it, and it keeps talking while work runs in the background.
 
-Until its first npm release the plugin is `private` and not `familiar.bundled`; enable it by adding `@getfamiliar/plugin-gpt-voice` to `config/plugins`. It needs the web UI (`web-ui` plugin, `webserver.enabled: true`).
+It is a core plugin (`familiar.bundled`, always loaded). It needs the web UI (`web-ui` plugin, `webserver.enabled: true`).
 
 ## Requirements
 

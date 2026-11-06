@@ -2,7 +2,6 @@
     "name": "@getfamiliar/plugin-gpt-voice",
     "type": "module",
     "version": "0.0.1",
-    "private": true,
     "description": "Familiar plugin: talk to the assistant by voice (OpenAI GPT-Live), in the web UI and later by phone.",
     "publishConfig": {
         "access": "public"
@@ -10,7 +9,8 @@
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "familiar": {
-        "plugin": true
+        "plugin": true,
+        "bundled": true
     },
     "files": [
         "build",

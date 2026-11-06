@@ -2,7 +2,6 @@
     "name": "@getfamiliar/plugin-web-chat",
     "type": "module",
     "version": "0.0.1",
-    "private": true,
     "description": "Familiar plugin: chat with the assistant in the web UI.",
     "publishConfig": {
         "access": "public"
@@ -10,7 +9,8 @@
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "familiar": {
-        "plugin": true
+        "plugin": true,
+        "bundled": true
     },
     "files": [
         "build",

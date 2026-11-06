@@ -116,7 +116,7 @@ The current split:
 
 | Core (bundled, always on) | Optional (install + whitelist) |
 | --- | --- |
-| `cli-chat`, `memory`, `telegram`, `whatsapp`, `transcribe-whisper` | `featherless`, `ms365`, `tesla`, `tailscale` |
+| `cli-chat`, `memory`, `telegram`, `whatsapp`, `transcribe-whisper`, `web-ui`, `web-chat`, `gpt-voice` | `featherless`, `ms365`, `tesla`, `tailscale` |
 
 ### `config/plugins`
 
