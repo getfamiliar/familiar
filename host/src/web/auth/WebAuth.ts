@@ -1,3 +1,4 @@
+import type { IncomingMessage } from "node:http";
 import {
     type Logger,
     PROXY_SECRET_HEADER,
@@ -8,6 +9,7 @@ import {
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { html } from "hono/html";
+import { parse as parseCookieHeader } from "hono/utils/cookie";
 import type { HostConfigService } from "../../utils/ConfigService.js";
 import { decodeMimeEncodedWords } from "./MimeEncodedWord.js";
 import type { TrustedProxy, TrustedProxyRegistry } from "./TrustedProxyRegistry.js";
@@ -164,7 +166,8 @@ export function isAllowedLogin(settings: WebAuthSettings, login: string): boolea
  */
 export function createAuthMiddleware(deps: WebAuthDeps): MiddlewareHandler<WebEnv> {
     return async (c, next) => {
-        const secret = c.req.header(PROXY_SECRET_HEADER);
+        const request = authRequestFromContext(c);
+        const secret = request.header(PROXY_SECRET_HEADER);
         let proxy: TrustedProxy | null = null;
         if (secret !== undefined) {
             proxy = deps.proxies.match(secret);
@@ -175,11 +178,11 @@ export function createAuthMiddleware(deps: WebAuthDeps): MiddlewareHandler<WebEn
                 return c.text("Unauthorized: unknown trusted-proxy secret", 401);
             }
         }
-        c.set("isHttps", isHttpsRequest(c, proxy));
-        if (!SAFE_METHODS.has(c.req.method) && !isSameOrigin(c, proxy)) {
+        c.set("isHttps", isHttpsRequest(request, proxy));
+        if (!SAFE_METHODS.has(c.req.method) && !isSameOrigin(request, proxy)) {
             return c.text("Forbidden: cross-origin request", 403);
         }
-        const identity = await resolveIdentity(c, deps, proxy);
+        const identity = await resolveIdentity(request, deps, proxy);
         if (PUBLIC_PATHS.test(c.req.path)) {
             c.set("signedInAs", identity.kind === "allowed" ? identity.principal : null);
             return next();
@@ -195,6 +198,115 @@ export function createAuthMiddleware(deps: WebAuthDeps): MiddlewareHandler<WebEn
     };
 }
 
+/**
+ * The parts of an incoming request the auth checks read. Built from a
+ * Hono context for ordinary requests ({@link authRequestFromContext}) and
+ * from node's raw `IncomingMessage` for WebSocket upgrades, which never
+ * reach the Hono app ({@link authRequestFromIncoming}).
+ */
+interface AuthRequest {
+    /** Header value by (case-insensitive) name, or undefined. */
+    header(name: string): string | undefined;
+    /** Cookie value by name, or undefined. */
+    cookie(name: string): string | undefined;
+    /** Whether the socket to this server itself is TLS. */
+    readonly isTlsSocket: boolean;
+}
+
+/**
+ * Adapt a Hono context to {@link AuthRequest}.
+ *
+ * @param c Request context.
+ * @returns The accessor.
+ */
+function authRequestFromContext(c: Context<WebEnv>): AuthRequest {
+    return {
+        header: (name) => c.req.header(name),
+        cookie: (name) => getCookie(c, name),
+        isTlsSocket: new URL(c.req.url).protocol === "https:",
+    };
+}
+
+/**
+ * Adapt node's raw request (a WebSocket upgrade) to {@link AuthRequest}.
+ *
+ * @param req The upgrade request.
+ * @returns The accessor.
+ */
+function authRequestFromIncoming(req: IncomingMessage): AuthRequest {
+    const cookies = parseCookieHeader(req.headers.cookie ?? "");
+    return {
+        header: (name) => {
+            const value = req.headers[name.toLowerCase()];
+            return Array.isArray(value) ? value[0] : value;
+        },
+        cookie: (name) => cookies[name],
+        isTlsSocket: "encrypted" in req.socket && req.socket.encrypted === true,
+    };
+}
+
+/** Outcome of {@link authenticateUpgrade}. */
+export type UpgradeAuthResult =
+    | { readonly kind: "allowed"; readonly principal: WebPrincipal; readonly isHttps: boolean }
+    | { readonly kind: "rejected"; readonly status: 401 | 403; readonly reason: string };
+
+/**
+ * Authenticate a WebSocket upgrade request with the same rules as the
+ * HTTP middleware ({@link createAuthMiddleware}): trusted-proxy secret,
+ * then proxy login or session cookie against the allowlist.
+ *
+ * Unlike ordinary GETs, an upgrade **must** carry a same-origin `Origin`
+ * header: a handshake is a GET, and without this check any website the
+ * user visits could open a socket with the user's session cookie
+ * (cross-site WebSocket hijacking). Browsers always send `Origin` on
+ * WebSocket handshakes.
+ *
+ * @param req The raw upgrade request.
+ * @param deps Settings, proxy registry, session store, logger.
+ * @returns The principal and HTTPS flag, or the status and reason to reject with.
+ */
+export async function authenticateUpgrade(
+    req: IncomingMessage,
+    deps: WebAuthDeps,
+): Promise<UpgradeAuthResult> {
+    const request = authRequestFromIncoming(req);
+    const secret = request.header(PROXY_SECRET_HEADER);
+    let proxy: TrustedProxy | null = null;
+    if (secret !== undefined) {
+        proxy = deps.proxies.match(secret);
+        if (proxy === null) {
+            return {
+                kind: "rejected",
+                status: 401,
+                reason: "unknown trusted-proxy secret",
+            };
+        }
+    }
+    const origin = request.header("origin");
+    if (origin === undefined || origin === "null" || !isSameOrigin(request, proxy)) {
+        return { kind: "rejected", status: 403, reason: "cross-origin WebSocket handshake" };
+    }
+    const identity = await resolveIdentity(request, deps, proxy);
+    if (identity.kind === "forbidden") {
+        deps.log.warn(
+            `webserver: rejected WebSocket of "${identity.login}" (via ${identity.via}) — not listed in webserver.auth.users`,
+        );
+        return {
+            kind: "rejected",
+            status: 403,
+            reason: `"${identity.login}" is not listed in webserver.auth.users`,
+        };
+    }
+    if (identity.kind === "none") {
+        return { kind: "rejected", status: 401, reason: "not signed in" };
+    }
+    return {
+        kind: "allowed",
+        principal: identity.principal,
+        isHttps: isHttpsRequest(request, proxy),
+    };
+}
+
 /** Outcome of {@link resolveIdentity}. */
 type Identity =
     | { readonly kind: "allowed"; readonly principal: WebPrincipal }
@@ -205,23 +317,23 @@ type Identity =
  * Determine who sent the request: the matched proxy's login first, else
  * the session cookie.
  *
- * @param c Request context.
+ * @param request Request accessor.
  * @param deps Auth deps.
  * @param proxy Matched proxy, or null.
  * @returns Allowed principal, a login not on the allowlist, or nothing.
  */
 async function resolveIdentity(
-    c: Context<WebEnv>,
+    request: AuthRequest,
     deps: WebAuthDeps,
     proxy: TrustedProxy | null,
 ): Promise<Identity> {
-    const fromProxy = proxy === null ? null : principalFromProxy(c, proxy);
+    const fromProxy = proxy === null ? null : principalFromProxy(request, proxy);
     if (fromProxy !== null) {
         return isAllowedLogin(deps.settings, fromProxy.login)
             ? { kind: "allowed", principal: fromProxy }
             : { kind: "forbidden", login: fromProxy.login, via: fromProxy.via };
     }
-    const fromSession = await principalFromSession(c, deps);
+    const fromSession = await principalFromSession(request, deps);
     return fromSession === null ? { kind: "none" } : { kind: "allowed", principal: fromSession };
 }
 
@@ -392,17 +504,17 @@ function plainAuthPage(view: WebAuthPageView): ReturnType<typeof html> {
  * RFC 2047 encoded words for non-ASCII text (Tailscale does this), which
  * are decoded.
  *
- * @param c Request context.
+ * @param request Request accessor.
  * @param proxy The matched proxy.
  * @returns The principal, or null when the proxy sent no login (e.g. a
  *   tagged tailnet device) and the session cookie has to decide.
  */
-function principalFromProxy(c: Context<WebEnv>, proxy: TrustedProxy): WebPrincipal | null {
-    const login = decodeMimeEncodedWords(c.req.header(proxy.userHeader) ?? "").trim();
+function principalFromProxy(request: AuthRequest, proxy: TrustedProxy): WebPrincipal | null {
+    const login = decodeMimeEncodedWords(request.header(proxy.userHeader) ?? "").trim();
     if (login === "") {
         return null;
     }
-    const rawName = proxy.nameHeader === undefined ? "" : (c.req.header(proxy.nameHeader) ?? "");
+    const rawName = proxy.nameHeader === undefined ? "" : (request.header(proxy.nameHeader) ?? "");
     const name = decodeMimeEncodedWords(rawName).trim();
     return { login, displayName: name === "" ? login : name, via: proxy.id };
 }
@@ -411,15 +523,15 @@ function principalFromProxy(c: Context<WebEnv>, proxy: TrustedProxy): WebPrincip
  * Resolve the session cookie. A session whose login was removed from the
  * allowlist no longer counts.
  *
- * @param c Request context.
+ * @param request Request accessor.
  * @param deps Auth deps.
  * @returns The principal, or null.
  */
 async function principalFromSession(
-    c: Context<WebEnv>,
+    request: AuthRequest,
     deps: WebAuthDeps,
 ): Promise<WebPrincipal | null> {
-    const token = getCookie(c, SESSION_COOKIE);
+    const token = request.cookie(SESSION_COOKIE);
     if (token === undefined) {
         return null;
     }
@@ -434,15 +546,15 @@ async function principalFromSession(
  * Whether the browser side of the connection is HTTPS. Behind a trusted
  * proxy that is the proxy's `X-Forwarded-Proto`; otherwise the request URL.
  *
- * @param c Request context.
+ * @param request Request accessor.
  * @param proxy Matched proxy, or null.
  * @returns True for HTTPS.
  */
-function isHttpsRequest(c: Context<WebEnv>, proxy: TrustedProxy | null): boolean {
+function isHttpsRequest(request: AuthRequest, proxy: TrustedProxy | null): boolean {
     if (proxy !== null) {
-        return c.req.header("x-forwarded-proto")?.split(",")[0]?.trim() === "https";
+        return request.header("x-forwarded-proto")?.split(",")[0]?.trim() === "https";
     }
-    return new URL(c.req.url).protocol === "https:";
+    return request.isTlsSocket;
 }
 
 /**
@@ -453,17 +565,17 @@ function isHttpsRequest(c: Context<WebEnv>, proxy: TrustedProxy | null): boolean
  * its upstream). Without `Origin`, `Sec-Fetch-Site: same-origin` is
  * accepted.
  *
- * @param c Request context.
+ * @param request Request accessor.
  * @param proxy Matched proxy, or null.
  * @returns True when the request comes from this site.
  */
-function isSameOrigin(c: Context<WebEnv>, proxy: TrustedProxy | null): boolean {
-    const origin = c.req.header("origin");
+function isSameOrigin(request: AuthRequest, proxy: TrustedProxy | null): boolean {
+    const origin = request.header("origin");
     const forwardedHost =
-        proxy === null ? undefined : c.req.header("x-forwarded-host")?.split(",")[0]?.trim();
-    const host = forwardedHost || c.req.header("host");
+        proxy === null ? undefined : request.header("x-forwarded-host")?.split(",")[0]?.trim();
+    const host = forwardedHost || request.header("host");
     if (origin === undefined || origin === "null") {
-        return c.req.header("sec-fetch-site") === "same-origin";
+        return request.header("sec-fetch-site") === "same-origin";
     }
     try {
         return host !== undefined && new URL(origin).host === host;

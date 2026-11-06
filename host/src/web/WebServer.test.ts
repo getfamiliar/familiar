@@ -8,11 +8,14 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import {
     PROXY_SECRET_HEADER,
     type WebAuthPageView,
+    type WebSocketConnectionInfo,
+    type WebSocketPeer,
     type WebUi,
     type WebUiEnv,
 } from "@getfamiliar/shared";
 import { MockLogger } from "@getfamiliar/shared/testing";
 import { Hono } from "hono";
+import { WebSocket } from "ws";
 import { HostConfigService } from "../utils/ConfigService.js";
 import { MemoryWebSessionStore } from "./auth/MemoryWebSessionStore.js";
 import { TrustedProxyRegistry } from "./auth/TrustedProxyRegistry.js";
@@ -586,5 +589,149 @@ describe("WebServer", () => {
         config.reload([]);
         await reloadable.reload();
         assert.equal(reloadable.listeningUrl, null);
+    });
+});
+
+/** Outcome of {@link openSocket}: an open client, or the refusing HTTP status. */
+type SocketOutcome = { readonly ws: WebSocket } | { readonly status: number };
+
+/**
+ * Open a WebSocket client against the test server.
+ *
+ * @param url Server URL (`http://…`).
+ * @param path Request path.
+ * @param headers Handshake headers (Origin, cookie, proxy headers).
+ * @returns The open client or the status the server refused with.
+ */
+function openSocket(
+    url: string,
+    path: string,
+    headers: Record<string, string>,
+): Promise<SocketOutcome> {
+    return new Promise((resolve, reject) => {
+        const ws = new WebSocket(`${url.replace(/^http/, "ws")}${path}`, { headers });
+        ws.once("open", () => resolve({ ws }));
+        ws.once("unexpected-response", (_req, res) => {
+            res.resume();
+            resolve({ status: res.statusCode ?? 0 });
+        });
+        ws.once("error", reject);
+    });
+}
+
+/**
+ * Wait for a client socket to close.
+ *
+ * @param ws The client.
+ * @returns Close code and reason.
+ */
+function closed(ws: WebSocket): Promise<{ code: number; reason: string }> {
+    return new Promise((resolve) => {
+        ws.once("close", (code, reason) => resolve({ code, reason: reason.toString() }));
+    });
+}
+
+/**
+ * Register an echo socket at `/plugins/echo/socket` that answers every
+ * frame with `<login>:<frame>` and records the connection infos.
+ *
+ * @param webPlugins Registry to register in.
+ * @returns The recorded connections.
+ */
+function registerEchoSocket(webPlugins: WebPluginRegistry): WebSocketConnectionInfo[] {
+    const connections: WebSocketConnectionInfo[] = [];
+    webPlugins.set("echo", {
+        controller: new Hono<WebUiEnv>(),
+        sockets: [
+            {
+                path: "/socket",
+                onConnection: (peer: WebSocketPeer, info) => {
+                    connections.push(info);
+                    peer.onMessage((data) => peer.send(`${info.principal.login}:${String(data)}`));
+                },
+            },
+        ],
+    });
+    return connections;
+}
+
+describe("WebServer plugin sockets", () => {
+    it("accepts an authenticated same-origin handshake and relays frames", async () => {
+        const { url, webPlugins } = await startWithAuth();
+        const connections = registerEchoSocket(webPlugins);
+        const host = new URL(url).host;
+        const outcome = await openSocket(url, "/plugins/echo/socket?x=1", {
+            ...SIGNED_IN,
+            origin: `http://${host}`,
+            "x-forwarded-proto": "https",
+        });
+        assert.ok("ws" in outcome);
+        const reply = new Promise<string>((resolve) =>
+            outcome.ws.once("message", (data) => resolve(String(data))),
+        );
+        outcome.ws.send("hello");
+        assert.equal(await reply, "me@example.com:hello");
+        assert.equal(connections[0]?.principal.login, "me@example.com");
+        assert.equal(connections[0]?.isHttps, true);
+        outcome.ws.close();
+    });
+
+    it("accepts a session cookie", async () => {
+        const { url, sessions, webPlugins } = await startWithAuth();
+        registerEchoSocket(webPlugins);
+        const cookie = await signIn(url, sessions);
+        const outcome = await openSocket(url, "/plugins/echo/socket", {
+            cookie,
+            origin: url,
+        });
+        assert.ok("ws" in outcome);
+        outcome.ws.close();
+    });
+
+    it("refuses missing identity, foreign or missing Origin, and unknown paths", async () => {
+        const { url, webPlugins } = await startWithAuth();
+        registerEchoSocket(webPlugins);
+        assert.deepEqual(await openSocket(url, "/plugins/echo/socket", { origin: url }), {
+            status: 401,
+        });
+        assert.deepEqual(
+            await openSocket(url, "/plugins/echo/socket", {
+                ...SIGNED_IN,
+                origin: "https://evil.example",
+            }),
+            { status: 403 },
+        );
+        assert.deepEqual(await openSocket(url, "/plugins/echo/socket", { ...SIGNED_IN }), {
+            status: 403,
+        });
+        assert.deepEqual(
+            await openSocket(url, "/plugins/echo/other", { ...SIGNED_IN, origin: url }),
+            { status: 404 },
+        );
+    });
+
+    it("closes a plugin's sockets when it re-registers", async () => {
+        const { url, webPlugins } = await startWithAuth();
+        registerEchoSocket(webPlugins);
+        const outcome = await openSocket(url, "/plugins/echo/socket", {
+            ...SIGNED_IN,
+            origin: url,
+        });
+        assert.ok("ws" in outcome);
+        const closing = closed(outcome.ws);
+        registerEchoSocket(webPlugins);
+        assert.deepEqual(await closing, { code: 1012, reason: "plugin restarted" });
+    });
+
+    it("rejects malformed and duplicate socket paths", () => {
+        const registry = new WebPluginRegistry();
+        for (const paths of [["socket"], ["/../x"], ["/a b"], ["/s", "/s"]]) {
+            assert.throws(() =>
+                registry.set("p", {
+                    controller: new Hono<WebUiEnv>(),
+                    sockets: paths.map((path) => ({ path, onConnection: () => {} })),
+                }),
+            );
+        }
     });
 });

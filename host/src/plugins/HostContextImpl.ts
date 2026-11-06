@@ -247,6 +247,8 @@ export class HostContextImpl implements HostContext {
             this.subscribeChat(filter, handler),
         appendAssistantMessage: (eventId: string, text: string): Promise<void> =>
             this.appendChatMessage(eventId, "assistant", text),
+        appendMessage: (eventId: string, role: "user" | "assistant", text: string): Promise<void> =>
+            this.appendChatMessage(eventId, role, text),
         listMessages: (query: ChatHistoryQuery): Promise<readonly ChatMessage[]> =>
             this.listChatMessages(query),
     };
@@ -383,15 +385,14 @@ export class HostContextImpl implements HostContext {
     }
 
     /**
-     * Insert a chatmessage attached to `eventId`. Used by
-     * {@link HostContext.chat.appendUserMessage} and
-     * `appendAssistantMessage`. Thin wrapper over
+     * Insert a chatmessage attached to `eventId`. Backs
+     * `ctx.chat.appendMessage` and `appendAssistantMessage`. Thin wrapper over
      * {@link ChatMessageBus.insert} so plugin code never reaches into
      * the bus directly.
      */
     private async appendChatMessage(
         eventId: string,
-        role: "assistant",
+        role: "user" | "assistant",
         text: string,
     ): Promise<void> {
         const conn = await this.deps.ensureConnection();

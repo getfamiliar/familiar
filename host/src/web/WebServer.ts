@@ -1,5 +1,6 @@
-import type { Server } from "node:http";
+import { type IncomingMessage, type Server, STATUS_CODES } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { Duplex } from "node:stream";
 import {
     DEFAULT_WEBSERVER_HOST,
     DEFAULT_WEBSERVER_PORT,
@@ -9,9 +10,11 @@ import {
 import { createAdaptorServer, type Http2Bindings, type HttpBindings } from "@hono/node-server";
 import { Hono } from "hono";
 import { html } from "hono/html";
+import { type WebSocket, WebSocketServer } from "ws";
 import type { HostConfigService } from "../utils/ConfigService.js";
 import type { TrustedProxyRegistry } from "./auth/TrustedProxyRegistry.js";
 import {
+    authenticateUpgrade,
     createAuthMiddleware,
     mountLoginRoutes,
     page,
@@ -20,8 +23,12 @@ import {
     type WebEnv,
 } from "./auth/WebAuth.js";
 import type { WebSessionStore } from "./auth/WebSessionStore.js";
-import type { WebPluginRegistry } from "./WebPluginRegistry.js";
+import type { RegisteredWebSocket, WebPluginRegistry } from "./WebPluginRegistry.js";
 import type { WebUiRegistry, WebUiSelection } from "./WebUiRegistry.js";
+import { WsPeer } from "./WsPeer.js";
+
+/** Largest WebSocket frame a plugin socket accepts (1 MiB). */
+const MAX_SOCKET_FRAME_BYTES = 1024 * 1024;
 
 /** Dependencies of the {@link WebServer}. */
 export interface WebServerDeps {
@@ -70,6 +77,13 @@ interface WebServerSettings {
  * the login routes. Without one, a plain page asks to install a web UI
  * plugin. When the registered controllers change (plugin restart), the
  * app is rebuilt in place without rebinding the socket.
+ *
+ * Plugin WebSocket endpoints (`WebPluginUi.sockets`) are served from the
+ * node server's `upgrade` event, which never reaches the Hono app: each
+ * handshake is authenticated by {@link authenticateUpgrade} (same rules
+ * as the middleware plus a mandatory same-origin `Origin`). Open sockets
+ * of a plugin are closed when it re-registers or unregisters, and all of
+ * them when the server stops.
  */
 export class WebServer {
     private readonly deps: WebServerDeps;
@@ -80,6 +94,13 @@ export class WebServer {
     private authDeps: WebAuthDeps | null = null;
     /** Unsubscribe from {@link WebServerDeps.webUis} and {@link WebServerDeps.webPlugins} changes. */
     private unsubscribeRegistries: (() => void) | null = null;
+    /** Accepts plugin WebSocket handshakes (no own listener). */
+    private readonly socketServer = new WebSocketServer({
+        noServer: true,
+        maxPayload: MAX_SOCKET_FRAME_BYTES,
+    });
+    /** Open plugin sockets with the registration they were accepted for. */
+    private readonly openSockets = new Map<WebSocket, RegisteredWebSocket>();
 
     /**
      * @param deps Config and logger.
@@ -151,6 +172,9 @@ export class WebServer {
         server.on("error", (err) => {
             this.deps.log.error(`webserver socket error: ${err.message}`);
         });
+        server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+            void this.handleUpgrade(req, socket, head);
+        });
         this.server = server;
         const unsubscribeUis = this.deps.webUis.onChange(() => this.rebuildApp());
         const unsubscribePlugins = this.deps.webPlugins.onChange(() => this.rebuildApp());
@@ -179,6 +203,10 @@ export class WebServer {
         this.unsubscribeRegistries = null;
         this.app = null;
         this.authDeps = null;
+        for (const ws of this.openSockets.keys()) {
+            ws.terminate();
+        }
+        this.openSockets.clear();
         server.closeAllConnections();
         await new Promise<void>((resolve) => {
             server.close(() => resolve());
@@ -206,7 +234,96 @@ export class WebServer {
             return;
         }
         this.app = this.buildApp(this.authDeps);
+        this.closeStaleSockets();
         this.deps.log.info(`webserver: web UI changed — ${describeSelection(this.selectWebUi())}`);
+    }
+
+    /**
+     * Close the open sockets whose plugin re-registered or unregistered
+     * (plugin restart): the new registration has fresh handlers, the old
+     * connections belong to the stopped instance.
+     */
+    private closeStaleSockets(): void {
+        for (const [ws, endpoint] of this.openSockets) {
+            if (this.deps.webPlugins.get(endpoint.pluginId) !== endpoint.ui) {
+                this.openSockets.delete(ws);
+                ws.close(1012, "plugin restarted");
+            }
+        }
+    }
+
+    /**
+     * Serve a WebSocket handshake: find the plugin endpoint, authenticate,
+     * then hand the accepted socket to the plugin. Every failure answers
+     * with a plain HTTP status on the raw socket.
+     *
+     * @param req The upgrade request.
+     * @param socket The raw TCP socket.
+     * @param head First packet of the upgraded stream.
+     */
+    private async handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
+        socket.on("error", (err) => {
+            this.deps.log.warn(
+                `webserver: WebSocket ${req.url ?? "?"} socket error: ${err.message}`,
+            );
+        });
+        const authDeps = this.authDeps;
+        if (authDeps === null) {
+            rejectUpgrade(socket, 503, "webserver is stopping");
+            return;
+        }
+        const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+        const endpoint = this.deps.webPlugins.findSocket(pathname);
+        if (endpoint === undefined) {
+            rejectUpgrade(socket, 404, "no WebSocket endpoint at this path");
+            return;
+        }
+        let auth: Awaited<ReturnType<typeof authenticateUpgrade>>;
+        try {
+            auth = await authenticateUpgrade(req, authDeps);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.deps.log.error(
+                `webserver: WebSocket ${pathname} authentication failed: ${message}`,
+            );
+            rejectUpgrade(socket, 500, "authentication failed");
+            return;
+        }
+        if (auth.kind === "rejected") {
+            this.deps.log.warn(
+                `webserver: rejected WebSocket ${pathname} with ${auth.status} — ${auth.reason}`,
+            );
+            rejectUpgrade(socket, auth.status, auth.reason);
+            return;
+        }
+        // The plugin may have restarted, or the server stopped, while we awaited.
+        if (this.server === null || this.deps.webPlugins.get(endpoint.pluginId) !== endpoint.ui) {
+            rejectUpgrade(socket, 503, "plugin restarting");
+            return;
+        }
+        this.socketServer.handleUpgrade(req, socket, head, (ws) => {
+            this.openSockets.set(ws, endpoint);
+            ws.on("close", () => this.openSockets.delete(ws));
+            ws.on("error", (err) => {
+                this.deps.log.warn(`webserver: WebSocket ${pathname} error: ${err.message}`);
+            });
+            const reportHandlerError = (err: unknown): void => {
+                const message = err instanceof Error ? err.message : String(err);
+                this.deps.log.error(
+                    `webserver: plugin "${endpoint.pluginId}" WebSocket ${pathname} handler threw: ${message}`,
+                );
+                ws.close(1011, "internal error");
+            };
+            const peer = new WsPeer(ws, reportHandlerError);
+            try {
+                endpoint.socket.onConnection(peer, {
+                    principal: auth.principal,
+                    isHttps: auth.isHttps,
+                });
+            } catch (err) {
+                reportHandlerError(err);
+            }
+        });
     }
 
     /**
@@ -301,6 +418,20 @@ function describeSelection(selection: WebUiSelection): string {
         case "ambiguous":
             return `Several plugins provide a web UI (${selection.available.join(", ")}). Pick one with webserver.uiPlugin and run familiar config reload.`;
     }
+}
+
+/**
+ * Refuse a WebSocket handshake with a plain HTTP response and drop the socket.
+ *
+ * @param socket The raw socket of the upgrade request.
+ * @param status HTTP status.
+ * @param reason Body text.
+ */
+function rejectUpgrade(socket: Duplex, status: number, reason: string): void {
+    const body = `${STATUS_CODES[status] ?? "Error"}: ${reason}`;
+    socket.end(
+        `HTTP/1.1 ${status} ${STATUS_CODES[status] ?? "Error"}\r\nConnection: close\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`,
+    );
 }
 
 /**

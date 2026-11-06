@@ -254,6 +254,16 @@ export interface HostContext {
          */
         appendAssistantMessage(eventId: string, text: string): Promise<void>;
         /**
+         * Insert a chatmessage of either role attached to `eventId`, for
+         * recording a conversation that happened outside the agent — e.g.
+         * the transcript of a voice call. Channel is resolved via the
+         * event's `preferred_chat_channel_id`. The same rule as for
+         * {@link appendAssistantMessage} applies: only for events that
+         * are already settled — typically a record-only event emitted
+         * with `state: "done"`, which no handler ever runs for.
+         */
+        appendMessage(eventId: string, role: "user" | "assistant", text: string): Promise<void>;
+        /**
          * Read one page of a channel's history (both roles), oldest first:
          * the newest `limit` messages before `beforeId`. For chat UIs that
          * show scrollback; the same per-channel history the model sees for

@@ -39,6 +39,77 @@ export interface WebPluginUi {
     readonly controller: Hono<WebUiEnv>;
     /** Optional page shown by the web UI for routes under `/plugins/<plugin-id>`. */
     readonly page?: WebPageModule;
+    /**
+     * Optional WebSocket endpoints, served at `/plugins/<plugin-id><path>`.
+     * The core authenticates every handshake like an ordinary request
+     * (proxy login or session, allowlist) and additionally requires a
+     * same-origin `Origin` header; only then is `onConnection` called.
+     * All sockets of a plugin are closed when it restarts.
+     */
+    readonly sockets?: readonly WebPluginSocket[];
+}
+
+/** A WebSocket endpoint of a plugin (see {@link WebPluginUi.sockets}). */
+export interface WebPluginSocket {
+    /**
+     * Path below the plugin's mount, starting with `/` (e.g. `/socket`
+     * → `/plugins/<plugin-id>/socket`). Matched exactly, query ignored.
+     */
+    readonly path: string;
+    /**
+     * Called once per authenticated connection. Must not throw; errors
+     * of the connection's own work belong on the peer (`close`).
+     *
+     * @param peer The open socket.
+     * @param info Who connected and how.
+     */
+    onConnection(peer: WebSocketPeer, info: WebSocketConnectionInfo): void;
+}
+
+/** Who opened a plugin WebSocket. */
+export interface WebSocketConnectionInfo {
+    /** The signed-in, allowlisted user. */
+    readonly principal: WebPrincipal;
+    /** Whether the browser reached the server over HTTPS (directly or via a trusted proxy). */
+    readonly isHttps: boolean;
+}
+
+/**
+ * Minimal, library-independent view of an open WebSocket, so plugins do
+ * not depend on the server's WebSocket implementation.
+ */
+export interface WebSocketPeer {
+    /**
+     * Send a text (string) or binary (bytes) frame. Silently dropped once
+     * the socket is closing.
+     *
+     * @param data Frame payload.
+     */
+    send(data: string | Uint8Array): void;
+    /**
+     * Close the socket.
+     *
+     * @param code WebSocket close code (default 1000; 4000–4999 are free for the application).
+     * @param reason Short human-readable reason (≤ 123 bytes).
+     */
+    close(code?: number, reason?: string): void;
+    /**
+     * Register the frame handler (one per peer; a second call replaces it).
+     *
+     * @param handler Receives text frames as string, binary frames as bytes.
+     */
+    onMessage(handler: (data: string | Uint8Array) => void): void;
+    /**
+     * Register the close handler (one per peer; a second call replaces
+     * it). Called exactly once, also when the server closed the socket.
+     *
+     * @param handler Receives the close code and reason.
+     */
+    onClose(handler: (code: number, reason: string) => void): void;
+    /** Bytes queued but not yet sent (for backpressure). */
+    readonly bufferedAmount: number;
+    /** Whether the socket is open (not connecting, closing or closed). */
+    readonly isOpen: boolean;
 }
 
 /** A plugin page as the core lists it for the web UI (`ctx.web.listPages()`). */

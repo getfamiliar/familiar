@@ -1,9 +1,22 @@
-import { type WebPageEntry, type WebPluginUi, webPluginBasePath } from "@getfamiliar/shared";
+import {
+    type WebPageEntry,
+    type WebPluginSocket,
+    type WebPluginUi,
+    webPluginBasePath,
+} from "@getfamiliar/shared";
 
 /** A registered plugin controller with its plugin id. */
 export interface RegisteredWebPlugin {
     readonly pluginId: string;
     readonly ui: WebPluginUi;
+}
+
+/** A plugin WebSocket endpoint matched by {@link WebPluginRegistry.findSocket}. */
+export interface RegisteredWebSocket {
+    readonly pluginId: string;
+    /** The registration it belongs to; identity changes when the plugin re-registers. */
+    readonly ui: WebPluginUi;
+    readonly socket: WebPluginSocket;
 }
 
 /**
@@ -23,12 +36,13 @@ export class WebPluginRegistry {
      * @param pluginId Providing plugin.
      * @param ui Controller and optional page.
      * @throws {Error} When the page module path is absolute or escapes the
-     *   plugin's mount (`..`).
+     *   plugin's mount (`..`), or a socket path is malformed or duplicated.
      */
     set(pluginId: string, ui: WebPluginUi): void {
         if (ui.page !== undefined) {
             validateModulePath(pluginId, ui.page.module);
         }
+        validateSocketPaths(pluginId, ui.sockets ?? []);
         this.plugins.set(pluginId, ui);
         this.notify();
     }
@@ -77,6 +91,38 @@ export class WebPluginRegistry {
     }
 
     /**
+     * The registration of one plugin.
+     *
+     * @param pluginId Plugin id.
+     * @returns Its controller, page and sockets, or undefined.
+     */
+    get(pluginId: string): WebPluginUi | undefined {
+        return this.plugins.get(pluginId);
+    }
+
+    /**
+     * Find the WebSocket endpoint for a request path
+     * (`/plugins/<plugin-id><socket-path>`, exact match).
+     *
+     * @param pathname URL path of the upgrade request, without query.
+     * @returns The endpoint, or undefined when no plugin serves that path.
+     */
+    findSocket(pathname: string): RegisteredWebSocket | undefined {
+        for (const [pluginId, ui] of this.plugins) {
+            const basePath = webPluginBasePath(pluginId);
+            if (!pathname.startsWith(`${basePath}/`)) {
+                continue;
+            }
+            const rest = pathname.slice(basePath.length);
+            const socket = ui.sockets?.find((candidate) => candidate.path === rest);
+            if (socket !== undefined) {
+                return { pluginId, ui, socket };
+            }
+        }
+        return undefined;
+    }
+
+    /**
      * Subscribe to changes of the registered set.
      *
      * @param listener Called after every set / unregister that changed something.
@@ -110,5 +156,30 @@ function validateModulePath(pluginId: string, modulePath: string): void {
         throw new Error(
             `plugin "${pluginId}" webPlugin: page.module "${modulePath}" must be a path relative to /plugins/${pluginId}/ (e.g. "page/page.js")`,
         );
+    }
+}
+
+/**
+ * Check a plugin's socket paths: start with `/`, plain URL path
+ * characters, no `..`, unique.
+ *
+ * @param pluginId Plugin (for the message).
+ * @param sockets The declared sockets.
+ * @throws {Error} When a path is malformed or declared twice.
+ */
+function validateSocketPaths(pluginId: string, sockets: readonly WebPluginSocket[]): void {
+    const seen = new Set<string>();
+    for (const { path } of sockets) {
+        if (!/^(\/[\w.-]+)+$/.test(path) || path.split("/").includes("..")) {
+            throw new Error(
+                `plugin "${pluginId}" webPlugin: socket path "${path}" must start with "/" and contain only letters, digits, "_", "-", "." and "/" (e.g. "/socket")`,
+            );
+        }
+        if (seen.has(path)) {
+            throw new Error(
+                `plugin "${pluginId}" webPlugin: socket path "${path}" is declared twice`,
+            );
+        }
+        seen.add(path);
     }
 }

@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { CACHE_MARKER_PLACEHOLDER, PROMPT_TEMPLATE_FILE } from "@getfamiliar/shared";
+import {
+    CACHE_MARKER_PLACEHOLDER,
+    type PlaceholderUse,
+    PROMPT_TEMPLATE_FILE,
+    parseTemplate,
+    renderTemplate,
+} from "@getfamiliar/shared";
 import { HandlerFile } from "./HandlerFile.js";
 import {
     CORE_PLACEHOLDER_RESOLVERS,
@@ -8,7 +14,6 @@ import {
     isContainerCorePlaceholder,
     isDynamicCorePlaceholder,
 } from "./prompt/CorePlaceholders.js";
-import { type PlaceholderUse, parseTemplate, renderTemplate } from "./prompt/PromptTemplate.js";
 import { formatPreloadedSkills, type SkillFile } from "./SkillFile.js";
 import { bastionAuthHeaders } from "./utils/BastionAuth.js";
 
@@ -183,7 +188,7 @@ export interface PromptParts {
  * template (`PROMPT.md` by default).
  *
  * The template is plain workspace markdown with `{NAME}` placeholders
- * and `{path.md}` includes (see `prompt/PromptTemplate.ts`). Core
+ * and `{path.md}` includes (see `PromptTemplate.ts` in `@getfamiliar/shared`). Core
  * placeholders are resolved here; any other name is fetched from the
  * host's plugin placeholder registry. Plugin appenders are fetched in
  * parallel and appended to the user-message head.

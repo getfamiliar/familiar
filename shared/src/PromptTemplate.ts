@@ -1,4 +1,4 @@
-import { CACHE_MARKER_PLACEHOLDER } from "@getfamiliar/shared";
+import { CACHE_MARKER_PLACEHOLDER } from "./PromptPlaceholders.js";
 
 /**
  * Matches one template token: `{NAME}` (upper-case placeholder) or

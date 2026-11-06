@@ -123,7 +123,7 @@ All hooks are optional and receive the plugin-scoped `HostContext`.
 | `stop(ctx)` | Daemon shutdown (LIFO) and before a restart | Release **everything** `start` set up (timers, poll loops, sockets, chat / workspace subscriptions) and reset module state. Must fit the shared drain budget. |
 | `tools(ctx)` | After `start`, at boot and after every restart | Synchronous and side-effect-free; just build the list. |
 | `webMenu(ctx)` | After `start`, at boot and after every restart | Returns menu items for the web UI's sidebar (see [Web UI menu items](#web-ui-menu-items)). Synchronous and side-effect-free. |
-| `webPlugin(ctx)` | After `start`, at boot and after every restart | Returns an HTTP controller (mounted at `/plugins/<id>/`) and an optional page for the web UI (see [Plugin pages and controllers](#plugin-pages-and-controllers)). Synchronous; just build and return. |
+| `webPlugin(ctx)` | After `start`, at boot and after every restart | Returns an HTTP controller (mounted at `/plugins/<id>/`), an optional page for the web UI and optional WebSocket endpoints (see [Plugin pages and controllers](#plugin-pages-and-controllers)). Synchronous; just build and return. |
 | `webUi(ctx)` | After `start`, at boot and after every restart | Returns the web UI's root controller (see [Providing the web UI](#providing-the-web-ui)). Synchronous; just build the Hono app. |
 | `getEmittedEvents(ctx)` | `familiar events list-topics`, also without the daemon | Synchronous. Derive the list from constants and `ctx.config`. |
 | `commands(ctx)` / `main(ctx)` | CLI dispatch | citty commands under `familiar <id>`. `main` runs when no subcommand is given. |
@@ -222,6 +222,7 @@ webPlugin: (ctx) => ({
         module: "page/page.js", // built ES module, served by your own controller
         sourceFile: ctx.isDevMode ? path.join(root, "src", "page.tsx") : undefined,
     },
+    sockets: [{ path: "/socket", onConnection: (peer, info) => … }], // optional
 }),
 ```
 
@@ -243,6 +244,11 @@ webPlugin: (ctx) => ({
   - `@/` resolves to the `src/` of the package the importing file belongs to.
   - Keep component files free of non-component exports, and accept your own `?inline` CSS in the entry (`import.meta.hot.accept("./index.css?inline", …)`). Otherwise an edit falls back to a full reload.
 - **Build.** A Vite library build (`build.lib`, format `es`) into a directory your controller serves with `WebStaticAssets` from shared (`spaFallback: false`, `urlPrefix: "/plugins/<id>/page"`).
+- **WebSockets.** `plugins/gpt-voice` is the reference implementation.
+  - Each entry of `sockets` is served at `/plugins/<plugin-id><path>` (exact match, query ignored). A WebSocket handshake never reaches the Hono controller; the core handles it.
+  - The core authenticates every handshake like an ordinary request (trusted-proxy login or session cookie, allowlist). It also **requires a same-origin `Origin` header**: a handshake is a GET, and without this check any website could open a socket with the user's cookie. Refusals are plain HTTP 401 / 403 / 404.
+  - `onConnection(peer, { principal, isHttps })` gets a library-independent `WebSocketPeer` (`send`, `close`, `onMessage`, `onClose`, `bufferedAmount`, `isOpen`); text frames arrive as string, binary frames as bytes, at most 1 MiB per frame.
+  - All sockets of a plugin are closed with code 1012 when it restarts, and with the webserver. Build the URL in the page from `location` (`wss:` on HTTPS) and `basePath`.
 
 ## CLI commands
 

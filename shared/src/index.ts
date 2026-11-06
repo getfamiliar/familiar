@@ -161,6 +161,17 @@ export {
     type PromptPlaceholderDefinition,
     type PromptPlaceholderKind,
 } from "./PromptPlaceholders.js";
+export {
+    isSafeIncludePath,
+    MAX_TEMPLATE_DEPTH,
+    type ParsedTemplate,
+    type ParseTemplateOptions,
+    type PlaceholderUse,
+    parseTemplate,
+    type RenderedTemplate,
+    renderTemplate,
+    type TemplateNode,
+} from "./PromptTemplate.js";
 export type { NewScheduledSubagent, ScheduledSubagentRow } from "./ScheduledSubagent.js";
 export {
     ScheduledSubagentBus,
@@ -259,7 +270,10 @@ export {
     type WebPageContext,
     type WebPageEntry,
     type WebPageModule,
+    type WebPluginSocket,
     type WebPluginUi,
+    type WebSocketConnectionInfo,
+    type WebSocketPeer,
     webPluginBasePath,
 } from "./WebPlugin.js";
 export { DEFAULT_WEBSERVER_HOST, DEFAULT_WEBSERVER_PORT } from "./WebServerDefaults.js";
