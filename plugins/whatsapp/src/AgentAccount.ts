@@ -70,8 +70,8 @@ export function readAuthorizedNumber(ctx: HostContext): string | null {
 /**
  * Build the `messages.upsert` wiring for the agent account: text and
  * voice messages from the authorized number become `chat:whatsapp`
- * chat events; everyone else gets a refusal (or, while no number is
- * configured, a discovery reply naming their number).
+ * chat events; everyone else gets a refusal naming their number in
+ * config format (see {@link buildUnauthorizedReply}).
  *
  * @param ctx Host context for events and logging.
  * @param authorizedNumber Normalized authorized number, or `null` for
@@ -177,19 +177,11 @@ async function handleAgentMessage(
         return;
     }
     const senderNumber = await resolveCounterpartNumber(sock, msg.key);
-    if (authorizedNumber === null) {
-        await reply(
-            sock,
-            chatJid,
-            `Not authorized. Your number is ${senderNumber ?? "unknown"}. Set ${AUTHORIZED_NUMBER_KEY}: "${senderNumber ?? "<your number>"}" in config/config.yml and restart.`,
-        );
-        return;
-    }
     if (!isAuthorizedSender(senderNumber, authorizedNumber)) {
         ctx.logger.info(
-            `whatsapp[agent] refusing msg ${messageId} from unauthorized sender ${senderNumber ?? chatJid}`,
+            `whatsapp[agent] refusing msg ${messageId} from unauthorized sender ${senderNumber ?? chatJid} (authorized: ${authorizedNumber ?? "none set"})`,
         );
-        await reply(sock, chatJid, "Sorry, I only talk to my owner.");
+        await reply(sock, chatJid, buildUnauthorizedReply(senderNumber));
         return;
     }
 
@@ -230,6 +222,23 @@ async function handleAgentMessage(
         return;
     }
     await reply(sock, chatJid, "Only text and voice messages are supported right now.");
+}
+
+/**
+ * Build the standard reply to a sender who is not the authorized number.
+ * It names the sender's number in exactly the form
+ * `whatsapp.agent.authorizedNumber` expects (bare international digits),
+ * so the owner can copy it straight into the config.
+ *
+ * @param senderNumber The sender's normalized phone number, or `null`
+ *   when WhatsApp only exposed an unmapped LID.
+ * @returns The reply text.
+ */
+export function buildUnauthorizedReply(senderNumber: string | null): string {
+    if (senderNumber === null) {
+        return `Sorry, I only talk to my owner. I couldn't determine your phone number, so set ${AUTHORIZED_NUMBER_KEY} to your number in international format without "+" (e.g. 4917612345678).`;
+    }
+    return `Sorry, I only talk to my owner. If that's you, run:\n\nfamiliar config set ${AUTHORIZED_NUMBER_KEY} "${senderNumber}"\nfamiliar config reload`;
 }
 
 /**

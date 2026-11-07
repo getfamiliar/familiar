@@ -155,7 +155,7 @@ function linkCommand(ctx: HostContext, account: WhatsAppAccount) {
                     await auth.saveCreds();
                     const me = auth.state.creds.me?.id ?? "unknown";
                     process.stdout.write(
-                        `\nLinked successfully as ${me}. Run \`familiar start\` to bring the daemon up.\n`,
+                        `\nLinked successfully as ${me}. The daemon loads WhatsApp credentials only at startup: run \`familiar start\`, or if it is already running, \`familiar stop\` and then \`familiar start\`.\n`,
                     );
                     if (account === "agent" && readAuthorizedNumber(ctx) === null) {
                         process.stdout.write(
