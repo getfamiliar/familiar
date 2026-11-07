@@ -14,9 +14,16 @@ import { Field, FieldDescription, FieldGroup, FieldSeparator } from "@/component
  * is decided by the core webserver.
  *
  * @param props.view The page the core decided to show.
+ * @param props.assistantName The assistant's name (`core.assistantName`).
  * @returns The page body.
  */
-export function AuthPage({ view }: { readonly view: WebAuthPageView }) {
+export function AuthPage({
+    view,
+    assistantName,
+}: {
+    readonly view: WebAuthPageView;
+    readonly assistantName: string;
+}) {
     return (
         <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
             <div className="w-full max-w-sm md:max-w-4xl">
@@ -24,13 +31,13 @@ export function AuthPage({ view }: { readonly view: WebAuthPageView }) {
                     <Card className="overflow-hidden p-0">
                         <CardContent className="grid p-0 md:grid-cols-2">
                             <div className="p-6 md:p-8">
-                                <AuthPageContent view={view} />
+                                <AuthPageContent view={view} name={assistantName} />
                             </div>
-                            <BrandPanel />
+                            <BrandPanel name={assistantName} />
                         </CardContent>
                     </Card>
                     <FieldDescription className="px-6 text-center">
-                        Familiar — your personal AI assistant.
+                        {assistantName} — your personal AI assistant.
                     </FieldDescription>
                 </div>
             </div>
@@ -42,9 +49,16 @@ export function AuthPage({ view }: { readonly view: WebAuthPageView }) {
  * The view-specific left half of the card.
  *
  * @param props.view The page to show.
+ * @param props.name The assistant's name.
  * @returns Heading, text and actions.
  */
-function AuthPageContent({ view }: { readonly view: WebAuthPageView }) {
+function AuthPageContent({
+    view,
+    name,
+}: {
+    readonly view: WebAuthPageView;
+    readonly name: string;
+}) {
     switch (view.kind) {
         case "signedIn":
             return (
@@ -60,7 +74,7 @@ function AuthPageContent({ view }: { readonly view: WebAuthPageView }) {
                     </FieldDescription>
                     <Field>
                         <Button asChild>
-                            <a href={view.continueUrl}>Continue to Familiar</a>
+                            <a href={view.continueUrl}>Continue to {name}</a>
                         </Button>
                     </Field>
                     <form method="post" action={view.logoutAction}>
@@ -75,7 +89,7 @@ function AuthPageContent({ view }: { readonly view: WebAuthPageView }) {
         case "signedOut":
             return (
                 <FieldGroup>
-                    <Heading title="Sign in to Familiar">You are not signed in.</Heading>
+                    <Heading title={`Sign in to ${name}`}>You are not signed in.</Heading>
                     <ol className="flex list-none flex-col gap-4 text-sm">
                         <Step number={1}>
                             On the machine running familiar, run{" "}
@@ -87,7 +101,7 @@ function AuthPageContent({ view }: { readonly view: WebAuthPageView }) {
                         Or
                     </FieldSeparator>
                     <FieldDescription className="text-center">
-                        Ask Familiar in chat for a login link.
+                        Ask {name} in chat for a login link.
                     </FieldDescription>
                 </FieldGroup>
             );
@@ -95,7 +109,7 @@ function AuthPageContent({ view }: { readonly view: WebAuthPageView }) {
             return (
                 <form method="post" action={view.formAction}>
                     <FieldGroup>
-                        <Heading title="Welcome back">Sign in to Familiar in this browser.</Heading>
+                        <Heading title="Welcome back">Sign in to {name} in this browser.</Heading>
                         <Field>
                             <Button type="submit">Sign in</Button>
                         </Field>
@@ -112,7 +126,7 @@ function AuthPageContent({ view }: { readonly view: WebAuthPageView }) {
                         This login link is invalid, already used or expired.
                     </Heading>
                     <FieldDescription className="text-center">
-                        Run <Command>{view.loginCommand}</Command> for a new one, or ask Familiar in
+                        Run <Command>{view.loginCommand}</Command> for a new one, or ask {name} in
                         chat.
                     </FieldDescription>
                     <Field>
@@ -200,16 +214,17 @@ function Command({
  * Right half of the card (hidden on small screens), in place of the
  * block's placeholder image.
  *
+ * @param props.name The assistant's name.
  * @returns The decorative panel.
  */
-function BrandPanel() {
+function BrandPanel({ name }: { readonly name: string }) {
     return (
         <div className="relative hidden flex-col items-center justify-center gap-4 bg-primary p-8 text-primary-foreground md:flex">
             <div className="flex size-14 items-center justify-center rounded-2xl bg-primary-foreground/10">
                 <SparklesIcon className="size-7" />
             </div>
             <div className="text-center">
-                <p className="text-2xl font-semibold tracking-tight">Familiar</p>
+                <p className="text-2xl font-semibold tracking-tight">{name}</p>
                 <p className="text-sm text-primary-foreground/70">Loyal. Local. Markdown.</p>
             </div>
         </div>

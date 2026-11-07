@@ -1,8 +1,9 @@
 NEXT:
 
 * Voice Enhancements: Maximaler Kontext im Gesprächsbeginn - Kalender für heute, letzte Unterhaltung, offene Fragen...
-
+* Saving Assistant name and avataaars generator in the web interface
 * Faster Event Processing und (!) 
+* tool_call in der Reflection unwrappen?
 
 * Memory enhancements:
   - List of questions.md in the wiki that can be used to ask the user for more information about uncertainties in the memories.

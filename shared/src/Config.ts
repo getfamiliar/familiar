@@ -25,6 +25,27 @@
  * the workspace globs the agent may write to, which are never handlers.
  */
 export const DEFAULT_WRITABLE_PATHS: readonly string[] = ["wiki/**", "files/**"];
+
+/** Config key of the assistant's name (web UI branding, `{ASSISTANT_NAME}`). */
+export const ASSISTANT_NAME_CONFIG_KEY = "core.assistantName";
+
+/** Assistant name when `core.assistantName` is unset or empty. */
+export const DEFAULT_ASSISTANT_NAME = "Familiar";
+
+/**
+ * Resolve the assistant's name from a raw config value: a non-blank
+ * string (trimmed), otherwise {@link DEFAULT_ASSISTANT_NAME}.
+ *
+ * @param value Raw value of `core.assistantName`, or undefined.
+ * @returns The name to show and to render into prompts.
+ */
+export function resolveAssistantName(value: unknown): string {
+    if (typeof value !== "string") {
+        return DEFAULT_ASSISTANT_NAME;
+    }
+    const trimmed = value.trim();
+    return trimmed === "" ? DEFAULT_ASSISTANT_NAME : trimmed;
+}
 export interface ConfigService {
     /**
      * Read a string under a dotted path. Throws when the key is

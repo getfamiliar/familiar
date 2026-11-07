@@ -194,6 +194,7 @@ function fakeHost(): FakeHost {
         },
         config,
         logger: new MockLogger(),
+        assistantName: "Fam",
     };
     return fake;
 }
@@ -210,7 +211,7 @@ let workspaceDir: string;
 beforeEach(() => {
     workspaceDir = mkdtempSync(path.join(tmpdir(), "gpt-voice-"));
     mkdirSync(path.join(workspaceDir, "voice"));
-    writeFileSync(path.join(workspaceDir, "SOUL.md"), "You are Fam, loyal and local.");
+    writeFileSync(path.join(workspaceDir, "SOUL.md"), "You are {ASSISTANT_NAME}, loyal and local.");
     writeFileSync(
         path.join(workspaceDir, "voice", "live.md"),
         "---\nvoice: cedar\n---\n{SOUL.md}\n\nSpeak German. Delegate calendar questions.\n",

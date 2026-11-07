@@ -39,7 +39,13 @@ export {
     type NewChatMessage,
 } from "./ChatMessage.js";
 export { type ChatHandler, ChatMessageBus, type ChatUnsubscribe } from "./ChatMessageBus.js";
-export { type ConfigService, DEFAULT_WRITABLE_PATHS } from "./Config.js";
+export {
+    ASSISTANT_NAME_CONFIG_KEY,
+    type ConfigService,
+    DEFAULT_ASSISTANT_NAME,
+    DEFAULT_WRITABLE_PATHS,
+    resolveAssistantName,
+} from "./Config.js";
 export type { ContainerToolInfo } from "./ContainerTool.js";
 export { type ParsedCron, parseCron } from "./CronExpression.js";
 export {

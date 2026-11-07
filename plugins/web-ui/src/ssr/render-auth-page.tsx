@@ -14,11 +14,15 @@ import css from "../index.css?inline";
  * show up on the next page load.
  *
  * @param view The page the core decided to show.
+ * @param assistantName The assistant's name for title and brand panel.
  * @returns The HTML document.
  */
-export async function renderAuthPage(view: WebAuthPageView): Promise<string> {
-    const body = renderToStaticMarkup(<AuthPage view={view} />);
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${TITLES[view.kind]} · Familiar</title><style>${css}</style></head><body>${body}</body></html>`;
+export async function renderAuthPage(
+    view: WebAuthPageView,
+    assistantName: string,
+): Promise<string> {
+    const body = renderToStaticMarkup(<AuthPage view={view} assistantName={assistantName} />);
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${TITLES[view.kind]} · ${escapeHtml(assistantName)}</title><style>${css}</style></head><body>${body}</body></html>`;
 }
 
 /** Document titles per page (static, no escaping needed). */
@@ -28,3 +32,18 @@ const TITLES: Readonly<Record<WebAuthPageView["kind"], string>> = {
     confirmLoginLink: "Sign in",
     invalidLoginLink: "Sign in",
 };
+
+/**
+ * Escape text for an HTML text node (the `<title>`; the body is escaped
+ * by React).
+ *
+ * @param text Raw text.
+ * @returns The escaped text.
+ */
+function escapeHtml(text: string): string {
+    return text
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+}

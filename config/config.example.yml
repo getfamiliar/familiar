@@ -16,6 +16,12 @@ core:
   # terminal without any plugin configured.
   defaultChatChannel: cli
 
+  # Your assistant's name. Shown in the web UI (sidebar, breadcrumb,
+  # page title, login pages) and available as `{ASSISTANT_NAME}` in
+  # workspace markdown (PROMPT.md, SOUL.md, handlers, voice/live.md).
+  # Optional; falls back to "Familiar" when omitted.
+  # assistantName: Familiar
+
   # Shared secret every request to the host bastion (LLM proxy, MCP
   # gateway, plugin tools) must carry in the `x-familiar-bastion-token`
   # header. The bastion listens on 0.0.0.0, so without it anything on

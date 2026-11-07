@@ -65,6 +65,17 @@ describe("config-backed placeholders", () => {
         assert.equal(CORE_PLACEHOLDER_RESOLVERS.PYTHON_PACKAGE_LIST?.(ctx), "(none)");
         assert.equal(CORE_PLACEHOLDER_RESOLVERS.WRITABLE_PATH_LIST?.(ctx), "(none)");
     });
+
+    it("renders the configured assistant name, trimmed", () => {
+        process.env[CONFIG_VAR] = JSON.stringify({ "core.assistantName": "  Jeeves " });
+        assert.equal(CORE_PLACEHOLDER_RESOLVERS.ASSISTANT_NAME?.(ctx), "Jeeves");
+    });
+
+    it("falls back to Familiar when the assistant name is unset or blank", () => {
+        assert.equal(CORE_PLACEHOLDER_RESOLVERS.ASSISTANT_NAME?.(ctx), "Familiar");
+        process.env[CONFIG_VAR] = JSON.stringify({ "core.assistantName": "   " });
+        assert.equal(CORE_PLACEHOLDER_RESOLVERS.ASSISTANT_NAME?.(ctx), "Familiar");
+    });
 });
 
 describe("formatRuntimeTime", () => {

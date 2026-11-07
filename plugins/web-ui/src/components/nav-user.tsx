@@ -18,13 +18,20 @@ import {
 
 /**
  * The signed-in user at the bottom of the sidebar: name, login and how
- * the core identified them (`via`, as on the `/login` page), with a
- * sign-out entry.
+ * the core identified them (`via`, as on the `/login` page), with the
+ * running familiar version and a sign-out entry.
  *
  * @param props.user The signed-in user.
+ * @param props.version Version of the running familiar host.
  * @returns The user menu.
  */
-export function NavUser({ user }: { readonly user: WebPrincipal }) {
+export function NavUser({
+    user,
+    version,
+}: {
+    readonly user: WebPrincipal;
+    readonly version: string;
+}) {
     const { isMobile } = useSidebar();
     const identity = <UserIdentity user={user} />;
     return (
@@ -50,6 +57,10 @@ export function NavUser({ user }: { readonly user: WebPrincipal }) {
                             <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                                 {identity}
                             </div>
+                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                            Familiar v{version}
                         </DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={signOut}>

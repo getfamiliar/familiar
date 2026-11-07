@@ -44,14 +44,16 @@ export class LiveConfigError extends Error {
  *
  * The body is a prompt template like `PROMPT.md`: `{SOUL.md}` and other
  * `{path.md}` includes are expanded (workspace-relative, depth-limited);
- * there are no runtime placeholders, an unknown `{NAME}` stays verbatim.
+ * the only placeholder is `{ASSISTANT_NAME}`, any other `{NAME}` stays
+ * verbatim.
  *
  * @param workspaceDir Absolute workspace root.
+ * @param assistantName Value of `{ASSISTANT_NAME}`.
  * @returns Model, voice and instructions.
  * @throws {LiveConfigError} When the file is missing, its frontmatter is
  *   not a YAML mapping, or `model` / `voice` are not strings.
  */
-export function readLiveSettings(workspaceDir: string): LiveSettings {
+export function readLiveSettings(workspaceDir: string, assistantName: string): LiveSettings {
     const source = readWorkspaceText(workspaceDir, LIVE_CONFIG_FILE);
     if (source === null) {
         throw new LiveConfigError(
@@ -66,7 +68,7 @@ export function readLiveSettings(workspaceDir: string): LiveSettings {
         readInclude: (relativePath) => readWorkspaceText(workspaceDir, relativePath),
         templateSources: {},
     });
-    const rendered = renderTemplate(parsed, new Map());
+    const rendered = renderTemplate(parsed, new Map([["ASSISTANT_NAME", assistantName]]));
     const instructions = [rendered.system, rendered.userHead]
         .filter((part) => part !== "")
         .join("\n\n");

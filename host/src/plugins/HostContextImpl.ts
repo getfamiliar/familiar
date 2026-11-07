@@ -3,6 +3,7 @@ import path from "node:path";
 import {
     AgentRunBus,
     type AgentRunUnsubscribe,
+    ASSISTANT_NAME_CONFIG_KEY,
     type CalendarApi,
     type ChatFilter,
     type ChatHandler,
@@ -30,6 +31,7 @@ import {
     type PostgresConnection,
     type PromptAppender,
     type PromptPlaceholderRegistration,
+    resolveAssistantName,
     type ScratchFile,
     StepResultBus,
     type StepResultUnsubscribe,
@@ -329,6 +331,10 @@ export class HostContextImpl implements HostContext {
 
     get familiarVersion(): string {
         return readFamiliarVersion();
+    }
+
+    get assistantName(): string {
+        return resolveAssistantName(this.deps.config.getString(ASSISTANT_NAME_CONFIG_KEY, null));
     }
 
     get dataDir(): string {

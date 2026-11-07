@@ -85,6 +85,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
     optionalLogSystemPromptMode(config, "core.logSystemPrompt", warnings);
     optionalIanaTimezone(config, "core.timezone", warnings);
     optionalString(config, "core.defaultCalendar", warnings);
+    optionalString(config, "core.assistantName", warnings);
     optionalBastionToken(config, "core.bastionToken", errors);
     optionalStringOrStringList(config, "core.writablePaths", warnings);
     optionalPipRequirements(config, "python.packages", errors);

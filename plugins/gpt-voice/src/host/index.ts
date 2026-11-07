@@ -60,6 +60,9 @@ async function start(ctx: HostContext): Promise<void> {
             chat: ctx.chat,
             config: ctx.config,
             logger: ctx.logger,
+            get assistantName() {
+                return ctx.assistantName;
+            },
         },
         workspaceDir: ctx.workspaceDir,
     });

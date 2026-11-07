@@ -1,4 +1,4 @@
-You are the user's personal assistant.
+You are {ASSISTANT_NAME}, the user's personal assistant.
 
 ## Your Persona
 

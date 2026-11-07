@@ -2,13 +2,13 @@ import { GalleryVerticalEndIcon } from "lucide-react";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 
 /**
- * Top of the sidebar: app icon, name and the running familiar version.
- * Links to the start page.
+ * Top of the sidebar: app icon and the assistant's name. Links to the
+ * start page.
  *
- * @param props.version Familiar version, or null while loading.
+ * @param props.name The assistant's name, or null while loading.
  * @returns The brand row.
  */
-export function AppBrand({ version }: { readonly version: string | null }) {
+export function AppBrand({ name }: { readonly name: string | null }) {
     return (
         <SidebarMenu>
             <SidebarMenuItem>
@@ -18,10 +18,7 @@ export function AppBrand({ version }: { readonly version: string | null }) {
                             <GalleryVerticalEndIcon className="size-4" />
                         </div>
                         <div className="grid flex-1 text-left text-sm leading-tight">
-                            <span className="truncate font-medium">Familiar</span>
-                            <span className="truncate text-xs">
-                                {version === null ? " " : `v${version}`}
-                            </span>
+                            <span className="truncate font-medium">{name ?? "\u00a0"}</span>
                         </div>
                     </a>
                 </SidebarMenuButton>

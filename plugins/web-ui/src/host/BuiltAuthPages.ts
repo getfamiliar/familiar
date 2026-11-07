@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 import type { WebAuthPageView } from "@getfamiliar/shared";
 
 /** Signature of `renderAuthPage` exported by the SSR bundle. */
-export type RenderAuthPage = (view: WebAuthPageView) => Promise<string>;
+export type RenderAuthPage = (view: WebAuthPageView, assistantName: string) => Promise<string>;
 
 /**
  * The production login-page renderer: the SSR bundle
@@ -25,18 +25,19 @@ export class BuiltAuthPages {
      * Render one page.
      *
      * @param view The page the core decided to show.
+     * @param assistantName The assistant's name for title and brand panel.
      * @returns The HTML document.
      * @throws {Error} When the bundle is missing or does not export
      *   `renderAuthPage` (the core then serves its plain page).
      */
-    async renderAuthPage(view: WebAuthPageView): Promise<string> {
+    async renderAuthPage(view: WebAuthPageView, assistantName: string): Promise<string> {
         this.loaded ??= this.load();
         const render = await this.loaded.catch((err: unknown) => {
             // Retry on the next request (e.g. after `npm run build`).
             this.loaded = null;
             throw err;
         });
-        return render(view);
+        return render(view, assistantName);
     }
 
     /**

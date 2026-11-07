@@ -12,7 +12,7 @@ import {
 import type { Shell } from "@/hooks/use-shell";
 
 /**
- * The app sidebar (collapses to icons): brand and version on top, the
+ * The app sidebar (collapses to icons): the assistant's name on top, the
  * plugins' menu in the middle, the signed-in user at the bottom.
  *
  * @param props.shell Shell data, or null while loading.
@@ -30,12 +30,14 @@ export function AppSidebar({
     return (
         <Sidebar collapsible="icon" {...props}>
             <SidebarHeader>
-                <AppBrand version={shell?.version ?? null} />
+                <AppBrand name={shell?.assistantName ?? null} />
             </SidebarHeader>
             <SidebarContent>
                 <NavMain items={shell?.menu ?? []} pathname={pathname} />
             </SidebarContent>
-            <SidebarFooter>{shell !== null && <NavUser user={shell.user} />}</SidebarFooter>
+            <SidebarFooter>
+                {shell !== null && <NavUser user={shell.user} version={shell.version} />}
+            </SidebarFooter>
             <SidebarRail />
         </Sidebar>
     );

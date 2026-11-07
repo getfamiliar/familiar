@@ -46,6 +46,8 @@ export interface VoiceHost {
     readonly chat: Pick<HostContext["chat"], "appendMessage">;
     readonly config: HostContext["config"];
     readonly logger: Logger;
+    /** The assistant's name for `{ASSISTANT_NAME}`, read per call. */
+    readonly assistantName: string;
 }
 
 /** Creates the AI SDK Live codec for an API key and model. */
@@ -173,7 +175,7 @@ export class LiveCall {
         }
         let settings: LiveSettings;
         try {
-            settings = readLiveSettings(this.deps.workspaceDir);
+            settings = readLiveSettings(this.deps.workspaceDir, this.deps.host.assistantName);
         } catch (err) {
             if (err instanceof LiveConfigError) {
                 throw new CallSetupError(CALL_CLOSE_CODES.noLiveConfig, err.message);

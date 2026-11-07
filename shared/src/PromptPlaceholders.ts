@@ -64,6 +64,11 @@ export const CORE_PROMPT_PLACEHOLDERS: readonly PromptPlaceholderDefinition[] = 
         kind: "static",
     },
     {
+        name: "ASSISTANT_NAME",
+        description: "The assistant's name from `core.assistantName` (default `Familiar`).",
+        kind: "static",
+    },
+    {
         name: "SKILL_LIST",
         description: "Bullet list of the skills in `skills/` (id and description).",
         kind: "static",

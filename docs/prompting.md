@@ -101,6 +101,7 @@ Run `familiar prompt placeholders` for the authoritative list including placehol
 | `{CACHE_MARKER}` | static | Not a value: the split point between system prompt and user message (see above). Only the first one in `PROMPT.md` counts. |
 | `{HANDLER_CONTENT}` | static | The body of the resolved handler file. Placeholders inside it are expanded. |
 | `{PRELOADED_SKILLS}` | static | The full content of every skill listed in the handler's `skills` frontmatter (frontmatter stripped), each under its own `# Skill \`id\` (preloaded)` heading with a note that it is already loaded. Empty when the handler preloads nothing. Not cut at the per-file size limit. Placeholders inside are expanded. |
+| `{ASSISTANT_NAME}` | static | The assistant's name from `core.assistantName` in `config.yml` (default `Familiar`). Also available in `voice/live.md`. |
 | `{HANDLER_PATH}` | static | Workspace-relative path of the handler, e.g. `chat/telegram.md`. |
 | `{SKILL_LIST}` | static | One bullet per skill in `skills/`: `` - `id`: description ``. |
 | `{TOOL_LIST}` | static¹ | One bullet per tool preloaded for this run. |

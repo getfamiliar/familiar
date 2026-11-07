@@ -335,6 +335,12 @@ export interface HostContext {
     /** Version of the running familiar host (the `@getfamiliar/host` package version, e.g. `0.4.2`). */
     readonly familiarVersion: string;
     /**
+     * The assistant's name (`core.assistantName`, default `Familiar`),
+     * read on every access so it follows `familiar config reload`. Use it
+     * wherever the assistant names itself to the user (UI branding, voice).
+     */
+    readonly assistantName: string;
+    /**
      * Absolute host path of the project's `data/` directory.
      *
      * Plugins that need to persist host-side state (auth tokens that

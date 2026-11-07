@@ -105,17 +105,18 @@ export class ViteDevBridge {
      * no script, so there is no hot reload for them).
      *
      * @param view The page the core decided to show.
+     * @param assistantName The assistant's name for title and brand panel.
      * @returns The HTML document.
      * @throws {Error} When the module fails to load or lacks `renderAuthPage`.
      */
-    async renderAuthPage(view: WebAuthPageView): Promise<string> {
+    async renderAuthPage(view: WebAuthPageView, assistantName: string): Promise<string> {
         const module = (await this.server.ssrLoadModule(AUTH_PAGE_MODULE)) as {
             renderAuthPage?: RenderAuthPage;
         };
         if (typeof module.renderAuthPage !== "function") {
             throw new Error(`web-ui: ${AUTH_PAGE_MODULE} does not export renderAuthPage`);
         }
-        return module.renderAuthPage(view);
+        return module.renderAuthPage(view, assistantName);
     }
 
     /** Shut the Vite server (watchers, HMR websocket) down. */

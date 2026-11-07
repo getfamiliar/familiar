@@ -87,6 +87,7 @@ export const FORWARDED_CONTAINER_CONFIG_KEYS: readonly string[] = [
     "core.toolDefinitionsContextFraction",
     "core.toolHeuristicRunWindow",
     "core.timezone",
+    "core.assistantName",
     "inference.defaultProvider",
     "inference.defaultModel",
     "inference.aliases",

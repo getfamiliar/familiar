@@ -17,7 +17,12 @@ const ASSETS = {
  * @returns The source.
  */
 function shellWith(menu: WebMenuEntry[]): ShellSource {
-    return { familiarVersion: "1.2.3", listMenuItems: () => menu, listPages: () => [] };
+    return {
+        familiarVersion: "1.2.3",
+        assistantName: "Jeeves",
+        listMenuItems: () => menu,
+        listPages: () => [],
+    };
 }
 
 /**
@@ -37,13 +42,14 @@ function mounted(shell: ShellSource = shellWith([])): Hono<WebUiEnv> {
 }
 
 describe("buildWebUiController", () => {
-    it("answers /api/shell with the principal, the version and the menu", async () => {
+    it("answers /api/shell with the principal, the name, the version and the menu", async () => {
         const menu: WebMenuEntry[] = [
             { pluginId: "mail", icon: "mail", label: "Mail", route: "/mail" },
         ];
         const res = await mounted(shellWith(menu)).request("/api/shell");
         assert.deepEqual(await res.json(), {
             user: { login: "me@example.com", displayName: "Jürgen Weiß", via: "session" },
+            assistantName: "Jeeves",
             version: "1.2.3",
             menu,
             pages: [],
@@ -82,13 +88,13 @@ describe("buildWebUiController", () => {
     it("hands the core the controller and the login-page renderer", async () => {
         const ui = buildWebUi(
             ASSETS as never,
-            { renderAuthPage: async (view) => `rendered ${view.kind}` },
+            { renderAuthPage: async (view, name) => `rendered ${view.kind} for ${name}` },
             shellWith([]),
         );
         assert.equal(await (await ui.controller.request("/x")).text(), "asset /x");
         assert.equal(
             await ui.renderAuthPage?.({ kind: "signedOut", loginCommand: "familiar web login" }),
-            "rendered signedOut",
+            "rendered signedOut for Jeeves",
         );
     });
 });

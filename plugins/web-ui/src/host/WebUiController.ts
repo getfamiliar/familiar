@@ -13,10 +13,12 @@ export interface UiAssetHandler {
     handle(c: Context<WebUiEnv>): Promise<Response>;
 }
 
-/** Data from the core the app shell shows: version and menu, read per request. */
+/** Data from the core the app shell shows: name, version and menu, read per request. */
 export interface ShellSource {
     /** Version of the running familiar host. */
     readonly familiarVersion: string;
+    /** The assistant's name (`core.assistantName`, default `Familiar`). */
+    readonly assistantName: string;
     /** The plugins' menu items, sorted. */
     listMenuItems(): readonly WebMenuEntry[];
     /** The plugin pages. */
@@ -25,7 +27,7 @@ export interface ShellSource {
 
 /** Renders the login-flow pages the core webserver asks for. */
 export interface AuthPageSource {
-    renderAuthPage(view: WebAuthPageView): Promise<string>;
+    renderAuthPage(view: WebAuthPageView, assistantName: string): Promise<string>;
 }
 
 /**
@@ -33,7 +35,7 @@ export interface AuthPageSource {
  *
  * @param assets Page / asset handler.
  * @param authPages Login-page renderer.
- * @param shell Version and menu from the core.
+ * @param shell Name, version and menu from the core.
  * @returns Root controller plus login-page renderer.
  */
 export function buildWebUi(
@@ -43,7 +45,7 @@ export function buildWebUi(
 ): WebUi {
     return {
         controller: buildWebUiController(assets, shell),
-        renderAuthPage: (view) => authPages.renderAuthPage(view),
+        renderAuthPage: (view) => authPages.renderAuthPage(view, shell.assistantName),
     };
 }
 
@@ -68,6 +70,7 @@ export function buildWebUiController(assets: UiAssetHandler, shell: ShellSource)
         const { login, displayName, via } = c.get("principal");
         return c.json({
             user: { login, displayName, via },
+            assistantName: shell.assistantName,
             version: shell.familiarVersion,
             menu: shell.listMenuItems(),
             pages: shell.listPages(),

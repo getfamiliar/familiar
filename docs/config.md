@@ -8,7 +8,7 @@ The file is a YAML mapping of top-level groups:
 
 | Group | Owner | Content |
 | --- | --- | --- |
-| `core` | platform | Postgres password, default chat channel, bastion token, log retention, timezone, agent step timeout, tool knobs, `writablePaths`. |
+| `core` | platform | Postgres password, default chat channel, assistant name, bastion token, log retention, timezone, agent step timeout, tool knobs, `writablePaths`. |
 | `inference` | platform | `defaultProvider`, `defaultModel`, `aliases`, `apiKeys.<provider>`, retries, context management, debug captures. |
 | `mail` / `calendar` | platform | Cross-provider safety knobs (`allowSend`, `recipientWhitelist`, `allowAttendees`, `emitEventsInDev`). |
 | `chat` | platform | `chat.compaction.thresholdBytes` / `keepUncompactedBytes`. |
@@ -16,6 +16,8 @@ The file is a YAML mapping of top-level groups:
 | `python` | platform | `python.packages` baked into the agent image. |
 | `webserver` | platform | The user-facing web UI: `enabled`, `port`, `host`, `auth` (see [Webserver](#webserver)). |
 | `<plugin-id>` | plugin | One group per plugin, named exactly like the plugin id (`telegram`, `ms365`, `memory`, `tesla`, …). |
+
+`core.assistantName` names your assistant (default `Familiar`). The web UI shows it in the sidebar, the breadcrumb, the page title and on the login pages; the running version stays visible as "Familiar v…" in the user menu. Workspace markdown gets it as `{ASSISTANT_NAME}` (see [prompting](prompting.md)), so `SOUL.md` can say "You are {ASSISTANT_NAME} …". It applies on `familiar config reload`: the web UI on the next page load, agentruns and voice calls from the next one on.
 
 The platform minimum (`core.postgresPassword`, `core.defaultChatChannel`, `inference.defaultProvider`, `inference.defaultModel`, `inference.apiKeys`) is checked by the linter; plugin groups are validated by their plugins. Unknown top-level groups are ignored.
 
@@ -45,7 +47,7 @@ The platform minimum (`core.postgresPassword`, `core.defaultChatChannel`, `infer
 `familiar config reload` (or the agent tool `config_reload`) applies both config files to the running daemon. There is no file watcher — a half-edited file is never picked up. A reload:
 
 1. **Validates everything first**: the `config.yml` lint, provider resolution for every `inference.apiKeys` entry, the `mcp.yml` lint, and MCP-id clashes with plugin tool groups. On any error nothing is applied; the daemon keeps running on the previous configuration and the report lists the errors.
-2. **Swaps the configuration.** Every host component that reads its value per use sees the new value immediately: mail / calendar safety, storage mounts and policy, `core.defaultChatChannel`, `core.timezone` (host side), chat compaction limits, the `llm-debug` retention, dev event gating.
+2. **Swaps the configuration.** Every host component that reads its value per use sees the new value immediately: mail / calendar safety, storage mounts and policy, `core.defaultChatChannel`, `core.assistantName`, `core.timezone` (host side), chat compaction limits, the `llm-debug` retention, dev event gating.
 3. **Rebuilds the inference provider table** of the LLM reverse proxy (`inference.apiKeys`, `inference.captureModelHttpRequestBodies`).
 4. **Restarts affected plugins**: every plugin whose own group changed (or one of its declared `restartOnConfigChange` keys) is stopped, its tools / providers / prompt contributions are unregistered, and it runs `prepare` → `start` → `tools` again. A plugin that was disabled at boot (e.g. missing token) starts this way once its config is fixed. A plugin that has background work but no `stop` hook cannot be restarted in place and is reported as "daemon restart required".
 5. **Applies the `mcp.yml` diff** — see [`docs/mcp.md`](mcp.md#reloading-mcpyml).

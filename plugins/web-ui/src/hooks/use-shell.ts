@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 export interface Shell {
     /** The signed-in user, as the core webserver resolved it. */
     readonly user: WebPrincipal;
+    /** The assistant's name (`core.assistantName`, default `Familiar`). */
+    readonly assistantName: string;
     /** Version of the running familiar host. */
     readonly version: string;
     /** Sidebar menu contributed by the plugins, already sorted. */

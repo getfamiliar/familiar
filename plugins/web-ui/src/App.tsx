@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { findPluginPage, PluginPage } from "@/components/plugin-page";
 import {
@@ -18,7 +19,8 @@ import { findActiveMenuPath } from "@/lib/menu";
  * Root of the web UI: the collapsible-to-icons sidebar (shadcn block
  * `sidebar-07`) with the plugins' menu; the content area shows the
  * plugin page owning the current route (placeholder content otherwise).
- * The breadcrumb names the menu entry of the current page.
+ * The breadcrumb starts at the assistant's name and names the menu
+ * entry of the current page; the document title is the assistant's name.
  *
  * @returns The app shell.
  */
@@ -27,6 +29,12 @@ export default function App() {
     const pathname = window.location.pathname;
     const active = shell === null ? null : findActiveMenuPath(shell.menu, pathname);
     const page = shell === null ? null : findPluginPage(shell.pages, pathname);
+    const assistantName = shell?.assistantName ?? null;
+    useEffect(() => {
+        if (assistantName !== null) {
+            document.title = assistantName;
+        }
+    }, [assistantName]);
     return (
         <TooltipProvider>
             <SidebarProvider>
@@ -44,7 +52,9 @@ export default function App() {
                             <Breadcrumb>
                                 <BreadcrumbList>
                                     <BreadcrumbItem className="hidden md:block">
-                                        <BreadcrumbLink href="/">Familiar</BreadcrumbLink>
+                                        <BreadcrumbLink href="/">
+                                            {assistantName ?? "\u00a0"}
+                                        </BreadcrumbLink>
                                     </BreadcrumbItem>
                                     {active !== null && (
                                         <>

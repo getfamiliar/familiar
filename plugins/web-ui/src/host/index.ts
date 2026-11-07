@@ -60,6 +60,9 @@ export default definePlugin({
             }
             return buildWebUi(assets, authPages, {
                 familiarVersion: ctx.familiarVersion,
+                get assistantName() {
+                    return ctx.assistantName;
+                },
                 listMenuItems: () => ctx.web.listMenuItems(),
                 listPages: () => ctx.web.listPages(),
             });

@@ -1,6 +1,11 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { CACHE_MARKER_PLACEHOLDER, CORE_PROMPT_PLACEHOLDERS } from "@getfamiliar/shared";
+import {
+    ASSISTANT_NAME_CONFIG_KEY,
+    CACHE_MARKER_PLACEHOLDER,
+    CORE_PROMPT_PLACEHOLDERS,
+    resolveAssistantName,
+} from "@getfamiliar/shared";
 import { parse as parseYaml } from "yaml";
 import { HandlerFile } from "../HandlerFile.js";
 import { PassedConfig, resolveTimezone } from "../utils/PassedConfig.js";
@@ -65,6 +70,8 @@ export type CorePlaceholderResolver = (ctx: CorePlaceholderContext) => string;
  */
 export const CORE_PLACEHOLDER_RESOLVERS: Readonly<Record<string, CorePlaceholderResolver>> = {
     HANDLER_PATH: (ctx) => ctx.handler.relativePath,
+    ASSISTANT_NAME: () =>
+        resolveAssistantName(PassedConfig.get<unknown>(ASSISTANT_NAME_CONFIG_KEY)),
     SKILL_LIST: () => listSkills() ?? EMPTY_LIST,
     TOOL_LIST: (ctx) => formatBullets(ctx.toolNames),
     PYTHON_PACKAGE_LIST: () =>
