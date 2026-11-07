@@ -21,7 +21,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** All workspace package directories (repo-relative), except the root. */
 function packageDirs() {
-    const dirs = ["shared", "host", "container", "cli"];
+    const dirs = ["shared", "avatar", "host", "container", "cli"];
     const pluginsRoot = join(root, "plugins");
     for (const entry of readdirSync(pluginsRoot, { withFileTypes: true })) {
         if (entry.isDirectory() && existsSync(join(pluginsRoot, entry.name, "package.json"))) {

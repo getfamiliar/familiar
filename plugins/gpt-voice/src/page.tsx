@@ -34,7 +34,7 @@ if (import.meta.hot) {
  * no portals.
  *
  * @param container Content area of the web UI.
- * @param context Route prefix, user, navigation.
+ * @param context Route prefix, user, assistant identity, navigation.
  * @returns Unmount function (ends a running call).
  */
 const mount: MountWebPage = (container, context) => {
@@ -47,7 +47,7 @@ const mount: MountWebPage = (container, context) => {
     const root = createRoot(container);
     root.render(
         <StrictMode>
-            <CallScreen basePath={context.basePath} />
+            <CallScreen basePath={context.basePath} assistant={context.assistant} />
         </StrictMode>,
     );
     return () => {

@@ -1,6 +1,11 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import type { WebMenuEntry, WebUiEnv } from "@getfamiliar/shared";
+import {
+    type AvatarConfig,
+    DEFAULT_AVATAR,
+    type WebMenuEntry,
+    type WebUiEnv,
+} from "@getfamiliar/shared";
 import { Hono } from "hono";
 import { buildWebUi, buildWebUiController, type ShellSource } from "./WebUiController.js";
 
@@ -9,6 +14,9 @@ const ASSETS = {
     handle: async (c: { req: { path: string }; text: (t: string) => Response }) =>
         c.text(`asset ${c.req.path}`),
 };
+
+/** Avatars the shell source was asked to save. */
+const saved: AvatarConfig[] = [];
 
 /**
  * A shell source with a fixed menu.
@@ -19,7 +27,10 @@ const ASSETS = {
 function shellWith(menu: WebMenuEntry[]): ShellSource {
     return {
         familiarVersion: "1.2.3",
-        assistantName: "Jeeves",
+        assistant: { name: "Jeeves", avatar: DEFAULT_AVATAR },
+        saveAssistantAvatar: async (avatar) => {
+            saved.push(avatar);
+        },
         listMenuItems: () => menu,
         listPages: () => [],
     };
@@ -49,7 +60,7 @@ describe("buildWebUiController", () => {
         const res = await mounted(shellWith(menu)).request("/api/shell");
         assert.deepEqual(await res.json(), {
             user: { login: "me@example.com", displayName: "Jürgen Weiß", via: "session" },
-            assistantName: "Jeeves",
+            assistant: { name: "Jeeves", avatar: DEFAULT_AVATAR },
             version: "1.2.3",
             menu,
             pages: [],
@@ -88,7 +99,10 @@ describe("buildWebUiController", () => {
     it("hands the core the controller and the login-page renderer", async () => {
         const ui = buildWebUi(
             ASSETS as never,
-            { renderAuthPage: async (view, name) => `rendered ${view.kind} for ${name}` },
+            {
+                renderAuthPage: async (view, assistant) =>
+                    `rendered ${view.kind} for ${assistant.name}`,
+            },
             shellWith([]),
         );
         assert.equal(await (await ui.controller.request("/x")).text(), "asset /x");
@@ -96,5 +110,32 @@ describe("buildWebUiController", () => {
             await ui.renderAuthPage?.({ kind: "signedOut", loginCommand: "familiar web login" }),
             "rendered signedOut for Jeeves",
         );
+    });
+
+    it("stores a valid avatar, completed with defaults", async () => {
+        saved.length = 0;
+        const res = await mounted().request("/api/settings/avatar", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ topType: "Hat", backgroundColor: "#ABCDEF" }),
+        });
+        assert.equal(res.status, 200);
+        const expected = { ...DEFAULT_AVATAR, topType: "Hat", backgroundColor: "#abcdef" };
+        assert.deepEqual(await res.json(), { avatar: expected });
+        assert.deepEqual(saved, [expected]);
+    });
+
+    it("refuses an invalid avatar without saving", async () => {
+        saved.length = 0;
+        const res = await mounted().request("/api/settings/avatar", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ topType: "Mohawk", glasses: true }),
+        });
+        assert.equal(res.status, 400);
+        const body = await res.json();
+        assert.match(body.error, /topType must be one of/);
+        assert.match(body.error, /unknown option glasses/);
+        assert.deepEqual(saved, []);
     });
 });

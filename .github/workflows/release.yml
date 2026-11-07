@@ -78,10 +78,11 @@ jobs:
       - run: node scripts/sync-templates.mjs
       - run: node scripts/ci-stamp.mjs "$VERSION"
       - run: npm run build
-      - name: Publish (shared → plugins → host → meta)
+      - name: Publish (shared → avatar → plugins → host → meta)
         run: |
           set -e
           npm publish -w @getfamiliar/shared --provenance --access public
+          npm publish -w @getfamiliar/avatar --provenance --access public
           # Every workspace under plugins/ is published — a new plugin needs
           # no edit here. Opt a plugin out with `"private": true`.
           for dir in plugins/*/; do

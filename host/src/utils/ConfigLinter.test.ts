@@ -443,3 +443,28 @@ inference:
         assert.ok(!result.errors.some((e) => e.includes("trustedProxies.good")));
     });
 });
+
+describe("ConfigLinter — assistant avatar", () => {
+    it("warns about unknown avatar options and values, without failing", () => {
+        const file = write(`
+core:
+  postgresPassword: secret
+  defaultChatChannel: cli
+  assistantAvatar:
+    topType: Hat
+    eyeType: Laser
+    glasses: true
+inference:
+  defaultProvider: openai
+  defaultModel: gpt-5
+  apiKeys:
+    openai: REAL_KEY
+`);
+        const result = lintConfigFile(file);
+        assert.equal(result.ok, true, `unexpected errors: ${JSON.stringify(result.errors)}`);
+        const warnings = result.warnings.join("\n");
+        assert.match(warnings, /core\.assistantAvatar: eyeType must be one of/);
+        assert.match(warnings, /core\.assistantAvatar: unknown option glasses/);
+        assert.doesNotMatch(warnings, /topType/);
+    });
+});

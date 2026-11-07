@@ -42,11 +42,26 @@ The CLI adds new npm packages to `dependencies`. Move them to `devDependencies`,
 
 ## API
 
-The controller serves JSON under `/api`. Right now there is only `GET /api/shell`, which returns what the app shell needs: the signed-in user (`user`: `login`, `displayName`, `via`), the familiar `version`, the sidebar `menu` and the plugin `pages`. Unknown `/api/*` routes get a JSON 404. Every other path is served as UI.
+The controller serves JSON under `/api`:
+
+- `GET /api/shell` returns what the app shell needs: the signed-in user (`user`: `login`, `displayName`, `via`), the `assistant` (`name`, `avatar`), the familiar `version`, the sidebar `menu` and the plugin `pages`.
+- `PUT /api/settings/avatar` stores the assistant's avatar in `core.assistantAvatar` (via `ctx.config.set`, comments in `config.yml` survive). Missing options are completed with defaults; unknown options or values are refused with `400` and the problems, nothing is written.
+
+Unknown `/api/*` routes get a JSON 404. Every other path is served as UI.
+
+## Assistant identity
+
+The assistant's name and avatar brand the UI: the avatar (`@getfamiliar/avatar`, see [`avatar/README.md`](../../avatar/README.md)) is the icon top left and, as a `data:` URL, the favicon; the name stands next to it, in the breadcrumb root and in the page title. The login pages show both too. The version moved into the user menu at the bottom ("Familiar v…").
+
+## Settings
+
+The plugin contributes one menu item of its own, `Settings` (weight 1000, so it is always last), with the web UI's own pages below it. They are routes of this app, not plugin pages: `App.tsx` renders them before looking for a plugin page.
+
+- **Avatar** (`/settings/avatar`, `src/components/settings/avatar-settings.tsx`): the avatar editor. A live, animated preview (sticky on wide screens) next to cards for face, hair & headwear, skin, facial hair, accessories, clothes and background, in as many columns as fit. Every value is a thumbnail of the avatar wearing it; options without effect (hat color without a hat, print without a graphic shirt, …) are hidden. Randomize, Reset and Save; leaving with unsaved changes asks first. A save updates brand, favicon and plugin pages without a reload.
 
 ## Menu
 
-The sidebar holds no menu items of its own. Every plugin can contribute some through its `webMenu(ctx)` hook ([`docs/plugins/create-plugins.md`](../../docs/plugins/create-plugins.md#web-ui-menu-items)). The core sorts them by plugin weight and the controller passes them on in `/api/shell`. `GET /` redirects to the first route of the menu, and with an empty menu it stays on the start page. Icons are lucide ids, loaded on demand via `DynamicIcon`. Each icon is its own small chunk in `build/client/assets`, and unknown ids show a dot. The menu links are plain links, so each page is a full page load that comes back through the SPA fallback.
+Apart from `Settings`, the sidebar holds no menu items of its own. Every plugin can contribute some through its `webMenu(ctx)` hook ([`docs/plugins/create-plugins.md`](../../docs/plugins/create-plugins.md#web-ui-menu-items)). The core sorts them by plugin weight and the controller passes them on in `/api/shell`. `GET /` redirects to the first route of the menu, and with an empty menu it stays on the start page. Icons are lucide ids, loaded on demand via `DynamicIcon`. Each icon is its own small chunk in `build/client/assets`, and unknown ids show a dot. The menu links are plain links, so each page is a full page load that comes back through the SPA fallback.
 
 ## Plugin pages
 

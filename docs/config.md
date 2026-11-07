@@ -19,6 +19,8 @@ The file is a YAML mapping of top-level groups:
 
 `core.assistantName` names your assistant (default `Familiar`). The web UI shows it in the sidebar, the breadcrumb, the page title and on the login pages; the running version stays visible as "Familiar v…" in the user menu. Workspace markdown gets it as `{ASSISTANT_NAME}` (see [prompting](prompting.md)), so `SOUL.md` can say "You are {ASSISTANT_NAME} …". It applies on `familiar config reload`: the web UI on the next page load, agentruns and voice calls from the next one on.
 
+`core.assistantAvatar` is the assistant's face, an [Avataaars](https://getavataaars.com/) avatar: a mapping with one value per option (`topType`, `accessoriesType`, `hairColor`, `hatColor`, `facialHairType`, `facialHairColor`, `clotheType`, `clotheColor`, `graphicType`, `eyeType`, `eyebrowType`, `mouthType`, `skinColor`) plus `backgroundColor` (`#rrggbb`). You normally don't write it by hand: the web UI's **Settings → Avatar** editor saves it and applies it right away. Missing options take their default, unknown options or values are linter warnings and fall back to the default as well. The allowed values are listed in `shared/src/AssistantAvatar.ts`. The web UI shows the avatar top left, as favicon and on the login pages; the voice call shows it as the assistant's animated face.
+
 The platform minimum (`core.postgresPassword`, `core.defaultChatChannel`, `inference.defaultProvider`, `inference.defaultModel`, `inference.apiKeys`) is checked by the linter; plugin groups are validated by their plugins. Unknown top-level groups are ignored.
 
 ## Key conventions

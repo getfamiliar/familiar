@@ -1,6 +1,7 @@
 import type { Experimental_RealtimeServerEvent, Experimental_RealtimeState } from "ai";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CALL_CLOSE_CODES, type VoiceStatus } from "@/host/VoiceProtocol";
+import { SpeechActivityDetector } from "@/lib/speech-activity";
 import { callSocketUrl, VoiceSession } from "@/lib/voice-session";
 
 /** Why the page cannot place a call at all. */
@@ -18,7 +19,7 @@ export interface VoiceCallState {
     readonly error: string | null;
     /** Whether the microphone is muted. */
     readonly isMuted: boolean;
-    /** Whether the assistant's voice is playing. */
+    /** Whether the assistant is audibly speaking (not just streaming silence). */
     readonly isAssistantSpeaking: boolean;
     /** Background tasks of this call still running. */
     readonly runningTaskCount: number;
@@ -56,6 +57,13 @@ export function useVoiceCall(basePath: string): VoiceCall {
     const [state, setState] = useState<VoiceCallState>(INITIAL_STATE);
     const sessionRef = useRef<VoiceSession | null>(null);
     const runningTasksRef = useRef(new Set<string>());
+    const speechRef = useRef<SpeechActivityDetector | null>(null);
+    if (speechRef.current === null) {
+        speechRef.current = new SpeechActivityDetector((isSpeaking) =>
+            setState((previous) => ({ ...previous, isAssistantSpeaking: isSpeaking })),
+        );
+    }
+    useEffect(() => () => speechRef.current?.dispose(), []);
 
     const update = useCallback((patch: Partial<VoiceCallState>) => {
         setState((previous) => ({ ...previous, ...patch }));
@@ -77,6 +85,10 @@ export function useVoiceCall(basePath: string): VoiceCall {
 
     const onSessionState = useCallback((realtime: Experimental_RealtimeState) => {
         const phase = phaseOf(realtime);
+        if (!realtime.isPlaying) {
+            // Playback stopped (interrupted, ended): drop the scheduled audio.
+            speechRef.current?.reset();
+        }
         if (phase === "idle") {
             runningTasksRef.current.clear();
             // The call ended on its own (host hung up, connection lost):
@@ -91,7 +103,6 @@ export function useVoiceCall(basePath: string): VoiceCall {
             ...previous,
             phase,
             isMuted: realtime.session?.isInputMuted ?? false,
-            isAssistantSpeaking: realtime.isPlaying,
             connectedAt:
                 phase === "connected"
                     ? (previous.connectedAt ?? Date.now())
@@ -104,6 +115,10 @@ export function useVoiceCall(basePath: string): VoiceCall {
 
     const onSessionEvent = useCallback(
         (event: Experimental_RealtimeServerEvent) => {
+            if (event.type === "audio-chunk" || event.type === "audio-delta") {
+                speechRef.current?.addChunk(event.delta);
+                return;
+            }
             if (event.type !== "custom") {
                 return;
             }
@@ -154,6 +169,7 @@ export function useVoiceCall(basePath: string): VoiceCall {
         void session.close().finally(() => {
             session.dispose();
             runningTasksRef.current.clear();
+            speechRef.current?.reset();
             update({
                 phase: "idle",
                 connectedAt: null,

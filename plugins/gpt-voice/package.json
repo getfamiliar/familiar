@@ -38,6 +38,7 @@
     },
     "devDependencies": {
         "@biomejs/biome": "^2.4.12",
+        "@getfamiliar/avatar": "*",
         "@shadcn/react": "^0.3.1",
         "@tailwindcss/vite": "^4.3.4",
         "@types/node": "^22",

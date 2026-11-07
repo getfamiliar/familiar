@@ -30,7 +30,7 @@ export function AppSidebar({
     return (
         <Sidebar collapsible="icon" {...props}>
             <SidebarHeader>
-                <AppBrand name={shell?.assistantName ?? null} />
+                <AppBrand assistant={shell?.assistant ?? null} />
             </SidebarHeader>
             <SidebarContent>
                 <NavMain items={shell?.menu ?? []} pathname={pathname} />

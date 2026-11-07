@@ -1,0 +1,47 @@
+{
+    "name": "@getfamiliar/avatar",
+    "type": "module",
+    "version": "0.0.1",
+    "description": "Familiar — the assistant's Avataaars avatar as a React component (animated or static, data URL).",
+    "publishConfig": {
+        "access": "public"
+    },
+    "main": "build/index.js",
+    "types": "build/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./build/index.d.ts",
+            "default": "./build/index.js"
+        }
+    },
+    "sideEffects": false,
+    "files": ["build"],
+    "engines": {
+        "node": ">=22"
+    },
+    "scripts": {
+        "build": "tsc",
+        "format": "biome format --write --config-path .. src/",
+        "format:check": "biome format --config-path .. src/",
+        "lint": "biome lint --config-path .. src/",
+        "check": "biome check --config-path .. src/",
+        "test": "tsx --test 'src/**/*.test.tsx'"
+    },
+    "license": "MIT",
+    "dependencies": {
+        "@getfamiliar/shared": "*"
+    },
+    "peerDependencies": {
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "^2.4.12",
+        "@types/node": "^22",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
+        "typescript": "^6.0.3"
+    }
+}

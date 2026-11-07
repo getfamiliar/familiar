@@ -9,6 +9,7 @@
  */
 
 import type { Hono } from "hono";
+import type { AvatarConfig } from "./AssistantAvatar.js";
 import type { WebPrincipal, WebUiEnv } from "./WebAuth.js";
 
 /** Where a plugin page's ES module comes from. */
@@ -132,8 +133,18 @@ export interface WebPageContext {
     readonly pathname: string;
     /** The signed-in user. */
     readonly user: WebPrincipal;
+    /** The assistant's name and avatar, as configured (render with `@getfamiliar/avatar`). */
+    readonly assistant: WebAssistantIdentity;
     /** Navigate the web UI to another route. */
     navigate(to: string): void;
+}
+
+/** How the assistant presents itself in the web UI. */
+export interface WebAssistantIdentity {
+    /** `core.assistantName`, default `Familiar`. */
+    readonly name: string;
+    /** `core.assistantAvatar`, completed with defaults. */
+    readonly avatar: AvatarConfig;
 }
 
 /**

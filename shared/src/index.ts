@@ -7,6 +7,20 @@ export type {
 } from "./AgentRun.js";
 export { AgentRunBus, type AgentRunUnsubscribe } from "./AgentRunBus.js";
 export {
+    ASSISTANT_AVATAR_CONFIG_KEY,
+    AVATAR_OPTION_VALUES,
+    type AvatarConfig,
+    type AvatarEyebrowType,
+    type AvatarEyeType,
+    type AvatarMouthType,
+    type AvatarOptionField,
+    type AvatarTopType,
+    DEFAULT_AVATAR,
+    findAvatarConfigProblems,
+    isAvatarOptionRelevant,
+    normalizeAvatarConfig,
+} from "./AssistantAvatar.js";
+export {
     BANNER_MAX_ACTIVE,
     BANNER_MAX_LIFETIME_DAYS,
     BANNER_MAX_TEXT_CHARS,
@@ -283,6 +297,7 @@ export {
 } from "./WebMenu.js";
 export {
     type MountWebPage,
+    type WebAssistantIdentity,
     type WebPageContext,
     type WebPageEntry,
     type WebPageModule,

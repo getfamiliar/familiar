@@ -3,7 +3,9 @@ import path from "node:path";
 import {
     AgentRunBus,
     type AgentRunUnsubscribe,
+    ASSISTANT_AVATAR_CONFIG_KEY,
     ASSISTANT_NAME_CONFIG_KEY,
+    type AvatarConfig,
     type CalendarApi,
     type ChatFilter,
     type ChatHandler,
@@ -28,6 +30,7 @@ import {
     type McpInfo,
     type NewEvent,
     type NotificationHandler,
+    normalizeAvatarConfig,
     type PostgresConnection,
     type PromptAppender,
     type PromptPlaceholderRegistration,
@@ -335,6 +338,10 @@ export class HostContextImpl implements HostContext {
 
     get assistantName(): string {
         return resolveAssistantName(this.deps.config.getString(ASSISTANT_NAME_CONFIG_KEY, null));
+    }
+
+    get assistantAvatar(): AvatarConfig {
+        return normalizeAvatarConfig(this.deps.config.getValue(ASSISTANT_AVATAR_CONFIG_KEY));
     }
 
     get dataDir(): string {

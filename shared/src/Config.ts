@@ -112,4 +112,11 @@ export interface ConfigService {
      *   atomic write fails.
      */
     set(key: string, value: unknown): Promise<void>;
+    /**
+     * Read the raw value under a dotted path, without shape checks — for
+     * structured values (mappings) whose reader validates them itself.
+     *
+     * @returns The raw value, or `undefined` when absent.
+     */
+    getValue(key: string): unknown;
 }

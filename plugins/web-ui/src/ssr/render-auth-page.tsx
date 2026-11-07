@@ -1,4 +1,5 @@
-import type { WebAuthPageView } from "@getfamiliar/shared";
+import { avatarToDataUrl } from "@getfamiliar/avatar";
+import type { WebAssistantIdentity, WebAuthPageView } from "@getfamiliar/shared";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AuthPage } from "@/components/auth-page";
 import css from "../index.css?inline";
@@ -14,15 +15,17 @@ import css from "../index.css?inline";
  * show up on the next page load.
  *
  * @param view The page the core decided to show.
- * @param assistantName The assistant's name for title and brand panel.
+ * @param assistant The assistant's name and avatar for title, favicon and brand panel.
  * @returns The HTML document.
  */
 export async function renderAuthPage(
     view: WebAuthPageView,
-    assistantName: string,
+    assistant: WebAssistantIdentity,
 ): Promise<string> {
-    const body = renderToStaticMarkup(<AuthPage view={view} assistantName={assistantName} />);
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${TITLES[view.kind]} · ${escapeHtml(assistantName)}</title><style>${css}</style></head><body>${body}</body></html>`;
+    const body = renderToStaticMarkup(<AuthPage view={view} assistant={assistant} />);
+    // The data URL is percent-encoded, so it cannot break out of the attribute.
+    const favicon = avatarToDataUrl(assistant.avatar);
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${TITLES[view.kind]} · ${escapeHtml(assistant.name)}</title><link rel="icon" type="image/svg+xml" href="${favicon}" /><style>${css}</style></head><body>${body}</body></html>`;
 }
 
 /** Document titles per page (static, no escaping needed). */

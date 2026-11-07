@@ -1,9 +1,17 @@
 import path from "node:path";
-import { definePlugin, type HostContext, WebStaticAssets } from "@getfamiliar/shared";
+import {
+    ASSISTANT_AVATAR_CONFIG_KEY,
+    definePlugin,
+    type HostContext,
+    WebStaticAssets,
+} from "@getfamiliar/shared";
 import { BuiltAuthPages } from "./BuiltAuthPages.js";
 import { findPluginRoot } from "./PluginRoot.js";
 import { ViteDevBridge } from "./ViteDevBridge.js";
 import { type AuthPageSource, buildWebUi, type UiAssetHandler } from "./WebUiController.js";
+
+/** Route of the avatar editor (a page of the web UI itself). */
+const SETTINGS_AVATAR_ROUTE = "/settings/avatar";
 
 /** Page / asset handler of the running plugin; set by `start`, reset by `stop`. */
 let assets: UiAssetHandler | null = null;
@@ -54,15 +62,28 @@ export default definePlugin({
     host: {
         start,
         stop,
+        // The web UI's own pages; always last in the menu.
+        webMenu: () => ({
+            weight: 1000,
+            items: [
+                {
+                    icon: "settings",
+                    label: "Settings",
+                    children: [{ label: "Avatar", route: SETTINGS_AVATAR_ROUTE }],
+                },
+            ],
+        }),
         webUi: (ctx) => {
             if (assets === null || authPages === null) {
                 throw new Error("web-ui: webUi called before start");
             }
             return buildWebUi(assets, authPages, {
                 familiarVersion: ctx.familiarVersion,
-                get assistantName() {
-                    return ctx.assistantName;
+                get assistant() {
+                    return { name: ctx.assistantName, avatar: ctx.assistantAvatar };
                 },
+                saveAssistantAvatar: (avatar) =>
+                    ctx.config.set(ASSISTANT_AVATAR_CONFIG_KEY, avatar),
                 listMenuItems: () => ctx.web.listMenuItems(),
                 listPages: () => ctx.web.listPages(),
             });

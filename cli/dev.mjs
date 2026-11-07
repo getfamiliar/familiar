@@ -6,7 +6,7 @@
 // entry point, so dev and prod exercise one launch path.
 //
 // What it adds on top of the bin:
-//   1. Staleness rebuild of `shared/`, `host/`, and each `plugins/*` whose
+//   1. Staleness rebuild of `shared/`, `avatar/`, `host/`, and each `plugins/*` whose
 //      compiled `build/index.js` is missing or older than its `src/`. The
 //      bin imports `host/build/index.js`, so the build must happen out here,
 //      before that import — the host can't compile itself.
@@ -27,7 +27,7 @@ import { join, resolve } from "node:path";
 const ROOT = resolve(import.meta.dirname, "..");
 
 /**
- * Newest modification time (ms) among all `*.ts` files under `dir`,
+ * Newest modification time (ms) among all `*.ts` / `*.tsx` files under `dir`,
  * recursing into subdirectories. Returns 0 when the tree has no such files.
  *
  * @param {string} dir Directory to walk.
@@ -39,7 +39,7 @@ function newestTsMtime(dir) {
         const full = join(dir, entry.name);
         if (entry.isDirectory()) {
             newest = Math.max(newest, newestTsMtime(full));
-        } else if (entry.isFile() && entry.name.endsWith(".ts")) {
+        } else if (entry.isFile() && /\.tsx?$/.test(entry.name)) {
             newest = Math.max(newest, statSync(full).mtimeMs);
         }
     }
@@ -89,6 +89,7 @@ function buildIfStale(pkgDir, label) {
 // shared first (host and plugins resolve it), then host, then each plugin —
 // mirrors the old shell launcher's build order.
 buildIfStale(join(ROOT, "shared"), "shared");
+buildIfStale(join(ROOT, "avatar"), "avatar");
 buildIfStale(join(ROOT, "host"), "host");
 const pluginsDir = join(ROOT, "plugins");
 if (existsSync(pluginsDir)) {

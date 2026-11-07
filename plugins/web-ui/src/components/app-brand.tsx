@@ -1,24 +1,33 @@
-import { GalleryVerticalEndIcon } from "lucide-react";
+import { AvatarSvg } from "@getfamiliar/avatar";
+import type { WebAssistantIdentity } from "@getfamiliar/shared";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 
 /**
- * Top of the sidebar: app icon and the assistant's name. Links to the
- * start page.
+ * Top of the sidebar: the assistant's avatar (large; icon-sized in the
+ * collapsed sidebar) and name. Links to the start page. The `!` sizes
+ * override the menu button's `[&_svg]:size-4`.
  *
- * @param props.name The assistant's name, or null while loading.
+ * @param props.assistant The assistant, or null while loading.
  * @returns The brand row.
  */
-export function AppBrand({ name }: { readonly name: string | null }) {
+export function AppBrand({ assistant }: { readonly assistant: WebAssistantIdentity | null }) {
     return (
         <SidebarMenu>
             <SidebarMenuItem>
-                <SidebarMenuButton size="lg" asChild>
+                <SidebarMenuButton size="lg" className="h-auto gap-3 py-2" asChild>
                     <a href="/">
-                        <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                            <GalleryVerticalEndIcon className="size-4" />
-                        </div>
+                        {assistant === null ? (
+                            <div className="aspect-square size-16 shrink-0 rounded-xl bg-sidebar-primary group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:rounded-lg" />
+                        ) : (
+                            <AvatarSvg
+                                config={assistant.avatar}
+                                className="aspect-square size-16! shrink-0 rounded-xl group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:rounded-lg"
+                            />
+                        )}
                         <div className="grid flex-1 text-left text-sm leading-tight">
-                            <span className="truncate font-medium">{name ?? "\u00a0"}</span>
+                            <span className="truncate font-semibold text-base">
+                                {assistant?.name ?? " "}
+                            </span>
                         </div>
                     </a>
                 </SidebarMenuButton>

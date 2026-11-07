@@ -1,6 +1,8 @@
+import { avatarToDataUrl } from "@getfamiliar/avatar";
 import { useEffect } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { findPluginPage, PluginPage } from "@/components/plugin-page";
+import { AVATAR_SETTINGS_ROUTE, AvatarSettings } from "@/components/settings/avatar-settings";
 import {
     Breadcrumb,
     BreadcrumbItem,
@@ -18,23 +20,31 @@ import { findActiveMenuPath } from "@/lib/menu";
 /**
  * Root of the web UI: the collapsible-to-icons sidebar (shadcn block
  * `sidebar-07`) with the plugins' menu; the content area shows the
- * plugin page owning the current route (placeholder content otherwise).
- * The breadcrumb starts at the assistant's name and names the menu
- * entry of the current page; the document title is the assistant's name.
+ * web UI's own settings pages or the plugin page owning the current route
+ * (placeholder content otherwise). The breadcrumb starts at the
+ * assistant's name and names the menu entry of the current page; the
+ * document title is the assistant's name, the favicon its avatar.
  *
  * @returns The app shell.
  */
 export default function App() {
-    const shell = useShell();
+    const { shell, setAssistantAvatar } = useShell();
     const pathname = window.location.pathname;
     const active = shell === null ? null : findActiveMenuPath(shell.menu, pathname);
-    const page = shell === null ? null : findPluginPage(shell.pages, pathname);
-    const assistantName = shell?.assistantName ?? null;
+    const isAvatarSettings = pathname === AVATAR_SETTINGS_ROUTE;
+    const page = shell === null || isAvatarSettings ? null : findPluginPage(shell.pages, pathname);
+    const assistantName = shell?.assistant.name ?? null;
+    const avatar = shell?.assistant.avatar ?? null;
     useEffect(() => {
         if (assistantName !== null) {
             document.title = assistantName;
         }
     }, [assistantName]);
+    useEffect(() => {
+        if (avatar !== null) {
+            setFavicon(avatarToDataUrl(avatar));
+        }
+    }, [avatar]);
     return (
         <TooltipProvider>
             <SidebarProvider>
@@ -82,8 +92,18 @@ export default function App() {
                             </Breadcrumb>
                         </div>
                     </header>
-                    {shell !== null && page !== null ? (
-                        <PluginPage page={page} pathname={pathname} user={shell.user} />
+                    {shell !== null && isAvatarSettings ? (
+                        <AvatarSettings
+                            savedAvatar={shell.assistant.avatar}
+                            onSaved={setAssistantAvatar}
+                        />
+                    ) : shell !== null && page !== null ? (
+                        <PluginPage
+                            page={page}
+                            pathname={pathname}
+                            user={shell.user}
+                            assistant={shell.assistant}
+                        />
                     ) : (
                         <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
                             <div className="grid auto-rows-min gap-4 md:grid-cols-3">
@@ -98,4 +118,21 @@ export default function App() {
             </SidebarProvider>
         </TooltipProvider>
     );
+}
+
+/**
+ * Point the document's icon at `href`, creating the `<link rel="icon">`
+ * when the page has none.
+ *
+ * @param href Icon URL (here a `data:` URL).
+ */
+function setFavicon(href: string): void {
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (link === null) {
+        link = document.createElement("link");
+        link.rel = "icon";
+        document.head.append(link);
+    }
+    link.type = "image/svg+xml";
+    link.href = href;
 }

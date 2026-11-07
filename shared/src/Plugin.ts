@@ -1,6 +1,7 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CommandDef } from "citty";
 import type { AgentRunRow } from "./AgentRun.js";
+import type { AvatarConfig } from "./AssistantAvatar.js";
 import type { CalendarApi } from "./Calendar.js";
 import type { ChatFilter, ChatHistoryQuery, ChatMessage } from "./ChatMessage.js";
 import type { ChatHandler, ChatUnsubscribe } from "./ChatMessageBus.js";
@@ -340,6 +341,11 @@ export interface HostContext {
      * wherever the assistant names itself to the user (UI branding, voice).
      */
     readonly assistantName: string;
+    /**
+     * The assistant's avatar (`core.assistantAvatar`, completed with
+     * defaults), read on every access. Render it with `@getfamiliar/avatar`.
+     */
+    readonly assistantAvatar: AvatarConfig;
     /**
      * Absolute host path of the project's `data/` directory.
      *

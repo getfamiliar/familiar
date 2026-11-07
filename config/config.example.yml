@@ -22,6 +22,17 @@ core:
   # Optional; falls back to "Familiar" when omitted.
   # assistantName: Familiar
 
+  # Your assistant's face (Avataaars options). Usually edited in the web
+  # UI under Settings → Avatar, which writes this mapping. Missing options
+  # take their default; see docs/config.md for the options.
+  # assistantAvatar:
+  #   topType: ShortHairShortFlat
+  #   hairColor: BrownDark
+  #   clotheType: CollarSweater
+  #   clotheColor: Blue03
+  #   mouthType: Smile
+  #   backgroundColor: "#65c9ff"
+
   # Shared secret every request to the host bastion (LLM proxy, MCP
   # gateway, plugin tools) must carry in the `x-familiar-bastion-token`
   # header. The bastion listens on 0.0.0.0, so without it anything on
@@ -340,14 +351,15 @@ inference:
 # numeric id.
 #
 # agent.authorizedNumber: the only number the agent's WhatsApp account
-# talks to — your own number in international format (with or without
-# "+"). While unset, the agent replies to any sender with their number
-# so you can paste it here.
+# talks to — your own number in international format: country code
+# without leading 0 ("4917612345678"; "+49 176 …" and "0049…" work too,
+# a national "0176…" does not). Every other sender gets a refusal that
+# names their number in this format, so you can paste it here.
 # whatsapp:
 #   groupAllowlist:
 #     - "1203....@g.us"
 #   agent:
-#     authorizedNumber: "+49176..."
+#     authorizedNumber: "4917612345678"
 
 # Core mail settings (cross-provider). Safety knobs are applied by the
 # core `mail_send_*` tools before dispatching to whichever plugin owns

@@ -1,5 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
-import { type Logger, MIN_PROXY_SECRET_LENGTH } from "@getfamiliar/shared";
+import {
+    ASSISTANT_AVATAR_CONFIG_KEY,
+    findAvatarConfigProblems,
+    type Logger,
+    MIN_PROXY_SECRET_LENGTH,
+} from "@getfamiliar/shared";
 import { parse, YAMLParseError } from "yaml";
 import {
     DEFAULT_COMPACTION_THRESHOLD_BYTES,
@@ -86,6 +91,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
     optionalIanaTimezone(config, "core.timezone", warnings);
     optionalString(config, "core.defaultCalendar", warnings);
     optionalString(config, "core.assistantName", warnings);
+    lintAssistantAvatar(config, warnings);
     optionalBastionToken(config, "core.bastionToken", errors);
     optionalStringOrStringList(config, "core.writablePaths", warnings);
     optionalPipRequirements(config, "python.packages", errors);
@@ -327,6 +333,19 @@ function optionalLogSystemPromptMode(
     warnings.push(
         `${path} should be a boolean or one of "full" / "non-static" (got ${describe(value)}).`,
     );
+}
+
+/**
+ * Validate `core.assistantAvatar`: unknown options or values are
+ * warnings, because rendering falls back to the default per option.
+ *
+ * @param root Parsed config root.
+ * @param warnings Warning sink.
+ */
+function lintAssistantAvatar(root: Record<string, unknown>, warnings: string[]): void {
+    for (const problem of findAvatarConfigProblems(readPath(root, ASSISTANT_AVATAR_CONFIG_KEY))) {
+        warnings.push(`${ASSISTANT_AVATAR_CONFIG_KEY}: ${problem}.`);
+    }
 }
 
 /**

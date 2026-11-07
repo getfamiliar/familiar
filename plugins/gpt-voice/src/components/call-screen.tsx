@@ -1,14 +1,13 @@
 import {
-    AudioLines,
-    Loader2,
-    Mic,
-    MicOff,
-    Phone,
-    PhoneOff,
-    ShieldAlert,
-    TriangleAlert,
-} from "lucide-react";
+    Avatar,
+    type AvatarExpression,
+    EXPRESSION_PRESETS,
+    useTalkingMouth,
+} from "@getfamiliar/avatar";
+import type { WebAssistantIdentity } from "@getfamiliar/shared";
+import { Mic, MicOff, Phone, PhoneOff, ShieldAlert, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Laptop } from "@/components/laptop";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { type CallPhase, useVoiceCall, type VoiceBlocker } from "@/hooks/use-voice-call";
@@ -18,35 +17,34 @@ import { cn } from "@/lib/utils";
 export interface CallScreenProps {
     /** Plugin route prefix (`/plugins/gpt-voice`). */
     readonly basePath: string;
+    /** The assistant's name and avatar. */
+    readonly assistant: WebAssistantIdentity;
 }
 
 /**
- * The call screen, modelled on a video-call app: the assistant's avatar
- * in the middle (it pulses while the assistant speaks; a face will
- * replace it later), status and call duration below, and a control bar
- * with mute and call / hang-up at the bottom.
+ * The call screen, modelled on a video-call app: the assistant's animated
+ * face in the middle, name, status and call duration below, and a control
+ * bar with mute and call / hang-up at the bottom.
  *
- * @param props Route prefix.
+ * @param props Route prefix and assistant.
  * @returns The screen.
  */
-export function CallScreen({ basePath }: CallScreenProps) {
+export function CallScreen({ basePath, assistant }: CallScreenProps) {
     const call = useVoiceCall(basePath);
     const isInCall =
         call.phase === "connecting" || call.phase === "connected" || call.phase === "ending";
     return (
         <div className="flex h-full min-h-[480px] flex-col bg-muted/40">
-            <div className="flex flex-1 flex-col items-center justify-center gap-6 p-6">
-                <Avatar isSpeaking={call.isAssistantSpeaking} isInCall={isInCall} />
+            <div className="@container flex flex-1 flex-col items-center justify-center gap-6 p-6">
+                <AssistantFace
+                    assistant={assistant}
+                    isLive={call.phase === "connected"}
+                    isSpeaking={call.isAssistantSpeaking}
+                    isBusy={call.runningTaskCount > 0}
+                />
                 <div className="flex flex-col items-center gap-1 text-center">
-                    <div className="font-heading text-xl font-medium">Familiar</div>
+                    <div className="font-heading text-xl font-medium">{assistant.name}</div>
                     <CallStatus phase={call.phase} connectedAt={call.connectedAt} />
-                    {call.runningTaskCount > 0 && (
-                        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-background px-3 py-1 text-muted-foreground text-xs shadow-sm">
-                            <Loader2 className="size-3.5 animate-spin" />
-                            Working in the background
-                            {call.runningTaskCount > 1 ? ` (${call.runningTaskCount})` : ""}…
-                        </div>
-                    )}
                 </div>
                 <div className="w-full max-w-md space-y-3">
                     {call.phase === "blocked" &&
@@ -100,38 +98,70 @@ export function CallScreen({ basePath }: CallScreenProps) {
     );
 }
 
+/** Where the assistant looks while it works on the laptop. */
+const LOOK_AT_LAPTOP = { x: 0, y: 4 } as const;
+
 /**
- * The assistant's avatar: a circle with a pulsing ring while it speaks.
+ * The assistant's face. Before a call it rests in a circle: still,
+ * faded, half desaturated. Once the call runs (the duration shows), the
+ * circle grows into a 16:9 video tile like in a video call, the avatar
+ * grows with it (head and shoulders, like a webcam) and comes to life: it
+ * idles (head sway, blinks, glances) and changes its expression —
+ * listening, talking while it speaks. While background work runs, a
+ * laptop slides into the picture and the assistant looks down into it
+ * (unless it is speaking). A ring shows when it speaks.
  *
- * @param props Speaking and call state.
- * @returns The avatar.
+ * @param props Avatar and call state.
+ * @returns The tile.
  */
-function Avatar({
+function AssistantFace({
+    assistant,
+    isLive,
     isSpeaking,
-    isInCall,
+    isBusy,
 }: {
+    readonly assistant: WebAssistantIdentity;
+    readonly isLive: boolean;
     readonly isSpeaking: boolean;
-    readonly isInCall: boolean;
+    readonly isBusy: boolean;
 }) {
+    const talkingMouth = useTalkingMouth(isLive && isSpeaking);
+    const isWorking = isLive && isBusy;
+    const expression: AvatarExpression | undefined = !isLive
+        ? undefined
+        : isSpeaking
+          ? { ...EXPRESSION_PRESETS.speaking, mouth: talkingMouth }
+          : isBusy
+            ? EXPRESSION_PRESETS.thinking
+            : EXPRESSION_PRESETS.listening;
     return (
-        <div className="relative flex size-40 items-center justify-center">
-            {isSpeaking && (
-                <span className="absolute inset-0 animate-ping rounded-full bg-primary/20" />
+        <div
+            className={cn(
+                "relative shrink-0 overflow-hidden shadow-md ring-4 transition-all duration-700 ease-in-out",
+                isLive
+                    ? "h-[calc(min(100cqw,48rem)*9/16)] w-[min(100cqw,48rem)] rounded-2xl"
+                    : "size-56 rounded-[50%] opacity-90 grayscale-50",
+                isSpeaking ? "ring-primary" : "ring-transparent",
             )}
-            <span
-                className={cn(
-                    "absolute inset-0 rounded-full border-4 transition-colors",
-                    isSpeaking ? "border-primary" : "border-transparent",
-                )}
-            />
-            <div
-                className={cn(
-                    "relative flex size-36 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity",
-                    isInCall ? "opacity-100" : "opacity-70",
-                )}
-            >
-                <AudioLines className="size-14" />
+            style={{ backgroundColor: assistant.avatar.backgroundColor }}
+        >
+            <div className="absolute top-0 left-1/2 aspect-[264/280] h-full -translate-x-1/2">
+                <Avatar
+                    config={assistant.avatar}
+                    expression={expression}
+                    gaze={isWorking && !isSpeaking ? LOOK_AT_LAPTOP : undefined}
+                    title={assistant.name}
+                    animated={isLive}
+                    className="block size-full"
+                />
             </div>
+            <Laptop
+                isVisible={isWorking}
+                className="absolute bottom-0 left-1/2 h-[30%] -translate-x-1/2"
+            />
+            <span className="sr-only" aria-live="polite">
+                {isWorking ? `${assistant.name} is working in the background` : ""}
+            </span>
         </div>
     );
 }

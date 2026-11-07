@@ -1,6 +1,6 @@
-import type { WebAuthPageView } from "@getfamiliar/shared";
+import { AvatarSvg } from "@getfamiliar/avatar";
+import type { WebAssistantIdentity, WebAuthPageView } from "@getfamiliar/shared";
 import { cn } from "cn";
-import { SparklesIcon } from "lucide-react";
 import type * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,16 +14,17 @@ import { Field, FieldDescription, FieldGroup, FieldSeparator } from "@/component
  * is decided by the core webserver.
  *
  * @param props.view The page the core decided to show.
- * @param props.assistantName The assistant's name (`core.assistantName`).
+ * @param props.assistant The assistant's name and avatar.
  * @returns The page body.
  */
 export function AuthPage({
     view,
-    assistantName,
+    assistant,
 }: {
     readonly view: WebAuthPageView;
-    readonly assistantName: string;
+    readonly assistant: WebAssistantIdentity;
 }) {
+    const assistantName = assistant.name;
     return (
         <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
             <div className="w-full max-w-sm md:max-w-4xl">
@@ -33,7 +34,7 @@ export function AuthPage({
                             <div className="p-6 md:p-8">
                                 <AuthPageContent view={view} name={assistantName} />
                             </div>
-                            <BrandPanel name={assistantName} />
+                            <BrandPanel assistant={assistant} />
                         </CardContent>
                     </Card>
                     <FieldDescription className="px-6 text-center">
@@ -214,17 +215,18 @@ function Command({
  * Right half of the card (hidden on small screens), in place of the
  * block's placeholder image.
  *
- * @param props.name The assistant's name.
+ * @param props.assistant The assistant's name and avatar.
  * @returns The decorative panel.
  */
-function BrandPanel({ name }: { readonly name: string }) {
+function BrandPanel({ assistant }: { readonly assistant: WebAssistantIdentity }) {
     return (
         <div className="relative hidden flex-col items-center justify-center gap-4 bg-primary p-8 text-primary-foreground md:flex">
-            <div className="flex size-14 items-center justify-center rounded-2xl bg-primary-foreground/10">
-                <SparklesIcon className="size-7" />
-            </div>
+            <AvatarSvg
+                config={assistant.avatar}
+                className="size-32 rounded-full ring-4 ring-primary-foreground/15"
+            />
             <div className="text-center">
-                <p className="text-2xl font-semibold tracking-tight">{name}</p>
+                <p className="text-2xl font-semibold tracking-tight">{assistant.name}</p>
                 <p className="text-sm text-primary-foreground/70">Loyal. Local. Markdown.</p>
             </div>
         </div>

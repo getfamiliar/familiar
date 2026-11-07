@@ -232,7 +232,7 @@ webPlugin: (ctx) => ({
   - It is swapped without a restart of the webserver when the plugin restarts.
 - **Page.**
   - The web UI loads the page for every route under `/plugins/<plugin-id>`.
-  - It imports the module and calls its default export, `MountWebPage`: `mount(container, { basePath, pathname, user, navigate })` renders into the content area next to the sidebar and returns an unmount function.
+  - It imports the module and calls its default export, `MountWebPage`: `mount(container, { basePath, pathname, user, assistant, navigate })` renders into the content area next to the sidebar and returns an unmount function.
   - The contract is framework-agnostic. A React page creates its own root and brings its own React in production.
   - Add a menu entry that links to the page via `webMenu`.
 - **Styles.**

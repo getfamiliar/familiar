@@ -1,4 +1,9 @@
-import type { MountWebPage, WebPageEntry, WebPrincipal } from "@getfamiliar/shared";
+import type {
+    MountWebPage,
+    WebAssistantIdentity,
+    WebPageEntry,
+    WebPrincipal,
+} from "@getfamiliar/shared";
 import { CircleAlertIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -49,16 +54,19 @@ function moduleUrlOf(page: WebPageEntry): string {
  * @param props.page The page owning the current route.
  * @param props.pathname Current browser path.
  * @param props.user The signed-in user.
+ * @param props.assistant The assistant's name and avatar.
  * @returns The container.
  */
 export function PluginPage({
     page,
     pathname,
     user,
+    assistant,
 }: {
     readonly page: WebPageEntry;
     readonly pathname: string;
     readonly user: WebPrincipal;
+    readonly assistant: WebAssistantIdentity;
 }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [state, setState] = useState<"loading" | "mounted" | { error: string }>("loading");
@@ -85,6 +93,7 @@ export function PluginPage({
                     basePath: page.basePath,
                     pathname,
                     user,
+                    assistant,
                     navigate: (to) => window.location.assign(to),
                 });
                 setState("mounted");
@@ -98,7 +107,7 @@ export function PluginPage({
             isCancelled = true;
             unmount?.();
         };
-    }, [page, pathname, user]);
+    }, [page, pathname, user, assistant]);
 
     return (
         <div className="relative flex min-h-0 flex-1 flex-col">

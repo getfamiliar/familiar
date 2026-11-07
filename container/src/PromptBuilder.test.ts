@@ -145,6 +145,12 @@ describe("buildPrompt — total payload cap", () => {
     });
 });
 
+/** The ARCHITECTURE.md the shipped PROMPT.md includes. */
+const SHIPPED_ARCHITECTURE = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../data/workspace-template/ARCHITECTURE.md",
+);
+
 /** The PROMPT.md shipped with the canonical workspace template. */
 const SHIPPED_PROMPT_TEMPLATE = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -159,6 +165,7 @@ describe("buildPromptParts", () => {
         previousWorkspaceRoot = HandlerFile.getWorkspaceRoot();
         workspaceRoot = mkdtempSync(path.join(tmpdir(), "familiar-prompt-test-"));
         copyFileSync(SHIPPED_PROMPT_TEMPLATE, path.join(workspaceRoot, "PROMPT.md"));
+        copyFileSync(SHIPPED_ARCHITECTURE, path.join(workspaceRoot, "ARCHITECTURE.md"));
         writeFileSync(path.join(workspaceRoot, "SOUL.md"), "I am the soul.\n", "utf8");
         writeFileSync(path.join(workspaceRoot, "CONTEXT.md"), "I am the context.\n", "utf8");
         mkdirSync(path.join(workspaceRoot, "skills", "listfiles"), { recursive: true });
@@ -200,10 +207,12 @@ describe("buildPromptParts", () => {
         assert.match(parts.system, /^# Identity\n\nI am the soul\./m);
         assert.match(parts.system, /^# Context\n\nI am the context\./m);
         assert.match(parts.system, /^# Handler\n\nDo the thing\./m);
+        assert.match(parts.system, /^# Architecture of this system\n\nYou are an assistant/m);
         assert.match(parts.system, /^- `listfiles`: How to keep lists in files\.$/m);
-        assert.match(parts.system, /^# Available tools\n\n- send_chat\n- bash$/m);
-        assert.match(parts.system, /^## The bash tool$/m);
+        assert.match(parts.system, /^### Bash and Python$/m);
+        assert.match(parts.system, /^### Banners$/m);
         assert.doesNotMatch(parts.system, /^# Runtime$/m);
+        assert.match(parts.userHead, /^# Preloaded tools\n\n- send_chat\n- bash$/m);
         assert.match(parts.userHead, /^# Runtime$/m);
         assert.match(parts.userHead, /^- Event topic: `chat:telegram`$/m);
         assert.match(parts.userHead, /^- privileged: no$/m);
@@ -329,7 +338,7 @@ describe("buildPromptParts", () => {
             eventId: "event-without-scratch",
             plugins: null,
         });
-        assert.match(parts.system, /^- \{SOUL\.md\}$/m);
+        assert.match(parts.userHead, /^- \{SOUL\.md\}$/m);
     });
 
     it("renders preloaded skills untruncated after the handler", async () => {
@@ -349,7 +358,7 @@ describe("buildPromptParts", () => {
         assert.match(parts.system, /^List skill body\.$/m);
         assert.equal(parts.system.includes("tools: fs_*"), false);
         assert.equal(parts.system.includes(longBody), true);
-        assert.match(parts.system, /^## The bash tool$/m);
+        assert.match(parts.system, /^### Bash and Python$/m);
         assert.equal(parts.system.includes("…[truncated"), false);
     });
 

@@ -1,6 +1,6 @@
 import { createServer } from "node:net";
 import path from "node:path";
-import type { Logger, WebAuthPageView, WebUiEnv } from "@getfamiliar/shared";
+import type { Logger, WebAssistantIdentity, WebAuthPageView, WebUiEnv } from "@getfamiliar/shared";
 import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 import type { Context } from "hono";
 import type { ViteDevServer, Logger as ViteLogger } from "vite";
@@ -105,18 +105,18 @@ export class ViteDevBridge {
      * no script, so there is no hot reload for them).
      *
      * @param view The page the core decided to show.
-     * @param assistantName The assistant's name for title and brand panel.
+     * @param assistant The assistant's name and avatar for title, favicon and brand panel.
      * @returns The HTML document.
      * @throws {Error} When the module fails to load or lacks `renderAuthPage`.
      */
-    async renderAuthPage(view: WebAuthPageView, assistantName: string): Promise<string> {
+    async renderAuthPage(view: WebAuthPageView, assistant: WebAssistantIdentity): Promise<string> {
         const module = (await this.server.ssrLoadModule(AUTH_PAGE_MODULE)) as {
             renderAuthPage?: RenderAuthPage;
         };
         if (typeof module.renderAuthPage !== "function") {
             throw new Error(`web-ui: ${AUTH_PAGE_MODULE} does not export renderAuthPage`);
         }
-        return module.renderAuthPage(view, assistantName);
+        return module.renderAuthPage(view, assistant);
     }
 
     /** Shut the Vite server (watchers, HMR websocket) down. */
