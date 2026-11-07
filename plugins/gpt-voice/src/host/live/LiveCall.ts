@@ -197,6 +197,7 @@ export class LiveCall {
             transportKind: transport.kind,
             recentTurns: (maxTurns) => this.transcript.recent(maxTurns),
             deliver: (delegationId, text) => this.deliver(delegationId, text),
+            reportProgress: (delegationId, text) => this.reportProgress(delegationId, text),
             notifyClient: (frame) => this.notifyClient(frame),
             onEventEmitted: (eventId, delegationId) => deps.routeEvent(eventId, this, delegationId),
             onEventSettled: (eventId) => deps.unrouteEvent(eventId),
@@ -331,6 +332,25 @@ export class LiveCall {
             return;
         }
         this.deliverAfterHangup(text);
+    }
+
+    /**
+     * Tell the voice model silently what a background task is doing (a
+     * finished step of its run), bound to the delegation. Not spoken by
+     * itself; after hang-up it is dropped — only the result outlives the call.
+     *
+     * @param delegationId The delegation the task works on.
+     * @param text Progress note (at most one append long).
+     */
+    reportProgress(delegationId: string, text: string): void {
+        const upstream = this.upstream;
+        if (upstream === null || !this.isActive) {
+            return;
+        }
+        upstream.appendContext(delegationId, text, "thinking");
+        this.log.debug(
+            `gpt-voice: call ${this.id} delegation ${delegationId} progress note sent (${text.length} chars)`,
+        );
     }
 
     /**

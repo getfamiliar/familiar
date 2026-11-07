@@ -8,8 +8,10 @@ import type {
     ChatHandler,
     ChatMessage,
     EmitHandle,
+    EmitOptions,
     HostContext,
     NewEvent,
+    StepResultRow,
     WebSocketPeer,
 } from "@getfamiliar/shared";
 import { MockLogger } from "@getfamiliar/shared/testing";
@@ -127,6 +129,7 @@ class FakePeer implements WebSocketPeer {
 interface EmittedEvent {
     readonly event: NewEvent;
     readonly id: string;
+    readonly options: EmitOptions | undefined;
     resolve(text: string): void;
     reject(error: Error): void;
 }
@@ -159,7 +162,7 @@ function fakeHost(): FakeHost {
         banners: [],
         host: undefined as never,
     };
-    const emit = async (event: NewEvent): Promise<EmitHandle> => {
+    const emit = async (event: NewEvent, options?: EmitOptions): Promise<EmitHandle> => {
         const id = `ev-${fake.emitted.length + 1}`;
         let resolve: (text: string) => void = () => {};
         let reject: (error: Error) => void = () => {};
@@ -171,7 +174,7 @@ function fakeHost(): FakeHost {
         if (event.state === "done") {
             resolve("");
         }
-        fake.emitted.push({ event, id, resolve, reject });
+        fake.emitted.push({ event, id, options, resolve, reject });
         return { id, settled };
     };
     const config = {
@@ -396,6 +399,63 @@ describe("VoiceService", () => {
         );
         assert.equal(peer.receivedOfType("familiar.delegation.finished").length, 1);
         await service.stop();
+    });
+
+    it("sends the steps of a background task as silent progress for its delegation", async () => {
+        const fake = fakeHost();
+        const { upstream, peer } = await openCall(fake);
+        upstream.serverSend({
+            type: "session.delegation.created",
+            delegation: { id: "item_3", type: "delegation", target: "client" },
+        });
+        await tick();
+        const background = fake.emitted.find((entry) => entry.event.topic === "voice:background");
+        assert.ok(background?.options?.onStep !== undefined);
+        const onStep = background.options.onStep;
+        const step = (fields: Partial<StepResultRow>): StepResultRow =>
+            ({
+                id: "s",
+                agentRunId: "r1",
+                eventId: background.id,
+                stepNumber: 0,
+                finishReason: "tool-calls",
+                resultText: null,
+                reasoningText: null,
+                toolCalls: [],
+                toolResults: [],
+                ...fields,
+            }) as StepResultRow;
+        await onStep(
+            step({
+                reasoningText: "Kalender für morgen prüfen.",
+                toolCalls: [{ toolCallId: "c1", toolName: "calendar_list_events", input: {} }],
+            }),
+        );
+        // A send_chat-only step is spoken via the chat route, not repeated here.
+        await onStep(
+            step({
+                stepNumber: 1,
+                toolCalls: [{ toolCallId: "c2", toolName: "send_chat", input: { text: "x" } }],
+            }),
+        );
+        const progress = upstream
+            .sentOfType("session.thinking.append")
+            .filter((frame) => frame.delegation_id === "item_3");
+        assert.equal(progress.length, 1);
+        assert.match(String(progress[0]?.content), /Thinking: Kalender für morgen prüfen\./);
+        assert.equal(upstream.sentOfType("session.commentary.append").length, 0);
+
+        background.resolve("Morgen ist frei.");
+        await tick();
+        await onStep(step({ stepNumber: 2, reasoningText: "zu spät" }));
+        assert.equal(
+            upstream
+                .sentOfType("session.thinking.append")
+                .filter((frame) => frame.delegation_id === "item_3").length,
+            1,
+        );
+        peer.clientSend({ type: "session.close" });
+        await tick(10);
     });
 
     it("sends a result to the default chat channel when the call ended first", async () => {

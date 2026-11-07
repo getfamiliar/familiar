@@ -27,6 +27,7 @@ AI SDK realtime session  ──WS──▶  /plugins/gpt-voice/socket ──▶ 
   - The handler `voice/background.md` works out the request and does it with the usual tools.
   - Its result is sent back for the delegation (`session.commentary.append`), and GPT-Live says it in its own words.
   - Progress notes from `send_chat` on the channel `voice` are spoken too.
+  - Every finished step of the run (the tail of its reasoning, the tools it calls, failed calls) goes to GPT-Live as silent context for the delegation (`session.thinking.append` with the delegation id, at most 12 per delegation). The voice model can then tell the user what is going on while they wait, without reading every step aloud. The final answer and `send_chat`-only steps are skipped, since they are spoken anyway.
   - If the call ended before the task finished, the result goes to `core.defaultChatChannel` instead, so it is not lost.
 - **The voice model starts with context.** When a call starts, the host fills `{CURRENT_TIME}` and `{BANNER_LIST}` in `voice/live.md` (the banners are the notes every agent run sees). It also passes the last messages of earlier calls (chat channel `voice`, up to 12,000 characters) as the session's history.
 - **The briefing comes right after.** The voice model knows nothing about your day, and a briefing built by a cron job would run all day even when nobody calls. So the briefing is built only when you call:

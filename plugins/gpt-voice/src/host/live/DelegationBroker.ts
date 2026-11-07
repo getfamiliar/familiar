@@ -1,6 +1,12 @@
-import { EVENT_PRIORITY, type HostContext, type Logger } from "@getfamiliar/shared";
+import {
+    EVENT_PRIORITY,
+    type HostContext,
+    type Logger,
+    type StepResultRow,
+} from "@getfamiliar/shared";
 import { type HostFrame, VOICE_BACKGROUND_TOPIC, VOICE_CHAT_CHANNEL } from "../VoiceProtocol.js";
 import { formatTranscript, type TranscriptTurn } from "./CallTranscript.js";
+import { formatStepProgress } from "./StepProgress.js";
 
 /**
  * Wait after `session.delegation.created` before reading the transcript:
@@ -19,6 +25,12 @@ export const BACKGROUND_TRANSCRIPT_TURNS = 16;
  */
 export const MAX_APPEND_CHARS = 1500;
 
+/**
+ * Progress notes per delegation at most: each costs context window of
+ * the voice session, and the tool budget of a run bounds its steps anyway.
+ */
+export const MAX_PROGRESS_APPENDS = 12;
+
 /** Who placed the call. */
 export type CallTransportKind = "web" | "phone";
 
@@ -32,6 +44,8 @@ export interface DelegationBrokerDeps {
     readonly recentTurns: (maxTurns: number) => readonly TranscriptTurn[];
     /** Deliver text for a delegation (spoken while the call lasts, else to the default chat). */
     readonly deliver: (delegationId: string, text: string) => void;
+    /** Silent progress of a delegation (a finished step of its run) for the voice model. */
+    readonly reportProgress: (delegationId: string, text: string) => void;
     /** Tell the client about background-task progress. */
     readonly notifyClient: (frame: HostFrame) => void;
     /** Route chat messages of the emitted event (`send_chat`) back to this call. */
@@ -50,9 +64,10 @@ export interface DelegationBrokerDeps {
  * text — the voice model expects the backend to work it out from the
  * conversation. So each delegation becomes a `voice:background` event
  * whose prompt is the recent transcript (data only; what to do with it
- * is policy in `workspace/voice/background.md`). The run's result is
- * delivered back for the same delegation id, which makes the voice
- * model say it.
+ * is policy in `workspace/voice/background.md`). Every finished step of
+ * the run goes to the voice model as a silent progress note for the
+ * delegation; the run's result is delivered back for the same
+ * delegation id, which makes the voice model say it.
  */
 export class DelegationBroker {
     private readonly deps: DelegationBrokerDeps;
@@ -77,21 +92,45 @@ export class DelegationBroker {
         const turns = deps.recentTurns(BACKGROUND_TRANSCRIPT_TURNS);
         let eventId: string;
         let settled: Promise<string>;
+        const progress = { isSettled: false, sentCount: 0 };
+        const onStep = (step: StepResultRow): void => {
+            if (progress.isSettled) {
+                return;
+            }
+            const note = formatStepProgress(step, MAX_APPEND_CHARS);
+            if (note === null) {
+                return;
+            }
+            if (progress.sentCount >= MAX_PROGRESS_APPENDS) {
+                if (progress.sentCount === MAX_PROGRESS_APPENDS) {
+                    deps.log.info(
+                        `gpt-voice: call ${deps.callId} delegation ${delegationId} reached ${MAX_PROGRESS_APPENDS} progress notes — sending no more`,
+                    );
+                    progress.sentCount++;
+                }
+                return;
+            }
+            progress.sentCount++;
+            deps.reportProgress(delegationId, note);
+        };
         try {
-            const handle = await deps.events.emit({
-                topic: VOICE_BACKGROUND_TOPIC,
-                isExactTopic: true,
-                prompt: buildBackgroundPrompt(deps.callId, deps.transportKind, turns),
-                payload: {
-                    callId: deps.callId,
-                    delegationId,
-                    transport: deps.transportKind,
+            const handle = await deps.events.emit(
+                {
+                    topic: VOICE_BACKGROUND_TOPIC,
+                    isExactTopic: true,
+                    prompt: buildBackgroundPrompt(deps.callId, deps.transportKind, turns),
+                    payload: {
+                        callId: deps.callId,
+                        delegationId,
+                        transport: deps.transportKind,
+                    },
+                    priority: EVENT_PRIORITY.CHAT,
+                    preferredChatChannelId: VOICE_CHAT_CHANNEL,
+                    privileged: true,
+                    idempotencyKey: `gpt-voice:${deps.callId}:${delegationId}`,
                 },
-                priority: EVENT_PRIORITY.CHAT,
-                preferredChatChannelId: VOICE_CHAT_CHANNEL,
-                privileged: true,
-                idempotencyKey: `gpt-voice:${deps.callId}:${delegationId}`,
-            });
+                { onStep },
+            );
             eventId = handle.id;
             settled = handle.settled;
         } catch (err) {
@@ -118,6 +157,7 @@ export class DelegationBroker {
         });
         void settled.then(
             (resultText) => {
+                progress.isSettled = true;
                 deps.onEventSettled(eventId);
                 deps.notifyClient({
                     type: "familiar.delegation.finished",
@@ -129,6 +169,7 @@ export class DelegationBroker {
                 }
             },
             (err: unknown) => {
+                progress.isSettled = true;
                 deps.onEventSettled(eventId);
                 const message = err instanceof Error ? err.message : String(err);
                 deps.log.warn(
