@@ -44,7 +44,11 @@ export function CallScreen({ basePath, assistant }: CallScreenProps) {
                 />
                 <div className="flex flex-col items-center gap-1 text-center">
                     <div className="font-heading text-xl font-medium">{assistant.name}</div>
-                    <CallStatus phase={call.phase} connectedAt={call.connectedAt} />
+                    <CallStatus
+                        phase={call.phase}
+                        connectedAt={call.connectedAt}
+                        isBriefingLoading={call.isBriefingLoading}
+                    />
                 </div>
                 <div className="w-full max-w-md space-y-3">
                     {call.phase === "blocked" &&
@@ -169,15 +173,17 @@ function AssistantFace({
 /**
  * Status line under the name: what the call is doing, or its duration.
  *
- * @param props Phase and connect time.
+ * @param props Phase, connect time and whether the briefing is still being built.
  * @returns The line.
  */
 function CallStatus({
     phase,
     connectedAt,
+    isBriefingLoading,
 }: {
     readonly phase: CallPhase;
     readonly connectedAt: number | null;
+    readonly isBriefingLoading: boolean;
 }) {
     const now = useNow(phase === "connected");
     const text = (() => {
@@ -196,7 +202,12 @@ function CallStatus({
                 return "Hanging up…";
         }
     })();
-    return <div className="text-muted-foreground text-sm tabular-nums">{text}</div>;
+    return (
+        <div className="text-muted-foreground text-sm tabular-nums">
+            {text}
+            {phase === "connected" && isBriefingLoading && " · preparing briefing…"}
+        </div>
+    );
 }
 
 /**

@@ -202,6 +202,7 @@ export {
     renderTemplate,
     type TemplateNode,
 } from "./PromptTemplate.js";
+export { formatRuntimeTime } from "./RuntimeTime.js";
 export type { NewScheduledSubagent, ScheduledSubagentRow } from "./ScheduledSubagent.js";
 export {
     ScheduledSubagentBus,

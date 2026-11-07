@@ -7,6 +7,7 @@ import {
     CALL_SOCKET_PATH,
     GPT_VOICE_PLUGIN_ID,
     VOICE_BACKGROUND_TOPIC,
+    VOICE_BRIEFING_TOPIC,
     VOICE_CALL_TOPIC,
 } from "./VoiceProtocol.js";
 import { VoiceService } from "./VoiceService.js";
@@ -58,10 +59,17 @@ async function start(ctx: HostContext): Promise<void> {
         host: {
             events: ctx.events,
             chat: ctx.chat,
+            banners: ctx.banners,
             config: ctx.config,
             logger: ctx.logger,
             get assistantName() {
                 return ctx.assistantName;
+            },
+            get timezone() {
+                return ctx.config.getString(
+                    "core.timezone",
+                    Intl.DateTimeFormat().resolvedOptions().timeZone,
+                );
             },
         },
         workspaceDir: ctx.workspaceDir,
@@ -97,6 +105,12 @@ export default definePlugin({
                 topic: VOICE_BACKGROUND_TOPIC,
                 description:
                     "The voice model delegated a task during a call; the prompt is the recent conversation, the result is spoken.",
+                isExactTopic: true,
+            },
+            {
+                topic: VOICE_BRIEFING_TOPIC,
+                description:
+                    "A voice call started; build a briefing (appointments, mail, tasks) the voice model gets as silent context. Reused for 30 minutes.",
                 isExactTopic: true,
             },
             {

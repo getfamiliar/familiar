@@ -2,6 +2,7 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CommandDef } from "citty";
 import type { AgentRunRow } from "./AgentRun.js";
 import type { AvatarConfig } from "./AssistantAvatar.js";
+import type { BannerRow } from "./BannerBus.js";
 import type { CalendarApi } from "./Calendar.js";
 import type { ChatFilter, ChatHistoryQuery, ChatMessage } from "./ChatMessage.js";
 import type { ChatHandler, ChatUnsubscribe } from "./ChatMessageBus.js";
@@ -273,6 +274,21 @@ export interface HostContext {
          * @throws {Error} When `limit` is outside 1 … `MAX_CHAT_HISTORY_PAGE`.
          */
         listMessages(query: ChatHistoryQuery): Promise<readonly ChatMessage[]>;
+    };
+    /**
+     * Read access to the banners — the short-lived notes every agentrun
+     * sees through `{BANNER_LIST}`. Read-only on purpose: banners are the
+     * agent's notes, created through its `banner_create` tool. For
+     * plugins that build prompts of their own (e.g. the voice model's
+     * instructions) and should show the same notes.
+     */
+    readonly banners: {
+        /**
+         * The banners that have not expired, oldest first (expired ones
+         * are deleted on the way). Times are UTC; render them with
+         * `formatBannerList(banners, timezone)`.
+         */
+        listActive(): Promise<readonly BannerRow[]>;
     };
     /**
      * Per-event scratch directory operations. Each event the bus

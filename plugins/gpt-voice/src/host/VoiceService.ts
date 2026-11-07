@@ -5,6 +5,7 @@ import type {
     WebSocketConnectionInfo,
     WebSocketPeer,
 } from "@getfamiliar/shared";
+import { BriefingProvider } from "./live/BriefingProvider.js";
 import {
     type CallTransport,
     LiveCall,
@@ -27,6 +28,8 @@ export interface VoiceServiceDeps {
     readonly modelFactory?: LiveModelFactory;
     /** Override of the transcript settle delay (tests). */
     readonly transcriptSettleMs?: number;
+    /** Clock (tests). */
+    readonly now?: () => Date;
 }
 
 /** Where a background event's chat messages go. */
@@ -46,12 +49,20 @@ export class VoiceService {
     private readonly calls = new Set<LiveCall>();
     private readonly routes = new Map<string, EventRoute>();
     private unsubscribe: ChatUnsubscribe | null = null;
+    /** Shared by all calls, so a fresh briefing is reused. */
+    readonly briefing: BriefingProvider;
 
     /**
      * @param deps Host access, workspace and (for tests) upstream overrides.
      */
     constructor(deps: VoiceServiceDeps) {
         this.deps = deps;
+        this.briefing = new BriefingProvider({
+            events: deps.host.events,
+            log: deps.host.logger,
+            timezone: () => deps.host.timezone,
+            ...(deps.now === undefined ? {} : { now: deps.now }),
+        });
     }
 
     /** Subscribe to the `voice` chat channel. */
@@ -118,6 +129,8 @@ export class VoiceService {
                 workspaceDir: this.deps.workspaceDir,
                 connector: this.deps.connector ?? wsConnector,
                 modelFactory: this.deps.modelFactory ?? openAiLiveModelFactory,
+                briefing: this.briefing,
+                ...(this.deps.now === undefined ? {} : { now: this.deps.now }),
                 routeEvent: (eventId, routedCall, delegationId) =>
                     this.routes.set(eventId, { call: routedCall, delegationId }),
                 unrouteEvent: (eventId) => this.routes.delete(eventId),

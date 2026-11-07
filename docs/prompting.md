@@ -107,11 +107,11 @@ Run `familiar prompt placeholders` for the authoritative list including placehol
 | `{PYTHON_PACKAGE_LIST}` | static | Comma-separated python packages available to the `bash` tool (`python.packages` in `config.yml`). |
 | `{WRITABLE_PATH_LIST}` | static | Comma-separated `core.writablePaths` globs a non-privileged run may write to. |
 | `{RUNTIME_LIST}` | dynamic | Bullets: current time, event topic, handler file, scratch dir (`/scratch/<event-id>/`), `outputChat`, `privileged`. |
-| `{CURRENT_TIME}` | dynamic | e.g. `Tuesday, 2026-05-19T18:43:12 in timezone Europe/Berlin`. |
+| `{CURRENT_TIME}` | dynamic | e.g. `Tuesday, 2026-05-19T18:43:12 in timezone Europe/Berlin`. Also available in `voice/live.md` (time of the call start). |
 | `{EVENT_TOPIC}` | dynamic | The event topic, e.g. `chat:telegram`. |
 | `{PRIVILEGED}` | dynamic | `yes` if the run stems from you (terminal, your Telegram), else `no`. Non-privileged runs can't write outside their `/scratch/<event-id>/` and the writable paths. |
 | `{STAGED_FILE_LIST}` | dynamic | Bullets of files staged in `/scratch/<event-id>/` (e.g. mail attachments) with their sizes. |
-| `{BANNER_LIST}` | dynamic | The active banners, one `* [ID:12] 2026-11-06 12:30 (until 2026-11-06 23:59): text` bullet each, `(none)` when there are none (see "Banners" below). |
+| `{BANNER_LIST}` | dynamic | The active banners, one `* [ID:12] 2026-11-06 12:30 (until 2026-11-06 23:59): text` bullet each, `(none)` when there are none (see "Banners" below). Also available in `voice/live.md`. |
 | `{some/file.md}` | static | Content of that workspace file. |
 
 ¹ `{TOOL_LIST}` contains the handler's `tools` **plus** tools this handler used often in recent runs. That second part drifts over time, so the default template puts `{TOOL_LIST}` after the marker; moved before it, the system prompt wouldn't be perfectly stable.
@@ -122,7 +122,7 @@ Plugins can add their own placeholders (always `dynamic`); they show up in `fami
 
 Banners are short-lived notes every run sees, so context crosses from one run to the next: tell the assistant in the chat that you are setting up a new phone today, and the mail handlers stop warning about the new-login mails. The assistant creates them with `banner_create` (text plus expiry, at most 30 days ahead, at most 500 characters and 20 active banners) and removes them early with `banner_remove`; once the expiry passes a banner disappears on its own. Only privileged runs — ones that stem from you — may create banners, because a banner reaches every later prompt and a mail handler reading a crafted mail must not be able to plant one. Anyone may remove one.
 
-The default `ARCHITECTURE.md` explains banners and when to create one (static, before the marker), and the default `PROMPT.md` lists the active ones in a `# Banner Messages` section after the marker. A workspace seeded before banners existed needs both added by hand (copy them from `data/workspace-template/`). `familiar banners list` shows what the assistant currently sees, `familiar banners remove <id>` deletes a banner. Lasting facts belong in the long-term memory instead.
+The default `ARCHITECTURE.md` explains banners and when to create one (static, before the marker), and the default `PROMPT.md` lists the active ones in a `# Banner Messages` section after the marker. A workspace seeded before banners existed needs both added by hand (copy them from `data/workspace-template/`). The voice model gets them too: the default `voice/live.md` lists them via `{BANNER_LIST}` when a call starts. `familiar banners list` shows what the assistant currently sees, `familiar banners remove <id>` deletes a banner. Lasting facts belong in the long-term memory instead.
 
 ## What the model receives
 

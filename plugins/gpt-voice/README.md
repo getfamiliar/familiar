@@ -28,17 +28,27 @@ AI SDK realtime session  ──WS──▶  /plugins/gpt-voice/socket ──▶ 
   - Its result is sent back for the delegation (`session.commentary.append`), and GPT-Live says it in its own words.
   - Progress notes from `send_chat` on the channel `voice` are spoken too.
   - If the call ended before the task finished, the result goes to `core.defaultChatChannel` instead, so it is not lost.
+- **The voice model starts with context.** When a call starts, the host fills `{CURRENT_TIME}` and `{BANNER_LIST}` in `voice/live.md` (the banners are the notes every agent run sees). It also passes the last messages of earlier calls (chat channel `voice`, up to 12,000 characters) as the session's history.
+- **The briefing comes right after.** The voice model knows nothing about your day, and a briefing built by a cron job would run all day even when nobody calls. So the briefing is built only when you call:
+  - Once the session runs, the plugin emits `voice:briefing`. Its handler `voice/briefing.md` collects appointments, important mail, tasks and current topics.
+  - The result is sent to GPT-Live as silent context (`session.thinking.append`, in chunks of at most ~500 tokens). The voice model can then answer "what's next today?" itself instead of delegating.
+  - The event runs at priority 90, so a delegation of the running call overtakes it in the queue (it does not interrupt a briefing that is already running).
+  - A briefing younger than 30 minutes is reused for the next call, and calls that start at the same time share one run.
+  - If it fails, the call goes on without it.
+  - Near the context limit (85 % of GPT-Live's context window, before OpenAI hands over to a replacement engine at 90 %), the briefing is sent once more.
+  - The page shows "preparing briefing…" while it is being built.
 - **Transcripts are chat history.** Every finished utterance of both sides is recorded on the chat channel `voice`, under one record-only event `voice:call` per call (created as `done`, no handler runs). So later chats know what was said on the phone.
 
 ## Customizing
 
-Both files are shipped as workspace templates and are yours to edit:
+The files are shipped as workspace templates and are yours to edit:
 
 - **`voice/live.md`** is the voice model's instructions, read at the start of every call.
   - Frontmatter `model` (default `gpt-live-1`) and `voice` (default `marin`).
-  - The body is a prompt template like `PROMPT.md`: `{SOUL.md}` and other `{file.md}` includes are expanded.
+  - The body is a prompt template like `PROMPT.md`: `{SOUL.md}` and other `{file.md}` includes are expanded, and the placeholders `{ASSISTANT_NAME}`, `{CURRENT_TIME}` (call start) and `{BANNER_LIST}` are filled.
   - It is not an agent handler, even though it lives in a topic folder.
   - Tell it here when to delegate. GPT-Live has no tools; delegating is how it gets anything done.
+- **`voice/briefing.md`** is the handler of `voice:briefing`: what the briefing should contain. Keep it short; it costs one agent run per call (or per 30 minutes).
 - **`voice/background.md`** is the handler of `voice:background`: how to read the transcript and how to phrase a result that will be spoken.
 
 ## Later: phone
@@ -50,4 +60,4 @@ A phone line will be a second transport. OpenAI answers SIP calls itself, with G
 ## Development
 
 - `npm run build` compiles the host code (`src/host` → `build/`), type-checks the page and builds it with Vite (`build/page/page.js`). In dev mode the web UI loads `src/page.tsx` from source.
-- `npm test` runs the host tests (`node:test`): transcript turns, chunking of spoken results, and the full call flow against a fake OpenAI socket and a fake event bus.
+- `npm test` runs the host tests (`node:test`): transcript turns, chunking of spoken results, the history budget, the briefing cache, and the full call flow (including briefing and its re-send) against a fake OpenAI socket and a fake event bus.

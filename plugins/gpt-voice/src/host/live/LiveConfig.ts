@@ -12,6 +12,19 @@ export const DEFAULT_LIVE_MODEL = "gpt-live-1";
 /** Voice used when `voice/live.md` names none. */
 export const DEFAULT_LIVE_VOICE = "marin";
 
+/**
+ * Placeholders `voice/live.md` may use — the same names and formats as in
+ * `PROMPT.md`, filled by the host when a call starts.
+ */
+export const LIVE_PLACEHOLDERS = {
+    /** The assistant's name (`core.assistantName`). */
+    assistantName: "ASSISTANT_NAME",
+    /** Local wall-clock time at call start, with weekday and timezone. */
+    currentTime: "CURRENT_TIME",
+    /** The active banners, one bullet each, or `(none)`. */
+    bannerList: "BANNER_LIST",
+} as const;
+
 /** Splits a markdown file into YAML frontmatter and body. */
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
@@ -44,16 +57,19 @@ export class LiveConfigError extends Error {
  *
  * The body is a prompt template like `PROMPT.md`: `{SOUL.md}` and other
  * `{path.md}` includes are expanded (workspace-relative, depth-limited);
- * the only placeholder is `{ASSISTANT_NAME}`, any other `{NAME}` stays
- * verbatim.
+ * placeholders are filled from `values` (see {@link LIVE_PLACEHOLDERS}),
+ * any other `{NAME}` stays verbatim.
  *
  * @param workspaceDir Absolute workspace root.
- * @param assistantName Value of `{ASSISTANT_NAME}`.
+ * @param values Placeholder values, keyed by name without braces.
  * @returns Model, voice and instructions.
  * @throws {LiveConfigError} When the file is missing, its frontmatter is
  *   not a YAML mapping, or `model` / `voice` are not strings.
  */
-export function readLiveSettings(workspaceDir: string, assistantName: string): LiveSettings {
+export function readLiveSettings(
+    workspaceDir: string,
+    values: ReadonlyMap<string, string>,
+): LiveSettings {
     const source = readWorkspaceText(workspaceDir, LIVE_CONFIG_FILE);
     if (source === null) {
         throw new LiveConfigError(
@@ -68,7 +84,7 @@ export function readLiveSettings(workspaceDir: string, assistantName: string): L
         readInclude: (relativePath) => readWorkspaceText(workspaceDir, relativePath),
         templateSources: {},
     });
-    const rendered = renderTemplate(parsed, new Map([["ASSISTANT_NAME", assistantName]]));
+    const rendered = renderTemplate(parsed, values);
     const instructions = [rendered.system, rendered.userHead]
         .filter((part) => part !== "")
         .join("\n\n");

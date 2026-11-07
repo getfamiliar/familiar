@@ -17,6 +17,9 @@ export const CALL_SOCKET_PATH = "/socket";
 /** Topic of a background task delegated by the voice model. */
 export const VOICE_BACKGROUND_TOPIC = "voice:background";
 
+/** Topic of the briefing the voice model gets as silent context shortly after a call starts. */
+export const VOICE_BRIEFING_TOPIC = "voice:briefing";
+
 /** Topic of record-only events (call transcripts, results after hang-up); no handler runs. */
 export const VOICE_CALL_TOPIC = "voice:call";
 
@@ -58,5 +61,20 @@ export interface DelegationFinishedFrame {
     readonly is_failed: boolean;
 }
 
+/** Host → page frame: the briefing for this call is being built (or fetched from the cache). */
+export interface BriefingStartedFrame {
+    readonly type: "familiar.briefing.started";
+}
+
+/** Host → page frame: the briefing was handed to the voice model, or could not be built. */
+export interface BriefingFinishedFrame {
+    readonly type: "familiar.briefing.finished";
+    readonly is_failed: boolean;
+}
+
 /** Every host-originated frame on the call socket. */
-export type HostFrame = DelegationStartedFrame | DelegationFinishedFrame;
+export type HostFrame =
+    | DelegationStartedFrame
+    | DelegationFinishedFrame
+    | BriefingStartedFrame
+    | BriefingFinishedFrame;

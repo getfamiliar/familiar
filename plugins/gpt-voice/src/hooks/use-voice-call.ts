@@ -23,6 +23,8 @@ export interface VoiceCallState {
     readonly isAssistantSpeaking: boolean;
     /** Background tasks of this call still running. */
     readonly runningTaskCount: number;
+    /** Whether the host is still building the briefing for the voice model. */
+    readonly isBriefingLoading: boolean;
     /** When the call connected (ms since epoch), else null. */
     readonly connectedAt: number | null;
 }
@@ -42,6 +44,7 @@ const INITIAL_STATE: VoiceCallState = {
     isMuted: false,
     isAssistantSpeaking: false,
     runningTaskCount: 0,
+    isBriefingLoading: false,
     connectedAt: null,
 };
 
@@ -110,6 +113,7 @@ export function useVoiceCall(basePath: string): VoiceCall {
                       ? null
                       : previous.connectedAt,
             runningTaskCount: runningTasksRef.current.size,
+            isBriefingLoading: phase === "idle" ? false : previous.isBriefingLoading,
         }));
     }, []);
 
@@ -120,6 +124,14 @@ export function useVoiceCall(basePath: string): VoiceCall {
                 return;
             }
             if (event.type !== "custom") {
+                return;
+            }
+            if (event.rawType === "familiar.briefing.started") {
+                update({ isBriefingLoading: true });
+                return;
+            }
+            if (event.rawType === "familiar.briefing.finished") {
+                update({ isBriefingLoading: false });
                 return;
             }
             const raw = event.raw as { delegation_id?: unknown };
@@ -174,6 +186,7 @@ export function useVoiceCall(basePath: string): VoiceCall {
                 phase: "idle",
                 connectedAt: null,
                 runningTaskCount: 0,
+                isBriefingLoading: false,
                 isAssistantSpeaking: false,
             });
         });

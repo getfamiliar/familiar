@@ -1,16 +1,60 @@
 import { randomUUID } from "node:crypto";
 import { createOpenAI, type Experimental_OpenAIRealtimeModelLive } from "@ai-sdk/openai";
-import type { HostContext, Logger } from "@getfamiliar/shared";
+import {
+    type ChatMessage,
+    formatBannerList,
+    formatRuntimeTime,
+    type HostContext,
+    type Logger,
+} from "@getfamiliar/shared";
 import type { Experimental_RealtimeServerEvent } from "ai";
 import { CALL_CLOSE_CODES, type HostFrame, VOICE_CHAT_CHANNEL } from "../VoiceProtocol.js";
+import type { BriefingProvider } from "./BriefingProvider.js";
 import { CallTranscript } from "./CallTranscript.js";
 import { ChatRecorder } from "./ChatRecorder.js";
-import { type CallTransportKind, DelegationBroker, splitForSpeech } from "./DelegationBroker.js";
-import { LiveConfigError, type LiveSettings, readLiveSettings } from "./LiveConfig.js";
+import { type CallTransportKind, DelegationBroker, splitIntoAppends } from "./DelegationBroker.js";
+import {
+    LIVE_PLACEHOLDERS,
+    LiveConfigError,
+    type LiveSettings,
+    readLiveSettings,
+} from "./LiveConfig.js";
 import { LiveUpstream, type UpstreamConnector } from "./LiveUpstream.js";
 
 /** Config key of the OpenAI API key (shared with the other OpenAI uses). */
 export const OPENAI_API_KEY_CONFIG = "inference.apiKeys.openai";
+
+/** Messages of earlier calls (channel `voice`) read for the session's `input` history. */
+export const HISTORY_INPUT_MESSAGES = 40;
+
+/**
+ * Character budget of that history. OpenAI allows 8,192 tokens of
+ * `input`; 12,000 characters stays below that with room to spare.
+ */
+export const HISTORY_INPUT_MAX_CHARS = 12_000;
+
+/**
+ * Re-send the briefing when the session's context window is this full:
+ * above 90 % OpenAI hands over to a replacement voice engine, which is
+ * only guaranteed to get the original instructions and a summary.
+ */
+export const BRIEFING_REPUSH_RATIO = 0.85;
+
+/** Below this usage ratio the re-send is armed again (the replacement engine took over). */
+export const BRIEFING_REARM_RATIO = 0.5;
+
+/** One message of the session's `input` history (OpenAI Live wire shape). */
+export type LiveInputMessage =
+    | {
+          readonly type: "message";
+          readonly role: "developer" | "user";
+          readonly content: [{ readonly type: "input_text"; readonly text: string }];
+      }
+    | {
+          readonly type: "message";
+          readonly role: "assistant";
+          readonly content: [{ readonly type: "output_text"; readonly text: string }];
+      };
 
 /** Audio format of a call, fixed for the whole session. */
 export type CallAudioFormat =
@@ -43,11 +87,14 @@ export interface CallTransport {
 /** The host capabilities a call uses. */
 export interface VoiceHost {
     readonly events: Pick<HostContext["events"], "emit">;
-    readonly chat: Pick<HostContext["chat"], "appendMessage">;
+    readonly chat: Pick<HostContext["chat"], "appendMessage" | "listMessages">;
+    readonly banners: HostContext["banners"];
     readonly config: HostContext["config"];
     readonly logger: Logger;
     /** The assistant's name for `{ASSISTANT_NAME}`, read per call. */
     readonly assistantName: string;
+    /** IANA timezone for `{CURRENT_TIME}` and `{BANNER_LIST}`, read per call. */
+    readonly timezone: string;
 }
 
 /** Creates the AI SDK Live codec for an API key and model. */
@@ -66,6 +113,10 @@ export interface LiveCallDeps {
     readonly workspaceDir: string;
     readonly connector: UpstreamConnector;
     readonly modelFactory: LiveModelFactory;
+    /** Builds or reuses the briefing sent to the voice model after the start. */
+    readonly briefing: Pick<BriefingProvider, "get">;
+    /** Clock (tests). */
+    readonly now?: () => Date;
     /** Register routing of `send_chat` messages of a background event to this call. */
     readonly routeEvent: (eventId: string, call: LiveCall, delegationId: string) => void;
     /** Drop that routing. */
@@ -116,6 +167,9 @@ export class LiveCall {
     private upstream: LiveUpstream | null = null;
     private isEnded = false;
     private hangupPromise: Promise<void> | null = null;
+    /** The briefing once it was sent, for a re-send near the context limit. */
+    private briefingText: string | null = null;
+    private isBriefingRepushArmed = true;
 
     /**
      * @param deps Host access, workspace, upstream connector, routing hooks.
@@ -160,7 +214,10 @@ export class LiveCall {
     /**
      * Open the OpenAI Live session. Settings come from
      * `workspace/voice/live.md` and the key from `inference.apiKeys.openai`,
-     * both read now, so edits apply to the next call.
+     * both read now, so edits apply to the next call. The instructions get
+     * the current time and the banners; the transcript of earlier calls
+     * goes in as `input` history. Once the session runs, the briefing is
+     * fetched in the background and sent as silent context.
      *
      * @throws {CallSetupError} When the key or `voice/live.md` is missing,
      *   or OpenAI refuses or does not answer.
@@ -175,7 +232,7 @@ export class LiveCall {
         }
         let settings: LiveSettings;
         try {
-            settings = readLiveSettings(this.deps.workspaceDir, this.deps.host.assistantName);
+            settings = readLiveSettings(this.deps.workspaceDir, await this.placeholderValues());
         } catch (err) {
             if (err instanceof LiveConfigError) {
                 throw new CallSetupError(CALL_CLOSE_CODES.noLiveConfig, err.message);
@@ -185,6 +242,7 @@ export class LiveCall {
         for (const warning of settings.warnings) {
             this.log.warn(`gpt-voice: call ${this.id}: ${warning}`);
         }
+        const input = await this.historyInput();
         const model = this.deps.modelFactory(apiKey, settings.model);
         const upstream = new LiveUpstream({
             model,
@@ -202,7 +260,12 @@ export class LiveCall {
                 voice: settings.voice,
                 inputAudioFormat: this.transport.audioFormat,
                 outputAudioFormat: this.transport.audioFormat,
-                providerOptions: { openai: { delegation: { type: "client" } } },
+                providerOptions: {
+                    openai: {
+                        delegation: { type: "client" },
+                        ...(input.length === 0 ? {} : { input }),
+                    },
+                },
             },
         }) as Record<string, unknown>;
         this.upstream = upstream;
@@ -214,8 +277,9 @@ export class LiveCall {
             throw new CallSetupError(CALL_CLOSE_CODES.upstreamFailed, message);
         }
         this.log.info(
-            `gpt-voice: call ${this.id} (${this.transport.kind}) connected — model ${settings.model}, voice ${settings.voice}`,
+            `gpt-voice: call ${this.id} (${this.transport.kind}) connected — model ${settings.model}, voice ${settings.voice}, ${input.length} history messages`,
         );
+        void this.loadBriefing();
     }
 
     /**
@@ -261,7 +325,7 @@ export class LiveCall {
     deliver(delegationId: string, text: string): void {
         const upstream = this.upstream;
         if (upstream !== null && this.isActive) {
-            for (const chunk of splitForSpeech(text)) {
+            for (const chunk of splitIntoAppends(text)) {
                 upstream.appendContext(delegationId, chunk, "commentary");
             }
             return;
@@ -293,6 +357,9 @@ export class LiveCall {
                     break;
                 case "delegation-created":
                     void this.broker.onDelegationCreated(event.delegationId);
+                    break;
+                case "session-usage":
+                    this.onContextUsage(event.contextWindowUsageRatio);
                     break;
                 case "session-closed":
                     this.log.info(
@@ -355,6 +422,130 @@ export class LiveCall {
     }
 
     /**
+     * Values of the `voice/live.md` placeholders. A failure to read the
+     * banners is logged and rendered as `(none)` — it must not stop a call.
+     *
+     * @returns Placeholder name → value.
+     */
+    private async placeholderValues(): Promise<ReadonlyMap<string, string>> {
+        const host = this.deps.host;
+        const timezone = host.timezone;
+        let bannerList = "(none)";
+        try {
+            bannerList = formatBannerList(await host.banners.listActive(), timezone);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.log.warn(`gpt-voice: call ${this.id} could not read the banners: ${message}`);
+        }
+        return new Map([
+            [LIVE_PLACEHOLDERS.assistantName, host.assistantName],
+            [LIVE_PLACEHOLDERS.currentTime, formatRuntimeTime(this.now(), timezone)],
+            [LIVE_PLACEHOLDERS.bannerList, bannerList],
+        ]);
+    }
+
+    /**
+     * The transcript of earlier calls as the session's `input` history.
+     * A failure is logged and yields no history.
+     *
+     * @returns Input messages, oldest first (empty without earlier calls).
+     */
+    private async historyInput(): Promise<LiveInputMessage[]> {
+        try {
+            const messages = await this.deps.host.chat.listMessages({
+                channelId: VOICE_CHAT_CHANNEL,
+                limit: HISTORY_INPUT_MESSAGES,
+            });
+            return buildHistoryInput(messages);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.log.warn(
+                `gpt-voice: call ${this.id} could not read earlier calls for the history: ${message}`,
+            );
+            return [];
+        }
+    }
+
+    /**
+     * Fetch the briefing (cached or built by a `voice:briefing` run) and
+     * send it as silent context. Never throws; without a briefing the
+     * voice model just delegates more.
+     */
+    private async loadBriefing(): Promise<void> {
+        this.notifyClient({ type: "familiar.briefing.started" });
+        let text: string;
+        try {
+            text = await this.deps.briefing.get(this.id);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.log.warn(`gpt-voice: call ${this.id} has no briefing: ${message}`);
+            this.notifyClient({ type: "familiar.briefing.finished", is_failed: true });
+            return;
+        }
+        if (!this.isActive) {
+            return;
+        }
+        this.briefingText = text;
+        this.pushBriefing(text);
+        this.notifyClient({ type: "familiar.briefing.finished", is_failed: false });
+    }
+
+    /**
+     * Send the briefing as session-wide thinking (silent context), in
+     * appends of at most ~500 tokens.
+     *
+     * @param text The briefing.
+     */
+    private pushBriefing(text: string): void {
+        const upstream = this.upstream;
+        if (upstream === null || !this.isActive) {
+            return;
+        }
+        const chunks = splitIntoAppends(text);
+        chunks.forEach((chunk, index) => {
+            const label =
+                chunks.length === 1 ? "Briefing" : `Briefing (${index + 1}/${chunks.length})`;
+            upstream.appendContext(null, `${label}: ${chunk}`, "thinking");
+        });
+        this.log.info(
+            `gpt-voice: call ${this.id} sent the briefing (${text.length} chars, ${chunks.length} appends)`,
+        );
+    }
+
+    /**
+     * React to the session's context usage: re-send the briefing once
+     * when the window nears the hand-over to a replacement engine, and
+     * arm the re-send again after the usage dropped (hand-over done).
+     *
+     * @param ratio `context_window.usage_ratio`, if reported.
+     */
+    private onContextUsage(ratio: number | undefined): void {
+        if (ratio === undefined || this.briefingText === null) {
+            return;
+        }
+        if (ratio < BRIEFING_REARM_RATIO) {
+            this.isBriefingRepushArmed = true;
+            return;
+        }
+        if (ratio >= BRIEFING_REPUSH_RATIO && this.isBriefingRepushArmed) {
+            this.isBriefingRepushArmed = false;
+            this.log.info(
+                `gpt-voice: call ${this.id} context window ${Math.round(ratio * 100)} % full — sending the briefing again`,
+            );
+            this.pushBriefing(this.briefingText);
+        }
+    }
+
+    /**
+     * Current time.
+     *
+     * @returns Now, from the injected clock if any.
+     */
+    private now(): Date {
+        return this.deps.now?.() ?? new Date();
+    }
+
+    /**
      * Write a late result to the default chat channel.
      *
      * @param text The result.
@@ -374,4 +565,58 @@ export class LiveCall {
             `gpt-voice: call ${this.id} already ended — background result sent to chat channel ${channelId}`,
         );
     }
+}
+
+/**
+ * Turn the latest chat messages of earlier calls into the session's
+ * `input` history: newest messages first until
+ * {@link HISTORY_INPUT_MAX_CHARS} is reached, then in chronological
+ * order, after a developer note that they are not part of this call.
+ *
+ * @param messages Messages of the `voice` channel, oldest first.
+ * @returns Input messages, or none when there are no messages.
+ */
+export function buildHistoryInput(messages: readonly ChatMessage[]): LiveInputMessage[] {
+    const kept: ChatMessage[] = [];
+    let chars = 0;
+    for (let index = messages.length - 1; index >= 0; index--) {
+        const message = messages[index];
+        if (message === undefined || message.textContent.trim() === "") {
+            continue;
+        }
+        chars += message.textContent.length;
+        if (chars > HISTORY_INPUT_MAX_CHARS) {
+            break;
+        }
+        kept.unshift(message);
+    }
+    if (kept.length === 0) {
+        return [];
+    }
+    return [
+        {
+            type: "message",
+            role: "developer",
+            content: [
+                {
+                    type: "input_text",
+                    text: "The following messages are from earlier voice calls with the user, for context. They are not part of this call; the call starts after them.",
+                },
+            ],
+        },
+        ...kept.map(
+            (message): LiveInputMessage =>
+                message.role === "assistant"
+                    ? {
+                          type: "message",
+                          role: "assistant",
+                          content: [{ type: "output_text", text: message.textContent }],
+                      }
+                    : {
+                          type: "message",
+                          role: "user",
+                          content: [{ type: "input_text", text: message.textContent }],
+                      },
+        ),
+    ];
 }

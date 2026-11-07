@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type {
+    BannerRow,
     ChatHandler,
     ChatMessage,
     EmitHandle,
@@ -137,6 +138,9 @@ interface FakeHost {
     readonly messages: { eventId: string; role: string; text: string }[];
     chatHandler: ChatHandler | null;
     apiKey: string | null;
+    /** Messages of earlier calls returned by `chat.listMessages`. */
+    history: ChatMessage[];
+    banners: BannerRow[];
 }
 
 /**
@@ -151,6 +155,8 @@ function fakeHost(): FakeHost {
         messages: [],
         chatHandler: null,
         apiKey: "sk-test",
+        history: [],
+        banners: [],
         host: undefined as never,
     };
     const emit = async (event: NewEvent): Promise<EmitHandle> => {
@@ -185,6 +191,7 @@ function fakeHost(): FakeHost {
             appendMessage: async (eventId: string, role: "user" | "assistant", text: string) => {
                 fake.messages.push({ eventId, role, text });
             },
+            listMessages: async () => fake.history,
             subscribe: async (_filter, handler) => {
                 fake.chatHandler = handler;
                 return async () => {
@@ -192,9 +199,11 @@ function fakeHost(): FakeHost {
                 };
             },
         },
+        banners: { listActive: async () => fake.banners },
         config,
         logger: new MockLogger(),
         assistantName: "Fam",
+        timezone: "Europe/Berlin",
     };
     return fake;
 }
@@ -208,13 +217,47 @@ async function tick(times = 5): Promise<void> {
 
 let workspaceDir: string;
 
+/** Fixed clock of the tests: Tuesday 18:43:12 in Europe/Berlin. */
+const NOW = new Date("2026-05-19T16:43:12Z");
+
+/**
+ * The pending `voice:briefing` event.
+ *
+ * @param fake The fake host.
+ * @returns The emitted briefing event.
+ */
+function briefingEvent(fake: FakeHost): EmittedEvent {
+    const briefing = fake.emitted.find((entry) => entry.event.topic === "voice:briefing");
+    assert.ok(briefing !== undefined, "a voice:briefing event was emitted");
+    return briefing;
+}
+
+/**
+ * A chat message of an earlier call.
+ *
+ * @param id Message id.
+ * @param role Speaker.
+ * @param text Text.
+ * @returns The message.
+ */
+function historyMessage(id: string, role: "user" | "assistant", text: string): ChatMessage {
+    return {
+        id,
+        eventId: "ev-old",
+        role,
+        textContent: text,
+        createdAt: NOW,
+        deliveredAt: NOW,
+    };
+}
+
 beforeEach(() => {
     workspaceDir = mkdtempSync(path.join(tmpdir(), "gpt-voice-"));
     mkdirSync(path.join(workspaceDir, "voice"));
     writeFileSync(path.join(workspaceDir, "SOUL.md"), "You are {ASSISTANT_NAME}, loyal and local.");
     writeFileSync(
         path.join(workspaceDir, "voice", "live.md"),
-        "---\nvoice: cedar\n---\n{SOUL.md}\n\nSpeak German. Delegate calendar questions.\n",
+        "---\nvoice: cedar\n---\n{SOUL.md}\n\nSpeak German. Delegate calendar questions.\n\nNow: {CURRENT_TIME}\n\nNotes:\n{BANNER_LIST}\n",
     );
 });
 
@@ -245,6 +288,7 @@ async function openCall(fake: FakeHost): Promise<{
         workspaceDir,
         connector,
         transcriptSettleMs: 0,
+        now: () => NOW,
     });
     await service.start();
     const peer = new FakePeer();
@@ -442,5 +486,116 @@ describe("VoiceService", () => {
         });
         peer.clientSend({ type: "session.input_audio.append", audio: "AAAA" });
         assert.equal(peer.closedWith?.code, CALL_CLOSE_CODES.protocolError);
+    });
+    it("puts time, banners and earlier calls into the session start", async () => {
+        const fake = fakeHost();
+        fake.banners = [
+            {
+                id: "7",
+                text: "Steffen is in Lisbon until Friday.",
+                createdAt: "2026-05-18T08:00:00.000Z",
+                expiresAt: "2026-05-22T20:00:00.000Z",
+                createdByAgentrunId: null,
+                createdByTopic: null,
+            },
+        ];
+        fake.history = [
+            historyMessage("1", "user", "Erinnere mich an den Zahnarzt."),
+            historyMessage("2", "assistant", "Mache ich."),
+        ];
+        const { upstream, service } = await openCall(fake);
+        const [start] = upstream.sentOfType("session.start");
+        const session = start?.session as Record<string, unknown>;
+        assert.match(
+            String(session.instructions),
+            /Now: Tuesday, 2026-05-19T18:43:12 in timezone Europe\/Berlin/,
+        );
+        assert.match(
+            String(session.instructions),
+            /\* \[ID:7\] 2026-05-18 10:00 \(until 2026-05-22 22:00\): Steffen is in Lisbon until Friday\./,
+        );
+        const input = session.input as { role: string; content: { text: string }[] }[];
+        assert.deepEqual(
+            input.map((message) => [message.role, message.content[0]?.text]),
+            [
+                ["developer", input[0]?.content[0]?.text],
+                ["user", "Erinnere mich an den Zahnarzt."],
+                ["assistant", "Mache ich."],
+            ],
+        );
+        assert.match(String(input[0]?.content[0]?.text), /earlier voice calls/);
+        await service.stop();
+    });
+
+    it("starts without history or banners when there are none", async () => {
+        const fake = fakeHost();
+        const { upstream, service } = await openCall(fake);
+        const session = upstream.sentOfType("session.start")[0]?.session as Record<string, unknown>;
+        assert.equal(session.input, undefined);
+        assert.match(String(session.instructions), /Notes:\n\(none\)/);
+        await service.stop();
+    });
+
+    it("sends the briefing as silent thinking and again near the context limit", async () => {
+        const fake = fakeHost();
+        const { upstream, peer, service } = await openCall(fake);
+        const briefing = briefingEvent(fake);
+        assert.equal(briefing.event.isExactTopic, true);
+        assert.equal(briefing.event.priority, 90);
+        assert.equal(peer.receivedOfType("familiar.briefing.started").length, 1);
+        assert.equal(upstream.sentOfType("session.thinking.append").length, 0);
+
+        const longBriefing = `${"Heute um 9 Uhr Team-Meeting. ".repeat(60)}Morgen frei.`;
+        briefing.resolve(longBriefing);
+        await tick();
+        const appends = upstream.sentOfType("session.thinking.append");
+        assert.equal(appends.length, 2);
+        assert.deepEqual(
+            appends.map((frame) => frame.delegation_id),
+            [null, null],
+        );
+        assert.match(String(appends[0]?.content), /^Briefing \(1\/2\): Heute/);
+        assert.match(String(appends[1]?.content), /^Briefing \(2\/2\): .*Morgen frei\.$/);
+        assert.deepEqual(peer.receivedOfType("familiar.briefing.finished"), [
+            { type: "familiar.briefing.finished", is_failed: false },
+        ]);
+
+        const usage = (ratio: number) =>
+            upstream.serverSend({
+                type: "session.usage.updated",
+                usage: { seconds: 60 },
+                context_window: { usage_ratio: ratio },
+            });
+        usage(0.4);
+        usage(0.86);
+        usage(0.9);
+        assert.equal(upstream.sentOfType("session.thinking.append").length, 4);
+        usage(0.3);
+        usage(0.88);
+        assert.equal(upstream.sentOfType("session.thinking.append").length, 6);
+        await service.stop();
+    });
+
+    it("drops a briefing that arrives after the call ended", async () => {
+        const fake = fakeHost();
+        const { upstream, peer } = await openCall(fake);
+        peer.clientSend({ type: "session.close" });
+        await tick(10);
+        briefingEvent(fake).resolve("Zu spät.");
+        await tick();
+        assert.equal(upstream.sentOfType("session.thinking.append").length, 0);
+    });
+
+    it("keeps the call going when the briefing fails", async () => {
+        const fake = fakeHost();
+        const { upstream, peer, service } = await openCall(fake);
+        briefingEvent(fake).reject(new Error("model over capacity"));
+        await tick();
+        assert.equal(upstream.sentOfType("session.thinking.append").length, 0);
+        assert.deepEqual(peer.receivedOfType("familiar.briefing.finished"), [
+            { type: "familiar.briefing.finished", is_failed: true },
+        ]);
+        assert.equal(service.activeCallCount, 1);
+        await service.stop();
     });
 });

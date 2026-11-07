@@ -13,10 +13,11 @@ export const DEFAULT_TRANSCRIPT_SETTLE_MS = 800;
 export const BACKGROUND_TRANSCRIPT_TURNS = 16;
 
 /**
- * Longest text per spoken context append. OpenAI allows ~500 tokens per
- * append; 1500 characters stays well below that for German or English.
+ * Longest text per context append (spoken commentary or silent
+ * thinking). OpenAI allows ~500 tokens per append; 1500 characters stays
+ * well below that for German or English.
  */
-export const MAX_SPOKEN_CHUNK_CHARS = 1500;
+export const MAX_APPEND_CHARS = 1500;
 
 /** Who placed the call. */
 export type CallTransportKind = "web" | "phone";
@@ -170,7 +171,7 @@ export function buildBackgroundPrompt(
  * @param maxChars Chunk limit.
  * @returns Non-empty chunks in order.
  */
-export function splitForSpeech(text: string, maxChars = MAX_SPOKEN_CHUNK_CHARS): string[] {
+export function splitIntoAppends(text: string, maxChars = MAX_APPEND_CHARS): string[] {
     const chunks: string[] = [];
     let current = "";
     const pieces = text

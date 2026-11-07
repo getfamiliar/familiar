@@ -6,6 +6,8 @@ import {
     ASSISTANT_AVATAR_CONFIG_KEY,
     ASSISTANT_NAME_CONFIG_KEY,
     type AvatarConfig,
+    BannerBus,
+    type BannerRow,
     type CalendarApi,
     type ChatFilter,
     type ChatHandler,
@@ -256,6 +258,11 @@ export class HostContextImpl implements HostContext {
             this.appendChatMessage(eventId, role, text),
         listMessages: (query: ChatHistoryQuery): Promise<readonly ChatMessage[]> =>
             this.listChatMessages(query),
+    };
+
+    readonly banners = {
+        listActive: async (): Promise<readonly BannerRow[]> =>
+            new BannerBus(await this.deps.ensureConnection()).listActive(),
     };
 
     readonly mcp = {
