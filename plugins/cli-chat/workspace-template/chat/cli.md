@@ -1,4 +1,5 @@
 ---
+serial: chat
 outputChat: true
 model: smart
 ---

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { HandlerFile } from "./HandlerFile.js";
+import { HandlerFile, handlerSerialKey } from "./HandlerFile.js";
 
 const CONFIG_VAR = "FAMILIAR_CONTAINER_CONFIG";
 
@@ -148,4 +148,34 @@ test("the folder form x/index.md resolves when it is the only form", () => {
     const handler = HandlerFile.load("mail:new:ms365", { isExactTopic: true });
     assert.equal(handler.relativePath, "mail/new/ms365/index.md");
     assert.equal(handler.shadowedPath, null);
+});
+
+test("serial: true keys the handler by its own path", () => {
+    touch("chat/telegram.md", "---\nserial: true\n---\nbody\n");
+    const handler = HandlerFile.load("chat:telegram", { isExactTopic: true });
+    assert.equal(handlerSerialKey(handler), "handler:chat/telegram.md");
+});
+
+test("serial: <name> keys every handler declaring it by the shared group", () => {
+    touch("chat/telegram.md", "---\nserial: chat\n---\nbody\n");
+    touch("chat/web.md", "---\nserial: chat\n---\nbody\n");
+    const telegram = HandlerFile.load("chat:telegram", { isExactTopic: true });
+    const web = HandlerFile.load("chat:web", { isExactTopic: true });
+    assert.equal(handlerSerialKey(telegram), "group:chat");
+    assert.equal(handlerSerialKey(web), "group:chat");
+});
+
+test("serial absent or false runs in parallel", () => {
+    touch("mail/index.md", "---\nserial: false\n---\nbody\n");
+    touch("cal/index.md", "# no frontmatter\n");
+    assert.equal(handlerSerialKey(HandlerFile.load("mail", { isExactTopic: true })), null);
+    assert.equal(handlerSerialKey(HandlerFile.load("cal", { isExactTopic: true })), null);
+});
+
+test("serial rejects a malformed group name", () => {
+    touch("chat/web.md", "---\nserial: chat group\n---\nbody\n");
+    assert.throws(
+        () => HandlerFile.load("chat:web", { isExactTopic: true }),
+        /header field "serial" must be/,
+    );
 });

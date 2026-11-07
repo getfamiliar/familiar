@@ -26,6 +26,9 @@ import { buildContainerToolRunContext } from "./tools/ContainerToolRunContext.js
 import { ToolsFactory } from "./tools/ToolsFactory.js";
 import type { AgentrunRecovery } from "./utils/AgentrunRecovery.js";
 
+/** Default for {@link SchedulerSettings.maxConcurrentAgentruns} (`core.maxConcurrentAgentruns`). */
+export const DEFAULT_MAX_CONCURRENT_AGENTRUNS = 8;
+
 /** Reloadable knobs of the {@link AgentrunScheduler}; see {@link SchedulerDeps.settings}. */
 export interface SchedulerSettings {
     /**
@@ -57,6 +60,14 @@ export interface SchedulerSettings {
     readonly maxToolDescriptionChars?: number;
     readonly toolDefinitionsContextFraction?: number;
     readonly toolHeuristicRunWindow?: number;
+    /**
+     * Safety cap on agentruns executing (not paused) at once. Runs start
+     * immediately up to this cap; provider limits are enforced per model
+     * request (`inference.concurrency`), not here. Read on every pick, so a
+     * config reload applies at once. Defaults to
+     * {@link DEFAULT_MAX_CONCURRENT_AGENTRUNS}.
+     */
+    readonly maxConcurrentAgentruns?: number;
 }
 
 /**
@@ -122,12 +133,13 @@ export interface SchedulerDeps {
      */
     readonly refreshPassedConfig?: () => Promise<void>;
     /**
-     * Maximum number of runners executing (not paused) at once. Today
-     * always `1` to match Featherless's single Pro slot; per-model
-     * fan-out becomes a future change to the picker, not a new
-     * concept.
+     * Serialization key of a pending row, or `null` when the row may run
+     * in parallel with anything. Rows sharing a key run one at a time,
+     * in pick order (priority, then id). Production resolves the row's
+     * handler and returns its path when the handler declares
+     * `serial: true`. Optional — omitted means nothing is serialized.
      */
-    readonly maxConcurrentExecuting: number;
+    readonly serialKeyFor?: (row: AgentRunRow) => string | null;
     /**
      * Subscribe to "something might have changed, recheck eligibility"
      * signals. Production passes a closure that registers on
@@ -150,6 +162,10 @@ interface Waiter {
 
 interface ActiveAgent {
     readonly id: string;
+    /** Parent agentrun id, for the serial check's ancestor exemption. */
+    readonly parentId: string | null;
+    /** Serialization key the run holds (see {@link SchedulerDeps.serialKeyFor}). */
+    readonly serialKey: string | null;
     /** Resolves with the runner's final text or rejects with the runner's error. */
     readonly runPromise: Promise<string>;
     readonly abortController: AbortController;
@@ -157,6 +173,12 @@ interface ActiveAgent {
     readonly waiters: Map<string, Waiter>;
     /** `true` while the runner is parked on at least one waiter. */
     paused: boolean;
+    /**
+     * `true` while a model request waits for a free
+     * `inference.concurrency` slot. The step timer is stopped meanwhile;
+     * the run still counts as executing.
+     */
+    isWaitingForInference: boolean;
     /**
      * Active per-step timeout. Re-armed on every completed step via
      * {@link AgentrunScheduler.resetStepTimeout}; cleared during pauses
@@ -192,12 +214,14 @@ type RunOutcome =
  * 2. **Single source of truth on what's executing.** Holds an
  *    in-memory map of `ActiveAgent` records. The map distinguishes
  *    *executing* (making progress / model calls) from *paused*
- *    (parked on `waitForSubagent`). Concurrency is gated on the
- *    executing count alone.
+ *    (parked on `waitForSubagent`). Only the safety cap
+ *    `maxConcurrentAgentruns` gates on the executing count; provider
+ *    limits live in the per-request `InferenceConcurrencyLimiter`.
  * 3. **Picking next work.** `pickAndDispatch()` reads eligible
  *    pending rows from the bus, prefers ones already in the map
  *    (resume candidates), and starts or resumes them until the
- *    executing limit is reached.
+ *    safety cap is reached. Fresh rows whose serialization key is
+ *    held by another active run are skipped until it settles.
  * 4. **Subagent suspension.** When the start_subagent tool calls
  *    `waitForSubagent(childId)` via the per-runner closure, the
  *    Scheduler flips the parent to `waiting`, pauses its timeout,
@@ -330,17 +354,63 @@ export class AgentrunScheduler {
             }
         }
         const candidates = [...resumeCandidates, ...freshCandidates];
+        const maxConcurrent =
+            this.deps.settings().maxConcurrentAgentruns ?? DEFAULT_MAX_CONCURRENT_AGENTRUNS;
 
         for (const row of candidates) {
-            if (this.executingCount() >= this.deps.maxConcurrentExecuting) {
+            if (this.executingCount() >= maxConcurrent) {
                 break;
             }
             if (this.active.has(row.id)) {
                 await this.resumePaused(row);
-            } else {
-                await this.startFresh(row);
+                continue;
+            }
+            const serialKey = this.serialKeyFor(row);
+            if (serialKey !== null && this.hasSerialKeyHolder(serialKey, row)) {
+                continue;
+            }
+            await this.startFresh(row, serialKey);
+        }
+    }
+
+    /**
+     * Resolve a row's serialization key through the injected resolver.
+     * A resolver error (e.g. a missing handler) yields `null`: the run
+     * starts and fails with the real error in the runner.
+     */
+    private serialKeyFor(row: AgentRunRow): string | null {
+        if (this.deps.serialKeyFor === undefined) {
+            return null;
+        }
+        try {
+            return this.deps.serialKeyFor(row);
+        } catch (err) {
+            this.deps.log.debug(
+                { agentrunId: row.id, err: err instanceof Error ? err.message : String(err) },
+                `could not resolve the serialization key of agentrun ${row.id} [${row.topic}]; starting it unserialized`,
+            );
+            return null;
+        }
+    }
+
+    /**
+     * Whether another active run (executing or paused) holds `serialKey`.
+     * The candidate's own ancestors don't count: a serial handler that
+     * awaits a subagent of the same handler must not deadlock on itself.
+     */
+    private hasSerialKeyHolder(serialKey: string, row: AgentRunRow): boolean {
+        const ancestorIds = new Set<string>();
+        let parentId = row.parentAgentrunId;
+        while (parentId !== null && parentId !== undefined && !ancestorIds.has(parentId)) {
+            ancestorIds.add(parentId);
+            parentId = this.active.get(parentId)?.parentId ?? null;
+        }
+        for (const active of this.active.values()) {
+            if (active.serialKey === serialKey && !ancestorIds.has(active.id)) {
+                return true;
             }
         }
+        return false;
     }
 
     /** Count of runners currently executing (not paused). */
@@ -359,7 +429,7 @@ export class AgentrunScheduler {
      * the context (including the per-row `waitForSubagent` closure),
      * and launches `runner.run(ctx)` fire-and-forget.
      */
-    private async startFresh(row: AgentRunRow): Promise<void> {
+    private async startFresh(row: AgentRunRow, serialKey: string | null): Promise<void> {
         const { agentRunBus, log, runnerFactory } = this.deps;
 
         await agentRunBus.update(row.id, { state: "running" });
@@ -372,10 +442,13 @@ export class AgentrunScheduler {
         const abortController = new AbortController();
         const active: ActiveAgent = {
             id: row.id,
+            parentId: row.parentAgentrunId ?? null,
+            serialKey,
             runPromise: undefined as unknown as Promise<string>, // filled below
             abortController,
             waiters: new Map(),
             paused: false,
+            isWaitingForInference: false,
             timeoutHandle: null,
             stepTimeoutMs: this.deps.settings().stepTimeoutMs,
         };
@@ -664,7 +737,7 @@ export class AgentrunScheduler {
      * the pause path just cleared.
      */
     private resetStepTimeout(active: ActiveAgent): void {
-        if (active.paused) {
+        if (active.paused || active.isWaitingForInference) {
             return;
         }
         if (active.timeoutHandle !== null) {
@@ -672,6 +745,25 @@ export class AgentrunScheduler {
             active.timeoutHandle = null;
         }
         active.timeoutHandle = this.armTimeout(active);
+    }
+
+    /**
+     * Stop the step timer while a model request of `active` waits for a
+     * free `inference.concurrency` slot — queue time is not progress the
+     * run could have made.
+     */
+    private onInferenceWaitStart(active: ActiveAgent): void {
+        active.isWaitingForInference = true;
+        if (active.timeoutHandle !== null) {
+            this.deps.clock.clearTimeout(active.timeoutHandle);
+            active.timeoutHandle = null;
+        }
+    }
+
+    /** Re-arm a fresh full step budget once the queued request got its slot. */
+    private onInferenceWaitEnd(active: ActiveAgent): void {
+        active.isWaitingForInference = false;
+        this.resetStepTimeout(active);
     }
 
     /**
@@ -758,6 +850,8 @@ export class AgentrunScheduler {
                 await stepBus.add(step);
             },
             onStepFinished: () => this.resetStepTimeout(active),
+            onInferenceWaitStart: () => this.onInferenceWaitStart(active),
+            onInferenceWaitEnd: () => this.onInferenceWaitEnd(active),
             listBanners: () => bannerBus.listActive(),
             stampModel: async (model, systemPrompt) => {
                 await agentRunBus.update(row.id, {

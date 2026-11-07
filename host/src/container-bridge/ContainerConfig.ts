@@ -82,6 +82,7 @@ export class ContainerConfig {
 export const FORWARDED_CONTAINER_CONFIG_KEYS: readonly string[] = [
     "core.postgresPassword",
     "core.agentStepTimeout",
+    "core.maxConcurrentAgentruns",
     "core.toolCallOffloadingLimit",
     "core.maxToolDescriptionChars",
     "core.toolDefinitionsContextFraction",
@@ -91,6 +92,7 @@ export const FORWARDED_CONTAINER_CONFIG_KEYS: readonly string[] = [
     "inference.defaultProvider",
     "inference.defaultModel",
     "inference.aliases",
+    "inference.concurrency",
     "inference.maxRetries",
     "inference.outputFallbackPercentage",
     "inference.captureInitialMessageHistory",

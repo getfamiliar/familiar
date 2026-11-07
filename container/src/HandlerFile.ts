@@ -115,6 +115,17 @@ export interface HandlerFileHeader {
      * `SkillFile.ts`).
      */
     readonly skills?: readonly string[];
+    /**
+     * Serializes this handler's agentruns. `true`: at most one run of
+     * this handler file at a time. A name (`chat`): at most one run of
+     * *all* handlers declaring that name at a time — e.g. every chat
+     * handler shares `chat`, because the chat history is one global log
+     * and two quick messages must not be answered in parallel from it.
+     * Waiting runs start in pick order (priority, then id); a run's own
+     * subagents are exempt. Default `false`: runs start immediately. See
+     * {@link handlerSerialKey}.
+     */
+    readonly serial?: boolean | string;
 }
 
 /** Pair returned by the parser before defaults are applied. */
@@ -364,6 +375,7 @@ function parseHandler(filePath: string, source: string): DeclaredFile {
         systemPrompt: optionalSystemPrompt(filePath, raw),
         toolCallOffloadingLimit: optionalPositiveInteger(filePath, raw, "toolCallOffloadingLimit"),
         skills: optionalSkillIds(filePath, raw),
+        serial: optionalSerial(filePath, raw),
     };
 
     return { header, body };
@@ -390,6 +402,7 @@ function mergeDefaults(
         toolCallOffloadingLimit:
             declared.toolCallOffloadingLimit ?? defaults.toolCallOffloadingLimit,
         skills: declared.skills ?? defaults.skills,
+        serial: declared.serial ?? defaults.serial,
     };
 }
 
@@ -488,6 +501,53 @@ function optionalNumber(
         throw new Error(`${filePath}: header field "${field}" must be a finite number`);
     }
     return value;
+}
+
+/** Allowed shape of a named `serial` group (a topic word). */
+const SERIAL_GROUP_PATTERN = /^[\w-]+$/;
+
+/**
+ * Parse the optional `serial` header field: a boolean or a group name.
+ *
+ * @returns The value, or `undefined` when absent.
+ * @throws If it is neither a boolean nor a name matching `[\w-]+`.
+ */
+function optionalSerial(
+    filePath: string,
+    raw: Record<string, unknown>,
+): boolean | string | undefined {
+    const value = raw.serial;
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value === "boolean") {
+        return value;
+    }
+    if (typeof value === "string" && SERIAL_GROUP_PATTERN.test(value)) {
+        return value;
+    }
+    throw new Error(
+        `${filePath}: header field "serial" must be true, false or a group name matching [\\w-]+ (got ${JSON.stringify(value)})`,
+    );
+}
+
+/**
+ * Serialization key of a handler for the agentrun scheduler: runs that
+ * share a key never overlap.
+ *
+ * @param handler The loaded handler.
+ * @returns `handler:<path>` for `serial: true`, `group:<name>` for a
+ *   named group, `null` when the handler may run in parallel.
+ */
+export function handlerSerialKey(handler: HandlerFile): string | null {
+    const serial = handler.header.serial;
+    if (serial === true) {
+        return `handler:${handler.relativePath}`;
+    }
+    if (typeof serial === "string") {
+        return `group:${serial}`;
+    }
+    return null;
 }
 
 function optionalBoolean(

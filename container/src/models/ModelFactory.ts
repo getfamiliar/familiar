@@ -5,8 +5,8 @@ import { createGroq } from "@ai-sdk/groq";
 import { createMistral } from "@ai-sdk/mistral";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { createXai } from "@ai-sdk/xai";
-import type { LanguageModel } from "ai";
 import { bastionAuthHeaders } from "../utils/BastionAuth.js";
 import { PassedConfig, passedConfigVersion, requireConfig } from "../utils/PassedConfig.js";
 
@@ -20,8 +20,8 @@ import { PassedConfig, passedConfigVersion, requireConfig } from "../utils/Passe
  */
 const PLACEHOLDER_API_KEY = "via-bastion";
 
-/** Function that builds a {@link LanguageModel} for a given model id. */
-type LanguageModelBuilder = (modelId: string) => LanguageModel;
+/** Function that builds a {@link LanguageModelV4} for a given model id. */
+type LanguageModelBuilder = (modelId: string) => LanguageModelV4;
 
 /**
  * Map of supported Vercel AI SDK npm package → a factory that builds
@@ -252,7 +252,7 @@ function builderFor(provider: string, cat: ProviderCatalogue): LanguageModelBuil
 }
 
 /**
- * Builds the {@link LanguageModel} object the {@link AgentRunner} hands
+ * Builds the {@link LanguageModelV4} object the {@link AgentRunner} hands
  * to the Vercel AI SDK's tool-loop agent.
  *
  * Resolves the handler-declared `model` ref against the host-supplied
@@ -267,7 +267,7 @@ function builderFor(provider: string, cat: ProviderCatalogue): LanguageModelBuil
 export class ModelFactory {
     /**
      * Build a chat language-model object for the requested model ref.
-     * Returns the constructed `LanguageModel`, a `label` of the form
+     * Returns the constructed `LanguageModelV4`, a `label` of the form
      * `<provider>/<modelId>`, the `alias` name when the ref was an
      * `inference.aliases` key, and the resolved `provider` / `modelId`
      * pair separately — the provider prefix is filled in even when the
@@ -284,7 +284,7 @@ export class ModelFactory {
      *   unsupported.
      */
     static build(modelRef?: string): {
-        model: LanguageModel;
+        model: LanguageModelV4;
         label: string;
         provider: string;
         modelId: string;

@@ -83,9 +83,11 @@ export function lintConfigFile(path: string): ConfigLintResult {
     requireString(config, "inference.defaultModel", errors);
     lintInferenceProviders(config, defaultProvider, errors);
     lintInferenceAliases(config, errors);
+    lintInferenceConcurrency(config, errors, warnings);
 
     optionalPositiveInt(config, "core.logRetentionDays", warnings);
     optionalPositiveInt(config, "core.agentStepTimeout", warnings);
+    optionalPositiveInt(config, "core.maxConcurrentAgentruns", warnings);
     optionalPositiveInt(config, "core.toolCallOffloadingLimit", warnings);
     optionalLogSystemPromptMode(config, "core.logSystemPrompt", warnings);
     optionalIanaTimezone(config, "core.timezone", warnings);
@@ -161,6 +163,49 @@ function lintInferenceProviders(
         errors.push(
             `inference.defaultProvider "${defaultProvider}" must match an inference.apiKeys.* entry (with a key set).`,
         );
+    }
+}
+
+/**
+ * Validate the optional `inference.concurrency` map (limit key →
+ * maximum concurrent model requests). A key is a provider id
+ * (`deepseek`) or a provider-prefixed model id
+ * (`deepseek/deepseek-v4-pro`); values must be positive integers. A key
+ * whose provider has no `inference.apiKeys` entry is only a warning —
+ * the limit simply never applies.
+ *
+ * @param root The parsed config root.
+ * @param errors Collector for error messages.
+ * @param warnings Collector for warning messages.
+ */
+function lintInferenceConcurrency(
+    root: Record<string, unknown>,
+    errors: string[],
+    warnings: string[],
+): void {
+    const concurrency = readPath(root, "inference.concurrency");
+    if (concurrency === undefined || concurrency === null) {
+        return;
+    }
+    if (!isPlainObject(concurrency)) {
+        errors.push(`inference.concurrency must be a mapping (got ${describe(concurrency)}).`);
+        return;
+    }
+    const apiKeys = readPath(root, "inference.apiKeys");
+    const providerIds = new Set(isPlainObject(apiKeys) ? Object.keys(apiKeys) : []);
+    for (const [key, value] of Object.entries(concurrency)) {
+        if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+            errors.push(
+                `inference.concurrency."${key}": must be a positive integer (got ${describe(value)}).`,
+            );
+            continue;
+        }
+        const provider = key.split("/", 1)[0];
+        if (!providerIds.has(provider)) {
+            warnings.push(
+                `inference.concurrency."${key}": provider "${provider}" has no inference.apiKeys entry, so this limit never applies.`,
+            );
+        }
     }
 }
 

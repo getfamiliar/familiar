@@ -56,7 +56,7 @@ The platform minimum (`core.postgresPassword`, `core.defaultChatChannel`, `infer
 4. **Restarts affected plugins**: every plugin whose own group changed (or one of its declared `restartOnConfigChange` keys) is stopped, its tools / providers / prompt contributions are unregistered, and it runs `prepare` → `start` → `tools` again. A plugin that was disabled at boot (e.g. missing token) starts this way once its config is fixed. A plugin that has background work but no `stop` hook cannot be restarted in place and is reported as "daemon restart required".
 5. **Applies the `mcp.yml` diff** — see [`docs/mcp.md`](mcp.md#reloading-mcpyml).
 6. **Restarts the webserver** when a `webserver.*` key changed (stop, then start with the new settings — or stay stopped when `enabled` is now off).
-7. **Publishes the agent settings.** The container fetches its passed config from the bastion at the start of every agentrun, so `inference.defaultModel`, `inference.aliases`, `inference.maxRetries`, `core.agentStepTimeout`, `core.timezone`, the tool knobs and the debug captures apply from the next run on. Runs in progress keep their snapshot.
+7. **Publishes the agent settings.** The container fetches its passed config from the bastion at the start of every agentrun, so `inference.defaultModel`, `inference.aliases`, `inference.maxRetries`, `inference.concurrency`, `core.maxConcurrentAgentruns`, `core.agentStepTimeout`, `core.timezone`, the tool knobs and the debug captures apply from the next run on. Runs in progress keep their snapshot.
 
 ### Restart-only keys
 

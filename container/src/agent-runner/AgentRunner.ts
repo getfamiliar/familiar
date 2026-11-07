@@ -13,6 +13,7 @@ import {
 import { isStepCount, type ModelMessage, ToolLoopAgent, type ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
 import { HandlerFile } from "../HandlerFile.js";
+import { limitModelConcurrency } from "../models/InferenceConcurrencyLimiter.js";
 import { ModelFactory } from "../models/ModelFactory.js";
 import { fetchModelMetaData } from "../models/ModelMetadataClient.js";
 import { buildPrompt, buildPromptParts, type PromptParts } from "../PromptBuilder.js";
@@ -282,6 +283,17 @@ export interface AgentRunnerContext {
      */
     readonly onStepFinished: () => void;
     /**
+     * Fires when a model request has to wait for a free
+     * `inference.concurrency` slot. The Scheduler stops the per-step
+     * timer, so queue time never counts against the step budget.
+     */
+    readonly onInferenceWaitStart: () => void;
+    /**
+     * Fires when the waiting request got its slot (or gave up waiting).
+     * The Scheduler re-arms a fresh full step budget.
+     */
+    readonly onInferenceWaitEnd: () => void;
+    /**
      * Stamp resolved model id (and optionally the system prompt) onto
      * the agentrun row right after `ModelFactory.build`. The Scheduler
      * forwards to `AgentRunBus.update`. Done before the first
@@ -363,12 +375,20 @@ export class AgentRunner {
             );
         }
         const {
-            model,
+            model: providerModel,
             label: modelLabel,
             provider,
             modelId,
             alias: modelAlias,
         } = ModelFactory.build(handler.header.model);
+        const model = limitModelConcurrency(providerModel, {
+            provider,
+            modelId,
+            priority: ctx.row.priority,
+            log: ctx.log,
+            onWaitStart: ctx.onInferenceWaitStart,
+            onWaitEnd: ctx.onInferenceWaitEnd,
+        });
         if (modelAlias !== undefined) {
             ctx.log.debug(
                 { modelAlias, model: modelLabel },

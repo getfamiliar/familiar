@@ -75,6 +75,15 @@ core:
   # Optional; falls back to 150 when omitted.
   # agentStepTimeout: 150
 
+  # Safety cap on agentruns executing at the same time. Every event
+  # starts its run immediately, in parallel with the others, up to this
+  # cap; it only protects against bursts (e.g. a mail backlog of 200
+  # events). Runs parked on `start_subagent` don't count. Provider
+  # limits belong in `inference.concurrency`, handlers that must not
+  # overlap declare `serial:` in their frontmatter.
+  # Optional; falls back to 8 when omitted.
+  # maxConcurrentAgentruns: 8
+
   # Token cap for an inline tool-call result before the runner spills the
   # full result to a scratch file (the agent fs_reads it on demand). Also
   # the upper bound in the model-relative offload threshold
@@ -205,6 +214,18 @@ inference:
   # `maxRetries` in YAML frontmatter (set to 0 there to disable
   # retries for one handler without changing the global default).
   # maxRetries: 10
+
+  # Maximum concurrent model requests per provider or per model, for
+  # providers with a concurrency limit (e.g. a plan with one slot for
+  # large models). Keys are a provider id (`deepseek`) or a
+  # provider-prefixed model id (`deepseek/deepseek-v4-pro`); the most
+  # specific key wins. A request beyond the limit waits in a queue
+  # (higher event priority first) — the agentrun stays running and the
+  # wait does not count against `core.agentStepTimeout`. Providers
+  # without an entry are unlimited.
+  # concurrency:
+  #   featherless: 1
+  #   "deepseek/deepseek-v4-pro": 2
 
   # Fraction (0–1) of a model's context window used as the per-step
   # output-token ceiling, applied ONLY when the model's metadata

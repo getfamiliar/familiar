@@ -1,4 +1,5 @@
 ---
+serial: true
 outputChat: false
 model: fast
 tools: core, fs, bash, whatsapp

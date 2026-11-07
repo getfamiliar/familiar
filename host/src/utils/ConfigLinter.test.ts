@@ -468,3 +468,50 @@ inference:
         assert.doesNotMatch(warnings, /topType/);
     });
 });
+
+describe("ConfigLinter — inference.concurrency", () => {
+    /** Minimal valid config with the given YAML spliced in under `inference:`. */
+    function withInference(extra: string): string {
+        return write(`
+core:
+  postgresPassword: secret
+  defaultChatChannel: cli
+  maxConcurrentAgentruns: 4
+inference:
+  defaultProvider: deepseek
+  defaultModel: deepseek-v4-flash
+  apiKeys:
+    deepseek: REAL_KEY
+${extra}
+`);
+    }
+
+    it("accepts provider and provider/model keys", () => {
+        const result = lintConfigFile(
+            withInference(`  concurrency:\n    deepseek: 4\n    "deepseek/deepseek-v4-pro": 1`),
+        );
+        assert.equal(result.ok, true, `unexpected errors: ${JSON.stringify(result.errors)}`);
+        assert.deepEqual(
+            result.warnings.filter((w) => w.includes("concurrency")),
+            [],
+        );
+    });
+
+    it("rejects a non-positive limit", () => {
+        const result = lintConfigFile(withInference(`  concurrency:\n    deepseek: 0`));
+        assert.equal(result.ok, false);
+        assert.ok(result.errors.some((e) => e.includes(`inference.concurrency."deepseek"`)));
+    });
+
+    it("rejects a non-mapping value", () => {
+        const result = lintConfigFile(withInference(`  concurrency: 2`));
+        assert.equal(result.ok, false);
+        assert.ok(result.errors.some((e) => e.includes("inference.concurrency must be a mapping")));
+    });
+
+    it("warns about a provider without an api key", () => {
+        const result = lintConfigFile(withInference(`  concurrency:\n    featherless: 1`));
+        assert.equal(result.ok, true);
+        assert.ok(result.warnings.some((w) => w.includes(`provider "featherless"`)));
+    });
+});

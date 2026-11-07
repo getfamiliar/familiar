@@ -58,7 +58,8 @@ interface HarnessOptions {
     readonly behaviors: Record<string, MockBehavior>;
     readonly stepTimeoutMs?: number;
     readonly retryCap?: number;
-    readonly maxConcurrentExecuting?: number;
+    readonly maxConcurrentAgentruns?: number;
+    readonly serialKeyFor?: SchedulerDeps["serialKeyFor"];
 }
 
 /**
@@ -143,8 +144,9 @@ function buildHarness(opts: HarnessOptions): Harness {
             timezone: "UTC",
             stepTimeoutMs: opts.stepTimeoutMs ?? 60_000,
             retryCap: opts.retryCap ?? 3,
+            maxConcurrentAgentruns: opts.maxConcurrentAgentruns ?? 1,
         }),
-        maxConcurrentExecuting: opts.maxConcurrentExecuting ?? 1,
+        serialKeyFor: opts.serialKeyFor,
         subscribeChanges: (handler) => agentRunBus.subscribe(() => handler()),
     };
 
@@ -756,7 +758,7 @@ describe("AgentrunScheduler — error modes", () => {
 });
 
 describe("AgentrunScheduler — concurrency control", () => {
-    it("maxConcurrentExecuting=1 — second pending row waits until the first settles", async () => {
+    it("maxConcurrentAgentruns=1 — second pending row waits until the first settles", async () => {
         let releaseFirst: (() => void) | undefined;
         const firstGate = new Promise<void>((r) => {
             releaseFirst = r;
@@ -770,7 +772,7 @@ describe("AgentrunScheduler — concurrency control", () => {
                 },
                 second: async () => "2nd",
             },
-            maxConcurrentExecuting: 1,
+            maxConcurrentAgentruns: 1,
         });
         try {
             const { root: r1 } = await seedRootAgentrun(
@@ -801,6 +803,215 @@ describe("AgentrunScheduler — concurrency control", () => {
             assert.equal(s2.state, "done");
         } finally {
             releaseFirst?.();
+            await harness.stop();
+        }
+    });
+});
+
+describe("AgentrunScheduler — parallel execution", () => {
+    /** A gate a behavior awaits until the test opens it. */
+    function gate(): { readonly wait: Promise<void>; readonly open: () => void } {
+        let open = () => {};
+        const wait = new Promise<void>((resolve) => {
+            open = resolve;
+        });
+        return { wait, open };
+    }
+
+    it("starts independent rows at once under the default cap", async () => {
+        const blocker = gate();
+        const harness = buildHarness({
+            behaviors: {
+                first: async () => {
+                    await blocker.wait;
+                    return "1st";
+                },
+                second: async () => {
+                    await blocker.wait;
+                    return "2nd";
+                },
+            },
+            maxConcurrentAgentruns: 8,
+        });
+        try {
+            const { root: r1 } = await seedRootAgentrun(
+                harness.eventBus,
+                harness.agentRunBus,
+                "first",
+            );
+            const { root: r2 } = await seedRootAgentrun(
+                harness.eventBus,
+                harness.agentRunBus,
+                "second",
+            );
+            await flush();
+            await flush();
+            assert.equal(harness.store.agentruns.get(r1.id)?.state, "running");
+            assert.equal(harness.store.agentruns.get(r2.id)?.state, "running");
+        } finally {
+            blocker.open();
+            await harness.stop();
+        }
+    });
+
+    it("the safety cap holds further rows back until a slot frees", async () => {
+        const firstGate = gate();
+        const secondGate = gate();
+        const harness = buildHarness({
+            behaviors: {
+                first: async () => {
+                    await firstGate.wait;
+                    return "1st";
+                },
+                second: async () => {
+                    await secondGate.wait;
+                    return "2nd";
+                },
+                third: async () => "3rd",
+            },
+            maxConcurrentAgentruns: 2,
+        });
+        try {
+            const { root: r1 } = await seedRootAgentrun(
+                harness.eventBus,
+                harness.agentRunBus,
+                "first",
+            );
+            await seedRootAgentrun(harness.eventBus, harness.agentRunBus, "second");
+            const { root: r3 } = await seedRootAgentrun(
+                harness.eventBus,
+                harness.agentRunBus,
+                "third",
+            );
+            await flush();
+            await flush();
+            assert.equal(harness.store.agentruns.get(r3.id)?.state, "pending");
+
+            secondGate.open();
+            const done3 = await waitForTerminal(harness.agentRunBus, harness.store, r3.id);
+            assert.equal(done3.state, "done");
+            assert.equal(harness.store.agentruns.get(r1.id)?.state, "running");
+        } finally {
+            firstGate.open();
+            secondGate.open();
+            await harness.stop();
+        }
+    });
+
+    it("serial rows of one key run one at a time, in order; others run in parallel", async () => {
+        const firstChat = gate();
+        const order: string[] = [];
+        const harness = buildHarness({
+            behaviors: {
+                "chat:telegram": async (ctx) => {
+                    order.push(`start ${ctx.row.prompt}`);
+                    if (ctx.row.prompt === "one") {
+                        await firstChat.wait;
+                    }
+                    order.push(`end ${ctx.row.prompt}`);
+                    return "ok";
+                },
+                "mail:new": async () => "mail",
+            },
+            maxConcurrentAgentruns: 8,
+            serialKeyFor: (row) => (row.topic.startsWith("chat:") ? "chat/telegram.md" : null),
+        });
+        try {
+            const { root: c1 } = await seedRootAgentrun(
+                harness.eventBus,
+                harness.agentRunBus,
+                "chat:telegram",
+                { prompt: "one" },
+            );
+            const { root: c2 } = await seedRootAgentrun(
+                harness.eventBus,
+                harness.agentRunBus,
+                "chat:telegram",
+                { prompt: "two" },
+            );
+            const { root: m1 } = await seedRootAgentrun(
+                harness.eventBus,
+                harness.agentRunBus,
+                "mail:new",
+            );
+
+            const mailDone = await waitForTerminal(harness.agentRunBus, harness.store, m1.id);
+            assert.equal(mailDone.state, "done");
+            assert.equal(harness.store.agentruns.get(c1.id)?.state, "running");
+            assert.equal(harness.store.agentruns.get(c2.id)?.state, "pending");
+
+            firstChat.open();
+            await waitForTerminal(harness.agentRunBus, harness.store, c2.id);
+            assert.deepEqual(order, ["start one", "end one", "start two", "end two"]);
+        } finally {
+            firstChat.open();
+            await harness.stop();
+        }
+    });
+
+    it("a serial run's own subagent of the same key is exempt (no self-deadlock)", async () => {
+        const harness = buildHarness({
+            behaviors: {
+                "chat:telegram": async (ctx) => {
+                    if (ctx.row.parentAgentrunId !== null) {
+                        return "child";
+                    }
+                    const child = await harness.agentRunBus.add({
+                        eventId: ctx.row.eventId,
+                        parentAgentrunId: ctx.row.id,
+                        topic: "chat:telegram",
+                        prompt: "child",
+                        calltype: "started",
+                    });
+                    const settled = await ctx.waitForSubagent(child.id);
+                    return `parent saw ${settled.resultText}`;
+                },
+            },
+            maxConcurrentAgentruns: 8,
+            serialKeyFor: () => "chat/telegram.md",
+        });
+        try {
+            const { root } = await seedRootAgentrun(
+                harness.eventBus,
+                harness.agentRunBus,
+                "chat:telegram",
+            );
+            const done = await waitForTerminal(harness.agentRunBus, harness.store, root.id);
+            assert.equal(done.state, "done");
+            assert.equal(done.resultText, "parent saw child");
+        } finally {
+            await harness.stop();
+        }
+    });
+
+    it("waiting for an inference slot stops the step timer", async () => {
+        const slot = gate();
+        const harness = buildHarness({
+            behaviors: {
+                index: async (ctx) => {
+                    ctx.onInferenceWaitStart();
+                    const aborted = new Promise<never>((_, reject) => {
+                        ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason));
+                    });
+                    await Promise.race([slot.wait, aborted]);
+                    ctx.onInferenceWaitEnd();
+                    return "ok";
+                },
+            },
+            stepTimeoutMs: 1_000,
+        });
+        try {
+            const { root } = await seedRootAgentrun(harness.eventBus, harness.agentRunBus, "index");
+            await flush();
+            await flush();
+            harness.clock.advance(10_000);
+            await flush();
+            assert.equal(harness.store.agentruns.get(root.id)?.state, "running");
+            slot.open();
+            const done = await waitForTerminal(harness.agentRunBus, harness.store, root.id);
+            assert.equal(done.state, "done");
+        } finally {
+            slot.open();
             await harness.stop();
         }
     });
@@ -873,7 +1084,6 @@ describe("AgentrunScheduler — disaster recovery", () => {
             },
             recovery,
             settings: () => ({ timezone: "UTC", stepTimeoutMs: 60_000, retryCap: 3 }),
-            maxConcurrentExecuting: 1,
             subscribeChanges: (handler) => agentRunBus.subscribe(() => handler()),
         };
 

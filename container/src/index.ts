@@ -20,7 +20,7 @@ import { AgentrunScheduler, subscribeAgentrunsChanges } from "./AgentrunSchedule
 import { AgentRunner } from "./agent-runner/AgentRunner.js";
 import { ChatManager } from "./chat/ChatManager.js";
 import { EventWatcher } from "./EventWatcher.js";
-import { HandlerFile } from "./HandlerFile.js";
+import { HandlerFile, handlerSerialKey } from "./HandlerFile.js";
 import { HostToolsClient } from "./host-tools/HostToolsClient.js";
 import { reportContainerToolCatalog } from "./host-tools/ToolCatalogClient.js";
 import { McpClientPool } from "./mcp/McpClientPool.js";
@@ -152,9 +152,13 @@ async function main(): Promise<void> {
                 "core.toolDefinitionsContextFraction",
             ),
             toolHeuristicRunWindow: PassedConfig.get<number>("core.toolHeuristicRunWindow"),
+            maxConcurrentAgentruns: PassedConfig.get<number>("core.maxConcurrentAgentruns"),
         }),
         refreshPassedConfig: () => refreshPassedConfig(bastionUrl, bastionToken, passedConfigLog),
-        maxConcurrentExecuting: 1,
+        serialKeyFor: (row) => {
+            const handler = HandlerFile.load(row.topic, { isExactTopic: row.isExactTopic });
+            return handlerSerialKey(handler);
+        },
         subscribeChanges: (handler) => subscribeAgentrunsChanges(connection, handler),
     });
 
