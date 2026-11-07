@@ -78,12 +78,25 @@ export interface Bootstrap {
      */
     readonly workspaceDir: string;
     /**
-     * Absolute host path of `data/workspace-template/`. Copied into
-     * {@link workspaceDir} on daemon start (before plugin templates so
-     * that the global defaults win on overlaps). Versioned with the
-     * repo; users edit it directly to seed their workspace.
+     * Absolute path of the core workspace template shipped with the host
+     * package (`<assetRoot>/workspace-template/`). The workspace updater
+     * (`host/src/workspace/`) keeps {@link workspaceDir} in sync with it
+     * and the plugin templates; core files win on overlaps. Read-only
+     * package asset — edits belong in `workspace/`.
      */
     readonly workspaceTemplateDir: string;
+    /**
+     * Absolute path of the core update notes shipped with the host package
+     * (`<assetRoot>/workspace-updates/*.md`): one-off instructions the
+     * update agent applies once to the live workspace.
+     */
+    readonly workspaceUpdatesDir: string;
+    /**
+     * Absolute path of `data/workspace-base/`: the template state each
+     * workspace file was last synced against (`files/`) plus the update
+     * bookkeeping (`state.json`). The base of the 3-way merge.
+     */
+    readonly workspaceBaseDir: string;
     readonly postgresDataDir: string;
     /**
      * Directory under `dataDir` that pino-roll writes daily-rotated
@@ -253,7 +266,9 @@ export function bootstrap(): Bootstrap {
         bastionTokenFile: `${tmpDir}/.bastion-token`,
         llmDebugDir: `${tmpDir}/llm-debug`,
         workspaceDir: `${homeDir}/workspace`,
-        workspaceTemplateDir: `${dataDir}/workspace-template`,
+        workspaceTemplateDir: `${assetRoot}/workspace-template`,
+        workspaceUpdatesDir: `${assetRoot}/workspace-updates`,
+        workspaceBaseDir: `${dataDir}/workspace-base`,
         postgresDataDir: `${dataDir}/postgres`,
         logsDir: `${dataDir}/logs`,
         mcpLogsDir: `${dataDir}/logs/mcp`,

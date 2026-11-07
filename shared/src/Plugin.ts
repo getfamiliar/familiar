@@ -939,14 +939,24 @@ export interface PluginManifest {
     /** Host-side surface (CLI commands, daemons, cronjobs, tools). */
     readonly host?: PluginHostManifest;
     /**
-     * Absolute path to a directory of files copied into
-     * the workspace (`<home>/workspace/`) on first install. Existing files are left
-     * alone — diff/merge on plugin updates is a separate concern.
-     * Plugins typically derive this with
-     * `path.join(__dirname, "..", "workspace-template")` (or the ESM
-     * `import.meta.url` equivalent).
+     * Absolute path to a directory of default workspace files (handlers,
+     * skills). Missing files are seeded into `<home>/workspace/`; later
+     * template changes reach the workspace through the workspace updater
+     * (fast-forward when the user never edited the file, otherwise the
+     * `update:merge-file` agent run). Plugins typically derive this with
+     * `path.join(import.meta.dirname, "..", "workspace-template")`.
      */
     readonly workspaceTemplate?: string;
+    /**
+     * Absolute path to a directory of update notes (`YYYY-MM-DD-<slug>.md`):
+     * one-off instructions for changes a template diff cannot express —
+     * renamed placeholders, moved files, conventions that affect files the
+     * user created. Each note is applied once by an `update:apply-note`
+     * agent run and then recorded as done; a fresh install marks every
+     * existing note done. Conventionally
+     * `path.join(import.meta.dirname, "..", "workspace-updates")`.
+     */
+    readonly workspaceUpdates?: string;
 }
 
 /**

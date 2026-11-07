@@ -10,7 +10,7 @@ Every time something happens in your world (a mail arrives, a cron fires, you wr
 | --- | --- | --- |
 | `PROMPT.md` | The **prompt template**: the frame every handler is rendered into. Decides which parts appear, in which order, with which wording. | You (a default is shipped) |
 | `<topic>/<handler>.md` | A **handler**: the task-specific instructions plus YAML frontmatter (model, tools, …). | You, plugins (shipped defaults), the agent itself on request |
-| Anything else in the workspace | **Includes** (e.g. `SOUL.md`, `CONTEXT.md`), **skills** (`skills/<id>/SKILL.md`), knowledge files (`people/…`, `wiki/…`). | You and the agent |
+| Anything else in the workspace | **Includes** (e.g. `SOUL.md`, `ARCHITECTURE.md`), **skills** (`skills/<id>/SKILL.md`), knowledge files (`people/…`, `wiki/…`). | You and the agent |
 
 The template pulls in the handler and other files through **placeholders** like `{HANDLER_CONTENT}` and `{SOUL.md}`. The final prompt therefore is: `PROMPT.md` with every placeholder replaced.
 
@@ -26,10 +26,6 @@ The template pulls in the handler and other files through **placeholders** like 
 # Architecture of this system
 
 {ARCHITECTURE.md}
-
-# Context
-
-{CONTEXT.md}
 
 # Handler
 
@@ -69,7 +65,7 @@ Headings, wording and order are all up to you. Remove a section you don't want, 
 There are two kinds of tokens:
 
 - **`{NAME}`** — a placeholder whose value is computed per handler or per run. Names are upper case: `[A-Z][A-Z0-9_]*`.
-- **`{path.md}`** — an **include**: the content of a workspace file, e.g. `{SOUL.md}` or `{prompts/tone.md}`. The path is relative to the workspace root and may not contain `..` or start with `/`.
+- **`{path.md}`** — an **include**: the content of a workspace file, e.g. `{SOUL.md}` or `{prompts/tone.md}`. The path is relative to the workspace root and may not contain `..` or start with `/`. A leading YAML frontmatter block of the included file is dropped, so a handler can include another handler's body: the default chat handlers start with `{chat/index.md}`, the shared chat rules, which is also the fallback handler for `chat:*` — its `model` / `tools` / `skills` apply only when it runs as a handler.
 
 Any other braces are left alone, so JSON examples (`{"to": "anna"}`) and lowercase words in braces are safe to use.
 
@@ -122,7 +118,7 @@ Plugins can add their own placeholders (always `dynamic`); they show up in `fami
 
 Banners are short-lived notes every run sees, so context crosses from one run to the next: tell the assistant in the chat that you are setting up a new phone today, and the mail handlers stop warning about the new-login mails. The assistant creates them with `banner_create` (text plus expiry, at most 30 days ahead, at most 500 characters and 20 active banners) and removes them early with `banner_remove`; once the expiry passes a banner disappears on its own. Only privileged runs — ones that stem from you — may create banners, because a banner reaches every later prompt and a mail handler reading a crafted mail must not be able to plant one. Anyone may remove one.
 
-The default `ARCHITECTURE.md` explains banners and when to create one (static, before the marker), and the default `PROMPT.md` lists the active ones in a `# Banner Messages` section after the marker. A workspace seeded before banners existed needs both added by hand (copy them from `data/workspace-template/`). The voice model gets them too: the default `voice/live.md` lists them via `{BANNER_LIST}` when a call starts. `familiar banners list` shows what the assistant currently sees, `familiar banners remove <id>` deletes a banner. Lasting facts belong in the long-term memory instead.
+The default `ARCHITECTURE.md` explains banners and when to create one (static, before the marker), and the default `PROMPT.md` lists the active ones in a `# Banner Messages` section after the marker. Workspaces seeded before banners existed receive both through the workspace updater ([workspace-updates.md](workspace-updates.md)). The voice model gets them too: the default `voice/live.md` lists them via `{BANNER_LIST}` when a call starts. `familiar banners list` shows what the assistant currently sees, `familiar banners remove <id>` deletes a banner. Lasting facts belong in the long-term memory instead.
 
 ## What the model receives
 
@@ -175,7 +171,7 @@ All fields are optional. Unknown fields are ignored (so `description:` for your 
 
 | Field | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `model` | string | `inference.defaultModel` | Model to run under: an alias from `inference.aliases` in `config.yml` (e.g. `fast`, `smart`) or a provider model id. Use a light model for routing and triage, a heavy one for drafting and reasoning. |
+| `model` | string | `inference.defaultModel` | Model to run under: an alias from `inference.aliases` in `config.yml` (e.g. `fast`, `smart`) or a provider model id. Use a light model for routing and triage, a heavy one for drafting and reasoning. The shipped templates use the standard aliases `fast` and `smart`; when `inference.aliases` doesn't define them, they run under `inference.defaultModel`. |
 | `temperature` | number | provider default | Sampling temperature. `0` for deterministic extraction tasks, higher for creative writing. |
 | `tools` | list or comma string | `core` | Tools preloaded into the run. Entries are tool names (`send_chat`), globs (`mail_*`, quote them in a YAML list: `"mail_*"`), or groups: `core`, `fs`, `bash`, `reflection`, `mcp`, `all`, `none`, plus one group per MCP id and per plugin id. Entries are combined. Tools not listed stay reachable through `tool_call`; preloading just saves the model a discovery step. |
 | `skills` | list or comma string | — | Skill ids (folder names under `skills/`) whose `SKILL.md` is rendered straight into the prompt via `{PRELOADED_SKILLS}`, e.g. `skills: jira, reflection`. The `tools` a preloaded skill declares are added to this handler's preloaded tools. A missing skill fails the run with an error naming it. |
@@ -234,7 +230,7 @@ and set `systemPrompt: prompts/minimal.md` in those handlers.
 
 **Shared rules for all mail handlers.** Write them once to `mail/rules.md`, and include `{mail/rules.md}` in each mail handler (`mail/index.md`, `mail/new/ms365.md`, …). Handlers don't inherit from each other — only the most specific one runs.
 
-**Adding personal context.** Put facts about you in `CONTEXT.md` (job, family, preferences) — it's included by the default template. For larger knowledge, keep files under `people/` or `wiki/` and tell handlers to read them on demand.
+**Adding personal context.** Facts every run must know (job, family, how you want to be addressed) go into `SOUL.md`, which the default template includes. Everything else belongs in the wiki (`wiki/`, maintained by the memory plugin) or under `people/`; handlers read it on demand. To keep a separate file for always-present facts, create it and include it from `PROMPT.md` (e.g. `{ABOUT_ME.md}`).
 
 ## Checking your work
 

@@ -6,10 +6,6 @@
 
 {ARCHITECTURE.md}
 
-# Context
-
-{CONTEXT.md}
-
 # Handler
 
 {HANDLER_CONTENT}

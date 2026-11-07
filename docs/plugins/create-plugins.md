@@ -10,7 +10,7 @@ A plugin can contribute any combination of:
 
 - **Event sources.** A daemon (`start` / `stop`) that watches something in the world and calls `ctx.events.emit(...)`.
 - **Agent tools.** Declared in `tools()` and namespaced as `<plugin-id>_<name>`.
-- **Default handlers and skills.** Shipped in a `workspace-template/` folder and copied into the user's `workspace/` (missing files only).
+- **Default handlers and skills.** Shipped in a `workspace-template/` folder, seeded into the user's `workspace/` and kept up to date by the workspace updater; one-off migrations go into `workspace-updates/` notes ([workspace-updates.md](../workspace-updates.md)).
 - **CLI commands.** Mounted as `familiar <plugin-id> <subcommand>`.
 - **Prompt extensions, inference providers, model metadata, and mail / calendar / storage providers.** These go through the `HostContext` APIs and the `getModel*` hooks.
 
@@ -27,6 +27,7 @@ plugins/<name>/
     Commands.ts             # citty commands, if any
     *.test.ts               # node:test via tsx
   workspace-template/       # optional: default handlers / skills
+  workspace-updates/        # optional: update notes (YYYY-MM-DD-<slug>.md)
     <topic>/
       index.md
 ```
@@ -47,7 +48,7 @@ Copy an existing plugin and adapt it. `plugins/tailscale/package.json` is a smal
     "main": "build/index.js",
     "types": "build/index.d.ts",
     "familiar": { "plugin": true },
-    "files": ["build", "workspace-template"],
+    "files": ["build", "workspace-template", "workspace-updates"],
     "engines": { "node": ">=22" },
     "scripts": {
         "build": "tsc",
@@ -76,7 +77,7 @@ The fields that matter:
 - **`familiar.bundled: true`** makes the plugin core: always on, and shipped as a dependency of `@getfamiliar/cli`. Leave it out for optional plugins, which users enable through `config/plugins`. Don't set it before the first npm publish; see [First release](#first-release-to-npm).
 - **Internal dependencies are pinned as `"*"`.** `scripts/ci-stamp.mjs` rewrites them to the exact release version at publish time. Never write a concrete version for `@getfamiliar/*` dependencies.
 - **`version` stays at `0.0.1`.** CI stamps the real lockstep version (`0.1.<run>`). It's never committed back.
-- **`files`** must list everything the package needs at runtime. Leave out `workspace-template` if the plugin doesn't ship one.
+- **`files`** must list everything the package needs at runtime. Leave out `workspace-template` / `workspace-updates` if the plugin doesn't ship them.
 - **`"private": true`** keeps the plugin off npm; the publish loop skips it.
 
 ### `tsconfig.json`
@@ -97,6 +98,8 @@ import { startExampleDaemon, stopExampleDaemon, EXAMPLE_TOPIC } from "./ExampleD
 export default definePlugin({
     id: "example",
     workspaceTemplate: path.join(import.meta.dirname, "..", "workspace-template"),
+    // Optional: one-off update notes, see docs/workspace-updates.md.
+    workspaceUpdates: path.join(import.meta.dirname, "..", "workspace-updates"),
     host: {
         start: (ctx) => startExampleDaemon(ctx),
         stop: () => stopExampleDaemon(),
@@ -168,7 +171,7 @@ The full guide to designing and implementing agent tools (naming, groups, levels
 
 ## Workspace template and handlers
 
-Files under `workspace-template/` are copied into `workspace/` on every daemon start, but only those that are missing; user edits are never overwritten. Ship a default handler for each topic the plugin emits. Handler paths follow the topic: `chat:telegram` → `workspace-template/chat/telegram.md`. Every path segment must be a valid topic word (`[\w-]+`). See CLAUDE.md, sections "Handler resolution" and "Prompt template", plus [prompting.md](../prompting.md), for frontmatter (`model`, `tools`, `skills`, `cron`, …).
+Files under `workspace-template/` are seeded into `workspace/` when missing. Later changes to them reach existing workspaces through the workspace updater: files the user never edited are updated automatically, customized ones are merged by an `update:merge-file` agent run per file, and nothing is overwritten without a commit in the workspace git history. Changes a file diff can't express (a renamed placeholder or tool, a moved file, a convention that affects files the user created) need an **update note** in `workspace-updates/` — see [workspace-updates.md](../workspace-updates.md) for how to write one. Ship a default handler for each topic the plugin emits. Handler paths follow the topic: `chat:telegram` → `workspace-template/chat/telegram.md`. Every path segment must be a valid topic word (`[\w-]+`). See CLAUDE.md, sections "Handler resolution" and "Prompt template", plus [prompting.md](../prompting.md), for frontmatter (`model`, `tools`, `skills`, `cron`, …).
 
 Shared how-to knowledge goes into `workspace-template/skills/<name>/SKILL.md` instead of being duplicated across handlers.
 
@@ -326,6 +329,7 @@ A successful "Signed provenance statement" line before the error proves nothing:
 - [ ] The plugin disables itself when its config group is missing; secret keys are named per the secret rule
 - [ ] Config keys documented in `config/config.example.yml` and `docs/config.md`
 - [ ] Default handlers for every emitted topic in `workspace-template/`
+- [ ] An update note in `workspace-updates/` for every change existing workspaces can't pick up from the template diff alone
 - [ ] Tests, `format:check` and `lint` pass
 - [ ] Core vs. optional split updated in [ci-cd.md](../ci-cd.md#core-vs-optional)
 - [ ] First release: placeholder published by hand, trusted publisher configured, *then* pushed to `main` (and only then `familiar.bundled`)

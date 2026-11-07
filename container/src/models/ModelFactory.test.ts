@@ -68,4 +68,21 @@ describe("resolveModelRef — aliases", () => {
     it("does not resolve inherited object keys as aliases", () => {
         assert.equal(resolveModelRef("toString", catalogue).alias, undefined);
     });
+
+    it("falls back to defaultModel for an unconfigured standard alias", () => {
+        const withoutAliases: ProviderCatalogue = {
+            ...catalogue,
+            defaultModel: "zai-org/GLM-5.1",
+            aliases: {},
+        };
+        for (const name of ["fast", "smart"]) {
+            assert.deepEqual(resolveModelRef(name, withoutAliases), {
+                provider: "featherless",
+                modelId: "zai-org/GLM-5.1",
+                alias: undefined,
+            });
+        }
+        // A non-standard unknown name is still a bare model id.
+        assert.equal(resolveModelRef("speedy", withoutAliases).modelId, "speedy");
+    });
 });

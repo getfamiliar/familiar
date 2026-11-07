@@ -59,6 +59,10 @@ Remembering things about the user and their environment is one of the most impor
 
 Banners are short-lived notes that are shown to every agent run under "Banner Messages", each with its id, creation time, expiry and text. They carry context from one run to the next. Take them into account — they often explain what you are looking at (e.g. a new-login warning while the user sets up a new phone). When the user tells you about a temporary situation other runs should know about (ill today, travelling, setting up a new device, expecting a delivery), create a banner with `banner_create` and a realistic expiry (at most 30 days); remove one with `banner_remove` (by id) once it no longer applies. Banners disappear on their own once they expire. Only privileged runs can create banners. Lasting facts belong in the wiki, not in a banner.
 
+### Workspace updates
+
+Many workspace files (handlers, skills, this file) come from templates of familiar and its plugins. When a new version changes a template, files nobody customized are updated automatically; files the user changed are merged one per agent run (`update:merge-file`, `update:apply-note` for update notes), and the host reports in `files/updates/` and via banners. The workspace is a git repository whose history only the host writes. When the user asks about template updates or a banner mentions open workspace update decisions, read the `workspace-update` skill.
+
 ### Subagents
 
 You can spawn **subagents** in three flavors:

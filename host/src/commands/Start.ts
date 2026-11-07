@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 import {
+    BannerBus,
     type ConfigService,
     createLogger,
     DEFAULT_WRITABLE_PATHS,
@@ -78,6 +79,14 @@ import { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
 import { PostgresWebSessionStore } from "../web/auth/WebSessionStore.js";
 import { WebServer } from "../web/WebServer.js";
 import { buildWebTools } from "../web/WebTools.js";
+import { WorkspaceGit } from "../workspace/WorkspaceGit.js";
+import {
+    logWorkspaceSync,
+    WorkspaceMergeCoordinator,
+} from "../workspace/WorkspaceMergeCoordinator.js";
+import { buildTemplateSources } from "../workspace/WorkspaceReference.js";
+import { WorkspaceUpdater } from "../workspace/WorkspaceUpdater.js";
+import { buildWorkspaceUpdateTools } from "../workspace/WorkspaceUpdateTools.js";
 import { acquirePidFile, removePidFile } from "./pidfile.js";
 
 /**
@@ -180,8 +189,30 @@ export const startCommand = defineCommand({
 
         const plugins = await loadPlugins(boot, log);
         const pluginHost = new PluginHost(boot, log, plugins, config, mcpRegistry);
-        pluginHost.installWorkspaceTemplates();
-        log.info("plugin workspace templates installed");
+        // Bring the workspace in step with the core and plugin templates:
+        // seed new files, fast-forward files nobody customized, collect the
+        // rest for one agent run per file / update note (the merge coordinator below,
+        // once the bus is up). `core.autoUpdate: false` skips all of it —
+        // for a machine whose workspace is maintained elsewhere (e.g.
+        // synced in from another familiar via Syncthing).
+        const workspaceGit = new WorkspaceGit(boot.workspaceDir);
+        const workspaceUpdater = new WorkspaceUpdater({
+            workspaceDir: boot.workspaceDir,
+            baseDir: boot.workspaceBaseDir,
+            sources: () => buildTemplateSources(boot, plugins),
+            git: workspaceGit,
+        });
+        const isWorkspaceAutoUpdateEnabled = config.getBool("core.autoUpdate", true);
+        const workspaceSyncReport = isWorkspaceAutoUpdateEnabled
+            ? await workspaceUpdater.sync(boot.version)
+            : null;
+        if (workspaceSyncReport === null) {
+            log.info(
+                "workspace update: skipped because core.autoUpdate is false (no seeding, no template updates, no git commits)",
+            );
+        } else {
+            logWorkspaceSync(log, workspaceSyncReport);
+        }
 
         // Sync plugin init runs before any `start(ctx)` so cross-
         // plugin module state (e.g. transcribe-whisper's API key) is
@@ -475,6 +506,10 @@ export const startCommand = defineCommand({
                 sessions: webSessions,
                 proxies: pluginHost.trustedProxies,
             }),
+            ...buildWorkspaceUpdateTools({
+                updater: workspaceUpdater,
+                isAutoUpdateEnabled: () => config.getBool("core.autoUpdate", true),
+            }),
         ]);
         log.info("plugin daemons started");
 
@@ -522,6 +557,24 @@ export const startCommand = defineCommand({
             // (signal always present) without spuriously firing.
             daemonDownSignal: new AbortController().signal,
         });
+        // Settle what the sync left open, one agent run per file / note, in
+        // the background: the daemon doesn't wait for the merges.
+        const workspaceMergeCoordinator =
+            workspaceSyncReport === null
+                ? null
+                : new WorkspaceMergeCoordinator({
+                      report: workspaceSyncReport,
+                      updater: workspaceUpdater,
+                      emit: (event) => cronCtx.events.emit(event),
+                      banners: new BannerBus(await pluginHost.ensureConnection()),
+                      workspaceDir: boot.workspaceDir,
+                      git: workspaceGit,
+                      timezone: config.getString("core.timezone", "UTC"),
+                      version: boot.version,
+                      log: log.child({ component: "workspace-update" }),
+                  });
+        void workspaceMergeCoordinator?.run();
+
         const cronScheduler = new CronjobScheduler({
             watcher: workspaceWatcher,
             emit: async (event) => {
@@ -616,6 +669,7 @@ export const startCommand = defineCommand({
                 await safeStop(log, "scheduled-subagent scheduler", () =>
                     scheduledSubagentScheduler.stop(),
                 );
+                workspaceMergeCoordinator?.stop();
                 await safeStop(log, "chat compactor", () => chatCompactor.stop());
                 await safeStop(log, "cron scheduler", () => cronScheduler.stop());
                 await safeStop(log, "workspace watcher", () => workspaceWatcher.stop());

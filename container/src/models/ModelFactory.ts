@@ -177,9 +177,18 @@ function readAliases(): Record<string, string> {
 }
 
 /**
+ * Alias names the shipped workspace templates use (`model: fast` for
+ * routing and bookkeeping, `model: smart` for judgment). Without an
+ * `inference.aliases` entry they fall back to `defaultModel`, so the
+ * templates work on a config that defines no aliases.
+ */
+export const STANDARD_MODEL_ALIASES: readonly string[] = ["fast", "smart"];
+
+/**
  * Resolve a handler-declared `model` ref into `(provider, modelId)`.
  *
- * An empty ref falls back to `defaultModel`. The (possibly defaulted)
+ * An empty ref, or a {@link STANDARD_MODEL_ALIASES | standard alias}
+ * that `inference.aliases` doesn't define, falls back to `defaultModel`. The (possibly defaulted)
  * ref is then looked up once in `aliases` — exact match, single level —
  * and the result goes through the provider-prefix logic: a `/`-head that
  * names an enabled provider selects it, anything else is a bare id under
@@ -193,8 +202,14 @@ export function resolveModelRef(
     modelRef: string | undefined,
     cat: ProviderCatalogue,
 ): ResolvedModelRef {
+    const isUnconfiguredStandardAlias =
+        modelRef !== undefined &&
+        STANDARD_MODEL_ALIASES.includes(modelRef) &&
+        !Object.hasOwn(cat.aliases, modelRef);
     const requestedRef =
-        modelRef === undefined || modelRef.length === 0 ? cat.defaultModel : modelRef;
+        modelRef === undefined || modelRef.length === 0 || isUnconfiguredStandardAlias
+            ? cat.defaultModel
+            : modelRef;
     const aliasTarget = Object.hasOwn(cat.aliases, requestedRef)
         ? cat.aliases[requestedRef]
         : undefined;

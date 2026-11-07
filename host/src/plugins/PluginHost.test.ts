@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
@@ -12,7 +12,7 @@ import type {
 } from "@getfamiliar/shared";
 import { type Bootstrap, bootstrap } from "../Bootstrap.js";
 import { McpRegistry } from "../mcp/McpRegistry.js";
-import { buildTemplateSeedFilter, PluginHost } from "./PluginHost.js";
+import { PluginHost } from "./PluginHost.js";
 import { PluginToolsRegistry } from "./ToolsRegistry.js";
 
 /** Logger stub that records error/warn lines so tests can assert on them. */
@@ -228,58 +228,6 @@ describe("PluginHost.listEmittedEvents", () => {
         ]);
         assert.ok(lines.some((l) => l.includes('invalid event topic "not a topic"')));
         assert.ok(lines.some((l) => l.includes('plugin "throws" getEmittedEvents threw: boom')));
-    });
-});
-
-describe("buildTemplateSeedFilter", () => {
-    let root: string;
-
-    beforeEach(() => {
-        root = mkdtempSync(path.join(tmpdir(), "seed-filter-"));
-    });
-
-    afterEach(() => {
-        rmSync(root, { recursive: true, force: true });
-    });
-
-    /** Create a file (and its parents) under `root`. */
-    function touch(rel: string): void {
-        const abs = path.join(root, rel);
-        mkdirSync(path.dirname(abs), { recursive: true });
-        writeFileSync(abs, "x\n");
-    }
-
-    it("skips a template x.md when the workspace already has x/index.md", () => {
-        touch("template/chat/cli.md");
-        touch("workspace/chat/cli/index.md");
-        const filter = buildTemplateSeedFilter(
-            path.join(root, "template"),
-            path.join(root, "workspace"),
-        );
-        assert.equal(filter(path.join(root, "template/chat/cli.md")), false);
-    });
-
-    it("skips a template x/index.md when the workspace already has x.md", () => {
-        touch("template/chat/cli/index.md");
-        touch("workspace/chat/cli.md");
-        const filter = buildTemplateSeedFilter(
-            path.join(root, "template"),
-            path.join(root, "workspace"),
-        );
-        assert.equal(filter(path.join(root, "template/chat/cli/index.md")), false);
-    });
-
-    it("copies directories, non-handler files and handlers without a twin", () => {
-        touch("template/chat/cli.md");
-        const filter = buildTemplateSeedFilter(
-            path.join(root, "template"),
-            path.join(root, "workspace"),
-        );
-        assert.equal(filter(path.join(root, "template")), true);
-        assert.equal(filter(path.join(root, "template/chat")), true);
-        assert.equal(filter(path.join(root, "template/chat/cli.md")), true);
-        assert.equal(filter(path.join(root, "template/PROMPT.md")), true);
-        assert.equal(existsSync(path.join(root, "workspace")), false);
     });
 });
 

@@ -136,7 +136,6 @@ workspace/
   PROMPT.md                 # the prompt template every handler renders (see "Prompt template")
   SOUL.md                   # the assistant's core identity and values, included by the default PROMPT.md as {SOUL.md}
   ARCHITECTURE.md           # static explanation of the system for the agent (handlers, files, tools, skills, banners, subagents, output), included as {ARCHITECTURE.md} before the cache marker — best practice: explanatory prose goes here, PROMPT.md stays a skeleton
-  CONTEXT.md                # system-environment notes so the agent knows where and what it is, included as {CONTEXT.md}
   <topic>/                  # one folder per top-level topic (e.g. mail/, chat/, calendar/) - the user can invent new ones as needed, some are shipped by plugins
     index.md                # handler for topic `<topic>` (and fallback for unhandled `<topic>:*` events)
     analyze.md              # handler for topic `<topic>:analyze`, started by topic from another handler
@@ -191,7 +190,7 @@ All configuration — sensitive and non-sensitive — lives in `config/config.ym
 
 Top-level groups in `config/config.yml`:
 
-- `core` — `postgresPassword`, `defaultChatChannel`, optional `logRetentionDays`, optional `assistantName` (default `Familiar`; web UI branding, `{ASSISTANT_NAME}` placeholder, read via `ctx.assistantName` / `resolveAssistantName`), optional `assistantAvatar` (see "Assistant avatar"). Required.
+- `core` — `postgresPassword`, `defaultChatChannel`, optional `autoUpdate` (default `true`, see "Workspace updates"), optional `logRetentionDays`, optional `assistantName` (default `Familiar`; web UI branding, `{ASSISTANT_NAME}` placeholder, read via `ctx.assistantName` / `resolveAssistantName`), optional `assistantAvatar` (see "Assistant avatar"). Required.
 - `inference` — `provider`, `defaultModel`, `apiKeys.<provider>` map. Required.
 - `mail` / `calendar` — cross-provider settings (send / attendee safety knobs). `emitEventsInDev` (default `false`) controls whether a dev instance (`FAMILIAR_DEV=1`) emits `mail:*` / `calendar:*` bus events; by default pollers still sync but the events are dropped (`host/src/utils/DevEventGate.ts`), so a dev instance sharing the production account doesn't replay its whole backlog. Production ignores the flag.
 - `storage` — cloud-storage mounts and policy (`allowWrite`, `searchTimeoutMs`, `runQuotaMb`, `mounts.<alias>` with `plugin` / `account` / `drive` / `access` / `writeRoots` / `searchByDefault`). Parsed and statically linted by `host/src/storage/StorageConfig.ts` (also part of `config lint` and the daemon boot; plugin-aware checks run after `prepare`). Managed via `familiar storage list|add|remove|lint`; `add` / `remove` splice the file textually (`host/src/utils/ConfigDocument.ts`) so comments survive. Storage providers implement the `StorageProvider` SPI (`shared/src/Storage.ts`) and register via `ctx.storage.registerProvider` in **`prepare()`** (not `start()`) so the CLI reaches them without the daemon; the host `StorageService` owns refs, policy, search fan-out, cross-mount copy and the per-run byte quota, and the core `storage_*` tools are always registered — policy is enforced per call.
@@ -233,13 +232,14 @@ my-plugin/
     index.ts                # event sources, cronjobs, daemons
   container/                # mounted into container
     mcps/                   # plugin-provided MCP servers (optional)
-  workspace-template/       # copied into workspace on first install
+  workspace-template/       # seeded into the workspace, kept current by the workspace updater
+  workspace-updates/        # optional update notes (YYYY-MM-DD-<slug>.md), applied once per workspace
     <topic>/
       index.md
       ...
 ```
 
-A plugin may emit events on any number of topics and usually ships default handlers for the emitted events in its folder under `workspace-template/`. The daemon checks all workspace templates on startup and copies new / missing files to the `workspace/` directory.
+A plugin may emit events on any number of topics and usually ships default handlers for the emitted events in its folder under `workspace-template/` (manifest `workspaceTemplate`), plus optional update notes (manifest `workspaceUpdates`). See "Workspace updates" below.
 
 ### Plugin manifest (in package.json)
 
@@ -294,7 +294,7 @@ When the user asks for it in the chat, the agent can edit the handler markdown f
 Handler behavior is shaped by markdown files in layers, each with distinct ownership and purpose:
 
 - **Code-level capability** — what plugins make possible (in TypeScript/MCPs)
-- **Prompt template** — `PROMPT.md`, the single file defining how a handler's prompt is assembled; it pulls in `SOUL.md` and `CONTEXT.md` (identity and situational context, written by the user) via `{SOUL.md}` / `{CONTEXT.md}` includes
+- **Prompt template** — `PROMPT.md`, the single file defining how a handler's prompt is assembled; it pulls in `SOUL.md` (identity, written by the user) and `ARCHITECTURE.md` via `{SOUL.md}` / `{ARCHITECTURE.md}` includes
 - **Handler layer** — one handler file per topic (`<topic>/index.md`, `<topic>/analyze.md`, `<topic>/<subtopic>.md`, …); the most specific file for an event's topic runs alone. Plugin-shipped defaults, user-editable.
 - **Knowledge layer** — facts about people, projects, etc. (`people/`, plugin-specific), built up over time by handlers themselves, correctable by the user
 
@@ -306,7 +306,7 @@ All prompt prose lives in the workspace, not in code (user-facing reference: `do
 
 Template syntax (`shared/src/PromptTemplate.ts`, also used by host plugins such as `gpt-voice`):
 
-- `{NAME}` (`[A-Z][A-Z0-9_]*`) is a placeholder; `{path.md}` includes a workspace-relative markdown file (no `..`). Other braces — JSON examples, `{lowercase}` — stay untouched.
+- `{NAME}` (`[A-Z][A-Z0-9_]*`) is a placeholder; `{path.md}` includes a workspace-relative markdown file (no `..`) without its leading YAML frontmatter (`stripFrontmatter`, `container/src/PromptBuilder.ts`), so a handler can include another handler's body — the default chat handlers all start with `{chat/index.md}`. Other braces — JSON examples, `{lowercase}` — stay untouched.
 - Only workspace markdown is template: `PROMPT.md`, files it includes, and `{HANDLER_CONTENT}` (the handler body) are expanded recursively (depth ≤ 3, cycles stopped). Values produced by code or plugins are inserted verbatim and never rescanned, so event content containing `{SOUL.md}` cannot pull files into the prompt.
 - Problems never fail the run: unknown placeholders stay verbatim, missing includes render empty, bad paths/cycles keep the token — each with a `prompt template: …` warning in the agentrun log.
 - List placeholders render `(none)` when empty; templates have no conditionals.
@@ -337,7 +337,7 @@ All components log using a centralized logging service. Fields include plugin id
 
 ## Concurrency and model usage
 
-Each handler's markdown file declares which model the agent runs under. Instead of a concrete model ref, a handler may name a key from `inference.aliases` in `config.yml` (e.g. `model: fast`); `ModelFactory` resolves it (single level, `defaultModel` may be an alias too) and `agentruns.model` records the resolved `<provider>/<modelId>`. The heavy model (V4 Pro) is the bottleneck: Featherless's premium tier exposes one concurrent slot for 70B+ models.
+Each handler's markdown file declares which model the agent runs under. Instead of a concrete model ref, a handler may name a key from `inference.aliases` in `config.yml` (e.g. `model: fast`); `ModelFactory` resolves it (single level, `defaultModel` may be an alias too; the standard aliases `fast` / `smart` that the shipped templates use fall back to `defaultModel` when not configured — `STANDARD_MODEL_ALIASES`) and `agentruns.model` records the resolved `<provider>/<modelId>`. The heavy model (V4 Pro) is the bottleneck: Featherless's premium tier exposes one concurrent slot for 70B+ models.
 
 To keep things simple for now:
 
@@ -371,9 +371,8 @@ The following are deliberately deferred but should be addressed during implement
 1. **Suspend/resume mechanics for agentruns awaiting user feedback.** When a handler proposes a pending action — or otherwise asks the user a question — the agentrun has to wait for a response that may take seconds or hours. Does the watcher slot stay parked on the suspended agentrun (simple but burns the single slot for the duration), or does the agentrun get persisted to disk and re-scheduled when the response lands (requires re-hydrating agent + tool state)? Same question for general user-feedback prompts, not just approval gates.
 2. **A successor to the old "rules" concept.** Earlier designs had user-authored event-driven rules (`workspace/<plugin>/rules/`) with a two-stage retrieval helper. That mechanism is dropped for now — handler files cover the same surface less directly. Some way for the user to add cross-cutting reactive behavior without editing a topic's handler is still wanted; shape TBD.
 3. **Per-model concurrency limits.** The agentrun scheduler is single-slot today. Letting lightweight handlers run in parallel with one heavy handler is straightforward (model column on `agentruns`, watcher claim filter), but only worth the complexity once the single slot is actually a bottleneck.
-4. **Diff/merge on plugin updates** — when a plugin update brings new defaults but the user has customized their copy, present a diff and let the user choose. Even better: let the LLM handle the merge in a guided dialogue.
-5. **Web UI for workspace inspection and audit log browsing** — useful for debugging and understanding system behavior.
-6. **Eval harness** — a way to replay events against the system and measure handler quality. Critical for confidently swapping models or tuning prompts.
+4. **Web UI for workspace inspection and audit log browsing** — useful for debugging and understanding system behavior.
+5. **Eval harness** — a way to replay events against the system and measure handler quality. Critical for confidently swapping models or tuning prompts.
 
 ## Implementation order suggestion
 
@@ -402,13 +401,18 @@ When in doubt during implementation:
 
 ## The `workspace/` folder
 
-`workspace/` at the project root (gitignored) is mounted into the agent container as `/workspace`. The assistant's memory and personality live here (PROMPT.md, SOUL.md, CONTEXT.md, topic folders, people/, etc.). `familiar init` creates it empty; the daemon seeds it on every start from `data/workspace-template/` and the plugins' `workspace-template/` folders (missing files only). Host code reaches it via `boot.workspaceDir`, plugins via `ctx.workspaceDir`.
+`workspace/` at the project root (gitignored) is mounted into the agent container as `/workspace`. The assistant's memory and personality live here (PROMPT.md, SOUL.md, ARCHITECTURE.md, topic folders, people/, etc.). `familiar init` creates it empty; the daemon fills and updates it on every start from the core template `host/workspace-template/` (`boot.workspaceTemplateDir`, ships with the host package) and the plugins' `workspace-template/` folders. Host code reaches it via `boot.workspaceDir`, plugins via `ctx.workspaceDir`.
+
+### Workspace updates
+
+User-facing reference: `docs/workspace-updates.md` (keep it in sync). `WorkspaceUpdater` (`host/src/workspace/`) runs at daemon start in place of a copy-if-missing seed: a per-file 3-way merge with base = the template version a file was last synced to (`data/workspace-base/files/` + `state.json`), theirs = the current template (`buildWorkspaceReference`, core first, first source wins), ours = the workspace file (or its twin handler form). Untouched files fast-forward, new files are seeded, dropped untouched files are removed; everything else is pending (`both-changed` / `unknown-base` / `live-deleted` / `template-deleted`), and a file's base only advances when it is settled. Files of an unloaded plugin are left alone. Update notes (`host/workspace-updates/`, plugin manifest `workspaceUpdates`, id `<source>/<YYYY-MM-DD-slug>`) are one-off instructions recorded as done in `state.json`; a first run (no `state.json`) marks all existing notes done. The workspace is a git repository written only by the host (`WorkspaceGit`, isomorphic-git — no system git): snapshot before sync, one commit for automatic changes, one per decision; on git failure nothing is overwritten or removed. Syncthing folders get `.git` in `.stignore`. `WorkspaceMergeCoordinator` (started in the background after the daemon is up, stopped on shutdown) emits one exact, privileged event per open item — `update:apply-note` per note first, then `update:merge-file` per file (idempotency key includes a per-item fingerprint) — and awaits each, so there is no per-run item limit; then it writes the report `files/updates/<date>.md` and the banners itself. Without open items it only writes the banner about automatic changes. Merge policy lives in the workspace skill `skills/workspace-update/SKILL.md`. `core.autoUpdate: false` (for a machine whose workspace is synced in from another familiar) skips the daemon-start sync entirely; the writing tools then refuse with `AutoUpdateDisabled`. Tools (group `workspace`): `workspace_update_status` / `workspace_update_diff` (default), `workspace_update_resolve` / `workspace_update_note_done` (privileged); CLI `familiar workspace status|diff|resolve`.
 
 ## The `data/` folder
 
 The `data/` folder is the persistent host-side storage. Layout:
 
 - `data/postgres/` — bind-mounted into `familiar-postgres` as `/var/lib/postgresql/data`. Cluster state for the bus-state DB. The container runs with `--user <hostUid>:<hostGid>` so cluster files are owned by the operator and `rm -rf data/postgres` works from the host without `sudo`. A daemon upgraded from the old uid-70 layout needs a one-time `sudo chown -R "$(id -u):$(id -g)" data/postgres`.
+- `data/workspace-base/` — base of the workspace 3-way merge: `files/<path>` holds the template version each workspace file was last synced to, `state.json` the sources and the done update notes. Deleting it makes every file count as never synced (see "Workspace updates").
 
 Ephemeral runtime scratch lives in `tmp/` instead (gitignored, safe to wipe):
 

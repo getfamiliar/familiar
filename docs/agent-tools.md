@@ -121,7 +121,7 @@ The description is the only documentation the model sees when it decides to call
 2. **When to use it**, and when not to (if there is a sibling tool that fits better).
 3. **What the result means**, field by field when it is structured.
 4. **Side effects and follow-ups**: "Does NOT apply the change: call `config_reload` after your edits."
-5. **Pointers to longer instructions** when the tool needs judgment: "Before answering, read `skills/configuration/web-interface.md`." Put the long how-to into a workspace skill (`data/workspace-template/skills/<name>/…`), not into the description.
+5. **Pointers to longer instructions** when the tool needs judgment: "Before answering, read `skills/configuration/web-interface.md`." Put the long how-to into a workspace skill (`host/workspace-template/skills/<name>/…`), not into the description.
 
 Name concrete keys and values, not vague hints. "The provider must have an API key under `inference.apiKeys`" is better than "make sure it's configured".
 
@@ -187,7 +187,7 @@ Use real config files in a temp dir (`HostConfigService`) and in-memory fakes fo
 ## Making it known
 
 - **Verify the surface:** `familiar tools list` (with the daemon running) shows key, level badge, groups and description exactly as the agent sees them.
-- **Teach the judgment:** if the tool needs more than its description (how to word an answer, when to ask the user first), add or extend a workspace skill under `data/workspace-template/skills/` and reference it from the description. The daemon copies only *missing* files into existing workspaces, so existing workspaces need edited skill files synced by hand.
+- **Teach the judgment:** if the tool needs more than its description (how to word an answer, when to ask the user first), add or extend a workspace skill under `host/workspace-template/skills/` and reference it from the description. Existing workspaces receive the edit through the workspace updater ([workspace-updates.md](workspace-updates.md)).
 - **Document it:** user-facing settings in `docs/config.md`, architecture notes in `CLAUDE.md`, plugin tools in the plugin's README.
 
 ## Checklist

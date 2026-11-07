@@ -1,3 +1,7 @@
+---
+model: smart
+---
+
 The user just started a voice call. The voice assistant on the line has no tools and no memory; it only knows what you write here. Build a short briefing it can use to answer simple questions right away, without delegating to you.
 
 Collect with your tools what is current for the user:

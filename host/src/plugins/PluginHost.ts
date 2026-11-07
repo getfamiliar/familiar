@@ -1,5 +1,3 @@
-import { cpSync, existsSync } from "node:fs";
-import path from "node:path";
 import type {
     AnyCommandDef,
     ConfigService,
@@ -12,7 +10,7 @@ import type {
     PluginTool,
     PostgresConnection,
 } from "@getfamiliar/shared";
-import { EventBus, ModelNotSupported, TOPIC_PATTERN, twinHandlerPath } from "@getfamiliar/shared";
+import { EventBus, ModelNotSupported, TOPIC_PATTERN } from "@getfamiliar/shared";
 import { defineCommand } from "citty";
 import { type Bootstrap, isDevMode } from "../Bootstrap.js";
 import { readBastionTokenFile } from "../bastion/BastionToken.js";
@@ -563,56 +561,6 @@ export class PluginHost {
             map[plugin.id] = pluginRoot(plugin.id, subCmds, main);
         }
         return map;
-    }
-
-    /**
-     * Seed the workspace from templates. Two layers, copied in this
-     * order so the first writer wins on overlaps (`force: false`):
-     *
-     *   1. Global template at `data/workspace-template/` — versioned
-     *      with the repo, authored by the user. Authoritative for
-     *      anything it ships (e.g. `PROMPT.md`, `SOUL.md`, `CONTEXT.md`).
-     *   2. Plugin templates contributed via `plugin.workspaceTemplate`
-     *      — fill in topic-specific defaults the global template
-     *      didn't already cover.
-     *
-     * A handler exists in two interchangeable forms (`x.md` and
-     * `x/index.md`) and only one may exist, so a template file is also
-     * skipped when its twin is already in the workspace — a freshly
-     * seeded `x.md` would otherwise shadow the user's customized
-     * `x/index.md` (see {@link buildTemplateSeedFilter}).
-     *
-     * Idempotent and safe to call on every daemon start. Diff/merge on
-     * plugin updates (when a plugin ships a newer default than the
-     * user's local copy) is the open question already in CLAUDE.md and
-     * is not handled here.
-     */
-    installWorkspaceTemplates(): void {
-        if (existsSync(this.boot.workspaceTemplateDir)) {
-            cpSync(this.boot.workspaceTemplateDir, this.boot.workspaceDir, {
-                recursive: true,
-                force: false,
-                errorOnExist: false,
-                filter: buildTemplateSeedFilter(
-                    this.boot.workspaceTemplateDir,
-                    this.boot.workspaceDir,
-                ),
-            });
-        }
-        for (const plugin of this.plugins) {
-            if (!plugin.workspaceTemplate) {
-                continue;
-            }
-            if (!existsSync(plugin.workspaceTemplate)) {
-                continue;
-            }
-            cpSync(plugin.workspaceTemplate, this.boot.workspaceDir, {
-                recursive: true,
-                force: false,
-                errorOnExist: false,
-                filter: buildTemplateSeedFilter(plugin.workspaceTemplate, this.boot.workspaceDir),
-            });
-        }
     }
 
     /**
@@ -1251,28 +1199,5 @@ function disabledPluginTool(
                     "fix the cause, then reload the config (config_reload) or restart the daemon",
             );
         },
-    };
-}
-
-/**
- * Build the `cpSync` filter used when seeding the workspace from a
- * template folder. Everything is copied (subject to `force: false`)
- * except a handler file whose twin form already exists in the
- * workspace: a template `x.md` is skipped when `workspace/x/index.md`
- * exists, and a template `x/index.md` is skipped when `workspace/x.md`
- * exists. The same-name case is left to `force: false`.
- *
- * @param templateDir Absolute root of the template folder being copied.
- * @param workspaceDir Absolute workspace root.
- * @returns The filter; `true` means copy.
- */
-export function buildTemplateSeedFilter(
-    templateDir: string,
-    workspaceDir: string,
-): (source: string) => boolean {
-    return (source) => {
-        const relativePath = path.relative(templateDir, source).split(path.sep).join("/");
-        const twin = twinHandlerPath(relativePath);
-        return twin === null || !existsSync(path.join(workspaceDir, twin));
     };
 }

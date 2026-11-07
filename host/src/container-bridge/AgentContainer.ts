@@ -18,7 +18,7 @@ export const AGENT_CONTAINER_NAME = "familiar-agent";
  * - `"off"` — don't stamp `agentruns.system_prompt`.
  * - `"full"` — stamp the prompt verbatim.
  * - `"non-static"` — stamp the prompt with every `{path.md}` include
- *   (SOUL.md, CONTEXT.md, …) replaced by `<content of file …>` placeholders so the audit log
+ *   (SOUL.md, ARCHITECTURE.md, …) replaced by `<content of file …>` placeholders so the audit log
  *   keeps per-run signal without the framing-file noise.
  *
  * Forwarded to the container as the string env var

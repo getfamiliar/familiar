@@ -2,8 +2,9 @@
 // published @getfamiliar/host package carries everything `familiar init`
 // needs to scaffold a project. The host package's `files` allowlist
 // includes `template`, and this directory is gitignored (regenerated on
-// every publish), so config/*.example.yml and data/workspace-template/
-// stay the single source of truth.
+// every publish), so config/*.example.yml and config/plugins.example stay
+// the single source of truth. The core workspace template is not copied:
+// it lives in host/workspace-template/ and ships with the package as is.
 import { cpSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,7 +17,4 @@ mkdirSync(dest, { recursive: true });
 cpSync(join(root, "config", "config.example.yml"), join(dest, "config.example.yml"));
 cpSync(join(root, "config", "mcp.example.yml"), join(dest, "mcp.example.yml"));
 cpSync(join(root, "config", "plugins.example"), join(dest, "plugins"));
-cpSync(join(root, "data", "workspace-template"), join(dest, "workspace-template"), {
-    recursive: true,
-});
 console.log(`synced templates → ${dest}`);

@@ -1,3 +1,10 @@
+---
+model: smart
+outputChat: true
+---
+
+{chat/index.md}
+
 Your reply is delivered to the user via Telegram and rendered as **Markdown**, so format naturally
 using ordinary Markdown: `**bold**`, `_italic_`, `~~strikethrough~~`, `` `inline code` ``, fenced
 code blocks, `[links](https://example.com)`, bullet and numbered lists, and `> blockquotes`.

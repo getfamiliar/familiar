@@ -34,9 +34,9 @@ function copyIfMissing(src: string, dest: string, log: Logger): void {
  *
  * Writes `package.json` (pinning the `familiar` dependency), creates
  * `config/`, `data/`, `tmp/`, `workspace/`, and seeds `config/config.yml`,
- * `config/mcp.yml`, `config/plugins`, and `data/workspace-template/` from
- * the packaged `template/` assets. The workspace itself stays empty; the
- * daemon fills it from the templates on its first start.
+ * `config/mcp.yml` and `config/plugins` from the packaged `template/`
+ * assets. The workspace itself stays empty; the daemon fills it from the
+ * workspace templates (core and plugins) on its first start.
  */
 export const initCommand = defineCommand({
     meta: {
@@ -79,13 +79,6 @@ export const initCommand = defineCommand({
         );
         copyIfMissing(join(templateDir, "mcp.example.yml"), join(home, "config", "mcp.yml"), log);
         copyIfMissing(join(templateDir, "plugins"), join(home, "config", "plugins"), log);
-        cpSync(join(templateDir, "workspace-template"), join(home, "data", "workspace-template"), {
-            recursive: true,
-            force: false,
-            errorOnExist: false,
-        });
-        log.info(`seeded ${join(home, "data", "workspace-template")}`);
-
         log.info(
             "Familiar project initialized. Next: `npm install`, fill in config/config.yml, then `familiar start`.",
         );

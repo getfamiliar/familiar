@@ -563,9 +563,13 @@ function capString(value: string, max: number): string {
 
 /**
  * Read a file at `<workspaceRoot>/<relativePath>` synchronously,
- * returning its trimmed contents (per-file-truncated) or `null` if
- * the file does not exist. Other I/O errors propagate so the caller
- * doesn't silently mistake e.g. EACCES for a missing file.
+ * returning its trimmed body (per-file-truncated) or `null` if the file
+ * does not exist. A leading YAML frontmatter block is dropped: an
+ * included handler (e.g. `{chat/index.md}`, which is also the `chat`
+ * fallback handler) contributes only its prose — its `model` / `tools` /
+ * `skills` configure that handler, not the including one. Other I/O
+ * errors propagate so the caller doesn't silently mistake e.g. EACCES
+ * for a missing file.
  *
  * @param relativePath Workspace-relative path.
  * @returns The trimmed, truncated text, or `null` when missing.
@@ -575,13 +579,25 @@ function readWorkspaceFile(relativePath: string): string | null {
     const absolute = path.join(HandlerFile.getWorkspaceRoot(), relativePath);
     try {
         const raw = readFileSync(absolute, "utf8");
-        return truncate(raw.trim(), MAX_FILE_CHARS);
+        return truncate(stripFrontmatter(raw).trim(), MAX_FILE_CHARS);
     } catch (err) {
         if ((err as NodeJS.ErrnoException).code === "ENOENT") {
             return null;
         }
         throw err;
     }
+}
+
+/**
+ * Drop a leading YAML frontmatter block (`---` … `---`) without parsing
+ * it — a malformed block in an include must not fail the run.
+ *
+ * @param text File text.
+ * @returns The text after the block, or the text unchanged when it has none.
+ */
+export function stripFrontmatter(text: string): string {
+    const match = text.match(/^\uFEFF?\s*---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/);
+    return match === null ? text : text.slice(match[0].length);
 }
 
 /**

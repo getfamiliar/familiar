@@ -1,11 +1,8 @@
 ---
-tools: fs_read, fs_write, memory_search
-# Recommended: pin a reasoning-capable model here. Filing a memory is a
-# judgement call (which folder? which slug? extend existing or write new?),
-# and a small/fast model will drop facts on the floor. Uncomment one of:
-# model: deepseek/deepseek-reasoner
-# model: anthropic/claude-opus-4-7
-# model: openai/o1
+tools: fs_read, fs_write, fs_str_replace, fs_append, memory_search
+# Filing a memory is a judgement call (which folder? which slug? extend existing or
+# write new?), so this should be a reasoning-capable model — not a small/fast one.
+model: smart
 ---
 
 # File this memory
@@ -29,6 +26,9 @@ Procedure:
    (`wiki/people/<slug>.md`, `wiki/threads/<slug>.md`, etc.). Cross-link related notes
    with `[[other-slug]]`.
 5. Keep it terse: bullet points, not prose. Date facts when the date matters.
+6. Cleanup if necessary - simplify, rename, merge, fix typos. The wiki is your baby; take care of it.
+
+## Your output
 
 Reply with a one-line summary of what you did (`extended wiki/people/alice.md`,
 `created wiki/threads/acme-rollout.md`, or `noop — already recorded`).

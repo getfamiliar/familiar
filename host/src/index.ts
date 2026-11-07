@@ -14,6 +14,7 @@ import { stopCommand } from "./commands/Stop.js";
 import { buildStorageCommand } from "./commands/Storage.js";
 import { toolsCommand } from "./commands/Tools.js";
 import { webCommand } from "./commands/Web.js";
+import { buildWorkspaceCommand } from "./commands/Workspace.js";
 import { PluginHost } from "./plugins/PluginHost.js";
 import { loadPlugins } from "./plugins/PluginLoader.js";
 
@@ -57,7 +58,10 @@ const PLUGINS_GROUP_TITLE = "Plugins";
 const ROOT_COMMAND_GROUPS: readonly CommandGroup[] = [
     { title: "Start / Stop / Init", commands: ["init", "start", "stop"] },
     { title: "Configuration", commands: ["config", "storage", "tools", "web"] },
-    { title: "Maintenance & Audit", commands: ["banners", "events", "prompt", "psql"] },
+    {
+        title: "Maintenance & Audit",
+        commands: ["banners", "events", "prompt", "psql", "workspace"],
+    },
     { title: PLUGINS_GROUP_TITLE, commands: ["plugins"] },
 ];
 
@@ -104,6 +108,7 @@ async function main(): Promise<void> {
             prompt: buildPromptCommand(pluginHost),
             storage: buildStorageCommand(pluginHost),
             web: webCommand,
+            workspace: buildWorkspaceCommand(plugins),
             ...pluginHost.buildSubCommands(),
         },
     });

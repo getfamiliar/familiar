@@ -54,7 +54,7 @@ The installable package is `@getfamiliar/cli`; the command it provides is `famil
     mcp.yml             # MCP server config
     plugins             # optional-plugin whitelist (see “Plugins”)
   data/
-    workspace-template/ # seeds workspace/ on first start
+    workspace-base/     # template versions the workspace was last synced to
   tmp/
 ```
 
@@ -217,7 +217,7 @@ Every release still produces a `<version>` tag for every image (so the host, whi
 - adds a `repository` field (required for npm provenance),
 - and, for the `@getfamiliar/cli` meta-package, injects the bundled plugins as pinned dependencies and writes the generated `familiar.bundledPlugins` list — all derived from each plugin's `familiar.bundled` flag.
 
-`scripts/sync-templates.mjs` copies the canonical `config/*.example.yml` and `data/workspace-template/` into `host/template/` so the published `@getfamiliar/host` package carries everything `familiar init` needs. That directory is generated at publish time and is not committed.
+`scripts/sync-templates.mjs` copies the canonical `config/*.example.yml` and `config/plugins.example` into `host/template/` so the published `@getfamiliar/host` package carries everything `familiar init` needs. That directory is generated at publish time and is not committed. The core workspace template (`host/workspace-template/`) and update notes (`host/workspace-updates/`) ship with the package directly; see [workspace-updates.md](workspace-updates.md).
 
 ### Versioning scheme
 

@@ -22,6 +22,15 @@ core:
   # Optional; falls back to "Familiar" when omitted.
   # assistantName: Familiar
 
+  # Keep the workspace in step with the templates of familiar and its
+  # plugins on every daemon start: seed new files, update files you never
+  # edited, and let the assistant merge the ones you customized (history
+  # in the workspace git repository; see docs/workspace-updates.md).
+  # Set to false on a machine whose workspace is maintained by another
+  # familiar and synced in (e.g. via Syncthing), so the two don't both
+  # update the same files. Optional; defaults to true.
+  # autoUpdate: true
+
   # Your assistant's face (Avataaars options). Usually edited in the web
   # UI under Settings → Avatar, which writes this mapping. Missing options
   # take their default; see docs/config.md for the options.
@@ -167,7 +176,9 @@ inference:
   # `model: fast` instead of a concrete id, so swapping a model is a
   # one-line change here. Values are ordinary model refs (bare or
   # provider-prefixed); they cannot point to another alias. Alias names
-  # may only contain letters, digits, `_` and `-`.
+  # may only contain letters, digits, `_` and `-`. The shipped workspace
+  # templates use `fast` (routing, bookkeeping) and `smart` (judgment);
+  # left undefined, both run under defaultModel.
   # aliases:
   #   fast: deepseek/deepseek-v4-flash
   #   default: deepseek/deepseek-v4-flash

@@ -29,7 +29,7 @@ Remove any sign-off phrase like "Best regards" and other greetings that sit betw
 
 #### The text style
 
-Look at the body text across the chosen samples (new preferred). Extract the dominant CSS style for text the user has written  as a single CSS line like `font-family: Calibri; font-size: 11pt; color: #1f1f1f`. Ignore media queries and other responsive design elements — we want a single stable style to apply to all mail output.
+Look at the body text across the chosen samples (new preferred). Extract the dominant CSS style for text the user has written as a single CSS line like `font-family: Calibri; font-size: 11pt; color: #1f1f1f`. Ignore media queries and other responsive design elements — we want a single stable style to apply to all mail output.
 
 ### Decide on the flags
 

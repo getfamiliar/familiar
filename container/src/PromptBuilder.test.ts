@@ -5,7 +5,12 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { HandlerFile } from "./HandlerFile.js";
-import { buildPrompt, buildPromptParts, PromptTemplateMissingError } from "./PromptBuilder.js";
+import {
+    buildPrompt,
+    buildPromptParts,
+    PromptTemplateMissingError,
+    stripFrontmatter,
+} from "./PromptBuilder.js";
 import { loadPreloadedSkills } from "./SkillFile.js";
 
 /** Pull the JSON block out of a rendered prompt for shape assertions. */
@@ -148,13 +153,13 @@ describe("buildPrompt — total payload cap", () => {
 /** The ARCHITECTURE.md the shipped PROMPT.md includes. */
 const SHIPPED_ARCHITECTURE = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../../data/workspace-template/ARCHITECTURE.md",
+    "../../host/workspace-template/ARCHITECTURE.md",
 );
 
 /** The PROMPT.md shipped with the canonical workspace template. */
 const SHIPPED_PROMPT_TEMPLATE = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../../data/workspace-template/PROMPT.md",
+    "../../host/workspace-template/PROMPT.md",
 );
 
 describe("buildPromptParts", () => {
@@ -167,7 +172,6 @@ describe("buildPromptParts", () => {
         copyFileSync(SHIPPED_PROMPT_TEMPLATE, path.join(workspaceRoot, "PROMPT.md"));
         copyFileSync(SHIPPED_ARCHITECTURE, path.join(workspaceRoot, "ARCHITECTURE.md"));
         writeFileSync(path.join(workspaceRoot, "SOUL.md"), "I am the soul.\n", "utf8");
-        writeFileSync(path.join(workspaceRoot, "CONTEXT.md"), "I am the context.\n", "utf8");
         mkdirSync(path.join(workspaceRoot, "skills", "listfiles"), { recursive: true });
         writeFileSync(
             path.join(workspaceRoot, "skills", "listfiles", "SKILL.md"),
@@ -202,10 +206,24 @@ describe("buildPromptParts", () => {
         });
     }
 
+    it("includes a handler file without its frontmatter", async () => {
+        mkdirSync(path.join(workspaceRoot, "chat"), { recursive: true });
+        writeFileSync(
+            path.join(workspaceRoot, "chat", "shared.md"),
+            "---\nmodel: smart\nskills: reflection\n---\n\nShared chat rules.\n",
+            "utf8",
+        );
+        const parts = await build(
+            loadHandler("handler-include.md", "{chat/shared.md}\n\nOwn part.\n"),
+        );
+        assert.match(parts.system, /Shared chat rules\.\n\nOwn part\./);
+        assert.doesNotMatch(parts.system, /skills: reflection/);
+    });
+
     it("renders the shipped PROMPT.md into the familiar sections", async () => {
         const parts = await build(loadHandler("handler-full.md", "Do the thing.\n"));
         assert.match(parts.system, /^# Identity\n\nI am the soul\./m);
-        assert.match(parts.system, /^# Context\n\nI am the context\./m);
+        assert.doesNotMatch(parts.system, /^# Context$/m);
         assert.match(parts.system, /^# Handler\n\nDo the thing\./m);
         assert.match(parts.system, /^# Architecture of this system\n\nYou are an assistant/m);
         assert.match(parts.system, /^- `listfiles`: How to keep lists in files\.$/m);
@@ -366,5 +384,16 @@ describe("buildPromptParts", () => {
         const parts = await build(loadHandler("handler-noskills.md", "Do the thing.\n"));
         assert.equal(parts.system.includes("(preloaded)"), false);
         assert.equal(parts.system.includes("{PRELOADED_SKILLS}"), false);
+    });
+});
+
+describe("stripFrontmatter", () => {
+    it("drops a leading block and keeps everything else", () => {
+        assert.equal(stripFrontmatter("---\na: 1\n---\nbody\n"), "body\n");
+        assert.equal(
+            stripFrontmatter("no frontmatter\n---\nx\n---\n"),
+            "no frontmatter\n---\nx\n---\n",
+        );
+        assert.equal(stripFrontmatter("---\nbroken: [\n---\nbody"), "body");
     });
 });
