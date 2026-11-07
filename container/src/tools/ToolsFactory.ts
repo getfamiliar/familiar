@@ -1,6 +1,7 @@
 import {
     type AgentRunBus,
     type AgentRunRow,
+    type BannerBus,
     type ContainerToolInfo,
     DEFAULT_TOOL_LEVEL,
     estimateTokens,
@@ -13,6 +14,7 @@ import {
 } from "@getfamiliar/shared";
 import { asSchema, type Tool, type ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
+import { buildBannerCreateTool, buildBannerListTool, buildBannerRemoveTool } from "./banners.js";
 import { buildBashTool } from "./bash.js";
 import { buildFsTools } from "./fs.js";
 import { buildGetScheduledSubagentsTool } from "./getScheduledSubagents.js";
@@ -78,6 +80,9 @@ const CONTAINER_TOOL_GROUPS: Readonly<Record<string, readonly string[]>> = {
     schedule_subagent: ["core"],
     unschedule_subagent: ["core"],
     get_scheduled_subagents: ["reflection"],
+    banner_create: ["core"],
+    banner_remove: ["core"],
+    banner_list: ["reflection"],
     fs_read: ["core", "fs"],
     fs_write: ["fs"],
     fs_str_replace: ["fs"],
@@ -94,15 +99,18 @@ const CONTAINER_TOOL_GROUPS: Readonly<Record<string, readonly string[]>> = {
  * key absent here (including every built-in above and the meta-tools)
  * is `default`. See {@link import("@getfamiliar/shared").ToolLevel}.
  *
- * Deliberately empty today: the fs write tools keep their finer
+ * `banner_create` is `privileged`: a banner reaches every future prompt,
+ * so a non-privileged run (e.g. a mail handler reading attacker-controlled
+ * content) must not be able to plant one. The fs write tools keep their finer
  * path-scoped privilege gate (a blanket `privileged` would wrongly
  * block their legitimate non-privileged scratch writes), and `bash`
- * keeps its OS-confined `unpriv` downgrade. The non-`default` tools
- * currently live on the plugin side (`mail_send_*`, `event_replay`,
- * `mailstyle_update`); this table exists so built-ins can be
- * reclassified without new plumbing.
+ * keeps its OS-confined `unpriv` downgrade. Most other non-`default`
+ * tools live on the plugin side (`mail_send_*`, `event_replay`,
+ * `mailstyle_update`).
  */
-const CONTAINER_TOOL_LEVELS: Readonly<Record<string, ToolLevel>> = {};
+const CONTAINER_TOOL_LEVELS: Readonly<Record<string, ToolLevel>> = {
+    banner_create: "privileged",
+};
 
 /** Inputs the {@link AgentRunner} threads into the factory per agentrun. */
 export interface ToolsFactoryContext {
@@ -132,6 +140,11 @@ export interface ToolsFactoryContext {
      * Croner jobs for inserted rows.
      */
     readonly scheduledSubagentBus?: ScheduledSubagentBus;
+    /**
+     * Banner bus; required (together with `parent` and `timezone`) to
+     * register `banner_create`, `banner_remove` and `banner_list`.
+     */
+    readonly bannerBus?: BannerBus;
     /**
      * IANA timezone (typically `core.timezone`) used by the scheduled-
      * subagent tools to convert between wall-clock and UTC. When
@@ -321,6 +334,20 @@ export class ToolsFactory {
                 toolRunContext,
             );
         }
+        if (context.bannerBus && context.parent && context.timezone) {
+            systemTools.banner_create = buildBannerCreateTool(
+                context.bannerBus,
+                context.parent,
+                context.timezone,
+                toolRunContext,
+            );
+            systemTools.banner_remove = buildBannerRemoveTool(context.bannerBus, toolRunContext);
+            systemTools.banner_list = buildBannerListTool(
+                context.bannerBus,
+                context.timezone,
+                toolRunContext,
+            );
+        }
         if (context.parent) {
             // Filesystem tools are always available; the writing tools
             // (fs_write / fs_str_replace / fs_append) consult
@@ -477,6 +504,7 @@ export class ToolsFactory {
         const chat = {} as Parameters<typeof buildSendChatTool>[0];
         const bus = {} as AgentRunBus;
         const scheduled = {} as ScheduledSubagentBus;
+        const banners = {} as BannerBus;
         const parent = {} as AgentRunRow;
         const waitForSubagent: WaitForSubagent = async () => {
             throw new Error("ToolsFactory.catalog stub: waitForSubagent must not be invoked");
@@ -487,6 +515,9 @@ export class ToolsFactory {
             schedule_subagent: buildScheduleSubagentTool(bus, scheduled, parent, "UTC", ctx),
             unschedule_subagent: buildUnscheduleSubagentTool(scheduled, ctx),
             get_scheduled_subagents: buildGetScheduledSubagentsTool(scheduled, "UTC", ctx),
+            banner_create: buildBannerCreateTool(banners, parent, "UTC", ctx),
+            banner_remove: buildBannerRemoveTool(banners, ctx),
+            banner_list: buildBannerListTool(banners, "UTC", ctx),
             ...buildFsTools(parent, ctx),
             bash: buildBashTool(parent, ctx),
         };

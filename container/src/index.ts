@@ -1,5 +1,6 @@
 import {
     AgentRunBus,
+    BannerBus,
     ChatMessageBus,
     createLogger,
     EventBus,
@@ -121,6 +122,7 @@ async function main(): Promise<void> {
         connection,
         log.child({ component: "scheduled-subagent-bus" }),
     );
+    const bannerBus = new BannerBus(connection);
     const chat = new ChatManager(new ChatMessageBus(connection));
     const recovery = new AgentrunRecovery(connection, log.child({ component: "recovery" }));
     const passedConfigLog = log.child({ component: "passed-config" });
@@ -132,6 +134,7 @@ async function main(): Promise<void> {
         inferenceEventBus,
         toolCallBus,
         scheduledSubagentBus,
+        bannerBus,
         log: log.child({ component: "agentrun-scheduler" }),
         clock: RealClock,
         runnerFactory: () => new AgentRunner(),

@@ -2,6 +2,7 @@ import { APICallError } from "@ai-sdk/provider";
 import {
     type AgentRunBus,
     type AgentRunRow,
+    type BannerRow,
     DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
     type EventBus,
     estimateTokens,
@@ -307,6 +308,11 @@ export interface AgentRunnerContext {
      */
     readonly recordInferenceEvent: (event: NewInferenceEvent) => Promise<void>;
     /**
+     * Load the active banners for the `{BANNER_LIST}` prompt placeholder.
+     * The Scheduler forwards to `BannerBus.listActive`.
+     */
+    readonly listBanners: () => Promise<readonly BannerRow[]>;
+    /**
      * Per-run logger child, pre-tagged with agentrun id / topic /
      * handler. The runner adds further bindings for SDK-step diagnostics.
      */
@@ -434,6 +440,7 @@ export class AgentRunner {
             toolNames,
             preloadedSkills,
             eventId: ctx.row.eventId,
+            listBanners: ctx.listBanners,
             plugins: {
                 bastionUrl: requireConfig<string>("bastionUrl"),
                 bastionToken: requireConfig<string>("bastionToken"),

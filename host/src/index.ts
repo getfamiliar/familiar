@@ -1,6 +1,7 @@
 import { createLogger, prettyStdoutStream } from "@getfamiliar/shared";
 import { defineCommand, runMain } from "citty";
 import { bootstrap, requireHomeDir } from "./Bootstrap.js";
+import { bannersCommand } from "./commands/Banners.js";
 import { configCommand } from "./commands/Config.js";
 import { buildEventsCommand } from "./commands/Events.js";
 import { initCommand } from "./commands/Init.js";
@@ -56,7 +57,7 @@ const PLUGINS_GROUP_TITLE = "Plugins";
 const ROOT_COMMAND_GROUPS: readonly CommandGroup[] = [
     { title: "Start / Stop / Init", commands: ["init", "start", "stop"] },
     { title: "Configuration", commands: ["config", "storage", "tools", "web"] },
-    { title: "Maintenance & Audit", commands: ["events", "prompt", "psql"] },
+    { title: "Maintenance & Audit", commands: ["banners", "events", "prompt", "psql"] },
     { title: PLUGINS_GROUP_TITLE, commands: ["plugins"] },
 ];
 
@@ -94,6 +95,7 @@ async function main(): Promise<void> {
             init: initCommand,
             start: startCommand,
             stop: stopCommand,
+            banners: bannersCommand,
             events: buildEventsCommand(pluginHost),
             psql: psqlCommand,
             config: configCommand,

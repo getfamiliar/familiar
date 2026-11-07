@@ -111,6 +111,12 @@ export const CORE_PROMPT_PLACEHOLDERS: readonly PromptPlaceholderDefinition[] = 
         kind: "dynamic",
     },
     {
+        name: "BANNER_LIST",
+        description:
+            "Bullet list of active banners (short-lived notes runs left via `banner_create`), one `* [ID:<id>] <created> (until <expires>): <text>` line each.",
+        kind: "dynamic",
+    },
+    {
         name: "STAGED_FILE_LIST",
         description: "Bullet list of files staged in this event's `/scratch/<event-id>/` folder.",
         kind: "dynamic",

@@ -273,6 +273,52 @@ describe("buildPromptParts", () => {
         assert.ok(parts.warnings.some((w) => /\{CURRENT_TIME\} before \{CACHE_MARKER\}/.test(w)));
     });
 
+    it("renders active banners after the cache marker", async () => {
+        const parts = await buildPromptParts({
+            handler: loadHandler("handler-banners.md", "Do the thing.\n"),
+            topic: "mail:new",
+            privileged: false,
+            toolNames: [],
+            preloadedSkills: [],
+            eventId: "event-without-scratch",
+            plugins: null,
+            listBanners: async () => [
+                {
+                    id: "123",
+                    text: "User is setting up a new phone today.",
+                    createdAt: "2026-11-06T11:30:00.000Z",
+                    expiresAt: "2026-11-06T22:59:00.000Z",
+                    createdByAgentrunId: null,
+                    createdByTopic: null,
+                },
+            ],
+        });
+        assert.match(parts.userHead, /^# Banner Messages$/m);
+        assert.match(
+            parts.userHead,
+            /^\* \[ID:123\] 2026-11-06 \d\d:30 \(until 2026-11-0\d \d\d:59\): User is setting up a new phone today\.$/m,
+        );
+        assert.equal(parts.system.includes("[ID:123]"), false);
+        assert.deepEqual(parts.warnings, []);
+    });
+
+    it("renders (none) and warns when loading banners fails", async () => {
+        const parts = await buildPromptParts({
+            handler: loadHandler("handler-banners-fail.md", "Do the thing.\n"),
+            topic: "mail:new",
+            privileged: false,
+            toolNames: [],
+            preloadedSkills: [],
+            eventId: "event-without-scratch",
+            plugins: null,
+            listBanners: async () => {
+                throw new Error("db down");
+            },
+        });
+        assert.match(parts.userHead, /^# Banner Messages\n\n\(none\)$/m);
+        assert.ok(parts.warnings.some((w) => /loading banners failed.*db down/.test(w)));
+    });
+
     it("does not expand placeholders smuggled in through the handler's tools", async () => {
         const parts = await buildPromptParts({
             handler: loadHandler("handler-inject.md", "Do the thing.\n"),

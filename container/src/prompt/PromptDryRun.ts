@@ -1,6 +1,7 @@
 import {
     AgentRunBus,
     type AgentRunRow,
+    BannerBus,
     ChatMessageBus,
     createLogger,
     DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
@@ -159,12 +160,14 @@ async function main(): Promise<void> {
             DRY_RUN_AGENTRUN_ID,
             DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,
         );
+        const bannerBus = new BannerBus(connection);
         const tools = await ToolsFactory.build({
             chat: new ChatManager(new ChatMessageBus(connection)),
             eventId: DRY_RUN_EVENT_ID,
             tools: combineToolEntries(handler.header.tools, preloadedSkills),
             bus: new AgentRunBus(connection, log),
             scheduledSubagentBus: new ScheduledSubagentBus(connection, log),
+            bannerBus,
             timezone: resolveTimezone(),
             parent: row,
             waitForSubagent: () => Promise.reject(new Error("dry run: subagents are not executed")),
@@ -188,6 +191,7 @@ async function main(): Promise<void> {
             toolNames,
             preloadedSkills,
             eventId: DRY_RUN_EVENT_ID,
+            listBanners: () => bannerBus.listActive(),
             plugins: {
                 bastionUrl,
                 bastionToken,

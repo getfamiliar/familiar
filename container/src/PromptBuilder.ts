@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
+    type BannerRow,
     CACHE_MARKER_PLACEHOLDER,
     type PlaceholderUse,
     PROMPT_TEMPLATE_FILE,
@@ -73,6 +74,9 @@ const DEFAULT_TEMPLATE_MODE = "default";
 /** `systemPrompt` value selecting {@link NONE_TEMPLATE}. */
 const NONE_TEMPLATE_MODE = "none";
 
+/** Core placeholder whose value needs the banners preloaded from the database. */
+const BANNER_LIST_PLACEHOLDER = "BANNER_LIST";
+
 /** Default timeout for the bastion round-trips fetching plugin prompt content. */
 const PLUGIN_FETCH_TIMEOUT_MS = 10_000;
 
@@ -142,6 +146,11 @@ export interface BuildPromptPartsInput {
     readonly eventId: string;
     /** Host access for plugin content, or `null` to skip it. */
     readonly plugins: PluginPromptAccess | null;
+    /**
+     * Loads the active banners for `{BANNER_LIST}`. Called only when the
+     * placeholder is resolved; when omitted the list renders empty.
+     */
+    readonly listBanners?: () => Promise<readonly BannerRow[]>;
     /** Assembly instant; defaults to now. Injectable for tests. */
     readonly now?: Date;
     /**
@@ -220,6 +229,13 @@ export async function buildPromptParts(input: BuildPromptPartsInput): Promise<Pr
     const warnings = [...parsed.warnings];
 
     const usedNames = [...new Set(parsed.uses.map((use) => use.name))];
+    const coreNames =
+        input.shouldResolveAllCore === true
+            ? Object.keys(CORE_PLACEHOLDER_RESOLVERS)
+            : usedNames.filter((name) => CORE_PLACEHOLDER_RESOLVERS[name] !== undefined);
+    const banners = coreNames.includes(BANNER_LIST_PLACEHOLDER)
+        ? await loadBanners(input.listBanners, warnings)
+        : [];
     const coreContext: CorePlaceholderContext = {
         handler,
         topic: input.topic,
@@ -227,12 +243,9 @@ export async function buildPromptParts(input: BuildPromptPartsInput): Promise<Pr
         toolNames: input.toolNames,
         eventId: input.eventId,
         now: input.now ?? new Date(),
+        banners,
     };
     const values = new Map<string, string>();
-    const coreNames =
-        input.shouldResolveAllCore === true
-            ? Object.keys(CORE_PLACEHOLDER_RESOLVERS)
-            : usedNames.filter((name) => CORE_PLACEHOLDER_RESOLVERS[name] !== undefined);
     for (const name of coreNames) {
         const resolve = CORE_PLACEHOLDER_RESOLVERS[name];
         if (resolve !== undefined) {
@@ -291,6 +304,32 @@ export async function buildPromptParts(input: BuildPromptPartsInput): Promise<Pr
         appenderSections,
         warnings,
     };
+}
+
+/**
+ * Load the active banners for `{BANNER_LIST}`. A database failure must
+ * not fail the run (the banners are context, not the task), so it is
+ * reported as a prompt warning and the list renders empty.
+ *
+ * @param listBanners Loader, or `undefined` when the caller has none.
+ * @param warnings Warning sink; receives a line on failure.
+ * @returns The active banners, or `[]`.
+ */
+async function loadBanners(
+    listBanners: (() => Promise<readonly BannerRow[]>) | undefined,
+    warnings: string[],
+): Promise<readonly BannerRow[]> {
+    if (listBanners === undefined) {
+        return [];
+    }
+    try {
+        return await listBanners();
+    } catch (err) {
+        warnings.push(
+            `{${BANNER_LIST_PLACEHOLDER}}: loading banners failed, rendered empty: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return [];
+    }
 }
 
 /**

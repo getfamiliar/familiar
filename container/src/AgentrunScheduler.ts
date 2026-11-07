@@ -2,6 +2,7 @@ import {
     AGENTRUNS_CHANNEL,
     type AgentRunBus,
     type AgentRunRow,
+    type BannerBus,
     type EventBus,
     type InferenceEventBus,
     type Logger,
@@ -86,6 +87,8 @@ export interface SchedulerDeps {
      */
     readonly toolCallBus: ToolCallBus;
     readonly scheduledSubagentBus: ScheduledSubagentBus;
+    /** Banner store: backs the `banner_*` tools and `{BANNER_LIST}`. */
+    readonly bannerBus: BannerBus;
     readonly log: Logger;
     readonly clock: Clock;
     /**
@@ -684,6 +687,7 @@ export class AgentrunScheduler {
             inferenceEventBus,
             toolCallBus,
             scheduledSubagentBus,
+            bannerBus,
             mcpPool,
             hostToolsClient,
             chat,
@@ -726,6 +730,7 @@ export class AgentrunScheduler {
                     tools,
                     bus: agentRunBus,
                     scheduledSubagentBus,
+                    bannerBus,
                     timezone,
                     parent: row,
                     waitForSubagent,
@@ -753,6 +758,7 @@ export class AgentrunScheduler {
                 await stepBus.add(step);
             },
             onStepFinished: () => this.resetStepTimeout(active),
+            listBanners: () => bannerBus.listActive(),
             stampModel: async (model, systemPrompt) => {
                 await agentRunBus.update(row.id, {
                     model,

@@ -56,6 +56,12 @@ These are preloaded for convenience — not the limit of what you can do. …
 
 {RUNTIME_LIST}
 
+# Banner Messages
+
+…
+
+{BANNER_LIST}
+
 # Files staged for this event
 
 …
@@ -112,11 +118,18 @@ Run `familiar prompt placeholders` for the authoritative list including placehol
 | `{EVENT_TOPIC}` | dynamic | The event topic, e.g. `chat:telegram`. |
 | `{PRIVILEGED}` | dynamic | `yes` if the run stems from you (terminal, your Telegram), else `no`. Non-privileged runs can't write outside their `/scratch/<event-id>/` and the writable paths. |
 | `{STAGED_FILE_LIST}` | dynamic | Bullets of files staged in `/scratch/<event-id>/` (e.g. mail attachments) with their sizes. |
+| `{BANNER_LIST}` | dynamic | The active banners, one `* [ID:12] 2026-11-06 12:30 (until 2026-11-06 23:59): text` bullet each, `(none)` when there are none (see "Banners" below). |
 | `{some/file.md}` | static | Content of that workspace file. |
 
 ¹ `{TOOL_LIST}` contains the handler's `tools` **plus** tools this handler used often in recent runs. That second part drifts over time, so the system prompt isn't perfectly stable while `{TOOL_LIST}` sits before the marker. Move it after the marker if caching matters to you more than having the tools near the handler text.
 
 Plugins can add their own placeholders (always `dynamic`); they show up in `familiar prompt placeholders` with the plugin's id as source. Plugins can also **append** text to the user message without a placeholder — the memory plugin does this with its `# Memories` table of relevant notes. Appended text always comes after the template's post-marker part.
+
+## Banners
+
+Banners are short-lived notes every run sees, so context crosses from one run to the next: tell the assistant in the chat that you are setting up a new phone today, and the mail handlers stop warning about the new-login mails. The assistant creates them with `banner_create` (text plus expiry, at most 30 days ahead, at most 500 characters and 20 active banners) and removes them early with `banner_remove`; once the expiry passes a banner disappears on its own. Only privileged runs — ones that stem from you — may create banners, because a banner reaches every later prompt and a mail handler reading a crafted mail must not be able to plant one. Anyone may remove one.
+
+The default `PROMPT.md` explains banners and when to create one in a static `## Banners` section before the marker (cacheable), and lists the active ones in a `# Banner Messages` section after it. A workspace seeded before banners existed needs both added by hand (copy them from `data/workspace-template/PROMPT.md`, or put the explanation into an included file such as `ARCHITECTURE.md`). `familiar banners list` shows what the assistant currently sees, `familiar banners remove <id>` deletes a banner. Lasting facts belong in the long-term memory instead.
 
 ## What the model receives
 

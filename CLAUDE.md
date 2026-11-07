@@ -116,10 +116,12 @@ Three distinct storage layers, each with a clear purpose and owner.
 
 ### 1. Bus state (host, transactional)
 
-Postgres database, owned by the host. Both host and container access it via the shared `EventBus` / `AgentRunBus` clients in `shared/`. Two tables today:
+Postgres database, owned by the host. Both host and container access it via the shared `EventBus` / `AgentRunBus` clients in `shared/`. The two core tables:
 
 - `events` — `id`, `topic` (CHECK against `TOPIC_PATTERN`, `[\w-]+(:[\w-]+)*`), `is_exact_topic`, `priority`, `state` (`pending|running|done|failed`), `payload`, `idempotency_key`, timestamps. Immutable record of "the world said this happened". State transitions are bookkeeping — nothing wakes on them except host-side completion waiters via `NOTIFY events_state`.
 - `agentruns` — `id`, `event_id` (FK), `parent_agentrun_id` (self-FK, null for root), `topic`, `is_exact_topic`, `priority`, `state` (`pending|running|done|failed`), `prompt`, `payload`, `result`, `error`, timestamps. The assistant's response tree per event.
+
+Further tables back individual features, e.g. `scheduled_subagents`, `chatmessages`, `tool_calls` and `banners` — short-lived notes (`text`, `expires_at`, creator lineage) that every agentrun sees through the `{BANNER_LIST}` placeholder. The container tools `banner_create` (`privileged`: a banner reaches every later prompt, so non-privileged runs must not plant one) / `banner_remove` / `banner_list` and the CLI `familiar banners list|remove` go through `BannerBus` (`shared/src/BannerBus.ts`), which deletes expired rows on every read.
 
 Three NOTIFY channels: `events_new` (INSERT into events; wakes the input-event watcher), `events_state` (state UPDATE on events; for host-side completion waiters), `agentruns_changed` (INSERT and state UPDATE on agentruns; wakes the agentrun scheduler).
 

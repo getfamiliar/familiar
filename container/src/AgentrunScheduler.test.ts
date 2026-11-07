@@ -124,6 +124,14 @@ function buildHarness(opts: HarnessOptions): Harness {
         } as unknown as SchedulerDeps["toolCallBus"],
         scheduledSubagentBus:
             scheduledSubagentBus as unknown as SchedulerDeps["scheduledSubagentBus"],
+        bannerBus: {
+            create: async () => {
+                throw new Error("bannerBus.create not implemented in harness");
+            },
+            remove: async () => [],
+            listActive: async () => [],
+            purgeExpired: async () => 0,
+        } as unknown as SchedulerDeps["bannerBus"],
         log,
         clock,
         runnerFactory: buildRunnerFactory(opts.behaviors),

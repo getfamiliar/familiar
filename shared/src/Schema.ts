@@ -575,6 +575,26 @@ CREATE TABLE IF NOT EXISTS web_sessions (
   last_seen_at  timestamptz NOT NULL DEFAULT now(),
   expires_at    timestamptz NOT NULL
 );
+
+-- ───────── banners ─────────
+--
+-- Short-lived notes the agent leaves for every later agentrun (e.g. "the
+-- user is setting up a new phone today"). Active banners are rendered
+-- into each prompt via the core {BANNER_LIST} placeholder; a banner
+-- disappears once \`expires_at\` passes (expired rows are deleted lazily
+-- by \`BannerBus\` on read / create). The created_by_* columns are the
+-- audit trail: which run (and topic) left the note.
+CREATE TABLE IF NOT EXISTS banners (
+  id                      bigserial PRIMARY KEY,
+  text                    text NOT NULL,
+  expires_at              timestamptz NOT NULL,
+  created_by_agentrun_id  bigint REFERENCES agentruns(id) ON DELETE SET NULL,
+  created_by_topic        text,
+  created_at              timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS banners_expires_at_idx
+  ON banners (expires_at);
 `;
 
 /**

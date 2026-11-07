@@ -2,8 +2,10 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import {
     ASSISTANT_NAME_CONFIG_KEY,
+    type BannerRow,
     CACHE_MARKER_PLACEHOLDER,
     CORE_PROMPT_PLACEHOLDERS,
+    formatBannerList,
     resolveAssistantName,
 } from "@getfamiliar/shared";
 import { parse as parseYaml } from "yaml";
@@ -57,6 +59,11 @@ export interface CorePlaceholderContext {
     readonly eventId: string;
     /** Wall-clock instant the prompt is assembled at. */
     readonly now: Date;
+    /**
+     * Active banners, preloaded by the PromptBuilder (only when
+     * `{BANNER_LIST}` is resolved; empty otherwise).
+     */
+    readonly banners: readonly BannerRow[];
 }
 
 /** Produces one placeholder's value for a run. */
@@ -83,6 +90,7 @@ export const CORE_PLACEHOLDER_RESOLVERS: Readonly<Record<string, CorePlaceholder
     EVENT_TOPIC: (ctx) => ctx.topic,
     PRIVILEGED: (ctx) => (ctx.privileged ? "yes" : "no"),
     STAGED_FILE_LIST: (ctx) => listStagedFiles(ctx.eventId) ?? EMPTY_LIST,
+    BANNER_LIST: (ctx) => formatBannerList(ctx.banners, resolveTimezone()),
 };
 
 /**
