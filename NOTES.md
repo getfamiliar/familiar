@@ -1,8 +1,6 @@
 NEXT:
 
-* Voice Enhancements: Maximaler Kontext im Gesprächsbeginn - Kalender für heute, letzte Unterhaltung, offene Fragen...
-* Saving Assistant name and avataaars generator in the web interface
-* Faster Event Processing und (!) 
+* Freigabefunktionen
 * tool_call in der Reflection unwrappen?
 
 * Memory enhancements:
@@ -20,15 +18,10 @@ NEXT:
 
 * Neue Kalender Tools: list all calendars mit sync status und "resync" tool, das einfach die Delta-Dateien löscht und damit den Kalender zu einer neusynchronisation zwingt.
 
-* Web Interface: zentraler Webserver mit Plugin Option und https://www.prompt-kit.com/ basiertem zentralen Chat
-
-* Whatsapp Plugin: Group processing stopped, had to re-login. Check if we can do something against that.
-
 Features:
 
 * Host-side LLM chat with access to console tools for selections, prompts etc. as a service - used for setup and plugin CLI tools.
 * Diff Tool for the workspace vs default workspace
-* Git repo for the workspace files?
 * Sane setup process
 
 * NEW MEMORY? The wiki approach seems to mangle stuff up - maybe give Hindsight a shot?

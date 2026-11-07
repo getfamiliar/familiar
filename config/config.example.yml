@@ -35,11 +35,19 @@ core:
   # UI under Settings → Avatar, which writes this mapping. Missing options
   # take their default; see docs/config.md for the options.
   # assistantAvatar:
-  #   topType: ShortHairShortFlat
-  #   hairColor: BrownDark
-  #   clotheType: CollarSweater
-  #   clotheColor: Blue03
-  #   mouthType: Smile
+  #   topType: LongHairStraight2
+  #   accessoriesType: Blank
+  #   hairColor: Auburn
+  #   hatColor: Blue02
+  #   facialHairType: Blank
+  #   facialHairColor: Black
+  #   clotheType: BlazerSweater
+  #   clotheColor: Pink
+  #   graphicType: Cumbia
+  #   eyeType: Squint
+  #   eyebrowType: Default
+  #   mouthType: Default
+  #   skinColor: Light
   #   backgroundColor: "#65c9ff"
 
   # Shared secret every request to the host bastion (LLM proxy, MCP

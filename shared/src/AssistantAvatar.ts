@@ -203,18 +203,18 @@ export type AvatarMouthType = AvatarConfig["mouthType"];
 
 /** The avatar used while `core.assistantAvatar` is unset. */
 export const DEFAULT_AVATAR: AvatarConfig = {
-    topType: "ShortHairShortFlat",
+    topType: "LongHairStraight2",
     accessoriesType: "Blank",
-    hairColor: "BrownDark",
-    hatColor: "Blue01",
+    hairColor: "Auburn",
+    hatColor: "Blue02",
     facialHairType: "Blank",
-    facialHairColor: "BrownDark",
-    clotheType: "CollarSweater",
-    clotheColor: "Blue03",
-    graphicType: "Bat",
-    eyeType: "Default",
-    eyebrowType: "DefaultNatural",
-    mouthType: "Smile",
+    facialHairColor: "Black",
+    clotheType: "BlazerSweater",
+    clotheColor: "Pink",
+    graphicType: "Cumbia",
+    eyeType: "Squint",
+    eyebrowType: "Default",
+    mouthType: "Default",
     skinColor: "Light",
     backgroundColor: "#65c9ff",
 };
