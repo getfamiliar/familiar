@@ -41,7 +41,8 @@
         "@orama/stopwords": "^3.1.13",
         "ai": "^7.0.163",
         "citty": "^0.1.6",
-        "marked": "^15.0.12"
+        "marked": "^15.0.12",
+        "yaml": "^2.8.4"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.4.12",

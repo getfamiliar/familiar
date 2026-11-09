@@ -1,0 +1,998 @@
+# Memory search eval cases — see README.md for the format and persona.md for the world.
+# Paths are workspace-relative (relative to corpus/<lang>/), exactly as the memory store indexes them.
+# Grades: 2 = must be found, 1 = acceptable. Empty map = negative case.
+
+# ---------------------------------------------------------------- exact-name
+- id: exact-name-01
+  category: exact-name
+  origin: "A full-name query where another person shares the first name and has a near-identical surname."
+  query: { de: "Tobias Hartl", en: "Tobias Hartl" }
+  relevant:
+    de: { wiki/people/tobias-hartl.md: 2, wiki/threads/brettspielabend.md: 1 }
+    en: { wiki/people/tobias-hartl.md: 2, wiki/threads/board-game-night.md: 1 }
+
+- id: exact-name-02
+  category: exact-name
+  origin: "The confusable twin of exact-name-01: the right person must beat the near-namesake."
+  query: { de: "Tobias Harter", en: "Tobias Harter" }
+  relevant:
+    de: { wiki/people/tobias-harter.md: 2, wiki/threads/jahresabschluss-2025.md: 1 }
+    en: { wiki/people/tobias-harter.md: 2, wiki/threads/annual-accounts-2025.md: 1 }
+
+- id: exact-name-03
+  category: exact-name
+  origin: "A surname with umlaut and ß whose slug is transliterated (oe/ss)."
+  query: { de: "Björn Größler", en: "Björn Größler" }
+  relevant:
+    de: { wiki/people/bjoern-groessler.md: 2, wiki/threads/brettspielabend.md: 1, wiki/threads/muehlbach-bande.md: 1 }
+    en: { wiki/people/bjoern-groessler.md: 2, wiki/threads/board-game-night.md: 1, wiki/threads/muehlbach-gang.md: 1 }
+
+- id: exact-name-04
+  category: exact-name
+  origin: "A rare surname must be found directly."
+  query: { de: "Wolfram Ziegenbalg", en: "Wolfram Ziegenbalg" }
+  relevant:
+    de: { wiki/people/wolfram-ziegenbalg.md: 2, wiki/threads/berufsunfaehigkeit-antrag.md: 1 }
+    en: { wiki/people/wolfram-ziegenbalg.md: 2, wiki/threads/disability-insurance-application.md: 1 }
+
+- id: exact-name-05
+  category: exact-name
+  origin: "Full name plus role; surname contains an umlaut transliterated in the slug."
+  query: { de: "Helga Brünnich Notarin", en: "Helga Brünnich notary" }
+  relevant:
+    de: { wiki/people/helga-bruennich.md: 2, wiki/threads/erbschein-grundbuch.md: 1 }
+    en: { wiki/people/helga-bruennich.md: 2, wiki/threads/inheritance-land-registry.md: 1 }
+
+- id: exact-name-06
+  category: exact-name
+  origin: "Baseline: an unambiguous full name."
+  query: { de: "Mara Lindqvist", en: "Mara Lindqvist" }
+  relevant:
+    de: { wiki/people/mara-lindqvist.md: 2, wiki/threads/brightwater-projekt.md: 1 }
+    en: { wiki/people/mara-lindqvist.md: 2, wiki/threads/brightwater-project.md: 1 }
+
+- id: exact-name-07
+  category: exact-name
+  origin: "A project name whose own file is a huge, noise-heavy thread."
+  query: { de: "Thermo-Pi", en: "Thermo-Pi" }
+  relevant:
+    de: { wiki/threads/thermo-pi.md: 2, wiki/people/sven-ostermann.md: 1, wiki/threads/entwickler-stammtisch.md: 1 }
+    en: { wiki/threads/thermo-pi.md: 2, wiki/people/sven-ostermann.md: 1, wiki/threads/developer-meetup.md: 1 }
+
+- id: exact-name-08
+  category: exact-name
+  origin: "A startup name that has no file of its own but is covered by a person file and a thread."
+  query: { de: "Lumora", en: "Lumora" }
+  relevant:
+    de: { wiki/people/kai-wendt.md: 2, wiki/threads/dealflow.md: 2, wiki/threads/gruenderstammtisch-kaltenbach.md: 1 }
+    en: { wiki/people/kai-wendt.md: 2, wiki/threads/dealflow.md: 2, wiki/threads/kaltenbach-founders-meetup.md: 1 }
+
+- id: exact-name-09
+  category: exact-name
+  origin: "Baseline: full name of a founder."
+  query: { de: "Kai Wendt", en: "Kai Wendt" }
+  relevant:
+    de: { wiki/people/kai-wendt.md: 2, wiki/threads/dealflow.md: 1, wiki/threads/gruenderstammtisch-kaltenbach.md: 1 }
+    en: { wiki/people/kai-wendt.md: 2, wiki/threads/dealflow.md: 1, wiki/threads/kaltenbach-founders-meetup.md: 1 }
+
+- id: exact-name-10
+  category: exact-name
+  origin: "Full name of a person who shares the surname with another person file."
+  query: { de: "Katrin Brandt", en: "Katrin Brandt" }
+  relevant:
+    de: { wiki/people/katrin-brandt.md: 2, wiki/people/jannis-brandt.md: 1, wiki/threads/ferienbetreuung-sommer-2026.md: 1 }
+    en: { wiki/people/katrin-brandt.md: 2, wiki/people/jannis-brandt.md: 1, wiki/threads/summer-holiday-care-2026.md: 1 }
+
+# ---------------------------------------------------------------- typo
+- id: typo-01
+  category: typo
+  origin: "A doubled letter in a distinctive word, with only one weak companion term."
+  query: { de: "Sternenimperrium", en: "Star Emprie" }
+  relevant:
+    de: { wiki/threads/brettspielabend.md: 2, wiki/people/tobias-hartl.md: 1, wiki/journal/2026-05.md: 1 }
+    en: { wiki/threads/board-game-night.md: 2, wiki/people/tobias-hartl.md: 1, wiki/journal/2026-05.md: 1 }
+
+- id: typo-02
+  category: typo
+  origin: "One wrong letter at the end of a rare surname."
+  query: { de: "Ziegenbald Versicherung", en: "Ziegenbald insurance" }
+  relevant:
+    de: { wiki/people/wolfram-ziegenbalg.md: 2, wiki/threads/berufsunfaehigkeit-antrag.md: 1 }
+    en: { wiki/people/wolfram-ziegenbalg.md: 2, wiki/threads/disability-insurance-application.md: 1 }
+
+- id: typo-03
+  category: typo
+  origin: "An inserted letter in a foreign surname, no other query term."
+  query: { de: "Lindqvidst", en: "Lindqvidst" }
+  relevant:
+    de: { wiki/people/mara-lindqvist.md: 2, wiki/threads/brightwater-projekt.md: 1 }
+    en: { wiki/people/mara-lindqvist.md: 2, wiki/threads/brightwater-project.md: 1 }
+
+- id: typo-04
+  category: typo
+  origin: "Misspelled project name; the fact sits deep in a giant file."
+  query: { de: "Thermo Pie Lizenz", en: "Thermo Pie license" }
+  relevant:
+    de: { wiki/threads/thermo-pi.md: 2, wiki/threads/entwickler-stammtisch.md: 1 }
+    en: { wiki/threads/thermo-pi.md: 2, wiki/threads/developer-meetup.md: 1 }
+
+- id: typo-05
+  category: typo
+  origin: "Doubled consonant in a company name."
+  query: { de: "Brightwatter Bestellung", en: "Brightwatter purchase order" }
+  relevant:
+    de: { wiki/threads/brightwater-projekt.md: 2, wiki/people/selin-aydin.md: 2 }
+    en: { wiki/threads/brightwater-project.md: 2, wiki/people/selin-aydin.md: 2 }
+
+- id: typo-06
+  category: typo
+  origin: "Common phonetic misspelling of a surname (-y instead of -i)."
+  query: { de: "Szymansky Makler", en: "Szymansky broker" }
+  relevant:
+    de: { wiki/people/ralf-szymanski.md: 2, wiki/threads/alte-muehle.md: 1 }
+    en: { wiki/people/ralf-szymanski.md: 2, wiki/threads/alte-muehle.md: 1 }
+
+- id: typo-07
+  category: typo
+  origin: "A dropped letter in a surname, single-term query."
+  query: { de: "Ostermnn", en: "Ostermnn" }
+  relevant:
+    de: { wiki/people/sven-ostermann.md: 2, wiki/threads/thermo-pi.md: 1 }
+    en: { wiki/people/sven-ostermann.md: 2, wiki/threads/thermo-pi.md: 1 }
+
+- id: typo-08
+  category: typo
+  origin: "A dropped letter inside a compound (DE) / a doubled letter (EN)."
+  query: { de: "Gleitsichbrille", en: "varifocalls" }
+  relevant:
+    de: { wiki/threads/optiker-brillen.md: 2 }
+    en: { wiki/threads/optician-glasses.md: 2 }
+
+- id: typo-09
+  category: typo
+  origin: "Swapped letters in a car brand; answer is spread over a long history file."
+  query: { de: "Hyundia Inspektion", en: "Hyundia service" }
+  relevant:
+    de: { wiki/threads/fahrzeuge.md: 2 }
+    en: { wiki/threads/vehicles.md: 2 }
+
+- id: typo-10
+  category: typo
+  origin: "Missing letter in a compound place name (DE) / swapped letters in a proper name (EN)."
+  query: { de: "Jugendherbege Falkenstein", en: "Falkenstien youth hostel" }
+  relevant:
+    de: { wiki/places/jugendherberge-burg-falkenstein.md: 2, wiki/threads/entwickler-stammtisch.md: 1, files/hackathon-notizen.md: 1 }
+    en: { wiki/places/burg-falkenstein-youth-hostel.md: 2, wiki/threads/developer-meetup.md: 1, files/hackathon-notes.md: 1 }
+
+- id: typo-11
+  category: typo
+  origin: "Swapped letters in a bank name."
+  query: { de: "Nordbnak pushTAN", en: "Nordbnak pushTAN" }
+  relevant:
+    de: { wiki/threads/nordbank-pushtan-vorfall.md: 2, wiki/threads/retech-diensthandy.md: 1 }
+    en: { wiki/threads/nordbank-pushtan-incident.md: 2, wiki/threads/retech-work-phone.md: 1 }
+
+- id: typo-12
+  category: typo
+  origin: "Single n instead of double n in an umlaut surname."
+  query: { de: "Brünich Erbschein", en: "Brünich certificate of inheritance" }
+  relevant:
+    de: { wiki/people/helga-bruennich.md: 2, wiki/threads/erbschein-grundbuch.md: 2 }
+    en: { wiki/people/helga-bruennich.md: 2, wiki/threads/inheritance-land-registry.md: 2 }
+
+# ---------------------------------------------------------------- compound
+- id: compound-01
+  category: compound
+  origin: "Query uses the parts of a compound (Sonderumlage, Dachsanierung) as separate words."
+  query: { de: "Umlage Dach", en: "roof levy" }
+  relevant:
+    de: { wiki/threads/weg-ahornweg-7.md: 2, wiki/journal/2026-06.md: 1 }
+    en: { wiki/threads/hoa-ahornweg-7.md: 2, wiki/journal/2026-06.md: 1 }
+
+- id: compound-02
+  category: compound
+  origin: "Query splits a long compound (Berufsunfähigkeitsversicherung) into its parts."
+  query: { de: "Berufsunfähigkeit Versicherung Antrag", en: "disability insurance application" }
+  relevant:
+    de: { wiki/threads/berufsunfaehigkeit-antrag.md: 2, wiki/people/wolfram-ziegenbalg.md: 1 }
+    en: { wiki/threads/disability-insurance-application.md: 2, wiki/people/wolfram-ziegenbalg.md: 1 }
+
+- id: compound-03
+  category: compound
+  origin: "Head-less part word: the text only contains the compound (Marderschaden, Marderschutz)."
+  query: { de: "Marder", en: "marten" }
+  relevant:
+    de: { wiki/threads/fahrzeuge.md: 2 }
+    en: { wiki/threads/vehicles.md: 2 }
+
+- id: compound-04
+  category: compound
+  origin: "Query uses a compound (Heizungstausch) that the text only has as a phrase (Austausch der Heizung)."
+  query: { de: "Heizungstausch Lindenstraße", en: "heating replacement Lindenstraße" }
+  relevant:
+    de: { wiki/threads/weg-lindenstrasse-3.md: 2, wiki/journal/2026-05.md: 1 }
+    en: { wiki/threads/hoa-lindenstrasse-3.md: 2, wiki/journal/2026-05.md: 1 }
+
+- id: compound-05
+  category: compound
+  origin: "Query uses the head of compounds (Kontaktlinsen, Tageslinsen) alone."
+  query: { de: "Linsen Fritzi", en: "lenses Fritzi" }
+  relevant:
+    de: { wiki/threads/optiker-brillen.md: 2, wiki/people/friederike-weiss.md: 1 }
+    en: { wiki/threads/optician-glasses.md: 2, wiki/people/friederike-weiss.md: 1 }
+
+- id: compound-06
+  category: compound
+  origin: "Query builds a longer compound (…berichtigungsantrag) that never occurs in the text."
+  query: { de: "Grundbuchberichtigungsantrag", en: "land registry correction application" }
+  relevant:
+    de: { wiki/threads/erbschein-grundbuch.md: 2, wiki/people/helga-bruennich.md: 1 }
+    en: { wiki/threads/inheritance-land-registry.md: 2, wiki/people/helga-bruennich.md: 1 }
+
+- id: compound-07
+  category: compound
+  origin: "Query forms a compound (Steinschlagreparatur) from words that appear separately."
+  query: { de: "Steinschlagreparatur Mazda", en: "stone chip repair Mazda" }
+  relevant:
+    de: { wiki/threads/fahrzeuge.md: 2 }
+    en: { wiki/threads/vehicles.md: 2 }
+
+- id: compound-08
+  category: compound
+  origin: "Part word of a hyphenated compound (Sport- und Naturcamp)."
+  query: { de: "Naturcamp Paul", en: "nature camp Paul" }
+  relevant:
+    de: { wiki/threads/ferienbetreuung-sommer-2026.md: 2, wiki/people/paul-weiss.md: 1, wiki/people/jannis-brandt.md: 1 }
+    en: { wiki/threads/summer-holiday-care-2026.md: 2, wiki/people/paul-weiss.md: 1, wiki/people/jannis-brandt.md: 1 }
+
+# ---------------------------------------------------------------- inflection
+- id: inflection-01
+  category: inflection
+  origin: "Inflected proper name (der Alten Mühle) against the nominative title."
+  query: { de: "Grundsteuer der Alten Mühle", en: "property tax of the Alte Mühle" }
+  relevant:
+    de: { wiki/threads/alte-muehle.md: 2 }
+    en: { wiki/threads/alte-muehle.md: 2 }
+
+- id: inflection-02
+  category: inflection
+  origin: "Singular query forms against plural text forms (Besichtigungen, Interessenten, abspringen)."
+  query: { de: "Besichtigung Interessent abgesprungen", en: "viewing buyer dropped out" }
+  relevant:
+    de: { wiki/threads/alte-muehle.md: 2, wiki/people/ralf-szymanski.md: 1 }
+    en: { wiki/threads/alte-muehle.md: 2, wiki/people/ralf-szymanski.md: 1 }
+
+- id: inflection-03
+  category: inflection
+  origin: "Genitive and plural forms (des Gründerstammtisches, Pitches) against the base forms."
+  query: { de: "Pitches des Gründerstammtisches", en: "founders meetups pitching" }
+  relevant:
+    de: { wiki/threads/gruenderstammtisch-kaltenbach.md: 2, wiki/people/nele-hoffmann.md: 1 }
+    en: { wiki/threads/kaltenbach-founders-meetup.md: 2, wiki/people/nele-hoffmann.md: 1 }
+
+- id: inflection-04
+  category: inflection
+  origin: "Plural query matching two parallel threads that use the singular."
+  query: { de: "Eigentümerversammlungen 2026", en: "owners' meetings 2026" }
+  relevant:
+    de: { wiki/threads/weg-ahornweg-7.md: 2, wiki/threads/weg-lindenstrasse-3.md: 2 }
+    en: { wiki/threads/hoa-ahornweg-7.md: 2, wiki/threads/hoa-lindenstrasse-3.md: 2 }
+
+- id: inflection-05
+  category: inflection
+  origin: "Plural and participle (Brettspielabende ausgefallen) against singular title and other tense."
+  query: { de: "Brettspielabende ausgefallen", en: "board game nights cancelled" }
+  relevant:
+    de: { wiki/threads/brettspielabend.md: 2, wiki/journal/2026-06.md: 1 }
+    en: { wiki/threads/board-game-night.md: 2, wiki/journal/2026-06.md: 1 }
+
+- id: inflection-06
+  category: inflection
+  origin: "Derived forms (Sanierungskosten geschätzt) against Kostenschätzung / sanieren."
+  query: { de: "Sanierungskosten geschätzt", en: "estimated renovation costs" }
+  relevant:
+    de: { wiki/threads/alte-muehle.md: 2, wiki/people/bjoern-groessler.md: 1 }
+    en: { wiki/threads/alte-muehle.md: 2, wiki/people/bjoern-groessler.md: 1 }
+
+- id: inflection-07
+  category: inflection
+  origin: "Plural forms (Rechnungen, Beträge) against Sammelrechnung / Betrag."
+  query: { de: "Rechnungen FunkFix Beträge", en: "FunkFix invoices amounts" }
+  relevant:
+    de: { wiki/threads/mobilfunk.md: 2 }
+    en: { wiki/threads/mobile-contracts.md: 2 }
+
+# ---------------------------------------------------------------- synonym
+- id: synonym-01
+  category: synonym
+  origin: "Paraphrase (neues Kniegelenk) for a technical term (Knie-TEP, Knieprothese)."
+  query: { de: "neues Kniegelenk Ines", en: "Ines new knee joint" }
+  relevant:
+    de: { wiki/threads/ines-reha-knie.md: 2, wiki/people/ines-weiss.md: 2 }
+    en: { wiki/threads/ines-knee-rehab.md: 2, wiki/people/ines-weiss.md: 2 }
+
+- id: synonym-02
+  category: synonym
+  origin: "A role word (Steuerberater/accountant) instead of the person's or firm's name."
+  query: { de: "Termin beim Steuerberater", en: "meeting with the accountant" }
+  relevant:
+    de: { wiki/threads/jahresabschluss-2025.md: 2, wiki/people/tobias-harter.md: 2, wiki/journal/2026-05.md: 1 }
+    en: { wiki/threads/annual-accounts-2025.md: 2, wiki/people/tobias-harter.md: 2, wiki/journal/2026-05.md: 1 }
+
+- id: synonym-03
+  category: synonym
+  origin: "Everyday paraphrase for a thread named by shop and product."
+  query: { de: "Handy für die Arbeit gekauft", en: "bought a phone for work" }
+  relevant:
+    de: { wiki/threads/retech-diensthandy.md: 2 }
+    en: { wiki/threads/retech-work-phone.md: 2 }
+
+- id: synonym-04
+  category: synonym
+  origin: "Role synonym (Hausärztin / GP) for a doctor known by name."
+  query: { de: "Hausärztin", en: "GP family doctor" }
+  relevant:
+    de: { wiki/people/anna-reuter.md: 2, wiki/places/praxis-dr-reuter.md: 2 }
+    en: { wiki/people/anna-reuter.md: 2, wiki/places/practice-dr-reuter.md: 2 }
+
+- id: synonym-05
+  category: synonym
+  origin: "Region (Skandinavien) instead of the country in the title."
+  query: { de: "Urlaub Skandinavien Ferienhaus", en: "Scandinavia holiday cabin" }
+  relevant:
+    de: { wiki/threads/ferienhaus-norwegen-2027.md: 2, wiki/people/familie-nowak.md: 1 }
+    en: { wiki/threads/norway-cabin-2027.md: 2, wiki/people/family-nowak.md: 1 }
+
+- id: synonym-06
+  category: synonym
+  origin: "Synonym (Winterräder montiert) for the wording in the file (Wechsel auf Winterreifen)."
+  query: { de: "Winterräder montiert", en: "winter wheels fitted" }
+  relevant:
+    de: { wiki/threads/fahrzeuge.md: 2 }
+    en: { wiki/threads/vehicles.md: 2 }
+
+- id: synonym-07
+  category: synonym
+  origin: "Paraphrase (Übernachtung) for the venue of an event."
+  query: { de: "Hackathon Übernachtung", en: "hackathon accommodation" }
+  relevant:
+    de: { wiki/places/jugendherberge-burg-falkenstein.md: 2, wiki/threads/entwickler-stammtisch.md: 2, files/hackathon-notizen.md: 1 }
+    en: { wiki/places/burg-falkenstein-youth-hostel.md: 2, wiki/threads/developer-meetup.md: 2, files/hackathon-notes.md: 1 }
+
+- id: synonym-08
+  category: synonym
+  origin: "Colloquial description (Konto gehackt) of a security incident."
+  query: { de: "Konto gehackt fremdes Gerät", en: "bank account hacked unknown device" }
+  relevant:
+    de: { wiki/threads/nordbank-pushtan-vorfall.md: 2, wiki/threads/phishing-muster.md: 1 }
+    en: { wiki/threads/nordbank-pushtan-incident.md: 2, wiki/threads/phishing-patterns.md: 1 }
+
+- id: synonym-09
+  category: synonym
+  origin: "Category word (Nüsse) for the specific term (Haselnüsse) in a person file."
+  query: { de: "Kindergeburtstag Allergie Nüsse", en: "kids birthday nut allergy" }
+  relevant:
+    de: { wiki/people/jannis-brandt.md: 2, wiki/self/essen.md: 1 }
+    en: { wiki/people/jannis-brandt.md: 2, wiki/self/food.md: 1 }
+
+- id: synonym-10
+  category: synonym
+  origin: "Paraphrase (Lieblingsessen) for a self file titled with a broader word."
+  query: { de: "Lieblingsessen", en: "favourite food" }
+  relevant:
+    de: { wiki/self/essen.md: 2 }
+    en: { wiki/self/food.md: 2 }
+
+- id: synonym-11
+  category: synonym
+  origin: "Paraphrase (Wochenplan Sport) for a routines file."
+  query: { de: "Sport Wochenplan", en: "weekly workout schedule" }
+  relevant:
+    de: { wiki/self/routinen.md: 2 }
+    en: { wiki/self/routines.md: 2 }
+
+# ---------------------------------------------------------------- semantic
+- id: semantic-01
+  category: semantic
+  origin: "A category word (property sale) for an object known only by a proper name; the category appears only in the body."
+  query: { de: "Immobilienverkauf", en: "property sale" }
+  relevant:
+    de: { wiki/threads/alte-muehle.md: 2, wiki/people/ralf-szymanski.md: 2 }
+    en: { wiki/threads/alte-muehle.md: 2, wiki/people/ralf-szymanski.md: 2 }
+
+- id: semantic-02
+  category: semantic
+  origin: "An abstract word (Erbe/inheritance) linking a person file, a thread and a proper-named object."
+  query: { de: "Erbe", en: "inheritance" }
+  relevant:
+    de: { wiki/people/oma-gisela.md: 2, wiki/threads/erbschein-grundbuch.md: 2, wiki/threads/alte-muehle.md: 1 }
+    en: { wiki/people/grandma-gisela.md: 2, wiki/threads/inheritance-land-registry.md: 2, wiki/threads/alte-muehle.md: 1 }
+
+- id: semantic-03
+  category: semantic
+  origin: "Eye-surgery query with no exact answer: only the optician is related, while a founder thread uses 'vision' and 'foresight' as pitch words."
+  query: { de: "Augen lasern", en: "laser eye surgery" }
+  relevant:
+    de: { wiki/threads/optiker-brillen.md: 1 }
+    en: { wiki/threads/optician-glasses.md: 1 }
+
+- id: semantic-04
+  category: semantic
+  origin: "A category description (smart home hobby project) for a project with a fantasy name."
+  query: { de: "Smart-Home-Hobbyprojekt Heizung", en: "smart home hobby project heating" }
+  relevant:
+    de: { wiki/threads/thermo-pi.md: 2, wiki/threads/entwickler-stammtisch.md: 1 }
+    en: { wiki/threads/thermo-pi.md: 2, wiki/threads/developer-meetup.md: 1 }
+
+- id: semantic-05
+  category: semantic
+  origin: "Generic finance terms (startup investment) for a thread named with jargon (Dealflow)."
+  query: { de: "Beteiligung an einem Startup", en: "investing in a startup" }
+  relevant:
+    de: { wiki/threads/dealflow.md: 2, wiki/threads/gruenderstammtisch-kaltenbach.md: 1, wiki/people/kai-wendt.md: 1 }
+    en: { wiki/threads/dealflow.md: 2, wiki/threads/kaltenbach-founders-meetup.md: 1, wiki/people/kai-wendt.md: 1 }
+
+- id: semantic-06
+  category: semantic
+  origin: "A description (bread baking app) of a project with a fantasy name (Brotzeit)."
+  query: { de: "App zum Brotbacken", en: "bread baking app" }
+  relevant:
+    de: { wiki/people/lisa-tran.md: 2, wiki/threads/entwickler-stammtisch.md: 1 }
+    en: { wiki/people/lisa-tran.md: 2, wiki/threads/developer-meetup.md: 1 }
+
+- id: semantic-07
+  category: semantic
+  origin: "A description (watering houseplants) of a project with a fantasy name (PlantWatch)."
+  query: { de: "Zimmerpflanzen gießen Sensor", en: "houseplant watering sensor" }
+  relevant:
+    de: { wiki/people/yusuf-demir.md: 2, wiki/threads/entwickler-stammtisch.md: 1 }
+    en: { wiki/people/yusuf-demir.md: 2, wiki/threads/developer-meetup.md: 1 }
+
+- id: semantic-08
+  category: semantic
+  origin: "A description of the work (cloud migration client) instead of the client's name."
+  query: { de: "Kunde Cloud-Migration Datenplattform", en: "client cloud migration data platform" }
+  relevant:
+    de: { wiki/threads/brightwater-projekt.md: 2, wiki/people/mara-lindqvist.md: 1 }
+    en: { wiki/threads/brightwater-project.md: 2, wiki/people/mara-lindqvist.md: 1 }
+
+# ---------------------------------------------------------------- date
+- id: date-01
+  category: date
+  origin: "ISO month-day fragment, the convention the wiki prescribes; a noise file mentions the same date."
+  query: { de: "-05-25", en: "-05-25" }
+  relevant:
+    de: { wiki/threads/jahresabschluss-2025.md: 2, wiki/journal/2026-05.md: 2, wiki/people/tobias-harter.md: 1 }
+    en: { wiki/threads/annual-accounts-2025.md: 2, wiki/journal/2026-05.md: 2, wiki/people/tobias-harter.md: 1 }
+
+- id: date-02
+  category: date
+  origin: "Local date format (DD.MM.YYYY / Month D, YYYY) while the wiki uses ISO."
+  query: { de: "25.05.2026", en: "May 25, 2026" }
+  relevant:
+    de: { wiki/threads/jahresabschluss-2025.md: 2, wiki/journal/2026-05.md: 2, wiki/people/tobias-harter.md: 1 }
+    en: { wiki/threads/annual-accounts-2025.md: 2, wiki/journal/2026-05.md: 2, wiki/people/tobias-harter.md: 1 }
+
+- id: date-03
+  category: date
+  origin: "Spelled-out date plus a role word."
+  query: { de: "25. Mai Steuerberater", en: "May 25 tax advisor" }
+  relevant:
+    de: { wiki/threads/jahresabschluss-2025.md: 2, wiki/people/tobias-harter.md: 2, wiki/journal/2026-05.md: 1 }
+    en: { wiki/threads/annual-accounts-2025.md: 2, wiki/people/tobias-harter.md: 2, wiki/journal/2026-05.md: 1 }
+
+- id: date-04
+  category: date
+  origin: "Full ISO date of an entry buried in a long history file."
+  query: { de: "2026-10-24", en: "2026-10-24" }
+  relevant:
+    de: { wiki/threads/fahrzeuge.md: 2 }
+    en: { wiki/threads/vehicles.md: 2 }
+
+- id: date-05
+  category: date
+  origin: "Local date format for a journal entry; a person file repeats the date."
+  query: { de: "14.05.2026", en: "14 May 2026" }
+  relevant:
+    de: { wiki/journal/2026-05.md: 2, wiki/people/ines-weiss.md: 1 }
+    en: { wiki/journal/2026-05.md: 2, wiki/people/ines-weiss.md: 1 }
+
+- id: date-06
+  category: date
+  origin: "Month name instead of the ISO month in the journal title."
+  query: { de: "Mai 2026", en: "May 2026" }
+  relevant:
+    de: { wiki/journal/2026-05.md: 2 }
+    en: { wiki/journal/2026-05.md: 2 }
+
+- id: date-07
+  category: date
+  origin: "Local date format plus one keyword, the event is recorded in three files."
+  query: { de: "09.06.2026 OP", en: "June 9 2026 surgery" }
+  relevant:
+    de: { wiki/threads/ines-reha-knie.md: 2, wiki/journal/2026-06.md: 2, wiki/people/ines-weiss.md: 2 }
+    en: { wiki/threads/ines-knee-rehab.md: 2, wiki/journal/2026-06.md: 2, wiki/people/ines-weiss.md: 2 }
+
+# ---------------------------------------------------------------- noise
+- id: noise-01
+  category: noise
+  origin: "A single buried fact inside a ~150 KB notification thread."
+  query: { de: "Thermo-Pi Lizenzwechsel MIT", en: "Thermo-Pi license change MIT" }
+  relevant:
+    de: { wiki/threads/thermo-pi.md: 2, wiki/threads/entwickler-stammtisch.md: 1, wiki/people/sven-ostermann.md: 1 }
+    en: { wiki/threads/thermo-pi.md: 2, wiki/threads/developer-meetup.md: 1, wiki/people/sven-ostermann.md: 1 }
+
+- id: noise-02
+  category: noise
+  origin: "Question for a planned date buried in a roadmap section full of noise."
+  query: { de: "Wann kommt Thermo-Pi 2.0?", en: "When is Thermo-Pi 2.0 released?" }
+  relevant:
+    de: { wiki/threads/thermo-pi.md: 2, wiki/people/sven-ostermann.md: 1 }
+    en: { wiki/threads/thermo-pi.md: 2, wiki/people/sven-ostermann.md: 1 }
+
+- id: noise-03
+  category: noise
+  origin: "Symptom description of a buried issue among dozens of similar issue entries."
+  query: { de: "Relais klackert alle 30 Sekunden", en: "relay clicking every 30 seconds" }
+  relevant:
+    de: { wiki/threads/thermo-pi.md: 2, wiki/people/sven-ostermann.md: 1 }
+    en: { wiki/threads/thermo-pi.md: 2, wiki/people/sven-ostermann.md: 1 }
+
+- id: noise-04
+  category: noise
+  origin: "Integration fact buried in a giant file."
+  query: { de: "Home-Assistant-Integration Thermo-Pi", en: "Home Assistant integration Thermo-Pi" }
+  relevant:
+    de: { wiki/threads/thermo-pi.md: 2 }
+    en: { wiki/threads/thermo-pi.md: 2 }
+
+- id: noise-05
+  category: noise
+  origin: "Role question answered by a person file and, buried, by the giant thread."
+  query: { de: "Wer ist Hauptbeitragender bei Thermo-Pi?", en: "Who is the main contributor to Thermo-Pi?" }
+  relevant:
+    de: { wiki/people/sven-ostermann.md: 2, wiki/threads/thermo-pi.md: 1 }
+    en: { wiki/people/sven-ostermann.md: 2, wiki/threads/thermo-pi.md: 1 }
+
+- id: noise-06
+  category: noise
+  origin: "Current-state question whose answer is one entry among ~80 dated history lines."
+  query: { de: "Wann zuletzt Reifenwechsel?", en: "When were the tyres last changed?" }
+  relevant:
+    de: { wiki/threads/fahrzeuge.md: 2 }
+    en: { wiki/threads/vehicles.md: 2 }
+
+- id: noise-07
+  category: noise
+  origin: "Specific incident inside a long history file, partly echoed in a second file."
+  query: { de: "Parkdelle Mazda Smart Repair Kosten", en: "parking dent Mazda smart repair cost" }
+  relevant:
+    de: { wiki/threads/fahrzeuge.md: 2, wiki/threads/kfz-versicherung.md: 1 }
+    en: { wiki/threads/vehicles.md: 2, wiki/threads/car-insurance.md: 1 }
+
+- id: noise-08
+  category: noise
+  origin: "A small incident buried in a long history file."
+  query: { de: "Nagel im Reifen Hyundai", en: "nail in the tyre Hyundai" }
+  relevant:
+    de: { wiki/threads/fahrzeuge.md: 2 }
+    en: { wiki/threads/vehicles.md: 2 }
+
+# ---------------------------------------------------------------- duplicate
+- id: duplicate-01
+  category: duplicate
+  origin: "Bare first name with a short duplicate file next to the full-name file."
+  query: { de: "Ines", en: "Ines" }
+  relevant:
+    de: { wiki/people/ines-weiss.md: 2, wiki/people/ines.md: 2 }
+    en: { wiki/people/ines-weiss.md: 2, wiki/people/ines.md: 2 }
+
+- id: duplicate-02
+  category: duplicate
+  origin: "First name plus role; both the duplicate and the full file describe the neighbour."
+  query: { de: "Henrik Nachbar", en: "Henrik neighbour" }
+  relevant:
+    de: { wiki/people/henrik-sommer.md: 2, wiki/people/henrik.md: 2 }
+    en: { wiki/people/henrik-sommer.md: 2, wiki/people/henrik.md: 2 }
+
+- id: duplicate-03
+  category: duplicate
+  origin: "The duplicate contradicts the full file (roses vs tulips); the full file must rank first."
+  query: { de: "Ines Lieblingsblumen", en: "Ines favourite flowers" }
+  relevant:
+    de: { wiki/people/ines-weiss.md: 2, wiki/people/ines.md: 1 }
+    en: { wiki/people/ines-weiss.md: 2, wiki/people/ines.md: 1 }
+
+- id: duplicate-04
+  category: duplicate
+  origin: "The duplicate contradicts the full file (son vs daughter)."
+  query: { de: "Henrik Kinder Tochter", en: "Henrik children daughter" }
+  relevant:
+    de: { wiki/people/henrik-sommer.md: 2, wiki/people/henrik.md: 1 }
+    en: { wiki/people/henrik-sommer.md: 2, wiki/people/henrik.md: 1 }
+
+# ---------------------------------------------------------------- cross-language
+# crossLanguage: query.en additionally runs against the German corpus, judged by relevant.de.
+- id: cross-language-01
+  category: cross-language
+  crossLanguage: true
+  origin: "English handler prompt searching German memories: role question."
+  query: { de: "Wer ist unser Steuerberater?", en: "Who is our tax advisor?" }
+  relevant:
+    de: { wiki/people/tobias-harter.md: 2, wiki/threads/jahresabschluss-2025.md: 2 }
+    en: { wiki/people/tobias-harter.md: 2, wiki/threads/annual-accounts-2025.md: 2 }
+
+- id: cross-language-02
+  category: cross-language
+  crossLanguage: true
+  origin: "English medical vocabulary against German text (Knie-TEP, Reha)."
+  query: { de: "Knie-OP Rehaklinik", en: "knee surgery rehab clinic" }
+  relevant:
+    de: { wiki/threads/ines-reha-knie.md: 2, wiki/people/ines-weiss.md: 1 }
+    en: { wiki/threads/ines-knee-rehab.md: 2, wiki/people/ines-weiss.md: 1 }
+
+- id: cross-language-03
+  category: cross-language
+  crossLanguage: true
+  origin: "English description of a German proper-named object."
+  query: { de: "geerbtes Haus der Großmutter", en: "house inherited from grandmother" }
+  relevant:
+    de: { wiki/threads/alte-muehle.md: 2, wiki/people/oma-gisela.md: 2, wiki/threads/erbschein-grundbuch.md: 1 }
+    en: { wiki/threads/alte-muehle.md: 2, wiki/people/grandma-gisela.md: 2, wiki/threads/inheritance-land-registry.md: 1 }
+
+- id: cross-language-04
+  category: cross-language
+  crossLanguage: true
+  origin: "English group term against a German compound title (Brettspielabend)."
+  query: { de: "Mitglieder der Brettspielrunde", en: "board game group members" }
+  relevant:
+    de: { wiki/threads/brettspielabend.md: 2 }
+    en: { wiki/threads/board-game-night.md: 2 }
+
+- id: cross-language-05
+  category: cross-language
+  crossLanguage: true
+  origin: "English relation query against German text (Mobilfunk, Sohn)."
+  query: { de: "Handyvertrag vom Sohn", en: "mobile phone contract of my son" }
+  relevant:
+    de: { wiki/threads/mobilfunk.md: 2, wiki/people/paul-weiss.md: 2 }
+    en: { wiki/threads/mobile-contracts.md: 2, wiki/people/paul-weiss.md: 2 }
+
+- id: cross-language-06
+  category: cross-language
+  crossLanguage: true
+  origin: "English legal term (owners' association) against the German acronym WEG."
+  query: { de: "Eigentümergemeinschaft Dachsanierung", en: "owners association roof repair" }
+  relevant:
+    de: { wiki/threads/weg-ahornweg-7.md: 2, wiki/journal/2026-06.md: 1 }
+    en: { wiki/threads/hoa-ahornweg-7.md: 2, wiki/journal/2026-06.md: 1 }
+
+- id: cross-language-07
+  category: cross-language
+  crossLanguage: true
+  origin: "English current-state question against a long German history file."
+  query: { de: "Winterreifen bei beiden Autos", en: "winter tyres on both cars" }
+  relevant:
+    de: { wiki/threads/fahrzeuge.md: 2 }
+    en: { wiki/threads/vehicles.md: 2 }
+
+- id: cross-language-08
+  category: cross-language
+  crossLanguage: true
+  origin: "English generic term (developer meetup) against a German title with its own acronym."
+  query: { de: "Entwickler-Stammtisch Hackathon", en: "developer meetup hackathon" }
+  relevant:
+    de: { wiki/threads/entwickler-stammtisch.md: 2, wiki/places/jugendherberge-burg-falkenstein.md: 1, files/hackathon-notizen.md: 1 }
+    en: { wiki/threads/developer-meetup.md: 2, wiki/places/burg-falkenstein-youth-hostel.md: 1, files/hackathon-notes.md: 1 }
+
+- id: cross-language-09
+  category: cross-language
+  crossLanguage: true
+  origin: "English incident description against German security vocabulary."
+  query: { de: "Anmeldung neues Gerät Bank unerwartet", en: "unexpected new device login at the bank" }
+  relevant:
+    de: { wiki/threads/nordbank-pushtan-vorfall.md: 2 }
+    en: { wiki/threads/nordbank-pushtan-incident.md: 2 }
+
+- id: cross-language-10
+  category: cross-language
+  crossLanguage: true
+  origin: "English childcare vocabulary against a German compound title (Ferienbetreuung)."
+  query: { de: "Betreuung Paul Sommerferien", en: "summer holiday childcare for Paul" }
+  relevant:
+    de: { wiki/threads/ferienbetreuung-sommer-2026.md: 2, wiki/people/katrin-brandt.md: 1 }
+    en: { wiki/threads/summer-holiday-care-2026.md: 2, wiki/people/katrin-brandt.md: 1 }
+
+# ---------------------------------------------------------------- long-prompt
+- id: long-prompt-01
+  category: long-prompt
+  origin: "A whole incoming mail as query, as the prompt appender does; a large digest shares the building's name."
+  query:
+    de: |
+      Von: Hausverwaltung Lenz <info@hv-lenz.example>
+      Betreff: Ablesung der Heizkostenverteiler am 03.12.2026
+      Sehr geehrte Eigentümerinnen und Eigentümer der WEG Ahornweg 7,
+      am Donnerstag, 03.12.2026, zwischen 8 und 12 Uhr werden die Heizkostenverteiler in allen Wohnungen abgelesen. Bitte ermöglichen Sie den Zugang oder hinterlegen Sie einen Schlüssel beim Beirat.
+      Mit freundlichen Grüßen
+      Frau Gerlach, Hausverwaltung Lenz
+    en: |
+      From: Hausverwaltung Lenz <info@hv-lenz.example>
+      Subject: Reading of the heating cost allocators on 2026-12-03
+      Dear owners of the Ahornweg 7 owners' association,
+      on Thursday, 3 December 2026, between 8 am and 12 noon the heating cost allocators in all flats will be read. Please provide access or leave a key with the advisory board.
+      Kind regards
+      Ms Gerlach, Hausverwaltung Lenz
+  relevant:
+    de: { wiki/threads/weg-ahornweg-7.md: 2, wiki/places/ahornweg-7.md: 1, wiki/people/henrik-sommer.md: 1 }
+    en: { wiki/threads/hoa-ahornweg-7.md: 2, wiki/places/ahornweg-7.md: 1, wiki/people/henrik-sommer.md: 1 }
+
+- id: long-prompt-02
+  category: long-prompt
+  origin: "A chat message from a known person mentioning a dog name that also appears in unrelated files."
+  query:
+    de: |
+      Hi Jürgen! Ich schaffe es am Dienstag nicht, die Jungs vom Fußball abzuholen, ich muss mit Leo zum Tierarzt. Kannst du ausnahmehalber übernehmen? Am Freitag mache ich es dafür. LG Katrin
+    en: |
+      Hi Jürgen! I can't pick the boys up from football on Tuesday, I have to take Leo to the vet. Could you take over this once? I'll do Friday instead. Cheers, Katrin
+  relevant:
+    de: { wiki/people/katrin-brandt.md: 2, wiki/self/routinen.md: 1, wiki/people/paul-weiss.md: 1, wiki/people/jannis-brandt.md: 1 }
+    en: { wiki/people/katrin-brandt.md: 2, wiki/self/routines.md: 1, wiki/people/paul-weiss.md: 1, wiki/people/jannis-brandt.md: 1 }
+
+- id: long-prompt-03
+  category: long-prompt
+  origin: "A broker's mail with the policy attached; long, formal text around a few key terms."
+  query:
+    de: |
+      Von: Wolfram Ziegenbalg <w.ziegenbalg@ziegenbalg-finanz.example>
+      Betreff: Ihre Police zur Berufsunfähigkeitsversicherung
+      Lieber Herr Weiß,
+      anbei erhalten Sie die Police in digitaler Form. Wie besprochen gilt der Ausschluss für die Lendenwirbelsäule; nach drei beschwerdefreien Jahren können wir eine Überprüfung beantragen. Der erste Beitrag wird zum 01.11.2026 abgebucht.
+      Herzliche Grüße, Wolfram Ziegenbalg
+    en: |
+      From: Wolfram Ziegenbalg <w.ziegenbalg@ziegenbalg-finanz.example>
+      Subject: Your disability insurance policy
+      Dear Mr Weiß,
+      please find attached the policy in digital form. As discussed, the exclusion for the lumbar spine applies; after three years without complaints we can request a review. The first premium will be debited on 1 November 2026.
+      Kind regards, Wolfram Ziegenbalg
+  relevant:
+    de: { wiki/threads/berufsunfaehigkeit-antrag.md: 2, wiki/people/wolfram-ziegenbalg.md: 2 }
+    en: { wiki/threads/disability-insurance-application.md: 2, wiki/people/wolfram-ziegenbalg.md: 2 }
+
+- id: long-prompt-04
+  category: long-prompt
+  origin: "An organiser's reminder mail touching an event, a venue and a loose notes file."
+  query:
+    de: |
+      Von: Yusuf Demir
+      Betreff: Hackathon März – Anzahlung
+      Hallo zusammen, die Jugendherberge hat unsere Reservierung für das Hackathon-Wochenende bestätigt. Ich überweise die Anzahlung bis Ende November. Jürgen, denkst du an Beamer und Verlängerungskabel? Bitte tragt euch bis zum nächsten Stammtisch in die Liste ein.
+      Viele Grüße, Yusuf
+    en: |
+      From: Yusuf Demir
+      Subject: Hackathon in March – deposit
+      Hi all, the youth hostel has confirmed our reservation for the hackathon weekend. I'll transfer the deposit by the end of November. Jürgen, will you take care of the projector and extension cables? Please add yourselves to the list before the next meetup.
+      Best, Yusuf
+  relevant:
+    de: { wiki/threads/entwickler-stammtisch.md: 2, files/hackathon-notizen.md: 1, wiki/places/jugendherberge-burg-falkenstein.md: 1, wiki/people/yusuf-demir.md: 1 }
+    en: { wiki/threads/developer-meetup.md: 2, files/hackathon-notes.md: 1, wiki/places/burg-falkenstein-youth-hostel.md: 1, wiki/people/yusuf-demir.md: 1 }
+
+- id: long-prompt-05
+  category: long-prompt
+  origin: "An invoice mail where a mail rule for the same sender competes with the wiki thread."
+  query:
+    de: |
+      Von: FunkFix Kundenservice <rechnung@funkfix.example>
+      Betreff: Ihre Rechnung für November 2026
+      Guten Tag Herr Weiß, Ihre aktuelle Sammelrechnung über 54,96 € steht im Kundenportal bereit. Der Betrag wird am 15.11.2026 von Ihrem Konto abgebucht. Ihr FunkFix-Team
+    en: |
+      From: FunkFix customer service <invoice@funkfix.example>
+      Subject: Your invoice for November 2026
+      Hello Mr Weiß, your current combined invoice of 54.96 € is available in the customer portal. The amount will be debited from your account on 15 November 2026. Your FunkFix team
+  relevant:
+    de: { wiki/threads/mobilfunk.md: 2 }
+    en: { wiki/threads/mobile-contracts.md: 2 }
+
+- id: long-prompt-06
+  category: long-prompt
+  origin: "A user's chat request to remember a to-do, phrased casually."
+  query:
+    de: |
+      Erinner mich bitte im Januar dran, die Fähre für Norwegen zu buchen – da gibt's Frühbucherpreise. Wir fahren ja mit dem Mazda.
+    en: |
+      Please remind me in January to book the ferry for Norway – there are early-bird prices then. We're taking the Mazda after all.
+  relevant:
+    de: { wiki/threads/ferienhaus-norwegen-2027.md: 2, wiki/threads/fahrzeuge.md: 1 }
+    en: { wiki/threads/norway-cabin-2027.md: 2, wiki/threads/vehicles.md: 1 }
+
+# ---------------------------------------------------------------- keyword-salad
+- id: keyword-salad-01
+  category: keyword-salad
+  origin: "An agent query stuffed with eight names and terms spanning three files."
+  query:
+    de: "Kai Wendt Lumora Pitch Pre-Seed Gründerstammtisch Nele Hoffmann Dealflow Absage"
+    en: "Kai Wendt Lumora pitch pre-seed founders meetup Nele Hoffmann dealflow declined"
+  relevant:
+    de: { wiki/threads/dealflow.md: 2, wiki/people/kai-wendt.md: 2, wiki/threads/gruenderstammtisch-kaltenbach.md: 2, wiki/people/nele-hoffmann.md: 1 }
+    en: { wiki/threads/dealflow.md: 2, wiki/people/kai-wendt.md: 2, wiki/threads/kaltenbach-founders-meetup.md: 2, wiki/people/nele-hoffmann.md: 1 }
+
+- id: keyword-salad-02
+  category: keyword-salad
+  origin: "Company plus every contact person plus process words."
+  query:
+    de: "Brightwater Mara Lindqvist Dirk Pohlmann Selin Aydin Bestellung Kickoff Rechnung"
+    en: "Brightwater Mara Lindqvist Dirk Pohlmann Selin Aydin purchase order kickoff invoice"
+  relevant:
+    de: { wiki/threads/brightwater-projekt.md: 2, wiki/people/mara-lindqvist.md: 1, wiki/people/dirk-pohlmann.md: 1, wiki/people/selin-aydin.md: 1 }
+    en: { wiki/threads/brightwater-project.md: 2, wiki/people/mara-lindqvist.md: 1, wiki/people/dirk-pohlmann.md: 1, wiki/people/selin-aydin.md: 1 }
+
+- id: keyword-salad-03
+  category: keyword-salad
+  origin: "Inheritance query mixing people, roles, places and documents."
+  query:
+    de: "Oma Gisela Erbe Testament Notarin Brünnich Grundbuch Unterbrunn Alte Mühle"
+    en: "Grandma Gisela inheritance will notary Brünnich land registry Unterbrunn Alte Mühle"
+  relevant:
+    de: { wiki/threads/erbschein-grundbuch.md: 2, wiki/people/oma-gisela.md: 2, wiki/threads/alte-muehle.md: 1, wiki/people/helga-bruennich.md: 1 }
+    en: { wiki/threads/inheritance-land-registry.md: 2, wiki/people/grandma-gisela.md: 2, wiki/threads/alte-muehle.md: 1, wiki/people/helga-bruennich.md: 1 }
+
+- id: keyword-salad-04
+  category: keyword-salad
+  origin: "Group query listing first names that each have their own person files."
+  query:
+    de: "Brettspiel Björn Henrik Tobias Yusuf Sternenimperium Grenzwelten Freitag"
+    en: "board game Björn Henrik Tobias Yusuf Star Empire Frontier Worlds Friday"
+  relevant:
+    de: { wiki/threads/brettspielabend.md: 2, wiki/people/tobias-hartl.md: 1 }
+    en: { wiki/threads/board-game-night.md: 2, wiki/people/tobias-hartl.md: 1 }
+
+- id: keyword-salad-05
+  category: keyword-salad
+  origin: "Trip query mixing destination, families, payment and transport terms."
+  query:
+    de: "Norwegen Ålesund Nowak Sommer Anzahlung Fähre Hirtshals 2027"
+    en: "Norway Ålesund Nowak Sommer deposit ferry Hirtshals 2027"
+  relevant:
+    de: { wiki/threads/ferienhaus-norwegen-2027.md: 2, wiki/people/familie-nowak.md: 1, wiki/people/henrik-sommer.md: 1 }
+    en: { wiki/threads/norway-cabin-2027.md: 2, wiki/people/family-nowak.md: 1, wiki/people/henrik-sommer.md: 1 }
+
+- id: keyword-salad-06
+  category: keyword-salad
+  origin: "Person nickname plus hobby plus shop plus product details."
+  query:
+    de: "Fritzi Handball Kontaktlinsen Optik Klarblick Tageslinsen Abo"
+    en: "Fritzi handball contact lenses Optik Klarblick daily lenses subscription"
+  relevant:
+    de: { wiki/threads/optiker-brillen.md: 2, wiki/people/friederike-weiss.md: 2 }
+    en: { wiki/threads/optician-glasses.md: 2, wiki/people/friederike-weiss.md: 2 }
+
+# ---------------------------------------------------------------- abbreviation
+- id: abbreviation-01
+  category: abbreviation
+  origin: "Only the group's acronym plus one process word."
+  query: { de: "SPS Anzahlung", en: "SPM deposit" }
+  relevant:
+    de: { wiki/threads/entwickler-stammtisch.md: 2, files/hackathon-notizen.md: 1, wiki/places/jugendherberge-burg-falkenstein.md: 1 }
+    en: { wiki/threads/developer-meetup.md: 2, files/hackathon-notes.md: 1, wiki/places/burg-falkenstein-youth-hostel.md: 1 }
+
+- id: abbreviation-02
+  category: abbreviation
+  origin: "Acronym of a group plus a topic of one of its talks."
+  query: { de: "SPS Vortrag Lizenz", en: "SPM talk license" }
+  relevant:
+    de: { wiki/threads/entwickler-stammtisch.md: 2, wiki/threads/thermo-pi.md: 1 }
+    en: { wiki/threads/developer-meetup.md: 2, wiki/threads/thermo-pi.md: 1 }
+
+- id: abbreviation-03
+  category: abbreviation
+  origin: "Legal acronym plus an abbreviated street name; a parallel thread differs only in the address."
+  query: { de: "WEG Lindenstr. 3", en: "HOA Lindenstr. 3" }
+  relevant:
+    de: { wiki/threads/weg-lindenstrasse-3.md: 2 }
+    en: { wiki/threads/hoa-lindenstrasse-3.md: 2 }
+
+- id: abbreviation-04
+  category: abbreviation
+  origin: "Common insurance acronym (BU / DI) that never appears in the text."
+  query: { de: "BU-Antrag", en: "DI insurance application" }
+  relevant:
+    de: { wiki/threads/berufsunfaehigkeit-antrag.md: 2, wiki/people/wolfram-ziegenbalg.md: 1 }
+    en: { wiki/threads/disability-insurance-application.md: 2, wiki/people/wolfram-ziegenbalg.md: 1 }
+
+- id: abbreviation-05
+  category: abbreviation
+  origin: "A firm's initialism without the rest of its name."
+  query: { de: "KRW Unterlagen", en: "KRW documents" }
+  relevant:
+    de: { wiki/threads/jahresabschluss-2025.md: 2, wiki/people/tobias-harter.md: 1 }
+    en: { wiki/threads/annual-accounts-2025.md: 2, wiki/people/tobias-harter.md: 1 }
+
+# ---------------------------------------------------------------- distractor
+# Non-wiki files (mail rules, handlers) are not graded unless they hold the answer; they count as irrelevant.
+- id: distractor-01
+  category: distractor
+  origin: "A mail rule for the same provider competes with the thread holding the actual amount; the rule is ungraded."
+  query: { de: "FunkFix Rechnung 6,99 €", en: "FunkFix invoice 6.99 €" }
+  relevant:
+    de: { wiki/threads/mobilfunk.md: 2, wiki/people/paul-weiss.md: 2 }
+    en: { wiki/threads/mobile-contracts.md: 2, wiki/people/paul-weiss.md: 2 }
+
+- id: distractor-02
+  category: distractor
+  origin: "Shop name plus process words that a mail rule repeats; the rule is ungraded."
+  query: { de: "ReTech Bestellung Rechnung", en: "ReTech order invoice" }
+  relevant:
+    de: { wiki/threads/retech-diensthandy.md: 2 }
+    en: { wiki/threads/retech-work-phone.md: 2 }
+
+- id: distractor-03
+  category: distractor
+  origin: "Query echoing the wording of a mail rule ('security notice, new device'); the rule is ungraded."
+  query: { de: "Nordbank Sicherheitshinweis neues Gerät", en: "Nordbank security notice new device" }
+  relevant:
+    de: { wiki/threads/nordbank-pushtan-vorfall.md: 2 }
+    en: { wiki/threads/nordbank-pushtan-incident.md: 2 }
+
+- id: distractor-04
+  category: distractor
+  origin: "Handler instructions mention phishing and links; the wiki thread with the actual patterns must win."
+  query: { de: "Phishing Links nicht klicken Muster", en: "phishing don't click links patterns" }
+  relevant:
+    de: { wiki/threads/phishing-muster.md: 2 }
+    en: { wiki/threads/phishing-patterns.md: 2 }
+
+- id: distractor-05
+  category: distractor
+  origin: "Counter-case: here a file outside the wiki is the right answer and must be found."
+  query: { de: "Geschenkideen Fritzi Weihnachten", en: "gift ideas Fritzi Christmas" }
+  relevant:
+    de: { files/geschenkeliste-fritzi.md: 2, wiki/people/friederike-weiss.md: 1 }
+    en: { files/gift-list-fritzi.md: 2, wiki/people/friederike-weiss.md: 1 }
+
+# ---------------------------------------------------------------- negative
+- id: negative-01
+  category: negative
+  origin: "A bare first name that appears nowhere; every hit is noise with near-identical scores."
+  query: { de: "Tom", en: "Tom" }
+  relevant: { de: {}, en: {} }
+
+- id: negative-02
+  category: negative
+  origin: "An event at a venue with no file; a generic coworking mention exists elsewhere."
+  query: { de: "Studio Nord Coworking Termin", en: "Studio Nord coworking appointment" }
+  relevant: { de: {}, en: {} }
+
+- id: negative-03
+  category: negative
+  origin: "A device the user doesn't own; unrelated files scored high in the real logs."
+  query: { de: "E-Ink-Tablet Notizen", en: "e-ink tablet notes" }
+  relevant: { de: {}, en: {} }
+
+- id: negative-04
+  category: negative
+  origin: "A hobby that does not exist in the world."
+  query: { de: "Segelschein Prüfung", en: "sailing licence exam" }
+  relevant: { de: {}, en: {} }
+
+- id: negative-05
+  category: negative
+  origin: "Plausible appointment type with no file; health files are related but do not answer."
+  query: { de: "Zahnarzttermin", en: "dentist appointment" }
+  relevant: { de: {}, en: {} }
+
+- id: negative-06
+  category: negative
+  origin: "Vague to-do query with no single answer; generic urgent vocabulary in a phishing file scored highest in the real logs."
+  query: { de: "offene Aufgaben Fristen Termine aktuell", en: "open tasks deadlines appointments current" }
+  relevant: { de: {}, en: {} }
+
+- id: negative-07
+  category: negative
+  origin: "Investment topic that does not exist, next to a real investment thread."
+  query: { de: "Bitcoin Investment", en: "Bitcoin investment" }
+  relevant: { de: {}, en: {} }
+
+- id: negative-08
+  category: negative
+  origin: "An event that never happened (the couple is not married)."
+  query: { de: "Hochzeitstag Jürgen und Ines", en: "Jürgen and Ines wedding anniversary" }
+  relevant: { de: {}, en: {} }

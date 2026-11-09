@@ -1,0 +1,519 @@
+# WhatsApp-Gruppen-Digest
+
+Tägliche Kurzzusammenfassungen der WhatsApp-Gruppen, in denen Jürgen Mitglied ist (Mühlbach-Bande, Elternrat 4b, Handball U16, Ahornweg 7 Nachbarn). Nur Überblick, keine Handlungspunkte.
+
+## 2025-11
+
+- **2025-11-02 · Ahornweg 7 Nachbarn** (5 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2025-11-03 · Elternrat 4b** (32 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2025-11-03 · Ahornweg 7 Nachbarn** (4 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2025-11-03 · Ahornweg 7 Nachbarn** (4 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2025-11-04 · Ahornweg 7 Nachbarn** (43 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+- **2025-11-05 · Ahornweg 7 Nachbarn** (33 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2025-11-05 · Elternrat 4b** (35 Nachrichten): Wandertag verschoben wegen Regen.
+- **2025-11-06 · Mühlbach-Bande** (25 Nachrichten): Henrik fragt, wer am Samstag zum Grillen kommt; vier Zusagen.
+- **2025-11-09 · Ahornweg 7 Nachbarn** (23 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2025-11-09 · Mühlbach-Bande** (17 Nachrichten): Björn teilt ein Foto vom alten Schulhof, alle schwelgen in Erinnerungen.
+- **2025-11-10 · Mühlbach-Bande** (25 Nachrichten): Henrik fragt, wer am Samstag zum Grillen kommt; vier Zusagen.
+- **2025-11-12 · Mühlbach-Bande** (23 Nachrichten): Björn teilt ein Foto vom alten Schulhof, alle schwelgen in Erinnerungen.
+- **2025-11-13 · Handball U16** (55 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2025-11-13 · Elternrat 4b** (36 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2025-11-13 · Mühlbach-Bande** (47 Nachrichten): Björn teilt ein Foto vom alten Schulhof, alle schwelgen in Erinnerungen.
+- **2025-11-13 · Mühlbach-Bande** (34 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2025-11-13 · Elternrat 4b** (24 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2025-11-14 · Mühlbach-Bande** (27 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2025-11-14 · Mühlbach-Bande** (59 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2025-11-15 · Mühlbach-Bande** (22 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+- **2025-11-17 · Ahornweg 7 Nachbarn** (28 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+- **2025-11-17 · Mühlbach-Bande** (40 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2025-11-17 · Mühlbach-Bande** (45 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2025-11-17 · Ahornweg 7 Nachbarn** (9 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+- **2025-11-19 · Ahornweg 7 Nachbarn** (48 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2025-11-19 · Elternrat 4b** (6 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2025-11-20 · Handball U16** (19 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2025-11-20 · Handball U16** (42 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2025-11-23 · Mühlbach-Bande** (44 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2025-11-23 · Elternrat 4b** (7 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2025-11-23 · Elternrat 4b** (4 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2025-11-25 · Ahornweg 7 Nachbarn** (21 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2025-11-25 · Handball U16** (20 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2025-11-25 · Handball U16** (58 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2025-11-26 · Handball U16** (60 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2025-11-26 · Ahornweg 7 Nachbarn** (50 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2025-11-27 · Elternrat 4b** (48 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2025-11-27 · Elternrat 4b** (19 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2025-11-27 · Handball U16** (57 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2025-11-28 · Ahornweg 7 Nachbarn** (22 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+
+## 2025-12
+
+- **2025-12-01 · Elternrat 4b** (11 Nachrichten): Läuse-Hinweis aus der Parallelklasse, bitte Köpfe kontrollieren.
+- **2025-12-02 · Ahornweg 7 Nachbarn** (21 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2025-12-02 · Elternrat 4b** (48 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2025-12-03 · Ahornweg 7 Nachbarn** (12 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2025-12-04 · Handball U16** (25 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2025-12-04 · Elternrat 4b** (34 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2025-12-05 · Elternrat 4b** (25 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2025-12-06 · Handball U16** (36 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2025-12-06 · Handball U16** (49 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2025-12-07 · Mühlbach-Bande** (3 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+- **2025-12-07 · Ahornweg 7 Nachbarn** (6 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2025-12-08 · Ahornweg 7 Nachbarn** (30 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2025-12-08 · Elternrat 4b** (38 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2025-12-09 · Elternrat 4b** (56 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2025-12-09 · Handball U16** (9 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2025-12-10 · Mühlbach-Bande** (3 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+- **2025-12-10 · Elternrat 4b** (39 Nachrichten): Läuse-Hinweis aus der Parallelklasse, bitte Köpfe kontrollieren.
+- **2025-12-10 · Elternrat 4b** (23 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2025-12-11 · Elternrat 4b** (47 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2025-12-13 · Handball U16** (40 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2025-12-15 · Elternrat 4b** (42 Nachrichten): Läuse-Hinweis aus der Parallelklasse, bitte Köpfe kontrollieren.
+- **2025-12-15 · Elternrat 4b** (20 Nachrichten): Läuse-Hinweis aus der Parallelklasse, bitte Köpfe kontrollieren.
+- **2025-12-16 · Ahornweg 7 Nachbarn** (19 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2025-12-17 · Handball U16** (15 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2025-12-17 · Elternrat 4b** (55 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2025-12-17 · Handball U16** (59 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2025-12-18 · Ahornweg 7 Nachbarn** (21 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2025-12-18 · Mühlbach-Bande** (28 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2025-12-20 · Mühlbach-Bande** (13 Nachrichten): Björn teilt ein Foto vom alten Schulhof, alle schwelgen in Erinnerungen.
+- **2025-12-21 · Mühlbach-Bande** (7 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2025-12-21 · Ahornweg 7 Nachbarn** (53 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2025-12-22 · Ahornweg 7 Nachbarn** (37 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2025-12-22 · Elternrat 4b** (56 Nachrichten): Wandertag verschoben wegen Regen.
+- **2025-12-23 · Handball U16** (15 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2025-12-24 · Handball U16** (49 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2025-12-24 · Ahornweg 7 Nachbarn** (46 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2025-12-25 · Mühlbach-Bande** (47 Nachrichten): Björn teilt ein Foto vom alten Schulhof, alle schwelgen in Erinnerungen.
+- **2025-12-27 · Elternrat 4b** (24 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2025-12-27 · Ahornweg 7 Nachbarn** (48 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2025-12-27 · Elternrat 4b** (39 Nachrichten): Wandertag verschoben wegen Regen.
+
+## 2026-01
+
+- **2026-01-01 · Handball U16** (8 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-01-05 · Handball U16** (36 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-01-05 · Ahornweg 7 Nachbarn** (16 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-01-05 · Ahornweg 7 Nachbarn** (39 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-01-05 · Mühlbach-Bande** (51 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+- **2026-01-06 · Elternrat 4b** (43 Nachrichten): Läuse-Hinweis aus der Parallelklasse, bitte Köpfe kontrollieren.
+- **2026-01-07 · Handball U16** (7 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-01-08 · Ahornweg 7 Nachbarn** (53 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2026-01-08 · Handball U16** (51 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-01-08 · Mühlbach-Bande** (58 Nachrichten): Henrik fragt, wer am Samstag zum Grillen kommt; vier Zusagen.
+- **2026-01-09 · Mühlbach-Bande** (46 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2026-01-09 · Handball U16** (16 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-01-11 · Handball U16** (34 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-01-11 · Mühlbach-Bande** (38 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-01-11 · Elternrat 4b** (39 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-01-11 · Handball U16** (29 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-01-12 · Ahornweg 7 Nachbarn** (31 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-01-13 · Ahornweg 7 Nachbarn** (46 Nachrichten): Hinweis: Mülltonnen werden morgen früh geleert.
+- **2026-01-13 · Elternrat 4b** (28 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-01-13 · Handball U16** (8 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-01-16 · Elternrat 4b** (60 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-01-16 · Elternrat 4b** (47 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-01-16 · Handball U16** (39 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-01-16 · Ahornweg 7 Nachbarn** (18 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2026-01-17 · Elternrat 4b** (54 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-01-17 · Ahornweg 7 Nachbarn** (22 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+- **2026-01-20 · Handball U16** (54 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-01-20 · Handball U16** (7 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-01-21 · Elternrat 4b** (25 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-01-22 · Handball U16** (45 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-01-22 · Elternrat 4b** (20 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-01-22 · Handball U16** (37 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-01-24 · Mühlbach-Bande** (10 Nachrichten): Terminabstimmung fürs nächste Treffen, Ergebnis offen.
+- **2026-01-25 · Elternrat 4b** (54 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2026-01-25 · Handball U16** (49 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-01-25 · Handball U16** (11 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-01-25 · Mühlbach-Bande** (31 Nachrichten): Björn teilt ein Foto vom alten Schulhof, alle schwelgen in Erinnerungen.
+- **2026-01-26 · Handball U16** (27 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-01-27 · Handball U16** (23 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-01-27 · Ahornweg 7 Nachbarn** (39 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+
+## 2026-02
+
+- **2026-02-01 · Mühlbach-Bande** (22 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2026-02-01 · Elternrat 4b** (54 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-02-02 · Handball U16** (51 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-02-03 · Ahornweg 7 Nachbarn** (3 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-02-03 · Mühlbach-Bande** (42 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2026-02-04 · Mühlbach-Bande** (58 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-02-07 · Elternrat 4b** (30 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-02-08 · Mühlbach-Bande** (34 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-02-09 · Elternrat 4b** (45 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-02-09 · Handball U16** (35 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-02-10 · Elternrat 4b** (28 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-02-12 · Handball U16** (28 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-02-14 · Elternrat 4b** (33 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-02-14 · Mühlbach-Bande** (16 Nachrichten): Henrik fragt, wer am Samstag zum Grillen kommt; vier Zusagen.
+- **2026-02-14 · Handball U16** (48 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-02-15 · Mühlbach-Bande** (38 Nachrichten): Björn teilt ein Foto vom alten Schulhof, alle schwelgen in Erinnerungen.
+- **2026-02-15 · Mühlbach-Bande** (46 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-02-16 · Handball U16** (49 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-02-17 · Ahornweg 7 Nachbarn** (5 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-02-18 · Ahornweg 7 Nachbarn** (5 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-02-18 · Elternrat 4b** (42 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-02-19 · Ahornweg 7 Nachbarn** (7 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+- **2026-02-19 · Handball U16** (9 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-02-19 · Ahornweg 7 Nachbarn** (33 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-02-20 · Mühlbach-Bande** (36 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2026-02-20 · Ahornweg 7 Nachbarn** (9 Nachrichten): Hinweis: Mülltonnen werden morgen früh geleert.
+- **2026-02-20 · Elternrat 4b** (40 Nachrichten): Wandertag verschoben wegen Regen.
+- **2026-02-21 · Ahornweg 7 Nachbarn** (12 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-02-21 · Handball U16** (14 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-02-22 · Ahornweg 7 Nachbarn** (60 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+- **2026-02-23 · Mühlbach-Bande** (42 Nachrichten): Henrik fragt, wer am Samstag zum Grillen kommt; vier Zusagen.
+- **2026-02-24 · Handball U16** (44 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-02-24 · Mühlbach-Bande** (42 Nachrichten): Henrik fragt, wer am Samstag zum Grillen kommt; vier Zusagen.
+- **2026-02-25 · Handball U16** (13 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-02-25 · Elternrat 4b** (19 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-02-26 · Elternrat 4b** (56 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2026-02-28 · Elternrat 4b** (44 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-02-28 · Elternrat 4b** (42 Nachrichten): Wandertag verschoben wegen Regen.
+- **2026-02-28 · Ahornweg 7 Nachbarn** (50 Nachrichten): Hinweis: Mülltonnen werden morgen früh geleert.
+- **2026-02-28 · Mühlbach-Bande** (15 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+
+## 2026-03
+
+- **2026-03-01 · Elternrat 4b** (15 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-03-01 · Handball U16** (42 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-03-02 · Elternrat 4b** (15 Nachrichten): Wandertag verschoben wegen Regen.
+- **2026-03-03 · Handball U16** (29 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-03-05 · Elternrat 4b** (30 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-03-05 · Elternrat 4b** (13 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-03-05 · Ahornweg 7 Nachbarn** (55 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2026-03-06 · Handball U16** (39 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-03-06 · Ahornweg 7 Nachbarn** (43 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-03-06 · Elternrat 4b** (58 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-03-06 · Handball U16** (57 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-03-06 · Elternrat 4b** (50 Nachrichten): Wandertag verschoben wegen Regen.
+- **2026-03-07 · Handball U16** (42 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-03-08 · Handball U16** (28 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-03-08 · Ahornweg 7 Nachbarn** (41 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+- **2026-03-09 · Mühlbach-Bande** (51 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2026-03-10 · Ahornweg 7 Nachbarn** (12 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-03-11 · Ahornweg 7 Nachbarn** (47 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-03-12 · Elternrat 4b** (9 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-03-13 · Handball U16** (35 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-03-14 · Handball U16** (38 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-03-15 · Handball U16** (17 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-03-15 · Ahornweg 7 Nachbarn** (28 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-03-15 · Mühlbach-Bande** (33 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2026-03-15 · Mühlbach-Bande** (9 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-03-16 · Handball U16** (43 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-03-17 · Handball U16** (60 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-03-17 · Elternrat 4b** (27 Nachrichten): Wandertag verschoben wegen Regen.
+- **2026-03-17 · Handball U16** (41 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-03-18 · Handball U16** (47 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-03-19 · Ahornweg 7 Nachbarn** (36 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-03-20 · Elternrat 4b** (47 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-03-21 · Ahornweg 7 Nachbarn** (26 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-03-21 · Elternrat 4b** (38 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-03-21 · Ahornweg 7 Nachbarn** (10 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2026-03-23 · Elternrat 4b** (7 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-03-24 · Handball U16** (57 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-03-25 · Handball U16** (59 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-03-26 · Ahornweg 7 Nachbarn** (17 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-03-27 · Mühlbach-Bande** (60 Nachrichten): Björn teilt ein Foto vom alten Schulhof, alle schwelgen in Erinnerungen.
+
+## 2026-04
+
+- **2026-04-01 · Handball U16** (56 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-04-02 · Elternrat 4b** (8 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-04-02 · Ahornweg 7 Nachbarn** (8 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-04-02 · Mühlbach-Bande** (43 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+- **2026-04-05 · Handball U16** (26 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-04-05 · Ahornweg 7 Nachbarn** (10 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-04-05 · Ahornweg 7 Nachbarn** (45 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-04-06 · Ahornweg 7 Nachbarn** (41 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-04-07 · Handball U16** (37 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-04-08 · Handball U16** (3 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-04-08 · Handball U16** (37 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-04-09 · Ahornweg 7 Nachbarn** (31 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2026-04-09 · Elternrat 4b** (19 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-04-09 · Elternrat 4b** (42 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-04-10 · Ahornweg 7 Nachbarn** (60 Nachrichten): Hinweis: Mülltonnen werden morgen früh geleert.
+- **2026-04-11 · Mühlbach-Bande** (60 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+- **2026-04-11 · Ahornweg 7 Nachbarn** (59 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-04-12 · Elternrat 4b** (39 Nachrichten): Läuse-Hinweis aus der Parallelklasse, bitte Köpfe kontrollieren.
+- **2026-04-14 · Mühlbach-Bande** (4 Nachrichten): Terminabstimmung fürs nächste Treffen, Ergebnis offen.
+- **2026-04-15 · Elternrat 4b** (8 Nachrichten): Wandertag verschoben wegen Regen.
+- **2026-04-15 · Handball U16** (30 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-04-15 · Mühlbach-Bande** (41 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-04-15 · Elternrat 4b** (59 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2026-04-17 · Elternrat 4b** (58 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-04-17 · Mühlbach-Bande** (17 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-04-17 · Elternrat 4b** (35 Nachrichten): Wandertag verschoben wegen Regen.
+- **2026-04-18 · Ahornweg 7 Nachbarn** (51 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-04-19 · Mühlbach-Bande** (15 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-04-19 · Ahornweg 7 Nachbarn** (42 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2026-04-20 · Elternrat 4b** (11 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-04-21 · Ahornweg 7 Nachbarn** (10 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-04-23 · Mühlbach-Bande** (32 Nachrichten): Björn teilt ein Foto vom alten Schulhof, alle schwelgen in Erinnerungen.
+- **2026-04-24 · Mühlbach-Bande** (30 Nachrichten): Terminabstimmung fürs nächste Treffen, Ergebnis offen.
+- **2026-04-25 · Mühlbach-Bande** (4 Nachrichten): Henrik fragt, wer am Samstag zum Grillen kommt; vier Zusagen.
+- **2026-04-25 · Mühlbach-Bande** (17 Nachrichten): Terminabstimmung fürs nächste Treffen, Ergebnis offen.
+- **2026-04-25 · Ahornweg 7 Nachbarn** (45 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-04-26 · Mühlbach-Bande** (60 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-04-26 · Elternrat 4b** (60 Nachrichten): Wandertag verschoben wegen Regen.
+- **2026-04-27 · Ahornweg 7 Nachbarn** (52 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-04-28 · Handball U16** (37 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+
+## 2026-05
+
+- **2026-05-01 · Elternrat 4b** (41 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-05-02 · Handball U16** (51 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-05-03 · Handball U16** (45 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-05-04 · Ahornweg 7 Nachbarn** (12 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-05-05 · Ahornweg 7 Nachbarn** (41 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-05-06 · Mühlbach-Bande** (17 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2026-05-06 · Mühlbach-Bande** (16 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-05-07 · Elternrat 4b** (4 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-05-08 · Ahornweg 7 Nachbarn** (39 Nachrichten): Hinweis: Mülltonnen werden morgen früh geleert.
+- **2026-05-09 · Elternrat 4b** (8 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-05-09 · Ahornweg 7 Nachbarn** (51 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-05-09 · Elternrat 4b** (7 Nachrichten): Läuse-Hinweis aus der Parallelklasse, bitte Köpfe kontrollieren.
+- **2026-05-09 · Elternrat 4b** (14 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-05-11 · Mühlbach-Bande** (43 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-05-13 · Ahornweg 7 Nachbarn** (27 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2026-05-14 · Ahornweg 7 Nachbarn** (36 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2026-05-14 · Mühlbach-Bande** (13 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2026-05-15 · Mühlbach-Bande** (51 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-05-16 · Handball U16** (6 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-05-18 · Ahornweg 7 Nachbarn** (16 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-05-18 · Mühlbach-Bande** (31 Nachrichten): Terminabstimmung fürs nächste Treffen, Ergebnis offen.
+- **2026-05-18 · Ahornweg 7 Nachbarn** (6 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-05-18 · Elternrat 4b** (23 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2026-05-18 · Handball U16** (20 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-05-19 · Mühlbach-Bande** (14 Nachrichten): Henrik fragt, wer am Samstag zum Grillen kommt; vier Zusagen.
+- **2026-05-19 · Handball U16** (52 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-05-19 · Elternrat 4b** (11 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-05-19 · Elternrat 4b** (26 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2026-05-19 · Elternrat 4b** (15 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-05-21 · Mühlbach-Bande** (60 Nachrichten): Terminabstimmung fürs nächste Treffen, Ergebnis offen.
+- **2026-05-21 · Ahornweg 7 Nachbarn** (45 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-05-22 · Handball U16** (26 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-05-22 · Mühlbach-Bande** (9 Nachrichten): Björn teilt ein Foto vom alten Schulhof, alle schwelgen in Erinnerungen.
+- **2026-05-23 · Ahornweg 7 Nachbarn** (19 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-05-23 · Ahornweg 7 Nachbarn** (58 Nachrichten): Hinweis: Mülltonnen werden morgen früh geleert.
+- **2026-05-23 · Elternrat 4b** (25 Nachrichten): Läuse-Hinweis aus der Parallelklasse, bitte Köpfe kontrollieren.
+- **2026-05-24 · Ahornweg 7 Nachbarn** (47 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2026-05-26 · Elternrat 4b** (5 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-05-26 · Mühlbach-Bande** (6 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-05-27 · Handball U16** (56 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+
+## 2026-06
+
+- **2026-06-02 · Mühlbach-Bande** (52 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+- **2026-06-02 · Handball U16** (15 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-06-02 · Elternrat 4b** (52 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-06-05 · Mühlbach-Bande** (5 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2026-06-06 · Handball U16** (53 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-06-06 · Handball U16** (17 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-06-07 · Elternrat 4b** (16 Nachrichten): Wandertag verschoben wegen Regen.
+- **2026-06-07 · Mühlbach-Bande** (7 Nachrichten): Terminabstimmung fürs nächste Treffen, Ergebnis offen.
+- **2026-06-09 · Handball U16** (13 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-06-09 · Ahornweg 7 Nachbarn** (35 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-06-12 · Elternrat 4b** (4 Nachrichten): Wandertag verschoben wegen Regen.
+- **2026-06-12 · Handball U16** (4 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-06-13 · Handball U16** (33 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-06-13 · Handball U16** (57 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-06-15 · Handball U16** (59 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-06-16 · Mühlbach-Bande** (55 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2026-06-17 · Handball U16** (37 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-06-17 · Handball U16** (50 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-06-18 · Elternrat 4b** (31 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-06-18 · Handball U16** (33 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-06-18 · Ahornweg 7 Nachbarn** (55 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+- **2026-06-18 · Mühlbach-Bande** (45 Nachrichten): Björn teilt ein Foto vom alten Schulhof, alle schwelgen in Erinnerungen.
+- **2026-06-19 · Elternrat 4b** (60 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-06-19 · Mühlbach-Bande** (35 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+- **2026-06-19 · Mühlbach-Bande** (15 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-06-20 · Elternrat 4b** (12 Nachrichten): Läuse-Hinweis aus der Parallelklasse, bitte Köpfe kontrollieren.
+- **2026-06-21 · Handball U16** (53 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-06-21 · Mühlbach-Bande** (37 Nachrichten): Terminabstimmung fürs nächste Treffen, Ergebnis offen.
+- **2026-06-22 · Elternrat 4b** (60 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-06-22 · Handball U16** (31 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-06-22 · Elternrat 4b** (31 Nachrichten): Läuse-Hinweis aus der Parallelklasse, bitte Köpfe kontrollieren.
+- **2026-06-23 · Ahornweg 7 Nachbarn** (17 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-06-23 · Mühlbach-Bande** (57 Nachrichten): Terminabstimmung fürs nächste Treffen, Ergebnis offen.
+- **2026-06-24 · Mühlbach-Bande** (19 Nachrichten): Terminabstimmung fürs nächste Treffen, Ergebnis offen.
+- **2026-06-24 · Mühlbach-Bande** (7 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+- **2026-06-24 · Elternrat 4b** (23 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-06-24 · Elternrat 4b** (55 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-06-26 · Mühlbach-Bande** (42 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+- **2026-06-27 · Mühlbach-Bande** (53 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-06-28 · Ahornweg 7 Nachbarn** (34 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+
+## 2026-07
+
+- **2026-07-01 · Mühlbach-Bande** (48 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2026-07-01 · Ahornweg 7 Nachbarn** (34 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-07-01 · Mühlbach-Bande** (21 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-07-02 · Handball U16** (33 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-07-02 · Handball U16** (8 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-07-03 · Ahornweg 7 Nachbarn** (11 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-07-03 · Elternrat 4b** (39 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-07-06 · Mühlbach-Bande** (48 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-07-07 · Handball U16** (35 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-07-08 · Ahornweg 7 Nachbarn** (18 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-07-09 · Elternrat 4b** (9 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-07-09 · Ahornweg 7 Nachbarn** (12 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-07-10 · Ahornweg 7 Nachbarn** (57 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-07-10 · Elternrat 4b** (23 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-07-11 · Elternrat 4b** (4 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-07-12 · Elternrat 4b** (19 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-07-12 · Elternrat 4b** (24 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2026-07-13 · Elternrat 4b** (11 Nachrichten): Wandertag verschoben wegen Regen.
+- **2026-07-14 · Elternrat 4b** (54 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-07-14 · Elternrat 4b** (24 Nachrichten): Wandertag verschoben wegen Regen.
+- **2026-07-14 · Elternrat 4b** (3 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-07-15 · Ahornweg 7 Nachbarn** (52 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-07-15 · Mühlbach-Bande** (23 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-07-15 · Elternrat 4b** (10 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-07-16 · Handball U16** (14 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-07-18 · Handball U16** (39 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-07-19 · Ahornweg 7 Nachbarn** (5 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-07-20 · Elternrat 4b** (3 Nachrichten): Läuse-Hinweis aus der Parallelklasse, bitte Köpfe kontrollieren.
+- **2026-07-20 · Handball U16** (51 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-07-21 · Elternrat 4b** (40 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-07-21 · Ahornweg 7 Nachbarn** (58 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-07-22 · Mühlbach-Bande** (23 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-07-22 · Mühlbach-Bande** (22 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-07-23 · Handball U16** (35 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-07-25 · Handball U16** (60 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-07-25 · Handball U16** (35 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-07-27 · Mühlbach-Bande** (7 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-07-27 · Handball U16** (24 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-07-27 · Mühlbach-Bande** (20 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+- **2026-07-27 · Handball U16** (14 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+
+## 2026-08
+
+- **2026-08-01 · Elternrat 4b** (3 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-08-01 · Elternrat 4b** (45 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2026-08-01 · Handball U16** (4 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-08-02 · Handball U16** (36 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-08-04 · Mühlbach-Bande** (18 Nachrichten): Terminabstimmung fürs nächste Treffen, Ergebnis offen.
+- **2026-08-04 · Elternrat 4b** (15 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-08-05 · Mühlbach-Bande** (34 Nachrichten): Terminabstimmung fürs nächste Treffen, Ergebnis offen.
+- **2026-08-05 · Ahornweg 7 Nachbarn** (4 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+- **2026-08-05 · Ahornweg 7 Nachbarn** (17 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-08-06 · Handball U16** (35 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-08-07 · Mühlbach-Bande** (25 Nachrichten): Henrik fragt, wer am Samstag zum Grillen kommt; vier Zusagen.
+- **2026-08-07 · Elternrat 4b** (16 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-08-07 · Elternrat 4b** (3 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-08-08 · Ahornweg 7 Nachbarn** (29 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-08-09 · Mühlbach-Bande** (58 Nachrichten): Terminabstimmung fürs nächste Treffen, Ergebnis offen.
+- **2026-08-09 · Elternrat 4b** (33 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-08-10 · Ahornweg 7 Nachbarn** (14 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2026-08-10 · Mühlbach-Bande** (53 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+- **2026-08-11 · Elternrat 4b** (15 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-08-12 · Ahornweg 7 Nachbarn** (25 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-08-13 · Elternrat 4b** (55 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-08-13 · Ahornweg 7 Nachbarn** (16 Nachrichten): Hinweis: Mülltonnen werden morgen früh geleert.
+- **2026-08-14 · Mühlbach-Bande** (7 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-08-14 · Handball U16** (42 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-08-14 · Mühlbach-Bande** (41 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-08-15 · Ahornweg 7 Nachbarn** (33 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-08-16 · Elternrat 4b** (52 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-08-17 · Elternrat 4b** (47 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2026-08-18 · Mühlbach-Bande** (35 Nachrichten): Henrik fragt, wer am Samstag zum Grillen kommt; vier Zusagen.
+- **2026-08-18 · Elternrat 4b** (41 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-08-18 · Handball U16** (13 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-08-21 · Elternrat 4b** (23 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-08-21 · Elternrat 4b** (30 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-08-22 · Handball U16** (56 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-08-22 · Ahornweg 7 Nachbarn** (16 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-08-24 · Handball U16** (14 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-08-25 · Ahornweg 7 Nachbarn** (7 Nachrichten): Hinweis: Mülltonnen werden morgen früh geleert.
+- **2026-08-26 · Mühlbach-Bande** (41 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2026-08-27 · Elternrat 4b** (38 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2026-08-28 · Mühlbach-Bande** (3 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+
+## 2026-09
+
+- **2026-09-01 · Ahornweg 7 Nachbarn** (46 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+- **2026-09-01 · Handball U16** (33 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-09-02 · Mühlbach-Bande** (39 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-09-02 · Mühlbach-Bande** (6 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-09-02 · Ahornweg 7 Nachbarn** (15 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-09-03 · Ahornweg 7 Nachbarn** (33 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-09-04 · Mühlbach-Bande** (30 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-09-05 · Ahornweg 7 Nachbarn** (49 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-09-05 · Handball U16** (48 Nachrichten): Trainerin teilt den Hallenplan für den Monat.
+- **2026-09-06 · Mühlbach-Bande** (31 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-09-08 · Ahornweg 7 Nachbarn** (26 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-09-11 · Ahornweg 7 Nachbarn** (18 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-09-12 · Elternrat 4b** (17 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-09-13 · Handball U16** (5 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-09-14 · Mühlbach-Bande** (29 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-09-14 · Handball U16** (25 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-09-16 · Ahornweg 7 Nachbarn** (8 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+- **2026-09-16 · Elternrat 4b** (3 Nachrichten): Läuse-Hinweis aus der Parallelklasse, bitte Köpfe kontrollieren.
+- **2026-09-16 · Handball U16** (46 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-09-17 · Mühlbach-Bande** (59 Nachrichten): Geburtstagsglückwünsche in der Runde, viele Emojis.
+- **2026-09-17 · Ahornweg 7 Nachbarn** (12 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-09-18 · Elternrat 4b** (33 Nachrichten): Läuse-Hinweis aus der Parallelklasse, bitte Köpfe kontrollieren.
+- **2026-09-19 · Handball U16** (22 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-09-19 · Elternrat 4b** (4 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-09-19 · Handball U16** (14 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-09-20 · Elternrat 4b** (40 Nachrichten): Wandertag verschoben wegen Regen.
+- **2026-09-21 · Handball U16** (4 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-09-22 · Elternrat 4b** (9 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-09-22 · Elternrat 4b** (43 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-09-23 · Handball U16** (4 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-09-24 · Handball U16** (8 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-09-25 · Handball U16** (53 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-09-25 · Elternrat 4b** (26 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-09-25 · Elternrat 4b** (20 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-09-25 · Handball U16** (11 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-09-25 · Ahornweg 7 Nachbarn** (15 Nachrichten): Haustür schließt schlecht, Hausverwaltung Lenz ist informiert.
+- **2026-09-25 · Handball U16** (56 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-09-27 · Mühlbach-Bande** (26 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-09-28 · Elternrat 4b** (39 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-09-28 · Mühlbach-Bande** (60 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+
+## 2026-10
+
+- **2026-10-02 · Mühlbach-Bande** (48 Nachrichten): Henrik fragt, wer am Samstag zum Grillen kommt; vier Zusagen.
+- **2026-10-03 · Mühlbach-Bande** (6 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-10-03 · Mühlbach-Bande** (26 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-10-04 · Mühlbach-Bande** (29 Nachrichten): Björn teilt ein Foto vom alten Schulhof, alle schwelgen in Erinnerungen.
+- **2026-10-05 · Elternrat 4b** (51 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-10-05 · Elternrat 4b** (41 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-10-06 · Handball U16** (34 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-10-06 · Ahornweg 7 Nachbarn** (10 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+- **2026-10-06 · Handball U16** (33 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-10-08 · Ahornweg 7 Nachbarn** (4 Nachrichten): Wer hat den Kinderwagen im Flur stehen lassen?.
+- **2026-10-08 · Handball U16** (36 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-10-10 · Elternrat 4b** (11 Nachrichten): Sammlung für das Abschiedsgeschenk der Referendarin, 5 € pro Kind.
+- **2026-10-11 · Elternrat 4b** (53 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-10-11 · Elternrat 4b** (39 Nachrichten): Frage, ob morgen Sportunterricht draußen stattfindet.
+- **2026-10-11 · Handball U16** (12 Nachrichten): Trainingszeit am Mittwoch fällt aus, Halle belegt.
+- **2026-10-12 · Handball U16** (39 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-10-12 · Ahornweg 7 Nachbarn** (3 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-10-14 · Handball U16** (28 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-10-14 · Elternrat 4b** (49 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-10-14 · Mühlbach-Bande** (16 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.
+- **2026-10-14 · Mühlbach-Bande** (22 Nachrichten): Henrik fragt, wer am Samstag zum Grillen kommt; vier Zusagen.
+- **2026-10-15 · Mühlbach-Bande** (28 Nachrichten): Björn schickt ein Meme über Montage, Jürgen reagiert mit 😂.
+- **2026-10-16 · Elternrat 4b** (22 Nachrichten): Elternabend-Protokoll als PDF geteilt.
+- **2026-10-16 · Mühlbach-Bande** (3 Nachrichten): Henrik empfiehlt eine Serie, zwei haben sie schon gesehen.
+- **2026-10-17 · Handball U16** (47 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-10-17 · Ahornweg 7 Nachbarn** (7 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-10-17 · Ahornweg 7 Nachbarn** (23 Nachrichten): Paket für Wohnung 4 bei Henrik abgegeben.
+- **2026-10-17 · Handball U16** (29 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-10-17 · Handball U16** (22 Nachrichten): Trikots bitte gewaschen zum nächsten Spiel mitbringen.
+- **2026-10-18 · Ahornweg 7 Nachbarn** (54 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-10-18 · Handball U16** (34 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-10-18 · Handball U16** (12 Nachrichten): Fahrgemeinschaft zum Auswärtsspiel gesucht, Jürgen bietet zwei Plätze an.
+- **2026-10-20 · Handball U16** (15 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-10-20 · Elternrat 4b** (26 Nachrichten): Erinnerung: Brotdosen beschriften, Fundkiste läuft über.
+- **2026-10-25 · Ahornweg 7 Nachbarn** (28 Nachrichten): Treppenhausreinigung diese Woche durch Wohnung 2.
+- **2026-10-26 · Handball U16** (38 Nachrichten): Abstimmung über die Weihnachtsfeier der Mannschaft.
+- **2026-10-26 · Handball U16** (58 Nachrichten): Ergebnis vom Wochenende: knapper Sieg, Fritzi mit drei Toren.
+- **2026-10-27 · Ahornweg 7 Nachbarn** (17 Nachrichten): Wasserabstellung am Donnerstag 9–11 Uhr angekündigt.
+- **2026-10-28 · Elternrat 4b** (24 Nachrichten): Katrin fragt nach Helfern für das Schulfest-Kuchenbuffet.
+- **2026-10-28 · Mühlbach-Bande** (20 Nachrichten): Diskussion über das letzte Fußballspiel, keine Einigung.

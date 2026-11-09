@@ -1,0 +1,1 @@
+Mails from Nordbank: account statements and security notices. Archive statements. Security notices: check carefully for phishing (sender domain, links), never click links, and alert the user immediately if a notice mentions a new device or a blocked account.

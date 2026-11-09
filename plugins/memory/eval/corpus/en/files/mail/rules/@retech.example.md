@@ -1,0 +1,1 @@
+Mails from ReTech (refurbished electronics shop): order confirmations, shipping notices and review requests. Archive order confirmations and keep the invoice PDF for the tax folder. Delete review requests and marketing mails.

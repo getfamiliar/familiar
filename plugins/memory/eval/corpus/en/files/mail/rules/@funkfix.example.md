@@ -1,0 +1,1 @@
+Mails from FunkFix (mobile provider): monthly invoices for the family contracts. Archive the mail, note the invoice amount in `wiki/threads/mobile-contracts.md`. Only alert the user if the amount differs from the usual total by more than 5 €.

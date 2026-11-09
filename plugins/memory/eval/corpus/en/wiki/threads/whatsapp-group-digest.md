@@ -1,0 +1,519 @@
+# WhatsApp group digest
+
+Daily short summaries of the WhatsApp groups Jürgen is a member of (Muehlbach Gang, Parents 4b, Handball U16, Ahornweg 7 neighbours). Overview only, no action items.
+
+## 2025-11
+
+- **2025-11-02 · Ahornweg 7 neighbours** (5 messages): water shut-off announced for Thursday 9–11.
+- **2025-11-03 · Parents 4b** (32 messages): parents' evening minutes shared as PDF.
+- **2025-11-03 · Ahornweg 7 neighbours** (4 messages): who left the pram in the hallway?.
+- **2025-11-03 · Ahornweg 7 neighbours** (4 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2025-11-04 · Ahornweg 7 neighbours** (43 messages): parcel for flat 4 left with Henrik.
+- **2025-11-05 · Ahornweg 7 neighbours** (33 messages): who left the pram in the hallway?.
+- **2025-11-05 · Parents 4b** (35 messages): hiking day postponed because of rain.
+- **2025-11-06 · Muehlbach Gang** (25 messages): Henrik asks who is coming to the barbecue on Saturday; four yes.
+- **2025-11-09 · Ahornweg 7 neighbours** (23 messages): who left the pram in the hallway?.
+- **2025-11-09 · Muehlbach Gang** (17 messages): Björn shares a photo of the old schoolyard, everyone reminisces.
+- **2025-11-10 · Muehlbach Gang** (25 messages): Henrik asks who is coming to the barbecue on Saturday; four yes.
+- **2025-11-12 · Muehlbach Gang** (23 messages): Björn shares a photo of the old schoolyard, everyone reminisces.
+- **2025-11-13 · Handball U16** (55 messages): vote on the team's Christmas party.
+- **2025-11-13 · Parents 4b** (36 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2025-11-13 · Muehlbach Gang** (47 messages): Björn shares a photo of the old schoolyard, everyone reminisces.
+- **2025-11-13 · Muehlbach Gang** (34 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2025-11-13 · Parents 4b** (24 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2025-11-14 · Muehlbach Gang** (27 messages): discussion about the last football match, no agreement.
+- **2025-11-14 · Muehlbach Gang** (59 messages): discussion about the last football match, no agreement.
+- **2025-11-15 · Muehlbach Gang** (22 messages): birthday wishes in the group, lots of emojis.
+- **2025-11-17 · Ahornweg 7 neighbours** (28 messages): parcel for flat 4 left with Henrik.
+- **2025-11-17 · Muehlbach Gang** (40 messages): Henrik recommends a series, two have already watched it.
+- **2025-11-17 · Muehlbach Gang** (45 messages): Henrik recommends a series, two have already watched it.
+- **2025-11-17 · Ahornweg 7 neighbours** (9 messages): parcel for flat 4 left with Henrik.
+- **2025-11-19 · Ahornweg 7 neighbours** (48 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2025-11-19 · Parents 4b** (6 messages): parents' evening minutes shared as PDF.
+- **2025-11-20 · Handball U16** (19 messages): please bring washed jerseys to the next game.
+- **2025-11-20 · Handball U16** (42 messages): coach shares the gym schedule for the month.
+- **2025-11-23 · Muehlbach Gang** (44 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2025-11-23 · Parents 4b** (7 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2025-11-23 · Parents 4b** (4 messages): question whether PE is outside tomorrow.
+- **2025-11-25 · Ahornweg 7 neighbours** (21 messages): stairwell cleaning this week by flat 2.
+- **2025-11-25 · Handball U16** (20 messages): coach shares the gym schedule for the month.
+- **2025-11-25 · Handball U16** (58 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2025-11-26 · Handball U16** (60 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2025-11-26 · Ahornweg 7 neighbours** (50 messages): who left the pram in the hallway?.
+- **2025-11-27 · Parents 4b** (48 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2025-11-27 · Parents 4b** (19 messages): parents' evening minutes shared as PDF.
+- **2025-11-27 · Handball U16** (57 messages): Wednesday practice cancelled, gym booked.
+- **2025-11-28 · Ahornweg 7 neighbours** (22 messages): stairwell cleaning this week by flat 2.
+
+## 2025-12
+
+- **2025-12-01 · Parents 4b** (11 messages): head lice notice from the parallel class, please check.
+- **2025-12-02 · Ahornweg 7 neighbours** (21 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2025-12-02 · Parents 4b** (48 messages): question whether PE is outside tomorrow.
+- **2025-12-03 · Ahornweg 7 neighbours** (12 messages): water shut-off announced for Thursday 9–11.
+- **2025-12-04 · Handball U16** (25 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2025-12-04 · Parents 4b** (34 messages): question whether PE is outside tomorrow.
+- **2025-12-05 · Parents 4b** (25 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2025-12-06 · Handball U16** (36 messages): coach shares the gym schedule for the month.
+- **2025-12-06 · Handball U16** (49 messages): please bring washed jerseys to the next game.
+- **2025-12-07 · Muehlbach Gang** (3 messages): birthday wishes in the group, lots of emojis.
+- **2025-12-07 · Ahornweg 7 neighbours** (6 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2025-12-08 · Ahornweg 7 neighbours** (30 messages): stairwell cleaning this week by flat 2.
+- **2025-12-08 · Parents 4b** (38 messages): parents' evening minutes shared as PDF.
+- **2025-12-09 · Parents 4b** (56 messages): parents' evening minutes shared as PDF.
+- **2025-12-09 · Handball U16** (9 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2025-12-10 · Muehlbach Gang** (3 messages): birthday wishes in the group, lots of emojis.
+- **2025-12-10 · Parents 4b** (39 messages): head lice notice from the parallel class, please check.
+- **2025-12-10 · Parents 4b** (23 messages): question whether PE is outside tomorrow.
+- **2025-12-11 · Parents 4b** (47 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2025-12-13 · Handball U16** (40 messages): Wednesday practice cancelled, gym booked.
+- **2025-12-15 · Parents 4b** (42 messages): head lice notice from the parallel class, please check.
+- **2025-12-15 · Parents 4b** (20 messages): head lice notice from the parallel class, please check.
+- **2025-12-16 · Ahornweg 7 neighbours** (19 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2025-12-17 · Handball U16** (15 messages): Wednesday practice cancelled, gym booked.
+- **2025-12-17 · Parents 4b** (55 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2025-12-17 · Handball U16** (59 messages): vote on the team's Christmas party.
+- **2025-12-18 · Ahornweg 7 neighbours** (21 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2025-12-18 · Muehlbach Gang** (28 messages): Henrik recommends a series, two have already watched it.
+- **2025-12-20 · Muehlbach Gang** (13 messages): Björn shares a photo of the old schoolyard, everyone reminisces.
+- **2025-12-21 · Muehlbach Gang** (7 messages): Henrik recommends a series, two have already watched it.
+- **2025-12-21 · Ahornweg 7 neighbours** (53 messages): water shut-off announced for Thursday 9–11.
+- **2025-12-22 · Ahornweg 7 neighbours** (37 messages): stairwell cleaning this week by flat 2.
+- **2025-12-22 · Parents 4b** (56 messages): hiking day postponed because of rain.
+- **2025-12-23 · Handball U16** (15 messages): coach shares the gym schedule for the month.
+- **2025-12-24 · Handball U16** (49 messages): vote on the team's Christmas party.
+- **2025-12-24 · Ahornweg 7 neighbours** (46 messages): water shut-off announced for Thursday 9–11.
+- **2025-12-25 · Muehlbach Gang** (47 messages): Björn shares a photo of the old schoolyard, everyone reminisces.
+- **2025-12-27 · Parents 4b** (24 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2025-12-27 · Ahornweg 7 neighbours** (48 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2025-12-27 · Parents 4b** (39 messages): hiking day postponed because of rain.
+
+## 2026-01
+
+- **2026-01-01 · Handball U16** (8 messages): vote on the team's Christmas party.
+- **2026-01-05 · Handball U16** (36 messages): Wednesday practice cancelled, gym booked.
+- **2026-01-05 · Ahornweg 7 neighbours** (16 messages): water shut-off announced for Thursday 9–11.
+- **2026-01-05 · Ahornweg 7 neighbours** (39 messages): water shut-off announced for Thursday 9–11.
+- **2026-01-05 · Muehlbach Gang** (51 messages): birthday wishes in the group, lots of emojis.
+- **2026-01-06 · Parents 4b** (43 messages): head lice notice from the parallel class, please check.
+- **2026-01-07 · Handball U16** (7 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-01-08 · Ahornweg 7 neighbours** (53 messages): who left the pram in the hallway?.
+- **2026-01-08 · Handball U16** (51 messages): please bring washed jerseys to the next game.
+- **2026-01-08 · Muehlbach Gang** (58 messages): Henrik asks who is coming to the barbecue on Saturday; four yes.
+- **2026-01-09 · Muehlbach Gang** (46 messages): discussion about the last football match, no agreement.
+- **2026-01-09 · Handball U16** (16 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-01-11 · Handball U16** (34 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-01-11 · Muehlbach Gang** (38 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-01-11 · Parents 4b** (39 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-01-11 · Handball U16** (29 messages): Wednesday practice cancelled, gym booked.
+- **2026-01-12 · Ahornweg 7 neighbours** (31 messages): stairwell cleaning this week by flat 2.
+- **2026-01-13 · Ahornweg 7 neighbours** (46 messages): note: bins are emptied tomorrow morning.
+- **2026-01-13 · Parents 4b** (28 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-01-13 · Handball U16** (8 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-01-16 · Parents 4b** (60 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-01-16 · Parents 4b** (47 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-01-16 · Handball U16** (39 messages): Wednesday practice cancelled, gym booked.
+- **2026-01-16 · Ahornweg 7 neighbours** (18 messages): who left the pram in the hallway?.
+- **2026-01-17 · Parents 4b** (54 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-01-17 · Ahornweg 7 neighbours** (22 messages): parcel for flat 4 left with Henrik.
+- **2026-01-20 · Handball U16** (54 messages): Wednesday practice cancelled, gym booked.
+- **2026-01-20 · Handball U16** (7 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-01-21 · Parents 4b** (25 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-01-22 · Handball U16** (45 messages): vote on the team's Christmas party.
+- **2026-01-22 · Parents 4b** (20 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-01-22 · Handball U16** (37 messages): vote on the team's Christmas party.
+- **2026-01-24 · Muehlbach Gang** (10 messages): scheduling the next get-together, still open.
+- **2026-01-25 · Parents 4b** (54 messages): parents' evening minutes shared as PDF.
+- **2026-01-25 · Handball U16** (49 messages): Wednesday practice cancelled, gym booked.
+- **2026-01-25 · Handball U16** (11 messages): coach shares the gym schedule for the month.
+- **2026-01-25 · Muehlbach Gang** (31 messages): Björn shares a photo of the old schoolyard, everyone reminisces.
+- **2026-01-26 · Handball U16** (27 messages): please bring washed jerseys to the next game.
+- **2026-01-27 · Handball U16** (23 messages): Wednesday practice cancelled, gym booked.
+- **2026-01-27 · Ahornweg 7 neighbours** (39 messages): parcel for flat 4 left with Henrik.
+
+## 2026-02
+
+- **2026-02-01 · Muehlbach Gang** (22 messages): discussion about the last football match, no agreement.
+- **2026-02-01 · Parents 4b** (54 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-02-02 · Handball U16** (51 messages): Wednesday practice cancelled, gym booked.
+- **2026-02-03 · Ahornweg 7 neighbours** (3 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-02-03 · Muehlbach Gang** (42 messages): discussion about the last football match, no agreement.
+- **2026-02-04 · Muehlbach Gang** (58 messages): Henrik recommends a series, two have already watched it.
+- **2026-02-07 · Parents 4b** (30 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-02-08 · Muehlbach Gang** (34 messages): Henrik recommends a series, two have already watched it.
+- **2026-02-09 · Parents 4b** (45 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-02-09 · Handball U16** (35 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-02-10 · Parents 4b** (28 messages): question whether PE is outside tomorrow.
+- **2026-02-12 · Handball U16** (28 messages): Wednesday practice cancelled, gym booked.
+- **2026-02-14 · Parents 4b** (33 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-02-14 · Muehlbach Gang** (16 messages): Henrik asks who is coming to the barbecue on Saturday; four yes.
+- **2026-02-14 · Handball U16** (48 messages): please bring washed jerseys to the next game.
+- **2026-02-15 · Muehlbach Gang** (38 messages): Björn shares a photo of the old schoolyard, everyone reminisces.
+- **2026-02-15 · Muehlbach Gang** (46 messages): Henrik recommends a series, two have already watched it.
+- **2026-02-16 · Handball U16** (49 messages): Wednesday practice cancelled, gym booked.
+- **2026-02-17 · Ahornweg 7 neighbours** (5 messages): water shut-off announced for Thursday 9–11.
+- **2026-02-18 · Ahornweg 7 neighbours** (5 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-02-18 · Parents 4b** (42 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-02-19 · Ahornweg 7 neighbours** (7 messages): parcel for flat 4 left with Henrik.
+- **2026-02-19 · Handball U16** (9 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-02-19 · Ahornweg 7 neighbours** (33 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-02-20 · Muehlbach Gang** (36 messages): discussion about the last football match, no agreement.
+- **2026-02-20 · Ahornweg 7 neighbours** (9 messages): note: bins are emptied tomorrow morning.
+- **2026-02-20 · Parents 4b** (40 messages): hiking day postponed because of rain.
+- **2026-02-21 · Ahornweg 7 neighbours** (12 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-02-21 · Handball U16** (14 messages): vote on the team's Christmas party.
+- **2026-02-22 · Ahornweg 7 neighbours** (60 messages): parcel for flat 4 left with Henrik.
+- **2026-02-23 · Muehlbach Gang** (42 messages): Henrik asks who is coming to the barbecue on Saturday; four yes.
+- **2026-02-24 · Handball U16** (44 messages): coach shares the gym schedule for the month.
+- **2026-02-24 · Muehlbach Gang** (42 messages): Henrik asks who is coming to the barbecue on Saturday; four yes.
+- **2026-02-25 · Handball U16** (13 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-02-25 · Parents 4b** (19 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-02-26 · Parents 4b** (56 messages): parents' evening minutes shared as PDF.
+- **2026-02-28 · Parents 4b** (44 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-02-28 · Parents 4b** (42 messages): hiking day postponed because of rain.
+- **2026-02-28 · Ahornweg 7 neighbours** (50 messages): note: bins are emptied tomorrow morning.
+- **2026-02-28 · Muehlbach Gang** (15 messages): birthday wishes in the group, lots of emojis.
+
+## 2026-03
+
+- **2026-03-01 · Parents 4b** (15 messages): question whether PE is outside tomorrow.
+- **2026-03-01 · Handball U16** (42 messages): vote on the team's Christmas party.
+- **2026-03-02 · Parents 4b** (15 messages): hiking day postponed because of rain.
+- **2026-03-03 · Handball U16** (29 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-03-05 · Parents 4b** (30 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-03-05 · Parents 4b** (13 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-03-05 · Ahornweg 7 neighbours** (55 messages): who left the pram in the hallway?.
+- **2026-03-06 · Handball U16** (39 messages): Wednesday practice cancelled, gym booked.
+- **2026-03-06 · Ahornweg 7 neighbours** (43 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-03-06 · Parents 4b** (58 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-03-06 · Handball U16** (57 messages): coach shares the gym schedule for the month.
+- **2026-03-06 · Parents 4b** (50 messages): hiking day postponed because of rain.
+- **2026-03-07 · Handball U16** (42 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-03-08 · Handball U16** (28 messages): coach shares the gym schedule for the month.
+- **2026-03-08 · Ahornweg 7 neighbours** (41 messages): parcel for flat 4 left with Henrik.
+- **2026-03-09 · Muehlbach Gang** (51 messages): discussion about the last football match, no agreement.
+- **2026-03-10 · Ahornweg 7 neighbours** (12 messages): stairwell cleaning this week by flat 2.
+- **2026-03-11 · Ahornweg 7 neighbours** (47 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-03-12 · Parents 4b** (9 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-03-13 · Handball U16** (35 messages): coach shares the gym schedule for the month.
+- **2026-03-14 · Handball U16** (38 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-03-15 · Handball U16** (17 messages): please bring washed jerseys to the next game.
+- **2026-03-15 · Ahornweg 7 neighbours** (28 messages): stairwell cleaning this week by flat 2.
+- **2026-03-15 · Muehlbach Gang** (33 messages): discussion about the last football match, no agreement.
+- **2026-03-15 · Muehlbach Gang** (9 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-03-16 · Handball U16** (43 messages): coach shares the gym schedule for the month.
+- **2026-03-17 · Handball U16** (60 messages): Wednesday practice cancelled, gym booked.
+- **2026-03-17 · Parents 4b** (27 messages): hiking day postponed because of rain.
+- **2026-03-17 · Handball U16** (41 messages): please bring washed jerseys to the next game.
+- **2026-03-18 · Handball U16** (47 messages): vote on the team's Christmas party.
+- **2026-03-19 · Ahornweg 7 neighbours** (36 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-03-20 · Parents 4b** (47 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-03-21 · Ahornweg 7 neighbours** (26 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-03-21 · Parents 4b** (38 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-03-21 · Ahornweg 7 neighbours** (10 messages): who left the pram in the hallway?.
+- **2026-03-23 · Parents 4b** (7 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-03-24 · Handball U16** (57 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-03-25 · Handball U16** (59 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-03-26 · Ahornweg 7 neighbours** (17 messages): stairwell cleaning this week by flat 2.
+- **2026-03-27 · Muehlbach Gang** (60 messages): Björn shares a photo of the old schoolyard, everyone reminisces.
+
+## 2026-04
+
+- **2026-04-01 · Handball U16** (56 messages): vote on the team's Christmas party.
+- **2026-04-02 · Parents 4b** (8 messages): question whether PE is outside tomorrow.
+- **2026-04-02 · Ahornweg 7 neighbours** (8 messages): stairwell cleaning this week by flat 2.
+- **2026-04-02 · Muehlbach Gang** (43 messages): birthday wishes in the group, lots of emojis.
+- **2026-04-05 · Handball U16** (26 messages): Wednesday practice cancelled, gym booked.
+- **2026-04-05 · Ahornweg 7 neighbours** (10 messages): water shut-off announced for Thursday 9–11.
+- **2026-04-05 · Ahornweg 7 neighbours** (45 messages): water shut-off announced for Thursday 9–11.
+- **2026-04-06 · Ahornweg 7 neighbours** (41 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-04-07 · Handball U16** (37 messages): coach shares the gym schedule for the month.
+- **2026-04-08 · Handball U16** (3 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-04-08 · Handball U16** (37 messages): coach shares the gym schedule for the month.
+- **2026-04-09 · Ahornweg 7 neighbours** (31 messages): who left the pram in the hallway?.
+- **2026-04-09 · Parents 4b** (19 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-04-09 · Parents 4b** (42 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-04-10 · Ahornweg 7 neighbours** (60 messages): note: bins are emptied tomorrow morning.
+- **2026-04-11 · Muehlbach Gang** (60 messages): birthday wishes in the group, lots of emojis.
+- **2026-04-11 · Ahornweg 7 neighbours** (59 messages): water shut-off announced for Thursday 9–11.
+- **2026-04-12 · Parents 4b** (39 messages): head lice notice from the parallel class, please check.
+- **2026-04-14 · Muehlbach Gang** (4 messages): scheduling the next get-together, still open.
+- **2026-04-15 · Parents 4b** (8 messages): hiking day postponed because of rain.
+- **2026-04-15 · Handball U16** (30 messages): coach shares the gym schedule for the month.
+- **2026-04-15 · Muehlbach Gang** (41 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-04-15 · Parents 4b** (59 messages): parents' evening minutes shared as PDF.
+- **2026-04-17 · Parents 4b** (58 messages): question whether PE is outside tomorrow.
+- **2026-04-17 · Muehlbach Gang** (17 messages): Henrik recommends a series, two have already watched it.
+- **2026-04-17 · Parents 4b** (35 messages): hiking day postponed because of rain.
+- **2026-04-18 · Ahornweg 7 neighbours** (51 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-04-19 · Muehlbach Gang** (15 messages): Henrik recommends a series, two have already watched it.
+- **2026-04-19 · Ahornweg 7 neighbours** (42 messages): who left the pram in the hallway?.
+- **2026-04-20 · Parents 4b** (11 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-04-21 · Ahornweg 7 neighbours** (10 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-04-23 · Muehlbach Gang** (32 messages): Björn shares a photo of the old schoolyard, everyone reminisces.
+- **2026-04-24 · Muehlbach Gang** (30 messages): scheduling the next get-together, still open.
+- **2026-04-25 · Muehlbach Gang** (4 messages): Henrik asks who is coming to the barbecue on Saturday; four yes.
+- **2026-04-25 · Muehlbach Gang** (17 messages): scheduling the next get-together, still open.
+- **2026-04-25 · Ahornweg 7 neighbours** (45 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-04-26 · Muehlbach Gang** (60 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-04-26 · Parents 4b** (60 messages): hiking day postponed because of rain.
+- **2026-04-27 · Ahornweg 7 neighbours** (52 messages): stairwell cleaning this week by flat 2.
+- **2026-04-28 · Handball U16** (37 messages): Wednesday practice cancelled, gym booked.
+
+## 2026-05
+
+- **2026-05-01 · Parents 4b** (41 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-05-02 · Handball U16** (51 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-05-03 · Handball U16** (45 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-05-04 · Ahornweg 7 neighbours** (12 messages): water shut-off announced for Thursday 9–11.
+- **2026-05-05 · Ahornweg 7 neighbours** (41 messages): stairwell cleaning this week by flat 2.
+- **2026-05-06 · Muehlbach Gang** (17 messages): discussion about the last football match, no agreement.
+- **2026-05-06 · Muehlbach Gang** (16 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-05-07 · Parents 4b** (4 messages): question whether PE is outside tomorrow.
+- **2026-05-08 · Ahornweg 7 neighbours** (39 messages): note: bins are emptied tomorrow morning.
+- **2026-05-09 · Parents 4b** (8 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-05-09 · Ahornweg 7 neighbours** (51 messages): water shut-off announced for Thursday 9–11.
+- **2026-05-09 · Parents 4b** (7 messages): head lice notice from the parallel class, please check.
+- **2026-05-09 · Parents 4b** (14 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-05-11 · Muehlbach Gang** (43 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-05-13 · Ahornweg 7 neighbours** (27 messages): who left the pram in the hallway?.
+- **2026-05-14 · Ahornweg 7 neighbours** (36 messages): who left the pram in the hallway?.
+- **2026-05-14 · Muehlbach Gang** (13 messages): discussion about the last football match, no agreement.
+- **2026-05-15 · Muehlbach Gang** (51 messages): Henrik recommends a series, two have already watched it.
+- **2026-05-16 · Handball U16** (6 messages): Wednesday practice cancelled, gym booked.
+- **2026-05-18 · Ahornweg 7 neighbours** (16 messages): water shut-off announced for Thursday 9–11.
+- **2026-05-18 · Muehlbach Gang** (31 messages): scheduling the next get-together, still open.
+- **2026-05-18 · Ahornweg 7 neighbours** (6 messages): water shut-off announced for Thursday 9–11.
+- **2026-05-18 · Parents 4b** (23 messages): parents' evening minutes shared as PDF.
+- **2026-05-18 · Handball U16** (20 messages): please bring washed jerseys to the next game.
+- **2026-05-19 · Muehlbach Gang** (14 messages): Henrik asks who is coming to the barbecue on Saturday; four yes.
+- **2026-05-19 · Handball U16** (52 messages): please bring washed jerseys to the next game.
+- **2026-05-19 · Parents 4b** (11 messages): question whether PE is outside tomorrow.
+- **2026-05-19 · Parents 4b** (26 messages): parents' evening minutes shared as PDF.
+- **2026-05-19 · Parents 4b** (15 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-05-21 · Muehlbach Gang** (60 messages): scheduling the next get-together, still open.
+- **2026-05-21 · Ahornweg 7 neighbours** (45 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-05-22 · Handball U16** (26 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-05-22 · Muehlbach Gang** (9 messages): Björn shares a photo of the old schoolyard, everyone reminisces.
+- **2026-05-23 · Ahornweg 7 neighbours** (19 messages): water shut-off announced for Thursday 9–11.
+- **2026-05-23 · Ahornweg 7 neighbours** (58 messages): note: bins are emptied tomorrow morning.
+- **2026-05-23 · Parents 4b** (25 messages): head lice notice from the parallel class, please check.
+- **2026-05-24 · Ahornweg 7 neighbours** (47 messages): who left the pram in the hallway?.
+- **2026-05-26 · Parents 4b** (5 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-05-26 · Muehlbach Gang** (6 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-05-27 · Handball U16** (56 messages): coach shares the gym schedule for the month.
+
+## 2026-06
+
+- **2026-06-02 · Muehlbach Gang** (52 messages): birthday wishes in the group, lots of emojis.
+- **2026-06-02 · Handball U16** (15 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-06-02 · Parents 4b** (52 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-06-05 · Muehlbach Gang** (5 messages): discussion about the last football match, no agreement.
+- **2026-06-06 · Handball U16** (53 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-06-06 · Handball U16** (17 messages): coach shares the gym schedule for the month.
+- **2026-06-07 · Parents 4b** (16 messages): hiking day postponed because of rain.
+- **2026-06-07 · Muehlbach Gang** (7 messages): scheduling the next get-together, still open.
+- **2026-06-09 · Handball U16** (13 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-06-09 · Ahornweg 7 neighbours** (35 messages): stairwell cleaning this week by flat 2.
+- **2026-06-12 · Parents 4b** (4 messages): hiking day postponed because of rain.
+- **2026-06-12 · Handball U16** (4 messages): vote on the team's Christmas party.
+- **2026-06-13 · Handball U16** (33 messages): vote on the team's Christmas party.
+- **2026-06-13 · Handball U16** (57 messages): vote on the team's Christmas party.
+- **2026-06-15 · Handball U16** (59 messages): Wednesday practice cancelled, gym booked.
+- **2026-06-16 · Muehlbach Gang** (55 messages): discussion about the last football match, no agreement.
+- **2026-06-17 · Handball U16** (37 messages): vote on the team's Christmas party.
+- **2026-06-17 · Handball U16** (50 messages): coach shares the gym schedule for the month.
+- **2026-06-18 · Parents 4b** (31 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-06-18 · Handball U16** (33 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-06-18 · Ahornweg 7 neighbours** (55 messages): parcel for flat 4 left with Henrik.
+- **2026-06-18 · Muehlbach Gang** (45 messages): Björn shares a photo of the old schoolyard, everyone reminisces.
+- **2026-06-19 · Parents 4b** (60 messages): question whether PE is outside tomorrow.
+- **2026-06-19 · Muehlbach Gang** (35 messages): birthday wishes in the group, lots of emojis.
+- **2026-06-19 · Muehlbach Gang** (15 messages): Henrik recommends a series, two have already watched it.
+- **2026-06-20 · Parents 4b** (12 messages): head lice notice from the parallel class, please check.
+- **2026-06-21 · Handball U16** (53 messages): please bring washed jerseys to the next game.
+- **2026-06-21 · Muehlbach Gang** (37 messages): scheduling the next get-together, still open.
+- **2026-06-22 · Parents 4b** (60 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-06-22 · Handball U16** (31 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-06-22 · Parents 4b** (31 messages): head lice notice from the parallel class, please check.
+- **2026-06-23 · Ahornweg 7 neighbours** (17 messages): stairwell cleaning this week by flat 2.
+- **2026-06-23 · Muehlbach Gang** (57 messages): scheduling the next get-together, still open.
+- **2026-06-24 · Muehlbach Gang** (19 messages): scheduling the next get-together, still open.
+- **2026-06-24 · Muehlbach Gang** (7 messages): birthday wishes in the group, lots of emojis.
+- **2026-06-24 · Parents 4b** (23 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-06-24 · Parents 4b** (55 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-06-26 · Muehlbach Gang** (42 messages): birthday wishes in the group, lots of emojis.
+- **2026-06-27 · Muehlbach Gang** (53 messages): Henrik recommends a series, two have already watched it.
+- **2026-06-28 · Ahornweg 7 neighbours** (34 messages): who left the pram in the hallway?.
+
+## 2026-07
+
+- **2026-07-01 · Muehlbach Gang** (48 messages): discussion about the last football match, no agreement.
+- **2026-07-01 · Ahornweg 7 neighbours** (34 messages): water shut-off announced for Thursday 9–11.
+- **2026-07-01 · Muehlbach Gang** (21 messages): Henrik recommends a series, two have already watched it.
+- **2026-07-02 · Handball U16** (33 messages): coach shares the gym schedule for the month.
+- **2026-07-02 · Handball U16** (8 messages): vote on the team's Christmas party.
+- **2026-07-03 · Ahornweg 7 neighbours** (11 messages): stairwell cleaning this week by flat 2.
+- **2026-07-03 · Parents 4b** (39 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-07-06 · Muehlbach Gang** (48 messages): Henrik recommends a series, two have already watched it.
+- **2026-07-07 · Handball U16** (35 messages): please bring washed jerseys to the next game.
+- **2026-07-08 · Ahornweg 7 neighbours** (18 messages): water shut-off announced for Thursday 9–11.
+- **2026-07-09 · Parents 4b** (9 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-07-09 · Ahornweg 7 neighbours** (12 messages): water shut-off announced for Thursday 9–11.
+- **2026-07-10 · Ahornweg 7 neighbours** (57 messages): water shut-off announced for Thursday 9–11.
+- **2026-07-10 · Parents 4b** (23 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-07-11 · Parents 4b** (4 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-07-12 · Parents 4b** (19 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-07-12 · Parents 4b** (24 messages): parents' evening minutes shared as PDF.
+- **2026-07-13 · Parents 4b** (11 messages): hiking day postponed because of rain.
+- **2026-07-14 · Parents 4b** (54 messages): question whether PE is outside tomorrow.
+- **2026-07-14 · Parents 4b** (24 messages): hiking day postponed because of rain.
+- **2026-07-14 · Parents 4b** (3 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-07-15 · Ahornweg 7 neighbours** (52 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-07-15 · Muehlbach Gang** (23 messages): Henrik recommends a series, two have already watched it.
+- **2026-07-15 · Parents 4b** (10 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-07-16 · Handball U16** (14 messages): vote on the team's Christmas party.
+- **2026-07-18 · Handball U16** (39 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-07-19 · Ahornweg 7 neighbours** (5 messages): water shut-off announced for Thursday 9–11.
+- **2026-07-20 · Parents 4b** (3 messages): head lice notice from the parallel class, please check.
+- **2026-07-20 · Handball U16** (51 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-07-21 · Parents 4b** (40 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-07-21 · Ahornweg 7 neighbours** (58 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-07-22 · Muehlbach Gang** (23 messages): Henrik recommends a series, two have already watched it.
+- **2026-07-22 · Muehlbach Gang** (22 messages): Henrik recommends a series, two have already watched it.
+- **2026-07-23 · Handball U16** (35 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-07-25 · Handball U16** (60 messages): please bring washed jerseys to the next game.
+- **2026-07-25 · Handball U16** (35 messages): please bring washed jerseys to the next game.
+- **2026-07-27 · Muehlbach Gang** (7 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-07-27 · Handball U16** (24 messages): coach shares the gym schedule for the month.
+- **2026-07-27 · Muehlbach Gang** (20 messages): birthday wishes in the group, lots of emojis.
+- **2026-07-27 · Handball U16** (14 messages): coach shares the gym schedule for the month.
+
+## 2026-08
+
+- **2026-08-01 · Parents 4b** (3 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-08-01 · Parents 4b** (45 messages): parents' evening minutes shared as PDF.
+- **2026-08-01 · Handball U16** (4 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-08-02 · Handball U16** (36 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-08-04 · Muehlbach Gang** (18 messages): scheduling the next get-together, still open.
+- **2026-08-04 · Parents 4b** (15 messages): question whether PE is outside tomorrow.
+- **2026-08-05 · Muehlbach Gang** (34 messages): scheduling the next get-together, still open.
+- **2026-08-05 · Ahornweg 7 neighbours** (4 messages): parcel for flat 4 left with Henrik.
+- **2026-08-05 · Ahornweg 7 neighbours** (17 messages): water shut-off announced for Thursday 9–11.
+- **2026-08-06 · Handball U16** (35 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-08-07 · Muehlbach Gang** (25 messages): Henrik asks who is coming to the barbecue on Saturday; four yes.
+- **2026-08-07 · Parents 4b** (16 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-08-07 · Parents 4b** (3 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-08-08 · Ahornweg 7 neighbours** (29 messages): water shut-off announced for Thursday 9–11.
+- **2026-08-09 · Muehlbach Gang** (58 messages): scheduling the next get-together, still open.
+- **2026-08-09 · Parents 4b** (33 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-08-10 · Ahornweg 7 neighbours** (14 messages): who left the pram in the hallway?.
+- **2026-08-10 · Muehlbach Gang** (53 messages): birthday wishes in the group, lots of emojis.
+- **2026-08-11 · Parents 4b** (15 messages): question whether PE is outside tomorrow.
+- **2026-08-12 · Ahornweg 7 neighbours** (25 messages): water shut-off announced for Thursday 9–11.
+- **2026-08-13 · Parents 4b** (55 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-08-13 · Ahornweg 7 neighbours** (16 messages): note: bins are emptied tomorrow morning.
+- **2026-08-14 · Muehlbach Gang** (7 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-08-14 · Handball U16** (42 messages): vote on the team's Christmas party.
+- **2026-08-14 · Muehlbach Gang** (41 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-08-15 · Ahornweg 7 neighbours** (33 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-08-16 · Parents 4b** (52 messages): question whether PE is outside tomorrow.
+- **2026-08-17 · Parents 4b** (47 messages): parents' evening minutes shared as PDF.
+- **2026-08-18 · Muehlbach Gang** (35 messages): Henrik asks who is coming to the barbecue on Saturday; four yes.
+- **2026-08-18 · Parents 4b** (41 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-08-18 · Handball U16** (13 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-08-21 · Parents 4b** (23 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-08-21 · Parents 4b** (30 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-08-22 · Handball U16** (56 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-08-22 · Ahornweg 7 neighbours** (16 messages): stairwell cleaning this week by flat 2.
+- **2026-08-24 · Handball U16** (14 messages): coach shares the gym schedule for the month.
+- **2026-08-25 · Ahornweg 7 neighbours** (7 messages): note: bins are emptied tomorrow morning.
+- **2026-08-26 · Muehlbach Gang** (41 messages): discussion about the last football match, no agreement.
+- **2026-08-27 · Parents 4b** (38 messages): parents' evening minutes shared as PDF.
+- **2026-08-28 · Muehlbach Gang** (3 messages): discussion about the last football match, no agreement.
+
+## 2026-09
+
+- **2026-09-01 · Ahornweg 7 neighbours** (46 messages): parcel for flat 4 left with Henrik.
+- **2026-09-01 · Handball U16** (33 messages): Wednesday practice cancelled, gym booked.
+- **2026-09-02 · Muehlbach Gang** (39 messages): Henrik recommends a series, two have already watched it.
+- **2026-09-02 · Muehlbach Gang** (6 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-09-02 · Ahornweg 7 neighbours** (15 messages): stairwell cleaning this week by flat 2.
+- **2026-09-03 · Ahornweg 7 neighbours** (33 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-09-04 · Muehlbach Gang** (30 messages): Henrik recommends a series, two have already watched it.
+- **2026-09-05 · Ahornweg 7 neighbours** (49 messages): stairwell cleaning this week by flat 2.
+- **2026-09-05 · Handball U16** (48 messages): coach shares the gym schedule for the month.
+- **2026-09-06 · Muehlbach Gang** (31 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-09-08 · Ahornweg 7 neighbours** (26 messages): water shut-off announced for Thursday 9–11.
+- **2026-09-11 · Ahornweg 7 neighbours** (18 messages): stairwell cleaning this week by flat 2.
+- **2026-09-12 · Parents 4b** (17 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-09-13 · Handball U16** (5 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-09-14 · Muehlbach Gang** (29 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-09-14 · Handball U16** (25 messages): vote on the team's Christmas party.
+- **2026-09-16 · Ahornweg 7 neighbours** (8 messages): parcel for flat 4 left with Henrik.
+- **2026-09-16 · Parents 4b** (3 messages): head lice notice from the parallel class, please check.
+- **2026-09-16 · Handball U16** (46 messages): vote on the team's Christmas party.
+- **2026-09-17 · Muehlbach Gang** (59 messages): birthday wishes in the group, lots of emojis.
+- **2026-09-17 · Ahornweg 7 neighbours** (12 messages): water shut-off announced for Thursday 9–11.
+- **2026-09-18 · Parents 4b** (33 messages): head lice notice from the parallel class, please check.
+- **2026-09-19 · Handball U16** (22 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-09-19 · Parents 4b** (4 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-09-19 · Handball U16** (14 messages): Wednesday practice cancelled, gym booked.
+- **2026-09-20 · Parents 4b** (40 messages): hiking day postponed because of rain.
+- **2026-09-21 · Handball U16** (4 messages): vote on the team's Christmas party.
+- **2026-09-22 · Parents 4b** (9 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-09-22 · Parents 4b** (43 messages): question whether PE is outside tomorrow.
+- **2026-09-23 · Handball U16** (4 messages): vote on the team's Christmas party.
+- **2026-09-24 · Handball U16** (8 messages): vote on the team's Christmas party.
+- **2026-09-25 · Handball U16** (53 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-09-25 · Parents 4b** (26 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-09-25 · Parents 4b** (20 messages): question whether PE is outside tomorrow.
+- **2026-09-25 · Handball U16** (11 messages): please bring washed jerseys to the next game.
+- **2026-09-25 · Ahornweg 7 neighbours** (15 messages): front door doesn't close properly, Hausverwaltung Lenz informed.
+- **2026-09-25 · Handball U16** (56 messages): Wednesday practice cancelled, gym booked.
+- **2026-09-27 · Muehlbach Gang** (26 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-09-28 · Parents 4b** (39 messages): question whether PE is outside tomorrow.
+- **2026-09-28 · Muehlbach Gang** (60 messages): discussion about the last football match, no agreement.
+
+## 2026-10
+
+- **2026-10-02 · Muehlbach Gang** (48 messages): Henrik asks who is coming to the barbecue on Saturday; four yes.
+- **2026-10-03 · Muehlbach Gang** (6 messages): Henrik recommends a series, two have already watched it.
+- **2026-10-03 · Muehlbach Gang** (26 messages): Henrik recommends a series, two have already watched it.
+- **2026-10-04 · Muehlbach Gang** (29 messages): Björn shares a photo of the old schoolyard, everyone reminisces.
+- **2026-10-05 · Parents 4b** (51 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-10-05 · Parents 4b** (41 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-10-06 · Handball U16** (34 messages): vote on the team's Christmas party.
+- **2026-10-06 · Ahornweg 7 neighbours** (10 messages): parcel for flat 4 left with Henrik.
+- **2026-10-06 · Handball U16** (33 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-10-08 · Ahornweg 7 neighbours** (4 messages): who left the pram in the hallway?.
+- **2026-10-08 · Handball U16** (36 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-10-10 · Parents 4b** (11 messages): collection for the trainee teacher's farewell gift, 5 € per child.
+- **2026-10-11 · Parents 4b** (53 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-10-11 · Parents 4b** (39 messages): question whether PE is outside tomorrow.
+- **2026-10-11 · Handball U16** (12 messages): Wednesday practice cancelled, gym booked.
+- **2026-10-12 · Handball U16** (39 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-10-12 · Ahornweg 7 neighbours** (3 messages): stairwell cleaning this week by flat 2.
+- **2026-10-14 · Handball U16** (28 messages): please bring washed jerseys to the next game.
+- **2026-10-14 · Parents 4b** (49 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-10-14 · Muehlbach Gang** (16 messages): discussion about the last football match, no agreement.
+- **2026-10-14 · Muehlbach Gang** (22 messages): Henrik asks who is coming to the barbecue on Saturday; four yes.
+- **2026-10-15 · Muehlbach Gang** (28 messages): Björn sends a meme about Mondays, Jürgen reacts with 😂.
+- **2026-10-16 · Parents 4b** (22 messages): parents' evening minutes shared as PDF.
+- **2026-10-16 · Muehlbach Gang** (3 messages): Henrik recommends a series, two have already watched it.
+- **2026-10-17 · Handball U16** (47 messages): please bring washed jerseys to the next game.
+- **2026-10-17 · Ahornweg 7 neighbours** (7 messages): water shut-off announced for Thursday 9–11.
+- **2026-10-17 · Ahornweg 7 neighbours** (23 messages): parcel for flat 4 left with Henrik.
+- **2026-10-17 · Handball U16** (29 messages): vote on the team's Christmas party.
+- **2026-10-17 · Handball U16** (22 messages): please bring washed jerseys to the next game.
+- **2026-10-18 · Ahornweg 7 neighbours** (54 messages): water shut-off announced for Thursday 9–11.
+- **2026-10-18 · Handball U16** (34 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-10-18 · Handball U16** (12 messages): carpool for the away game wanted, Jürgen offers two seats.
+- **2026-10-20 · Handball U16** (15 messages): vote on the team's Christmas party.
+- **2026-10-20 · Parents 4b** (26 messages): reminder: label lunch boxes, the lost-and-found box is overflowing.
+- **2026-10-25 · Ahornweg 7 neighbours** (28 messages): stairwell cleaning this week by flat 2.
+- **2026-10-26 · Handball U16** (38 messages): vote on the team's Christmas party.
+- **2026-10-26 · Handball U16** (58 messages): weekend result: narrow win, Fritzi scored three goals.
+- **2026-10-27 · Ahornweg 7 neighbours** (17 messages): water shut-off announced for Thursday 9–11.
+- **2026-10-28 · Parents 4b** (24 messages): Katrin asks for volunteers for the school fair cake buffet.
+- **2026-10-28 · Muehlbach Gang** (20 messages): discussion about the last football match, no agreement.
