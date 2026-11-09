@@ -15,6 +15,7 @@ eval/
     en/              # the same workspace in English, natural English slugs
   cases.yml          # the search cases, each bilingual
   GenerateNoise.ts   # deterministic generator for the large noise files
+  GenerateCrowd.ts   # deterministic generator for the crowd
   ValidateCases.ts   # structural check of cases.yml (ids, categories, paths, grades)
 ```
 
@@ -29,6 +30,14 @@ npx tsx plugins/memory/eval/GenerateNoise.ts
 ```
 
 The output is deterministic (seeded PRNG) and committed, so results stay comparable. Do not edit the generated files by hand; change the script instead.
+
+The **crowd** — 200 people and 100 threads per language around the persona's wider circle, with deliberately confusable names (several Tobias, Mara/Maria/Marah, surnames like Hartmann, Lindquist, Ostermeier one to three edits away from persona surnames) — is generated too, so a misspelled or ambiguous name has to beat realistic competition instead of winning by being the only person file. Regenerate it with:
+
+```bash
+npx tsx plugins/memory/eval/GenerateCrowd.ts
+```
+
+It writes `corpus/<lang>/.crowd-manifest.json`; a rerun deletes exactly the files listed there and refuses to overwrite anything else. Before writing, it throws if any generated text contains a persona name or proper noun, a negative-case term, a topic a positive case asks about, or a date used in `cases.yml` / `persona.md`. Crowd files are never expected results: every case's relevance maps point at hand-written files only. Do not edit crowd files by hand; change the script.
 
 ## Case format
 
@@ -128,3 +137,4 @@ The scenarios reproduce problem patterns observed in the search logs of a real a
 - **Both languages in sync.** Every corpus change is made in `corpus/de/` and `corpus/en/`; every case has both queries and both relevance maps.
 - **Mind the traps.** Some names and words must appear only in specific files or nowhere (see `persona.md`, e.g. "Leo", "Tom"). Check with `grep` after editing.
 - **Noise via the script.** Change `GenerateNoise.ts` and rerun it instead of editing generated files; buried facts must stay unique (one occurrence per language).
+- **Crowd via the script.** When a new case introduces a name, a proper noun or a topic, add its distinctive words to `FORBIDDEN_TERMS` in `GenerateCrowd.ts` and rerun it, so no crowd file accidentally answers the case.

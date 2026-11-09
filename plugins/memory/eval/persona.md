@@ -169,3 +169,13 @@ Identical in both languages unless the content is prose (then translated):
 - **Summer holiday care**: town holiday programme 2026-07-20 – 08-07, family holiday on the Baltic coast 2026-08-10 – 08-21.
 - **Optician**: Jürgen's varifocals 690 € picked up 2026-03-21; Fritzi's daily lenses subscription 24 €/month from 2026-10-03.
 - **Journal**: 2026-05-14 first swim at the Kaltenbach quarry lake (Baggersee); 2026-05-21 Fritzi handball away win in Lauterbrunn; 2026-06-20 tournament, Fritzi's team second, classmate Leo.
+
+## Crowd (generated)
+
+`GenerateCrowd.ts` adds 200 people and 100 threads per language (listed in `corpus/<lang>/.crowd-manifest.json`) — Jürgen's wider circle in Kaltenbach and the fictional neighbouring towns Eschenrode, Hollerbach, Wiesenfeld, Oberweiler and Rotenfels:
+
+- **People:** staff of client companies (Brightline GmbH, Thermo-Tech AG, Nordbau GmbH, Datenhafen GmbH, …), parents from Grundschule Hollerbach / Realschule Eschenrode / Gesamtschule Wiesenfeld and from TV Eschenrode handball, neighbours (Kastanienweg, Gartenstraße, Mühlbacher Weg, …), craftspeople, therapists (no GP, dentist or eye doctor), founders (Feldfunk, Lernlicht, …), developers (Linux user group Wiesenfeld), former colleagues and association members.
+- **Confusable on purpose:** first-name clusters (Tobias ×8, Mara/Maria/Marah, Katrin/Kathrin, Sven, Björn, Paul, Inês/Inge/Iris) and surnames close to persona surnames (Hartmann, Hartwig, Harting, Hartlieb; Lindquist, Lindholm, Lindberg, Lindemann; Osterkamp, Ostermeier, Osterloh, Ostmann; Szymczak, Szymańska; Ziegenhagen, Ziegenhorn, Ziegler; Brünning, Brüning, Brünner; Größner, Grössing, Grosser; Wendland, Wendel, Wendtner; Reutter; Sommerfeld; Pohlmeier; Nowacki; Kranzler; Pfaffinger).
+- **Threads:** other clients' projects, associations, neighbours' renovations, household contracts and insurances, local events and groups, orders and parcels — never the persona's family, cars, flats, inheritance, health, tax or projects.
+- **Never in the crowd:** any persona person or proper noun, any negative-case term, the topics positive cases ask about, and every date used in `cases.yml` or this file. The generator enforces this and throws on a violation.
+
