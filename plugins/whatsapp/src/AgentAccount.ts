@@ -1,4 +1,7 @@
-import { transcribeAudio } from "@getfamiliar/plugin-transcribe-whisper";
+import {
+    formatTranscribedVoiceMessage,
+    transcribeAudio,
+} from "@getfamiliar/plugin-transcribe-whisper";
 import {
     type ChatUnsubscribe,
     type EmitHandle,
@@ -212,7 +215,7 @@ async function handleAgentMessage(
             );
             return;
         }
-        void emitAgentChatEvent(em, `[Transcribed voice message]\n${transcript}`, {
+        void emitAgentChatEvent(em, formatTranscribedVoiceMessage(transcript), {
             voice: {
                 duration: audio.seconds ?? null,
                 mime_type: audio.mimetype ?? null,

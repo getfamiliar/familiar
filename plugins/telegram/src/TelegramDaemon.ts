@@ -1,4 +1,7 @@
-import { transcribeAudio } from "@getfamiliar/plugin-transcribe-whisper";
+import {
+    formatTranscribedVoiceMessage,
+    transcribeAudio,
+} from "@getfamiliar/plugin-transcribe-whisper";
 import { type EmitHandle, EVENT_PRIORITY, type HostContext } from "@getfamiliar/shared";
 import { Bot, type Context, GrammyError, HttpError } from "grammy";
 import telegramifyMarkdown from "telegramify-markdown";
@@ -201,7 +204,7 @@ export async function startTelegramDaemon(ctx: HostContext): Promise<void> {
             await gctx.reply("Your voice message transcribed to nothing — was it silent?");
             return;
         }
-        void emitChatEvent(em, gctx, `[Transcribed voice message]\n${transcript}`, {
+        void emitChatEvent(em, gctx, formatTranscribedVoiceMessage(transcript), {
             voice: {
                 duration: voice.duration,
                 file_id: voice.file_id,

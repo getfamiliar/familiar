@@ -18,6 +18,7 @@ const OPENAI_API_KEY_CONFIG = "inference.apiKeys.openai";
  * never see Whisper's auth — the plugin owns its own key, populated
  * here in `start(ctx)`.
  */
+export { formatTranscribedVoiceMessage, TRANSCRIPTION_HINT } from "./TranscribedMessage.js";
 export { transcribeAudio } from "./Whisper.js";
 
 /**
