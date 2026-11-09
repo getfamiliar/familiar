@@ -1,4 +1,4 @@
-import { AvatarSvg } from "@getfamiliar/avatar";
+import { Avatar } from "@getfamiliar/avatar";
 import type { WebAssistantIdentity, WebAuthPageView } from "@getfamiliar/shared";
 import { cn } from "cn";
 import type * as React from "react";
@@ -38,7 +38,7 @@ export function AuthPage({
                         </CardContent>
                     </Card>
                     <FieldDescription className="px-6 text-center">
-                        {assistantName} — your personal AI assistant.
+                        {assistantName} powered by Familiar — your personal AI assistant.
                     </FieldDescription>
                 </div>
             </div>
@@ -212,23 +212,39 @@ function Command({
 }
 
 /**
+ * Blinking without script: the login pages run under a CSP without
+ * scripts, so `Avatar`'s timer-driven idle (gaze, blinks, brows) never
+ * starts and only its CSS head sway runs. This keyframe blink stands in
+ * for the timer; it targets `Avatar`'s blink group inside the panel only.
+ */
+const STATIC_BLINK_CSS = `
+.auth-avatar .fa-blink { animation: auth-blink 5.7s infinite; }
+@keyframes auth-blink { 0%, 95.5%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+@media (prefers-reduced-motion: reduce) { .auth-avatar .fa-blink { animation: none; } }
+`;
+
+/**
  * Right half of the card (hidden on small screens), in place of the
- * block's placeholder image.
+ * block's placeholder image: the panel takes the avatar's background
+ * color, so the animated avatar stands freely on it, bust resting on the
+ * bottom edge.
  *
  * @param props.assistant The assistant's name and avatar.
  * @returns The decorative panel.
  */
 function BrandPanel({ assistant }: { readonly assistant: WebAssistantIdentity }) {
     return (
-        <div className="relative hidden flex-col items-center justify-center gap-4 bg-primary p-8 text-primary-foreground md:flex">
-            <AvatarSvg
+        <div
+            className="auth-avatar relative hidden min-h-96 overflow-hidden md:block"
+            style={{ backgroundColor: assistant.avatar.backgroundColor }}
+        >
+            <style>{STATIC_BLINK_CSS}</style>
+            <Avatar
                 config={assistant.avatar}
-                className="size-32 rounded-full ring-4 ring-primary-foreground/15"
+                animated
+                title={assistant.name}
+                className="absolute inset-x-0 bottom-0 mx-auto h-[92%] w-auto max-w-full"
             />
-            <div className="text-center">
-                <p className="text-2xl font-semibold tracking-tight">{assistant.name}</p>
-                <p className="text-sm text-primary-foreground/70">Loyal. Local. Markdown.</p>
-            </div>
         </div>
     );
 }
