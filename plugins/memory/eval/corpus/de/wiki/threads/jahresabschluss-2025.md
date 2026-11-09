@@ -1,3 +1,6 @@
+---
+categories: [steuern, arbeit]
+---
 # Jahresabschluss 2025
 
 Jahresabschluss und Steuererklärungen 2025 für [[people/juergen-weiss|Jürgens]] Beratungstätigkeit, betreut von der KRW Partner Steuerberatung.

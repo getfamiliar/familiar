@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Gerd Hesse
 
 Secretary — Oberweiler fruit and garden club.

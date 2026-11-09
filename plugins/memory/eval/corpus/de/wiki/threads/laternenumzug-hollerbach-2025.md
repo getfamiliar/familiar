@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Laternenumzug Hollerbach 2025
 
 Laternenumzug Hollerbach 2025: Organisation und Beteiligte.

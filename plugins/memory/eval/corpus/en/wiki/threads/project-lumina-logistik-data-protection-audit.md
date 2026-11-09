@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Lumina Logistik: Data protection audit
 
 Consulting project for Lumina Logistik: data protection audit.

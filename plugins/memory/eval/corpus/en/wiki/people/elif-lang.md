@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Elif Lang
 
 Founder of Feldfunk (sensors for agriculture), Rotenfels.

@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Hanna Yilmaz
 
 Gründerin von Wolkenwerk (Wetterdaten für Bauprojekte), Rotenfels.

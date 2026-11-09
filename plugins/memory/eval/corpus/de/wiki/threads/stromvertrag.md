@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Stromvertrag
 
 Stromvertrag bei Quellwerk Energie: Konditionen und Schriftverkehr.

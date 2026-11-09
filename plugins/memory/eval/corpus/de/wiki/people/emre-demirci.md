@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Emre Demirci
 
 Vater von Pia (9. Klasse, Grundschule Hollerbach).

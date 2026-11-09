@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Lena Hartmann
 
 Projektleiterin bei Feldmann Maschinenbau in Eschenrode; Kontakt aus einem Beratungsprojekt.

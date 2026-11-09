@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order doormat
 
 Order of a doormat from Kaltenbacher Kaufhaus, shipped by Logistiq.

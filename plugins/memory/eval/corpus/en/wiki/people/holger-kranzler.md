@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Holger Kranzler
 
 Father of Lina (year 5, Hollerbach primary school).

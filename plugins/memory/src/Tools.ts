@@ -1,8 +1,22 @@
 import { createHash } from "node:crypto";
-import { EVENT_PRIORITY, type PluginTool } from "@getfamiliar/shared";
-import type { MemoryConfig } from "./Config.js";
-import type { MemoryStore } from "./MemoryStore.js";
-import { formatHitsFlat } from "./PromptAppender.js";
+import {
+    EVENT_PRIORITY,
+    type HostContext,
+    type PluginTool,
+    runTextTool,
+    ToolError,
+} from "@getfamiliar/shared";
+import { readMemoryConfig } from "./Config.js";
+import { renderDateHits, renderFileHits } from "./SearchRender.js";
+import type { WikiIndex } from "./WikiIndex.js";
+import {
+    type DateQuery,
+    MAX_SEARCH_TERMS,
+    prepareTerms,
+    searchDates,
+    searchFiles,
+    validateDateQuery,
+} from "./WikiSearch.js";
 
 /**
  * The save handler's event topic, emitted as an exact topic so it
@@ -13,61 +27,175 @@ import { formatHitsFlat } from "./PromptAppender.js";
  */
 export const SAVE_TOPIC = "skills:memory:save";
 
-const NOT_READY_MESSAGE =
-    "memory search is temporarily disabled — index still warming up or backend misconfigured";
+/** Description of `memory_search`; also what the eval's LLM stage shows the model. */
+export const SEARCH_TOOL_DESCRIPTION = `Search the long-term memory (every markdown file under \`wiki/\`) for files matching ANY of 1–${MAX_SEARCH_TERMS} terms. Returns a markdown table: path, title, one-line description, categories, which of your terms matched, and the best matching line. Files matching more of your terms come first.
+
+How to search well — the search is literal, not semantic, so YOU do the thinking:
+- Send names exactly as written (\`Tobias Hartl\`), typos are tolerated within about one letter.
+- Add synonyms, related words and the other language yourself: \`["Steuerberater", "Steuerberatung", "tax advisor"]\`.
+- Use the memory categories from the prompt as terms (\`"versicherung"\`) to find files by topic.
+- Prefer several short terms over one long phrase; whole sentences match nothing.
+- No result means the memory knows nothing under those words — try other words once, then say so.
+
+Judge the result yourself: \`Matched\` shows how many of your terms a file contains. A file that only shares a generic word (a first name, "Termin", "invoice") or another topic's word is not about your subject. If no file is actually about it, the memory does not know it — say so instead of citing loosely related files.
+Read a found file with \`fs_read\` before relying on it. For dates use \`memory_datesearch\`.`;
+
+/** Description of `memory_datesearch`; also what the eval's LLM stage shows the model. */
+export const DATE_SEARCH_TOOL_DESCRIPTION = `List every line in the long-term memory (\`wiki/\`) that mentions an ISO date in a range, or on a given day of the year. Returns a markdown table: date, path, the line itself, ordered by date. Month entries (\`2026-07\`) count for every day of that month.
+
+Give either \`from\` + \`to\` (ISO dates, inclusive; one day: from = to) or \`day\` (\`MM-DD\`, e.g. \`07-12\` for every July 12th in any year — birthdays, anniversaries). Convert natural dates yourself ("25. Mai 2026" → from/to \`2026-05-25\`, "Mai 2026" → \`2026-05-01\`…\`2026-05-31\`).`;
+
+/** Arguments of `memory_search`. */
+interface SearchArgs {
+    readonly terms: readonly string[];
+}
+
+/** Arguments of `memory_datesearch`. */
+interface DateSearchArgs {
+    readonly from?: string;
+    readonly to?: string;
+    readonly day?: string;
+}
+
+/** JSON schema of `memory_search`. */
+export const SEARCH_TOOL_SCHEMA = {
+    type: "object",
+    required: ["terms"],
+    additionalProperties: false,
+    properties: {
+        terms: {
+            type: "array",
+            minItems: 1,
+            maxItems: MAX_SEARCH_TERMS,
+            items: { type: "string" },
+            description: `1–${MAX_SEARCH_TERMS} search terms, OR-combined, e.g. ["Alte Mühle", "Hausverkauf", "Makler"].`,
+        },
+    },
+} as const;
+
+/** JSON schema of `memory_datesearch`. */
+export const DATE_SEARCH_TOOL_SCHEMA = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+        from: {
+            type: "string",
+            description: "First day, ISO YYYY-MM-DD, e.g. 2026-05-01. Requires `to`.",
+        },
+        to: {
+            type: "string",
+            description: "Last day (inclusive), ISO YYYY-MM-DD, e.g. 2026-05-31. Requires `from`.",
+        },
+        day: {
+            type: "string",
+            description: "Day of the year MM-DD in any year, e.g. 07-12. Instead of from/to.",
+        },
+    },
+} as const;
 
 /**
- * Build the two memory tools the agent sees as `memory_search` and
- * `memory_save`. Closures over the shared {@link MemoryStore} handle
- * initialized in `start(ctx)` — `tools(ctx)` runs after `start`
- * resolves, so the handle is always set by the time `execute` runs.
+ * Turns the raw tool arguments into a date query.
+ *
+ * @param args - The arguments.
+ * @returns The validated query.
+ * @throws {ToolError} `InvalidArgument` when neither or both forms are given or a value is invalid.
  */
-export function buildMemoryTools(store: MemoryStore, cfg: MemoryConfig): readonly PluginTool[] {
-    const searchTool: PluginTool<{ query: string; limit?: number }, string> = {
+export function parseDateSearchArgs(args: DateSearchArgs): DateQuery {
+    const from = args.from?.trim();
+    const to = args.to?.trim();
+    const day = args.day?.trim();
+    const hasRange = Boolean(from) || Boolean(to);
+    if (day && hasRange) {
+        throw new ToolError(
+            "InvalidArgument",
+            "memory_datesearch: give either day or from/to, not both",
+        );
+    }
+    let query: DateQuery;
+    if (day) {
+        query = { day };
+    } else if (from && to) {
+        query = { from, to };
+    } else {
+        throw new ToolError(
+            "InvalidArgument",
+            "memory_datesearch: give from and to (YYYY-MM-DD) or day (MM-DD)",
+        );
+    }
+    try {
+        validateDateQuery(query);
+    } catch (err) {
+        throw new ToolError("InvalidArgument", err instanceof Error ? err.message : String(err));
+    }
+    return query;
+}
+
+/**
+ * Builds the memory tools the agent sees as `memory_search`, `memory_datesearch` and
+ * `memory_save`.
+ *
+ * @param ctx - The plugin's host context (config is read per call).
+ * @param getIndex - Returns the live index, or `undefined` when it could not be opened.
+ * @returns The tools.
+ */
+export function buildMemoryTools(
+    ctx: HostContext,
+    getIndex: () => WikiIndex | undefined,
+): readonly PluginTool[] {
+    const requireIndex = (): WikiIndex => {
+        const index = getIndex();
+        if (!index) {
+            throw new ToolError(
+                "MemoryUnavailable",
+                "The memory index is not available: the memory plugin could not open its postgres tables at startup (see the daemon log).",
+            );
+        }
+        return index;
+    };
+
+    const searchTool: PluginTool<SearchArgs, string> = {
         name: "search",
-        // Long-term memory is meant to be ambient: every handler
-        // benefits from being able to recall facts about people,
-        // threads, places. Listing `core` here adds both memory
-        // tools to the implicit-default tool set every handler
-        // omitting `tools:` receives, alongside the container's
-        // built-in `fs_read`, `send_chat`, `start_subagent`,
-        // `schedule_subagent`, and `unschedule_subagent`.
+        // Long-term memory is ambient: every handler benefits from recall, so both search tools
+        // ride the implicit `core` tool set.
         groups: ["core"],
-        description:
-            "Search the long-term memory, including every markdown file in the workspace with a hybrid vector + BM25 approach. Returns a markdown report of found associations.",
-        inputSchema: {
-            type: "object",
-            required: ["query"],
-            properties: {
-                query: {
-                    type: "string",
-                    description: "Natural-language search query.",
-                },
-                limit: {
-                    type: "number",
-                    description:
-                        "Max number of hits to return. Defaults to the configured `maxToolMemoryResults`.",
-                },
-            },
-            additionalProperties: false,
-        },
-        execute: async ({ query, limit }) => {
-            if (!store.isReady()) {
-                return NOT_READY_MESSAGE;
-            }
-            const k =
-                typeof limit === "number" && limit > 0
-                    ? Math.floor(limit)
-                    : cfg.maxToolMemoryResults;
-            const hits = await store.search(query, { limit: k });
-            return formatHitsFlat(hits);
-        },
+        description: SEARCH_TOOL_DESCRIPTION,
+        inputSchema: SEARCH_TOOL_SCHEMA,
+        execute: (args, callCtx) =>
+            runTextTool(async () => {
+                const terms = Array.isArray(args.terms)
+                    ? args.terms.filter((term) => typeof term === "string")
+                    : [];
+                try {
+                    prepareTerms(terms);
+                } catch (err) {
+                    throw new ToolError(
+                        "InvalidArgument",
+                        err instanceof Error ? err.message : String(err),
+                    );
+                }
+                const config = readMemoryConfig(ctx.config);
+                const hits = await searchFiles(requireIndex(), terms, {
+                    limit: config.searchLimit,
+                    similarityThreshold: config.similarityThreshold,
+                });
+                return renderFileHits(hits, terms);
+            }, callCtx.toolRunContext),
+    };
+
+    const dateSearchTool: PluginTool<DateSearchArgs, string> = {
+        name: "datesearch",
+        groups: ["core"],
+        description: DATE_SEARCH_TOOL_DESCRIPTION,
+        inputSchema: DATE_SEARCH_TOOL_SCHEMA,
+        execute: (args, callCtx) =>
+            runTextTool(async () => {
+                const query = parseDateSearchArgs(args);
+                return renderDateHits(await searchDates(requireIndex(), query), query);
+            }, callCtx.toolRunContext),
     };
 
     const saveTool: PluginTool<{ content: string }, string> = {
         name: "save",
-        // See `searchTool.groups` comment above — both memory tools
-        // ride the same ambient `core` promotion.
         groups: ["core"],
         description:
             "Save facts, observations, notes into long-term memory. Content is handed to a dedicated reasoning agentrun, this toolcall does not wait and returns immediately. Remember to include identifying facts in the content (email addresses, names etc.)",
@@ -111,12 +239,12 @@ export function buildMemoryTools(store: MemoryStore, cfg: MemoryConfig): readonl
             handle.settled.catch((err) => {
                 toolCtx.log.warn(
                     { err: err instanceof Error ? err.message : String(err) },
-                    "memory: save event settled with failure",
+                    `memory: save event ${handle.id} settled with failure`,
                 );
             });
             return `Queued (event ${handle.id}). The memory will be filed shortly.`;
         },
     };
 
-    return [searchTool, saveTool];
+    return [searchTool, dateSearchTool, saveTool];
 }

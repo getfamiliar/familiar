@@ -1,3 +1,6 @@
+---
+categories: [health]
+---
 # Tobias Harting
 
 Occupational therapist, Praxis Harting in Rotenfels.

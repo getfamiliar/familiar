@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Bahncard
 
 Bahncard bei Bahn: Konditionen und Schriftverkehr.

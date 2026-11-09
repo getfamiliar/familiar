@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Agnieszka Brenner
 
 Projektleiterin bei Weidenhof Bio in Oberweiler; Kontakt aus einem Beratungsprojekt.

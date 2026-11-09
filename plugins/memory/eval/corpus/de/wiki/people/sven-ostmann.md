@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Sven Ostmann
 
 Vater von Mats (10. Klasse, Realschule Eschenrode).

@@ -1,3 +1,6 @@
+---
+categories: [taxes, work]
+---
 # Annual accounts 2025
 
 Annual accounts and tax returns 2025 for [[people/juergen-weiss|Jürgen]]'s consulting business, handled by KRW Partner Steuerberatung.

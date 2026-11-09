@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Bernd Wendland
 
 Mitglied — Heimatverein Kaltenbach.

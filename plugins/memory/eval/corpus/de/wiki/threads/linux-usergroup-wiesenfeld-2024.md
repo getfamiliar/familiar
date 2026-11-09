@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Linux-Usergroup Wiesenfeld 2024
 
 Linux-Usergroup Wiesenfeld 2024: Organisation und Beteiligte.

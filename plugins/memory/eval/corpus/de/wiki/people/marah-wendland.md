@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Marah Wendland
 
 Nachbarin, Lerchenweg 28 in Kaltenbach.

@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood, friends]
+---
 # Henrik Sommer
 
 Neighbour at [[places/ahornweg-7|Ahornweg 7]] (2nd floor), school friend from the [[threads/muehlbach-gang|Muehlbach Gang]].

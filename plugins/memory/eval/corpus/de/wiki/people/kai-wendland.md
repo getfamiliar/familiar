@@ -1,3 +1,6 @@
+---
+categories: [sport, kinder]
+---
 # Kai Wendland
 
 Vater von Emil, C-Jugend Handball beim TV Eschenrode.

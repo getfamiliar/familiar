@@ -1,3 +1,6 @@
+---
+categories: [health]
+---
 # Malte Krüger
 
 Paediatrician, Praxis Krüger in Hollerbach.

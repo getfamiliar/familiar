@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Jens Szymczak
 
 Vater von Jakob (5. Klasse, Grundschule Hollerbach).

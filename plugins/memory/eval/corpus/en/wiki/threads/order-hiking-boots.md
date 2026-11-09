@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order hiking boots
 
 Order of a hiking boots from Kaltenbacher Kaufhaus, shipped by Kurierwerk.

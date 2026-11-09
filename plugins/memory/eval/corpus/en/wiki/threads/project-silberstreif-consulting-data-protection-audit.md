@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Silberstreif Consulting: Data protection audit
 
 Consulting project for Silberstreif Consulting: data protection audit.

@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Clara Thiel
 
 Nachbarin, Lerchenweg 40 in Rotenfels.

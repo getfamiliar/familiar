@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Lena Hartmann
 
 Project lead at Feldmann Maschinenbau in Eschenrode; contact from a consulting project.

@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Lisa Lindholm
 
 Fliesenlegerin, Betrieb Fliesen Lindholm in Rotenfels.

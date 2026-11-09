@@ -1,3 +1,6 @@
+---
+categories: [trades, neighbourhood]
+---
 # Renovation Mühlbacher Weg 33
 
 Renovation of the neighbouring house Mühlbacher Weg 33: arrangements, noise, parking.

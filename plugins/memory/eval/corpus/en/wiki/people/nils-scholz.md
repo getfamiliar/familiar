@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Nils Scholz
 
 Father of Emil (year 10, Wiesenfeld comprehensive school).

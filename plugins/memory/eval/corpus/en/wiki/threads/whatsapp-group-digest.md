@@ -1,3 +1,6 @@
+---
+categories: [inbox]
+---
 # WhatsApp group digest
 
 Daily short summaries of the WhatsApp groups Jürgen is a member of (Muehlbach Gang, Parents 4b, Handball U16, Ahornweg 7 neighbours). Overview only, no action items.

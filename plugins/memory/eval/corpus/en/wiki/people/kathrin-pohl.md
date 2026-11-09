@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Kathrin Pohl
 
 Neighbour at Talweg 2, Kaltenbach.

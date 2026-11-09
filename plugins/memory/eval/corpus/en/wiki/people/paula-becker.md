@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Paula Becker
 
 Neighbour at Talweg 20, Kaltenbach.

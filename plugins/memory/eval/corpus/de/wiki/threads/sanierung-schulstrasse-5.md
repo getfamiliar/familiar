@@ -1,3 +1,6 @@
+---
+categories: [handwerk, nachbarschaft]
+---
 # Sanierung Schulstraße 5
 
 Sanierung des Nachbarhauses Schulstraße 5: Absprachen, Lärm, Parkplätze.

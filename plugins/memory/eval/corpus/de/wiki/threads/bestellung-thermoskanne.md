@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Thermoskanne
 
 Bestellung „Thermoskanne" bei Kaltenbacher Kaufhaus, Versand mit Kurierwerk.

@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Sophie Hartlieb
 
 Schreinerin, Betrieb Schreinerei Hartlieb in Rotenfels.

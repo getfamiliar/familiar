@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Gerd Ferreira
 
 Werkstudent bei Hansa Datenwerk in Hollerbach; Kontakt aus einem Beratungsprojekt.

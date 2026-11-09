@@ -1,3 +1,6 @@
+---
+categories: [trades, neighbourhood]
+---
 # Renovation Feldbergstraße 16
 
 Renovation of the neighbouring house Feldbergstraße 16: arrangements, noise, parking.

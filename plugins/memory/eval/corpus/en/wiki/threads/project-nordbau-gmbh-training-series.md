@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Nordbau GmbH: Training series
 
 Consulting project for Nordbau GmbH: training series.

@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Hendrik Sommerfeld
 
 Father of Smilla (year 1, Hollerbach primary school).

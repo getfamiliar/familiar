@@ -1,3 +1,6 @@
+---
+categories: [car]
+---
 # Vehicles
 
 The Weiß family's cars: a Mazda6 estate, driven mostly by [[people/juergen-weiss|Jürgen]], and a Hyundai i10 small car, driven mostly by [[people/ines-weiss|Ines]].

@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Frank Kaya
 
 Father of Hugo (year 9, Wiesenfeld comprehensive school).

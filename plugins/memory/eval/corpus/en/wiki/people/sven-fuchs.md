@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Sven Fuchs
 
 Joiner, business Schreinerei Fuchs in Wiesenfeld.

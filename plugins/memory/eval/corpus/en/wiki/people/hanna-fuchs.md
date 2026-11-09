@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Hanna Fuchs
 
 Member — Eschenrode running group.

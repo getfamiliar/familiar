@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Pflanzkübel
 
 Bestellung „Pflanzkübel" bei Hausfreund, Versand mit Kurierwerk.

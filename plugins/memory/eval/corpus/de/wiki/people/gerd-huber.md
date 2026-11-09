@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Gerd Huber
 
 Projektleiter bei Weidenhof Bio in Hollerbach; Kontakt aus einem Beratungsprojekt.

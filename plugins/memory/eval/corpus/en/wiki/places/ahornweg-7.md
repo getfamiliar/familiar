@@ -1,3 +1,6 @@
+---
+categories: [property, neighbourhood]
+---
 # Ahornweg 7
 
 Our home: owner-occupied flat on the 3rd floor of a building with six flats, Ahornweg 7, 35791 Kaltenbach.

@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Iris Ziegler
 
 Head of IT at Datenhafen GmbH in Oberweiler; contact from a consulting project.

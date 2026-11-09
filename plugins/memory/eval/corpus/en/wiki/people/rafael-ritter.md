@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Rafael Ritter
 
 Chair — Kaltenbach local history society.

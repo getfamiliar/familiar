@@ -1,3 +1,6 @@
+---
+categories: [sicherheit, posteingang]
+---
 # Phishing-Muster
 
 Sammlung von Phishing- und Betrugsmails, die bei [[people/juergen-weiss|Jürgen]] eingegangen sind, mit typischen Erkennungsmerkmalen.

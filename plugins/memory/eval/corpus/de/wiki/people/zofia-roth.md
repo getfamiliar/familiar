@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Zofia Roth
 
 Mutter von Smilla (10. Klasse, Realschule Eschenrode).

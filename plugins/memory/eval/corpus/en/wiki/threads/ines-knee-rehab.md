@@ -1,3 +1,6 @@
+---
+categories: [health, family]
+---
 # Ines: knee surgery and rehab
 
 Left knee replacement for [[people/ines-weiss|Ines]] in June 2026 and the inpatient rehab that followed.

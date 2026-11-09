@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Jens Szymczak
 
 Father of Jakob (year 5, Hollerbach primary school).

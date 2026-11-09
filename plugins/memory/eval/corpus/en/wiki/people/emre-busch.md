@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Emre Busch
 
 Secretary — Rotenfels volunteer fire brigade.

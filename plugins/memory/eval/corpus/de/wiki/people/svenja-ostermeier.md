@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Svenja Ostermeier
 
 Werkstudentin bei Nordbau GmbH in Rotenfels; Kontakt aus einem Beratungsprojekt.

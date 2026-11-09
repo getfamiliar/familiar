@@ -1,3 +1,6 @@
+---
+categories: [hobby, veranstaltungen]
+---
 # Jugendherberge Burg Falkenstein
 
 Jugendherberge in einer Burganlage im Lauterbrunner Wald; geplanter Ort des Hackathon-Wochenendes des [[threads/entwickler-stammtisch|Side-Project-Stammtischs]].

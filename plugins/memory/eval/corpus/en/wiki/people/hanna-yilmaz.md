@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Hanna Yilmaz
 
 Founder of Wolkenwerk (weather data for construction projects), Rotenfels.

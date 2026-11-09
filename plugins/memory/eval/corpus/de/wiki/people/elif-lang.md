@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Elif Lang
 
 Gründerin von Feldfunk (Sensorik für Landwirtschaft), Rotenfels.

@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Ehemaligentreffen Meridian IT 2026
 
 Ehemaligentreffen Meridian IT 2026: Organisation und Beteiligte.

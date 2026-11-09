@@ -1,3 +1,6 @@
+---
+categories: [hobby, freunde]
+---
 # Brettspielabend
 
 Monatliche Brettspielrunde von [[people/juergen-weiss|Jürgen]] mit Freunden, reihum bei einem der Mitglieder zu Hause.

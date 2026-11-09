@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Hendrik Böhm
 
 Einkäufer bei Hansa Datenwerk in Kaltenbach; Kontakt aus einem Beratungsprojekt.

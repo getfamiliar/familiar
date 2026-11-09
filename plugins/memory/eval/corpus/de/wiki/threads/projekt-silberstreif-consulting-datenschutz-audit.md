@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Silberstreif Consulting: Datenschutz-Audit
 
 Beratungsprojekt für Silberstreif Consulting: Datenschutz-Audit.

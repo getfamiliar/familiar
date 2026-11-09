@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Carla Szymczak
 
 Neighbour at Eichendorffstraße 38, Oberweiler.

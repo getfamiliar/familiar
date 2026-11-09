@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Timo Wendtner
 
 Head of IT at Lumina Logistik in Hollerbach; contact from a consulting project.

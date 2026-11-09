@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Hausratversicherung
 
 Hausratversicherung bei Talgrund Versicherung: Konditionen und Schriftverkehr.

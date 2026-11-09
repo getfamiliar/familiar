@@ -1,3 +1,6 @@
+---
+categories: [familie]
+---
 # Tante Hedi
 
 Hedi Kranz, Schwester von Jürgens verstorbenem Vater; kommt meist zusammen mit [[people/tante-roswitha|Tante Roswitha]] zu Besuch.

@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Kathrin Brüning
 
 Neighbour at Kastanienweg 38, Oberweiler.

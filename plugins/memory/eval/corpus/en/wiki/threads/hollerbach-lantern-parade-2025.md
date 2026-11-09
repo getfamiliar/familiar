@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Hollerbach lantern parade 2025
 
 Hollerbach lantern parade 2025: organisation and people involved.

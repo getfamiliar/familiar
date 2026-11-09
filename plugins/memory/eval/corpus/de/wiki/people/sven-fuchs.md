@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Sven Fuchs
 
 Schreiner, Betrieb Schreinerei Fuchs in Wiesenfeld.

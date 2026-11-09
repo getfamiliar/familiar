@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Fahrgemeinschaft Handball 2025
 
 Fahrgemeinschaft Handball 2025: Organisation und Beteiligte.

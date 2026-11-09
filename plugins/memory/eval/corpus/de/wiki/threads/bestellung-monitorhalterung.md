@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Monitorhalterung
 
 Bestellung „Monitorhalterung" bei Werkbank24, Versand mit PostNova.

@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Liability insurance
 
 Liability insurance with Talgrund Versicherung: terms and correspondence.

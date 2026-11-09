@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Repair-Café Rotenfels 2025
 
 Repair-Café Rotenfels 2025: Organisation und Beteiligte.

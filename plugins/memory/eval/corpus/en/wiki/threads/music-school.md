@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Music school
 
 Music school with Musikschule Wiesenfeld: terms and correspondence.

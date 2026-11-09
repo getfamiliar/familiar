@@ -1,3 +1,6 @@
+---
+categories: [bank, sicherheit]
+---
 # Nordbank pushTAN-Vorfall
 
 Unerwartete pushTAN-Anfrage zur Freischaltung eines neuen Geräts bei der Nordbank im August 2026; nicht bestätigt, Zugang abgesichert.

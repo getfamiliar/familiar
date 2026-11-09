@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Nordbau GmbH: Datenschutz-Audit
 
 Beratungsprojekt für Nordbau GmbH: Datenschutz-Audit.

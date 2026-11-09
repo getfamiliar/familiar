@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Emre Hansen
 
 Geschäftsführer bei Rotfuchs Medien in Oberweiler; Kontakt aus einem Beratungsprojekt.

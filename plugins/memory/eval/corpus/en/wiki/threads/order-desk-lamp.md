@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order desk lamp
 
 Order of a desk lamp from Werkbank24, shipped by PostNova.

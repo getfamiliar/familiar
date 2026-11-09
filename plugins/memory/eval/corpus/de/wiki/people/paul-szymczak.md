@@ -1,3 +1,6 @@
+---
+categories: [arbeit]
+---
 # Paul Szymczak
 
 Ehemaliger Kollege bei Systemhaus Kreuzberg (2011–2014).

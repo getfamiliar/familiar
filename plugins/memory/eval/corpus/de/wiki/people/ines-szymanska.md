@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Inês Szymańska
 
 Mutter von Rosa (4. Klasse, Realschule Eschenrode).

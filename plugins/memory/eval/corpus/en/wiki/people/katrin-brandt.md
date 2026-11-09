@@ -1,3 +1,6 @@
+---
+categories: [friends, kids]
+---
 # Katrin Brandt
 
 Mother of [[people/jannis-brandt|Jannis]], Paul's best friend; organizes the boys' holiday care.

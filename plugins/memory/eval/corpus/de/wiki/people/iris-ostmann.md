@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Iris Ostmann
 
 IT-Leiterin bei Rotfuchs Medien in Wiesenfeld; Kontakt aus einem Beratungsprojekt.

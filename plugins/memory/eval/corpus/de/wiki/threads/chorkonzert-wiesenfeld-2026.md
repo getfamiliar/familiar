@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Chorkonzert Wiesenfeld 2026
 
 Chorkonzert Wiesenfeld 2026: Organisation und Beteiligte.

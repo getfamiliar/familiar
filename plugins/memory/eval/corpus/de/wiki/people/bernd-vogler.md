@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Bernd Vogler
 
 Vater von Oskar (2. Klasse, Gesamtschule Wiesenfeld).

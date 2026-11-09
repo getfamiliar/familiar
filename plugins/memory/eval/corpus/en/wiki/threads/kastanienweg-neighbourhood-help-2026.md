@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Kastanienweg neighbourhood help 2026
 
 Kastanienweg neighbourhood help 2026: organisation and people involved.

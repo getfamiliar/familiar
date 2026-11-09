@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Lisa Ferreira
 
 Mutter von Marlies (4. Klasse, Grundschule Hollerbach).

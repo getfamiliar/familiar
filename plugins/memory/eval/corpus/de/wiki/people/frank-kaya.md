@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Frank Kaya
 
 Vater von Hugo (9. Klasse, Gesamtschule Wiesenfeld).

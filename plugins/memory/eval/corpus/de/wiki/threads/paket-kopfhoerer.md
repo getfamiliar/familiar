@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Paket Kopfhörer
 
 Paketsendung mit Over-Ear-Kopfhörern für [[people/juergen-weiss|Jürgen]], bestellt beim Elektronikversand „Klangwerk“.

@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Kai Walter
 
 Gründer von Fahrplanfux (Mitfahr-App für Pendler), Rotenfels.

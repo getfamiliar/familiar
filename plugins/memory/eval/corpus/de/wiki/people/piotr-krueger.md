@@ -1,3 +1,6 @@
+---
+categories: [sport, kinder]
+---
 # Piotr Krüger
 
 Vater von Marlies, B-Jugend Handball beim TV Eschenrode.

@@ -1,3 +1,6 @@
+---
+categories: [health]
+---
 # Optician and glasses
 
 Glasses and contact lenses of the family at the optician "Optik Klarblick" in Kaltenbach.

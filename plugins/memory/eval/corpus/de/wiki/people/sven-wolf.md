@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Sven Wolf
 
 Werkstudent bei Brightline GmbH in Kaltenbach; Kontakt aus einem Beratungsprojekt.

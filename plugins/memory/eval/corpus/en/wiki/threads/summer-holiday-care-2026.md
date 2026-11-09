@@ -1,3 +1,6 @@
+---
+categories: [kids]
+---
 # Summer holiday care 2026
 
 Care for [[people/paul-weiss|Paul]] during the 2026 summer holidays, organized together with [[people/katrin-brandt]], the mother of Paul's friend [[people/jannis-brandt|Jannis]].

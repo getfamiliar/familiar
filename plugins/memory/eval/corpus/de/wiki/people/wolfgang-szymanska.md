@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Wolfgang Szymańska
 
 Kassierer — Gemischter Chor Wiesenfeld.

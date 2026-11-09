@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Hanna Reutter
 
 Chair — Eschenrode running group.

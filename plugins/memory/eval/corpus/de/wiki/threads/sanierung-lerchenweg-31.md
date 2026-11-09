@@ -1,3 +1,6 @@
+---
+categories: [handwerk, nachbarschaft]
+---
 # Sanierung Lerchenweg 31
 
 Sanierung des Nachbarhauses Lerchenweg 31: Absprachen, Lärm, Parkplätze.

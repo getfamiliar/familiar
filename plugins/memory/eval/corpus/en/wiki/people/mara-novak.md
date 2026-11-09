@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Mara Novak
 
 Mother of Jakob (year 6, Wiesenfeld comprehensive school).

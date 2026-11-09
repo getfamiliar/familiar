@@ -1,3 +1,6 @@
+---
+categories: [gesundheit]
+---
 # Tobias Harting
 
 Ergotherapeut, Praxis Harting in Rotenfels.

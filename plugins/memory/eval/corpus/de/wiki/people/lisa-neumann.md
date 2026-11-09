@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Lisa Neumann
 
 Nachbarin, Ulmenring 40 in Wiesenfeld.

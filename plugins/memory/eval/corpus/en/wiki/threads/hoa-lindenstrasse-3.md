@@ -1,3 +1,6 @@
+---
+categories: [property]
+---
 # Owners' association Lindenstraße 3
 
 Owners' association (WEG) of Lindenstraße 3 in Kaltenbach, where [[people/juergen-weiss|Jürgen]] owns a rented-out flat; managed by Immobilien Vogt.

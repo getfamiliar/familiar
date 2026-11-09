@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Quellwerk Energie: CRM-Einführung
 
 Beratungsprojekt für Quellwerk Energie: CRM-Einführung.

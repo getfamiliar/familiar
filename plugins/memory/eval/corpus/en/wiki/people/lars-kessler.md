@@ -1,3 +1,6 @@
+---
+categories: [sports, kids]
+---
 # Lars Kessler
 
 Father of Theo, E-Jugend handball at TV Eschenrode.

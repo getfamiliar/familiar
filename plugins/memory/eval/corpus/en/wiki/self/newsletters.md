@@ -1,3 +1,6 @@
+---
+categories: [inbox]
+---
 # Newsletters
 
 Overview of the newsletters and bulk mails [[people/juergen-weiss|Jürgen]] receives, and how they are handled.

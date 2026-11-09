@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Nils Kuhlmann
 
 Nachbar, Talweg 14 in Oberweiler.

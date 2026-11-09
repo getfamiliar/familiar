@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Musikschule
 
 Musikschule bei Musikschule Wiesenfeld: Konditionen und Schriftverkehr.

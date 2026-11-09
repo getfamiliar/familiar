@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Kaltenbach town run 2024
 
 Kaltenbach town run 2024: organisation and people involved.

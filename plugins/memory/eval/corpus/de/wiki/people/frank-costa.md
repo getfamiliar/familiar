@@ -1,3 +1,6 @@
+---
+categories: [arbeit]
+---
 # Frank Costa
 
 Ehemaliger Kollege bei Meridian IT (2010–2014).

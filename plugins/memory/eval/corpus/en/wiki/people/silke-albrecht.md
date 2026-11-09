@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Silke Albrecht
 
 Neighbour at Kastanienweg 28, Wiesenfeld.

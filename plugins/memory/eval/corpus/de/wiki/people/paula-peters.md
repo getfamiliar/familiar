@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Paula Peters
 
 Kassiererin — Obst- und Gartenbauverein Oberweiler.

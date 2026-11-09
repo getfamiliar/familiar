@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Carla Osterkamp
 
 Mother of Anton (year 2, Eschenrode secondary school).

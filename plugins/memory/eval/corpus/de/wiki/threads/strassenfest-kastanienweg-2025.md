@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Straßenfest Kastanienweg 2025
 
 Straßenfest Kastanienweg 2025: Organisation und Beteiligte.

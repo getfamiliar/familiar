@@ -1,3 +1,6 @@
+---
+categories: [software, hobby]
+---
 # Kathrin Peters
 
 Softwareentwicklerin aus Kaltenbach, betreut das Open-Source-Projekt Rechnungsfuchs.

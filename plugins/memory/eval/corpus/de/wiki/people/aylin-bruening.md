@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Aylin Brüning
 
 Elektromeisterin, Betrieb Elektro Brüning in Wiesenfeld.

@@ -1,3 +1,6 @@
+---
+categories: [health]
+---
 # Petra Neumann
 
 Orthopaedist, Praxis Neumann in Eschenrode.

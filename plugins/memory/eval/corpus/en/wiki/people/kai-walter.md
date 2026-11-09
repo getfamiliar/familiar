@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Kai Walter
 
 Founder of Fahrplanfux (ride-sharing app for commuters), Rotenfels.

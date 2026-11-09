@@ -1,3 +1,6 @@
+---
+categories: [trades, neighbourhood]
+---
 # Renovation Kastanienweg 17
 
 Renovation of the neighbouring house Kastanienweg 17: arrangements, noise, parking.

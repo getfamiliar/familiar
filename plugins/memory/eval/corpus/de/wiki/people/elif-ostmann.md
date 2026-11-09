@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Elif Ostmann
 
 Elektromeisterin, Betrieb Elektro Ostmann in Rotenfels.

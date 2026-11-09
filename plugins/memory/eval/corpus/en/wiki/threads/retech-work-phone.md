@@ -1,3 +1,6 @@
+---
+categories: [shopping, work]
+---
 # ReTech work phone
 
 Refurbished work phone for [[people/juergen-weiss|Jürgen]]'s consulting business, bought from the refurbished-electronics shop ReTech.

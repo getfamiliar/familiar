@@ -148,6 +148,7 @@ A plugin that has a `start` but no `stop` can't be restarted in-process, so a co
   - `listFiles` lists the files.
   - `resolveFile` returns a file's host path for reading or streaming.
   - Files whose name starts with `.` are internal (spilled tool results, plugin bookkeeping). Leave them out wherever you show files to the user (`isHiddenScratchFile`).
+- **`ctx.database`** runs SQL on the host's postgres (`query(sql, values)`, `transaction(work)`), for plugins that keep their own tables. Create them idempotently in a postgres schema named after the plugin (`CREATE SCHEMA IF NOT EXISTS <id>`), and never touch the bus tables. Works in CLI commands too while `familiar-postgres` runs. Example: the memory plugin's wiki index.
 - **`ctx.isDevMode`** is `true` in a monorepo dev run (`npm run dev`, `FAMILIAR_DEV=1`), for developer conveniences such as hot reloading.
 - **`ctx.dataDir`** / **`ctx.workspaceDir`** / **`ctx.tmpDir`** hold the instance paths. Persistent plugin state goes under `dataDir`.
 - **`ctx.daemonDownSignal`** / **`ctx.isDaemonRunning()`** tell long-running loops whether the daemon is still up.

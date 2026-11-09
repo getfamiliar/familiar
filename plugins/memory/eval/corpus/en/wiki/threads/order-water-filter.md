@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order water filter
 
 Order of a water filter from Bürowelt Direkt, shipped by Logistiq.

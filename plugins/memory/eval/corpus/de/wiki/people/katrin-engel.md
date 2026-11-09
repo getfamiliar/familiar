@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Katrin Engel
 
 Kassiererin — Freiwillige Feuerwehr Rotenfels.

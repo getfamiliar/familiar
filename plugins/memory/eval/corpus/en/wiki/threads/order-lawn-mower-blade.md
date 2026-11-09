@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order lawn mower blade
 
 Order of a lawn mower blade from Hausfreund, shipped by Kurierwerk.

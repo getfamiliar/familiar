@@ -1,3 +1,6 @@
+---
+categories: [einkauf, arbeit]
+---
 # ReTech Diensthandy
 
 Generalüberholtes Diensthandy für [[people/juergen-weiss|Jürgens]] Beratungstätigkeit, gekauft beim Refurbished-Händler ReTech.

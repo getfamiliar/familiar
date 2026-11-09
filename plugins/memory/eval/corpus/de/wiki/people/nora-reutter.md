@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Nora Reutter
 
 Dachdeckerin, Betrieb Dachbau Reutter in Eschenrode.

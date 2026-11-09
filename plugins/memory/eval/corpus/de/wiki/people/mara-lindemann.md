@@ -1,3 +1,6 @@
+---
+categories: [gesundheit]
+---
 # Mara Lindemann
 
 Kinderärztin, Praxis Lindemann in Wiesenfeld.

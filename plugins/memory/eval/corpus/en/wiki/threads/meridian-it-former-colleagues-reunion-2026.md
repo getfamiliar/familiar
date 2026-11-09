@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Meridian IT former colleagues' reunion 2026
 
 Meridian IT former colleagues' reunion 2026: organisation and people involved.

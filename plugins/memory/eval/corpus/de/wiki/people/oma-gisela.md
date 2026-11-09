@@ -1,3 +1,6 @@
+---
+categories: [familie, erbe]
+---
 # Oma Gisela
 
 Gisela Weiß, Jürgens Großmutter väterlicherseits; gestorben 2024-11-18 mit 94 Jahren, hat Jürgen die „Alte Mühle" vererbt.

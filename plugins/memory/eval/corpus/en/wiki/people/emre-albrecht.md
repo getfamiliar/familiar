@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Emre Albrecht
 
 Neighbour at Schulstraße 34, Hollerbach.

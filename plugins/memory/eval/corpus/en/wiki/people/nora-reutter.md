@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Nora Reutter
 
 Roofer, business Dachbau Reutter in Eschenrode.

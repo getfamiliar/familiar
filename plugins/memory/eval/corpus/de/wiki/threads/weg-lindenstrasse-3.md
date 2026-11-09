@@ -1,3 +1,6 @@
+---
+categories: [immobilien]
+---
 # WEG Lindenstraße 3
 
 Eigentümergemeinschaft der Lindenstraße 3 in Kaltenbach, in der [[people/juergen-weiss|Jürgen]] eine vermietete Wohnung besitzt; Verwaltung durch Immobilien Vogt.

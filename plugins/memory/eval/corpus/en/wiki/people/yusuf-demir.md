@@ -1,3 +1,6 @@
+---
+categories: [software, hobbies]
+---
 # Yusuf Demir
 
 Organizer of the [[threads/developer-meetup|Side Project Meetup]], develops **PlantWatch** on the side.

@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Ulrike Reutter
 
 Vorsitzende — Fotoclub Eschenrode.

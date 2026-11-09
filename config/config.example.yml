@@ -147,9 +147,7 @@ core:
   # anchored at the workspace root, e.g. `wiki/**`). These are the ONLY
   # paths a non-privileged agentrun may write — everything else in the
   # workspace (handlers, SOUL.md, people/*, …) is
-  # writable only by privileged runs. They are ALSO quoted in full by the
-  # memory plugin (matches outside the list demote to a "See also"
-  # mention). Enforced both by the agent's fs tools and, for the bash
+  # writable only by privileged runs. Enforced both by the agent's fs tools and, for the bash
   # tool, by container OS permissions. Falls back to ["wiki/**", "files/**"]
   # when unset.
   # writablePaths: ["wiki/**", "files/**"]
@@ -344,31 +342,10 @@ inference:
 # --- Plugin-owned subtrees below. Each plugin parses + validates its
 # --- own keys; the platform linter does not police them.
 
-# Memory plugin. Indexes every .md file under workspace/ with an
-# Orama hybrid (vector + BM25) index and surfaces relevant snippets in
-# the system prompt. `embeddings.provider` + `embeddings.model` are
-# required; everything else has a default. The provider id references
-# an entry already declared under `inference.apiKeys.<id>` — credentials
-# are not restated here. Only providers whose SDK ships embeddings work
-# (openai, google, mistral, or an openai-compatible gateway).
+# Memory plugin (wiki index in postgres). Everything is optional.
 # memory:
-#   embeddings:
-#     provider: openai                  # must match an enabled inference provider
-#     model: text-embedding-3-small     # embedding model id under the provider
-#   minScoreToMention: 0.55             # score floor for the injected `# Memories` table; files at/below are dropped
-#   minVectorSimilarity: 0.3            # cosine-similarity floor for vector hits
-#   maxSystemPromptMemoryResults: 8     # max files listed in the injected `# Memories` table per agentrun
-#   maxToolMemoryResults: 5             # default `limit` for the memory_search tool when the agent omits it
-#   excludeGlobs: []                    # carve-outs from indexing (`*`-glob, rooted at workspace root)
-#   # In the injected `# Memories` table, core.writablePaths above selects each
-#   # file's description source: writable-path files are described by their first
-#   # paragraph, other files by their `description:` frontmatter. No separate key.
-#   language: english                   # stemmer + stopwords language; unknown values fall back to english
-#   maxChunkChars: 6000                 # max characters per embedded chunk; larger sections are split into "(part i/n)" chunks
-#   hybridWeights:
-#     vector: 0.5                       # weight of vector similarity in the hybrid score
-#     text: 0.5                         # weight of BM25 lexical match in the hybrid score
-#   persistToDiskDelay: 30              # seconds of index idleness before the dirty .msp gets flushed
+#   searchLimit: 10                     # files memory_search returns
+#   similarityThreshold: 0.6            # pg_trgm word similarity a search term needs to count as a hit (0–1)
 
 # Telegram plugin. botToken comes from BotFather (/newbot). Leave the
 # user id null on first boot — the bot enters discovery mode and

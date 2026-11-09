@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Arne Harder
 
 Fliesenleger, Betrieb Fliesen Harder in Oberweiler.

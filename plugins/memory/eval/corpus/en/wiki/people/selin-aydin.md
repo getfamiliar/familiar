@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Selin Aydin
 
 Buyer at Brightwater GmbH; responsible for the purchase order and invoices in the [[threads/brightwater-project]].

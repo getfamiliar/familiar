@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Rotfuchs Medien: Data protection audit
 
 Consulting project for Rotfuchs Medien: data protection audit.

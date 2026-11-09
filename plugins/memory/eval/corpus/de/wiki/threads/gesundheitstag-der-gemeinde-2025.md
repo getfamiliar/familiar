@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Gesundheitstag der Gemeinde 2025
 
 Gesundheitstag der Gemeinde 2025: Organisation und Beteiligte.

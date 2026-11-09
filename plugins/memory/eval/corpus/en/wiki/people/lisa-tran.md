@@ -1,3 +1,6 @@
+---
+categories: [software, hobbies]
+---
 # Lisa Tran
 
 Member of the [[threads/developer-meetup|Side Project Meetup]], builds the sourdough app **Brotzeit**.

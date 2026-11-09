@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Lena Kühn
 
 Produktmanagerin bei Rotfuchs Medien in Wiesenfeld; Kontakt aus einem Beratungsprojekt.

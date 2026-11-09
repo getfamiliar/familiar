@@ -1,3 +1,6 @@
+---
+categories: [freunde, hobby]
+---
 # Tobias Hartl
 
 Mitspieler im [[threads/brettspielabend]], IT-Administrator im Klinikum Kaltenbach.

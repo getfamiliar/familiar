@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Datenhafen GmbH: Intranet-Relaunch
 
 Beratungsprojekt für Datenhafen GmbH: Intranet-Relaunch.

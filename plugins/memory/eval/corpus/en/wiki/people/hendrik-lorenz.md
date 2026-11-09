@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Hendrik Lorenz
 
 Managing director at Quellwerk Energie in Oberweiler; contact from a consulting project.

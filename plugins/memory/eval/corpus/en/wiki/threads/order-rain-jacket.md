@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order rain jacket
 
 Order of a rain jacket from Bürowelt Direkt, shipped by PostNova.

@@ -158,6 +158,8 @@ export { renderMarkdown } from "./markdownTerminal.js";
 export { matchesAnyGlob, matchesGlob } from "./PathGlob.js";
 export type {
     AnyCommandDef,
+    DatabaseApi,
+    DatabaseQuery,
     EmitHandle,
     EmitOptions,
     EmittedEventDescriptor,

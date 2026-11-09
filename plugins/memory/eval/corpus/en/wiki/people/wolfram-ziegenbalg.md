@@ -1,3 +1,6 @@
+---
+categories: [insurance]
+---
 # Wolfram Ziegenbalg
 
 Insurance broker (Ziegenbalg Finanz, Kaltenbach), handles Jürgen's application for disability insurance.

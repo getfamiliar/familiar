@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Gerd Huber
 
 Project lead at Weidenhof Bio in Hollerbach; contact from a consulting project.

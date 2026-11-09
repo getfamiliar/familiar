@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Lena Kühn
 
 Product manager at Rotfuchs Medien in Wiesenfeld; contact from a consulting project.

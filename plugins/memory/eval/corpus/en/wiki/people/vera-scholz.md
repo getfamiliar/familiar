@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Vera Scholz
 
 Treasurer — Rotenfels volunteer fire brigade.

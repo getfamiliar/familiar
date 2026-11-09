@@ -1,3 +1,7 @@
+---
+categories: [software, hobby]
+review_at: 2026-11-30
+---
 # Side-Project-Stammtisch (SPS)
 
 Stammtisch für Software-Entwicklerinnen und -Entwickler mit eigenen Projekten, kurz **SPS**, organisiert von [[people/yusuf-demir]]; [[people/juergen-weiss|Jürgen]] ist mit [[threads/thermo-pi]] dabei.

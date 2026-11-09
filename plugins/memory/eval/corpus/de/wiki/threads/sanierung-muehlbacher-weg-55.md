@@ -1,3 +1,6 @@
+---
+categories: [handwerk, nachbarschaft]
+---
 # Sanierung Mühlbacher Weg 55
 
 Umbau im Haus Mühlbacher Weg 55, betrifft die Nachbarschaft.

@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Klassenfahrt der 6b 2024
 
 Klassenfahrt der 6b 2024: Organisation und Beteiligte.

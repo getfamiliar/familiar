@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Nils Kuhlmann
 
 Neighbour at Talweg 14, Oberweiler.

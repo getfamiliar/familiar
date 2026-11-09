@@ -1,3 +1,6 @@
+---
+categories: [software, hobbies]
+---
 # Thermo-Pi
 
 Jürgen's open-source heating controller for the Raspberry Pi (GitHub repository `juergenweiss/thermo-pi`): controls several radiators via relays and temperature sensors, with a web UI and MQTT. All notifications about the project end up here — releases, CI, issues, forum.

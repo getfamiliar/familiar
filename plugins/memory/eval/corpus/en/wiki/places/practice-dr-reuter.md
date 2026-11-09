@@ -1,3 +1,6 @@
+---
+categories: [health]
+---
 # Practice Dr. Reuter
 
 GP practice of [[people/anna-reuter|Dr. Anna Reuter]] at Bahnhofstraße 12, Kaltenbach — family doctor for the whole family.

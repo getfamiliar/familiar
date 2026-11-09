@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Paula Engel
 
 IT-Leiterin bei Weidenhof Bio in Wiesenfeld; Kontakt aus einem Beratungsprojekt.

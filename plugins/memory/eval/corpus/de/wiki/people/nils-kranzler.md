@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Nils Kranzler
 
 Dachdecker, Betrieb Dachbau Kranzler in Rotenfels.

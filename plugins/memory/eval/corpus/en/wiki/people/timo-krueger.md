@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Timo Krüger
 
 Plumber, business Haustechnik Krüger in Hollerbach.

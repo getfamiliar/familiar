@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Emre Demirci
 
 Father of Pia (year 9, Hollerbach primary school).

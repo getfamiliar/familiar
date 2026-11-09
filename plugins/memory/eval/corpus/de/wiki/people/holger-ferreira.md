@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Holger Ferreira
 
 IT-Leiter bei Lumina Logistik in Eschenrode; Kontakt aus einem Beratungsprojekt.

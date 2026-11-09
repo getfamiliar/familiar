@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Nils Ritter
 
 Founder of Ladenlicht (energy saving advice for shops), Eschenrode.

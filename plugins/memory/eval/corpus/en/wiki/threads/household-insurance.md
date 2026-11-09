@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Household insurance
 
 Household insurance with Talgrund Versicherung: terms and correspondence.

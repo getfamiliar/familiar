@@ -1,3 +1,6 @@
+---
+categories: [gesundheit]
+---
 # Optiker und Brillen
 
 Brillen und Kontaktlinsen der Familie beim Optiker „Optik Klarblick“ in Kaltenbach.

@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Holger Ferreira
 
 Head of IT at Lumina Logistik in Eschenrode; contact from a consulting project.

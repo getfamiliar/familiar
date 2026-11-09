@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Svenja Roth
 
 Fliesenlegerin, Betrieb Fliesen Roth in Eschenrode.

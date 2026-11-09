@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Lukas Horn
 
 Chimney sweep, business Kaminkehrer Horn in Wiesenfeld.

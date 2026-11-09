@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Lumina Logistik: Ticketing system
 
 Consulting project for Lumina Logistik: ticketing system.

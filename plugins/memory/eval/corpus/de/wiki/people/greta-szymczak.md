@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Greta Szymczak
 
 Nachbarin, Feldbergstraße 1 in Wiesenfeld.

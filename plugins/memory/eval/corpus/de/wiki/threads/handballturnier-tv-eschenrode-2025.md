@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Handballturnier TV Eschenrode 2025
 
 Handballturnier TV Eschenrode 2025: Organisation und Beteiligte.

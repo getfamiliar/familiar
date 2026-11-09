@@ -1,3 +1,6 @@
+---
+categories: [software, hobby]
+---
 # Gregor Rossi
 
 Softwareentwickler aus Kaltenbach, betreut das Open-Source-Projekt Feldpost.

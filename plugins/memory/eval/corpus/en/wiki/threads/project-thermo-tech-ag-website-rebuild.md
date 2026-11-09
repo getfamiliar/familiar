@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Thermo-Tech AG: Website rebuild
 
 Consulting project for Thermo-Tech AG: website rebuild.

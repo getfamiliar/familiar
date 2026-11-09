@@ -1,3 +1,6 @@
+---
+categories: [versicherung]
+---
 # Berufsunfähigkeitsversicherung – Antrag
 
 Antrag auf eine Berufsunfähigkeitsversicherung für [[people/juergen-weiss|Jürgen]] über den Versicherungsmakler [[people/wolfram-ziegenbalg]] (Ziegenbalg Finanz).

@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Glasfaseranschluss
 
 Glasfaseranschluss bei Lichtleiter Hessen: Konditionen und Schriftverkehr.

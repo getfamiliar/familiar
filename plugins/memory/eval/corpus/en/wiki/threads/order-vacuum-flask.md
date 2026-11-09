@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order vacuum flask
 
 Order of a vacuum flask from Kaltenbacher Kaufhaus, shipped by Kurierwerk.

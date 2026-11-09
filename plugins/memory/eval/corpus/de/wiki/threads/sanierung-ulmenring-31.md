@@ -1,3 +1,6 @@
+---
+categories: [handwerk, nachbarschaft]
+---
 # Sanierung Ulmenring 31
 
 Sanierung des Nachbarhauses Ulmenring 31: Absprachen, Lärm, Parkplätze.

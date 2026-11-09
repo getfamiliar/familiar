@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Flohmarkt Eschenrode 2024
 
 Flohmarkt Eschenrode 2024: Organisation und Beteiligte.

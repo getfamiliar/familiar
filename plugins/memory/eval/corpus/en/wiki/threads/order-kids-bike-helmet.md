@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order kids' bike helmet
 
 Order of a kids' bike helmet from Kaltenbacher Kaufhaus, shipped by Kurierwerk.

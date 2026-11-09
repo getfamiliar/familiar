@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Joost Haddad
 
 Vater von Vincent (2. Klasse, Realschule Eschenrode).

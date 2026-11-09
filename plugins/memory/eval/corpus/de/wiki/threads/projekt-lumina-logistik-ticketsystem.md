@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Lumina Logistik: Ticketsystem
 
 Beratungsprojekt für Lumina Logistik: Ticketsystem.

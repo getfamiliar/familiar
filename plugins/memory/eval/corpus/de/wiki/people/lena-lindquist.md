@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Lena Lindquist
 
 Mitglied — Lauftreff Eschenrode.

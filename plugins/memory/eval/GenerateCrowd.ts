@@ -1430,7 +1430,7 @@ function renderPerson(
             lines.push(bi(`- ${note[0]}`, `- ${capitalize(note[1])}`));
         }
     }
-    return toFile(bi(`wiki/people/${person.slug}.md`), lines);
+    return toFile(bi(`wiki/people/${person.slug}.md`), lines, ROLE_CATEGORIES[person.role]);
 }
 
 /**
@@ -1451,21 +1451,57 @@ function pickInOrder<T>(random: Random, items: readonly T[], count: number): T[]
 }
 
 /**
- * Joins bilingual lines into a generated file.
+ * Joins bilingual lines into a generated file, prefixed with a frontmatter block listing the
+ * categories (the wiki convention, see `skills/memory/SKILL.md`).
  *
  * @param filePath - Path per language.
  * @param lines - Lines per language.
+ * @param categories - Frontmatter categories.
  * @returns The generated file.
  */
-function toFile(filePath: Bilingual, lines: readonly Bilingual[]): GeneratedFile {
+function toFile(
+    filePath: Bilingual,
+    lines: readonly Bilingual[],
+    categories: readonly Bilingual[],
+): GeneratedFile {
+    const frontmatter = (language: Language): string =>
+        `---\ncategories: [${categories.map((category) => category[language]).join(", ")}]\n---\n`;
     return {
         path: filePath,
         content: {
-            de: `${lines.map((line) => line.de).join("\n")}\n`,
-            en: `${lines.map((line) => line.en).join("\n")}\n`,
+            de: `${frontmatter("de")}${lines.map((line) => line.de).join("\n")}\n`,
+            en: `${frontmatter("en")}${lines.map((line) => line.en).join("\n")}\n`,
         },
     };
 }
+
+/** Frontmatter categories per person role (same vocabulary as the hand-written corpus, see persona.md). */
+const ROLE_CATEGORIES: Readonly<Record<Role, readonly Bilingual[]>> = {
+    client: [bi("kunden", "clients"), bi("arbeit", "work")],
+    schoolParent: [bi("schule", "school"), bi("kinder", "kids")],
+    handballParent: [bi("sport", "sports"), bi("kinder", "kids")],
+    neighbour: [bi("nachbarschaft", "neighbourhood")],
+    craftsperson: [bi("handwerk", "trades")],
+    therapist: [bi("gesundheit", "health")],
+    founder: [bi("gruender", "startups")],
+    developer: [bi("software", "software"), bi("hobby", "hobbies")],
+    formerColleague: [bi("arbeit", "work")],
+    association: [bi("vereine", "clubs")],
+};
+
+/** Frontmatter categories per thread group. */
+const CLIENT_PROJECT_CATEGORIES: readonly Bilingual[] = [
+    bi("kunden", "clients"),
+    bi("arbeit", "work"),
+];
+const ASSOCIATION_CATEGORIES: readonly Bilingual[] = [bi("vereine", "clubs")];
+const RENOVATION_CATEGORIES: readonly Bilingual[] = [
+    bi("handwerk", "trades"),
+    bi("nachbarschaft", "neighbourhood"),
+];
+const CONTRACT_CATEGORIES: readonly Bilingual[] = [bi("vertraege", "contracts")];
+const EVENT_CATEGORIES: readonly Bilingual[] = [bi("veranstaltungen", "events")];
+const ORDER_CATEGORIES: readonly Bilingual[] = [bi("einkauf", "shopping")];
 
 // ---------------------------------------------------------------- threads
 
@@ -1479,6 +1515,8 @@ interface ThreadPlan {
     readonly events: readonly (readonly [string, string])[];
     /** Extra static bullets (status, amounts, tracking numbers). */
     readonly facts: readonly Bilingual[];
+    /** Frontmatter categories. */
+    readonly categories: readonly Bilingual[];
 }
 
 /**
@@ -1564,6 +1602,7 @@ function planThreads(
                 break;
             }
             add({
+                categories: CLIENT_PROJECT_CATEGORIES,
                 slug: bi(
                     `projekt-${slugify(company.name.de)}-${slugify(topic[0])}`,
                     `project-${slugify(company.name.en)}-${slugify(topic[1])}`,
@@ -1597,6 +1636,7 @@ function planThreads(
     // Associations (8).
     for (const association of ASSOCIATIONS) {
         add({
+            categories: ASSOCIATION_CATEGORIES,
             slug: bi(slugify(association.name.de), slugify(association.name.en)),
             title: association.name,
             context: bi(
@@ -1632,6 +1672,7 @@ function planThreads(
     for (const street of random.shuffle(STREETS)) {
         const number = random.int(1, 40);
         add({
+            categories: RENOVATION_CATEGORIES,
             slug: bi(
                 `sanierung-${slugify(street)}-${number}`,
                 `renovation-${slugify(street)}-${number}`,
@@ -1663,6 +1704,7 @@ function planThreads(
         const street = random.pick(STREETS);
         const number = random.int(41, 90);
         add({
+            categories: RENOVATION_CATEGORIES,
             slug: bi(
                 `sanierung-${slugify(street)}-${number}`,
                 `renovation-${slugify(street)}-${number}`,
@@ -1713,6 +1755,7 @@ function planThreads(
     ];
     for (const contract of contracts) {
         add({
+            categories: CONTRACT_CATEGORIES,
             slug: bi(slugify(contract[0]), slugify(contract[1])),
             title: bi(contract[0], contract[1]),
             context: bi(
@@ -1779,6 +1822,7 @@ function planThreads(
     for (const happening of happenings) {
         const year = random.int(2024, 2026);
         add({
+            categories: EVENT_CATEGORIES,
             slug: bi(`${slugify(happening[0])}-${year}`, `${slugify(happening[1])}-${year}`),
             title: bi(`${happening[0]} ${year}`, `${happening[1]} ${year}`),
             context: bi(
@@ -1855,6 +1899,7 @@ function planThreads(
         const shop = random.pick(shops);
         const tracking = `${carrier.slice(0, 2).toUpperCase()}${random.int(10000000, 99999999)}${random.int(100, 999)}`;
         add({
+            categories: ORDER_CATEGORIES,
             slug: bi(`bestellung-${slugify(product[0])}`, `order-${slugify(product[1])}`),
             title: bi(`Bestellung ${product[0]}`, `Order ${product[1].toLowerCase()}`),
             context: bi(
@@ -1921,7 +1966,11 @@ function renderThread(
             ),
         );
     });
-    return toFile(bi(`wiki/threads/${plan.slug.de}.md`, `wiki/threads/${plan.slug.en}.md`), lines);
+    return toFile(
+        bi(`wiki/threads/${plan.slug.de}.md`, `wiki/threads/${plan.slug.en}.md`),
+        lines,
+        plan.categories,
+    );
 }
 
 // ---------------------------------------------------------------- checks and output

@@ -1,3 +1,6 @@
+---
+categories: [familie]
+---
 # Jürgen Weiß
 
 Unser Nutzer: freiberuflicher Software-Berater (48) aus Kaltenbach, lebt mit [[people/ines-weiss|Ines]] und den beiden Kindern am Ahornweg 7.

@@ -1,3 +1,6 @@
+---
+categories: [hobbies, friends]
+---
 # Board game night
 
 Monthly board game group of [[people/juergen-weiss|Jürgen]] and friends, hosted in turn at one of the members' homes.

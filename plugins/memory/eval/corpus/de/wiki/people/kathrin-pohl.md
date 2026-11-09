@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Kathrin Pohl
 
 Nachbarin, Talweg 2 in Kaltenbach.

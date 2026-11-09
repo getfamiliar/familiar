@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Feldmann Maschinenbau: Lagerverwaltung
 
 Beratungsprojekt für Feldmann Maschinenbau: Lagerverwaltung.

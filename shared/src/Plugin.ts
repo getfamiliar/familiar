@@ -36,6 +36,24 @@ export type { ChatHandler, Client as McpClient };
 // biome-ignore lint/suspicious/noExplicitAny: matches citty's own SubCommandsDef usage.
 export type AnyCommandDef = CommandDef<any>;
 
+/** One parameterized SQL query function (`$1`, `$2`, … placeholders). */
+export type DatabaseQuery = <Row extends Record<string, unknown> = Record<string, unknown>>(
+    sql: string,
+    values?: readonly unknown[],
+) => Promise<readonly Row[]>;
+
+/** Plain SQL access to the host's postgres database, see {@link HostContext.database}. */
+export interface DatabaseApi {
+    /** Runs one statement on a pooled connection and returns its rows. */
+    readonly query: DatabaseQuery;
+    /**
+     * Runs `work` inside one transaction on a single connection:
+     * committed when `work` resolves, rolled back (and the error
+     * rethrown) when it rejects.
+     */
+    transaction<T>(work: (query: DatabaseQuery) => Promise<T>): Promise<T>;
+}
+
 /**
  * Capabilities the host exposes to plugins. Passed into every plugin
  * lifecycle method (`start`, `commands`, `cronjobs`).
@@ -290,6 +308,18 @@ export interface HostContext {
          */
         listActive(): Promise<readonly BannerRow[]>;
     };
+    /**
+     * Plain SQL access to the host's postgres database, for plugins that
+     * keep their own tables (e.g. the memory plugin's wiki index). The
+     * plugin owns its schema: it creates its tables idempotently
+     * (`CREATE ... IF NOT EXISTS`), ideally in a postgres schema named
+     * after the plugin, and never touches the bus tables.
+     *
+     * Works in the daemon and in one-shot CLI commands, as long as the
+     * `familiar-postgres` container is running (it is started by
+     * `familiar start`). The connection is opened lazily on first use.
+     */
+    readonly database: DatabaseApi;
     /**
      * Per-event scratch directory operations. Each event the bus
      * persists has a private scratch dir at `/scratch/<event-id>/`

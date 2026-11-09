@@ -1,3 +1,6 @@
+---
+categories: [familie]
+---
 # Tante Roswitha
 
 Roswitha Pfaff, Schwester von Jürgens verstorbenem Vater; besucht die Familie fast immer gemeinsam mit [[people/tante-hedi|Tante Hedi]].

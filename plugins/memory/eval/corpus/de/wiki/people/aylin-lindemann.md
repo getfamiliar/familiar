@@ -1,3 +1,6 @@
+---
+categories: [arbeit]
+---
 # Aylin Lindemann
 
 Ehemalige Kollegin bei Datastrom GmbH (2012–2016).

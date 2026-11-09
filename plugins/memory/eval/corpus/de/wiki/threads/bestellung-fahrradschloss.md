@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Fahrradschloss
 
 Bestellung „Fahrradschloss" bei Bürowelt Direkt, Versand mit Kurierwerk.

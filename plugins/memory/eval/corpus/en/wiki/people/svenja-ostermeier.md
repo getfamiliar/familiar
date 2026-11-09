@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Svenja Ostermeier
 
 Working student at Nordbau GmbH in Rotenfels; contact from a consulting project.

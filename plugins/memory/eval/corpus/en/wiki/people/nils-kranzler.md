@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Nils Kranzler
 
 Roofer, business Dachbau Kranzler in Rotenfels.

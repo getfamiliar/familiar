@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order planter
 
 Order of a planter from Hausfreund, shipped by Kurierwerk.

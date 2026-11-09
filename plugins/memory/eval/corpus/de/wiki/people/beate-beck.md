@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Beate Beck
 
 Mitglied — Imkerverein Hollerbach.

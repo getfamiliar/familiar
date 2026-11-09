@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Rail card
 
 Rail card with Bahn: terms and correspondence.

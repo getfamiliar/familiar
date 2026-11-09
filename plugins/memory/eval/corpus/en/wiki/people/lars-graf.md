@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Lars Graf
 
 Head of IT at Thermo-Tech AG in Rotenfels; contact from a consulting project.

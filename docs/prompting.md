@@ -49,6 +49,12 @@ These are preloaded for convenience — not the limit of what you can do. …
 
 {BANNER_LIST}
 
+# Memory
+
+…
+
+{MEMORY_CATEGORIES}
+
 # Files staged for this event
 
 …
@@ -112,7 +118,7 @@ Run `familiar prompt placeholders` for the authoritative list including placehol
 
 ¹ `{TOOL_LIST}` contains the handler's `tools` **plus** tools this handler used often in recent runs. That second part drifts over time, so the default template puts `{TOOL_LIST}` after the marker; moved before it, the system prompt wouldn't be perfectly stable.
 
-Plugins can add their own placeholders (always `dynamic`); they show up in `familiar prompt placeholders` with the plugin's id as source. Plugins can also **append** text to the user message without a placeholder — the memory plugin does this with its `# Memories` table of relevant notes. Appended text always comes after the template's post-marker part.
+Plugins can add their own placeholders (always `dynamic`); they show up in `familiar prompt placeholders` with the plugin's id as source. The default `PROMPT.md` uses one: the memory plugin's `{MEMORY_CATEGORIES}`, the categories of the wiki with their file counts. Plugins can also **append** text to the user message without a placeholder (`ctx.prompt.registerPromptAppender`). Appended text always comes after the template's post-marker part.
 
 ## Banners
 

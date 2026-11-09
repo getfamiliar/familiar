@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Björn Grössing
 
 Buyer at Datenhafen GmbH in Eschenrode; contact from a consulting project.

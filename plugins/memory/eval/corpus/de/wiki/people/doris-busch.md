@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Doris Busch
 
 Mutter von Smilla (8. Klasse, Grundschule Hollerbach).

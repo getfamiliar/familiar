@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Nordbau GmbH: Schulungsreihe
 
 Beratungsprojekt für Nordbau GmbH: Schulungsreihe.

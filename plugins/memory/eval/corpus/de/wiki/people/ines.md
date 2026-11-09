@@ -1,3 +1,6 @@
+---
+categories: [familie]
+---
 # Ines
 
 Jürgens Frau, arbeitet als Physiotherapeutin.

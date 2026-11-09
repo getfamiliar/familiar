@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Agnieszka Ritter
 
 Projektleiterin bei Datenhafen GmbH in Rotenfels; Kontakt aus einem Beratungsprojekt.

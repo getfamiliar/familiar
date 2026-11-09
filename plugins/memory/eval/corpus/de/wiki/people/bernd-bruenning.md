@@ -1,3 +1,6 @@
+---
+categories: [arbeit]
+---
 # Bernd Brünning
 
 Ehemaliger Kollege bei Infotakt AG (2013–2018).

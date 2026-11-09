@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Lukas Ludwig
 
 Working student at Weidenhof Bio in Rotenfels; contact from a consulting project.

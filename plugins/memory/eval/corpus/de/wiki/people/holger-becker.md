@@ -1,3 +1,6 @@
+---
+categories: [arbeit]
+---
 # Holger Becker
 
 Ehemaliger Kollege bei Systemhaus Kreuzberg (2014–2019).

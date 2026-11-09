@@ -1,3 +1,6 @@
+---
+categories: [food]
+---
 # Food
 
 Food preferences of [[people/juergen-weiss|Jürgen]] and the family.

@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Marlene Kaiser
 
 Mother of Marlies (year 10, Hollerbach primary school).

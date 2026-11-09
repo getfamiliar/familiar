@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Felix Neumann
 
 Einkäufer bei Feldmann Maschinenbau in Rotenfels; Kontakt aus einem Beratungsprojekt.

@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Thermo-Tech open day 2025
 
 Thermo-Tech open day 2025: organisation and people involved.

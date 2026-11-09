@@ -1,3 +1,6 @@
+---
+categories: [software, hobby]
+---
 # Lisa Tran
 
 Mitglied im [[threads/entwickler-stammtisch|Side-Project-Stammtisch]], baut die Sauerteig-App **Brotzeit**.

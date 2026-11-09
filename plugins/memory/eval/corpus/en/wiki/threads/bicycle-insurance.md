@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Bicycle insurance
 
 Bicycle insurance with Speiche & Co.: terms and correspondence.

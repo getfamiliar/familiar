@@ -1,3 +1,6 @@
+---
+categories: [family, kids]
+---
 # Friederike Weiß
 
 Daughter of [[people/juergen-weiss|Jürgen]] and [[people/ines-weiss|Ines]], everyone calls her **Fritzi**; 14 years old, 9th grade at Gymnasium Kaltenbach.

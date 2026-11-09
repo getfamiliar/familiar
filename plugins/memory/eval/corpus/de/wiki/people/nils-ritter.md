@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Nils Ritter
 
 Gründer von Ladenlicht (Energiesparberatung für Läden), Eschenrode.

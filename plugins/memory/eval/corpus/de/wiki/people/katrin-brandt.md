@@ -1,3 +1,6 @@
+---
+categories: [freunde, kinder]
+---
 # Katrin Brandt
 
 Mutter von [[people/jannis-brandt|Jannis]], Pauls bestem Freund; organisiert die Ferienbetreuung der Jungs.

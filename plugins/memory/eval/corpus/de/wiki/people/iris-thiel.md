@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Iris Thiel
 
 Kassiererin — Fotoclub Eschenrode.

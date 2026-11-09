@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Wiesenfeld mixed choir
 
 Notes: Wiesenfeld mixed choir — dates, contacts, fees.

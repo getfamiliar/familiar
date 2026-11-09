@@ -1,3 +1,6 @@
+---
+categories: [sport, kinder]
+---
 # Dirk Thiel
 
 Vater von Emil, D-Jugend Handball beim TV Eschenrode.

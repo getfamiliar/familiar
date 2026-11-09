@@ -1,3 +1,6 @@
+---
+categories: [software, hobby]
+---
 # Yusuf Demir
 
 Organisator des [[threads/entwickler-stammtisch|Side-Project-Stammtischs]], entwickelt nebenher **PlantWatch**.

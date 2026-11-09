@@ -1,3 +1,6 @@
+---
+categories: [gesundheit]
+---
 # Malte Krüger
 
 Kinderarzt, Praxis Krüger in Hollerbach.

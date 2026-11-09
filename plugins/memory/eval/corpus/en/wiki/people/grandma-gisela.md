@@ -1,3 +1,6 @@
+---
+categories: [family, inheritance]
+---
 # Grandma Gisela
 
 Gisela Weiß, Jürgen's paternal grandmother; died 2024-11-18 aged 94 and left Jürgen the "Alte Mühle" (old mill house).

@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Fitnessstudio-Vertrag
 
 Fitnessstudio-Vertrag bei Kraftraum Kaltenbach: Konditionen und Schriftverkehr.

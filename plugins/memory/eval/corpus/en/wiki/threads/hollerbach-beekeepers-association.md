@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Hollerbach beekeepers' association
 
 Notes: Hollerbach beekeepers' association — dates, contacts, fees.

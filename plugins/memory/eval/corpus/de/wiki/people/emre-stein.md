@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Emre Stein
 
 Werkstudent bei Datenhafen GmbH in Rotenfels; Kontakt aus einem Beratungsprojekt.

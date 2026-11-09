@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order office chair
 
 Order of a office chair from Bürowelt Direkt, shipped by Logistiq.

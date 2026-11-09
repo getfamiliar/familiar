@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Wolfgang Ziegler
 
 Kassierer — Heimatverein Kaltenbach.

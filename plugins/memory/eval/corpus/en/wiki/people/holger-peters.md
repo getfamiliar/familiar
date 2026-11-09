@@ -1,3 +1,6 @@
+---
+categories: [software, hobbies]
+---
 # Holger Peters
 
 Software developer from Hollerbach, maintains the open-source project Wetterfrosch-API.

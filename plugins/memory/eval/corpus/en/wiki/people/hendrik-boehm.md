@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Hendrik Böhm
 
 Buyer at Hansa Datenwerk in Kaltenbach; contact from a consulting project.

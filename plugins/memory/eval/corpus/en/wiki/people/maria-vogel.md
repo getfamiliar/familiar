@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Maria Vogel
 
 Neighbour at Gartenstraße 18, Kaltenbach.

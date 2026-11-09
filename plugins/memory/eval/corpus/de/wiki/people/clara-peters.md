@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Clara Peters
 
 Werkstudentin bei Nordbau GmbH in Oberweiler; Kontakt aus einem Beratungsprojekt.

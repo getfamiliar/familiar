@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Rafael Ziegenhorn
 
 Projektleiter bei Nordbau GmbH in Oberweiler; Kontakt aus einem Beratungsprojekt.

@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Infotakt former colleagues' reunion 2026
 
 Infotakt former colleagues' reunion 2026: organisation and people involved.

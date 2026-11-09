@@ -1,3 +1,6 @@
+---
+categories: [family]
+---
 # Ines
 
 Jürgen's wife, works as a physiotherapist.

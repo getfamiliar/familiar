@@ -1,3 +1,6 @@
+---
+categories: [handwerk, nachbarschaft]
+---
 # Sanierung Gartenstraße 20
 
 Sanierung des Nachbarhauses Gartenstraße 20: Absprachen, Lärm, Parkplätze.

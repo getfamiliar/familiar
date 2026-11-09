@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Emre Okafor
 
 Working student at Feldmann Maschinenbau in Eschenrode; contact from a consulting project.

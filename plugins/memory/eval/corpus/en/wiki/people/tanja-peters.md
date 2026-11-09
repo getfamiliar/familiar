@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Tanja Peters
 
 Buyer at Datenhafen GmbH in Kaltenbach; contact from a consulting project.

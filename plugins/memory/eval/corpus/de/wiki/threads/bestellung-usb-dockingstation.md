@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung USB-Dockingstation
 
 Bestellung „USB-Dockingstation" bei Hausfreund, Versand mit PostNova.

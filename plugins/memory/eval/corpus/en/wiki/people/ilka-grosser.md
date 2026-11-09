@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Ilka Grosser
 
 Head of IT at Hansa Datenwerk in Hollerbach; contact from a consulting project.

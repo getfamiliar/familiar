@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Zelt
 
 Bestellung „Zelt" bei Gartenglück, Versand mit PostNova.

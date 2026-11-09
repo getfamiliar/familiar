@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Piotr Osterloh
 
 Secretary — Friends of the Kaltenbach open-air pool.

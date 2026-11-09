@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Timo Krüger
 
 Installateur, Betrieb Haustechnik Krüger in Hollerbach.

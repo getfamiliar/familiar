@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order bluetooth speaker
 
 Order of a bluetooth speaker from Kaltenbacher Kaufhaus, shipped by Logistiq.

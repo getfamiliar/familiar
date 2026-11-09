@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Agnieszka Vogel
 
 Mutter von Greta (3. Klasse, Grundschule Hollerbach).

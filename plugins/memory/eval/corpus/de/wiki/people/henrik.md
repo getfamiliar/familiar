@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Henrik
 
 Nachbar von oben.

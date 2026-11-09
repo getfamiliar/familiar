@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Paula Peters
 
 Treasurer — Oberweiler fruit and garden club.

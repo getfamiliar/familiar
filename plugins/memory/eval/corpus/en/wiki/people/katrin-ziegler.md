@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Katrin Ziegler
 
 Member — Friends of the Kaltenbach open-air pool.

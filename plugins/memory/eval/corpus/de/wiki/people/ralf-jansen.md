@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Ralf Jansen
 
 Werkstudent bei Lumina Logistik in Hollerbach; Kontakt aus einem Beratungsprojekt.

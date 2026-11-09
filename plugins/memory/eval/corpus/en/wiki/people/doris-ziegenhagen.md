@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Doris Ziegenhagen
 
 Buyer at Feldmann Maschinenbau in Kaltenbach; contact from a consulting project.

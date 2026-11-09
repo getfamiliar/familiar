@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Open-Source-Sprint Taktgeber 2024
 
 Open-Source-Sprint Taktgeber 2024: Organisation und Beteiligte.

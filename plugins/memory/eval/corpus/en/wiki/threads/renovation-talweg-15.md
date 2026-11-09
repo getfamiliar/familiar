@@ -1,3 +1,6 @@
+---
+categories: [trades, neighbourhood]
+---
 # Renovation Talweg 15
 
 Renovation of the neighbouring house Talweg 15: arrangements, noise, parking.

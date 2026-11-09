@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Kestrel Software: Datenschutz-Audit
 
 Beratungsprojekt für Kestrel Software: Datenschutz-Audit.

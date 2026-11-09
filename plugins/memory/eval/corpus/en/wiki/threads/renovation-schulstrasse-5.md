@@ -1,3 +1,6 @@
+---
+categories: [trades, neighbourhood]
+---
 # Renovation Schulstraße 5
 
 Renovation of the neighbouring house Schulstraße 5: arrangements, noise, parking.

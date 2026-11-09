@@ -1,3 +1,6 @@
+---
+categories: [trades, neighbourhood]
+---
 # Renovation Feldbergstraße 43
 
 Conversion at Feldbergstraße 43, affects the neighbourhood.

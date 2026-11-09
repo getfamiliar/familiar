@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Hansa Datenwerk: Datenschutz-Audit
 
 Beratungsprojekt für Hansa Datenwerk: Datenschutz-Audit.

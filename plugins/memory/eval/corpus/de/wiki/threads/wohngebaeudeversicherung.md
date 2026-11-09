@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Wohngebäudeversicherung
 
 Wohngebäudeversicherung bei Talgrund Versicherung: Konditionen und Schriftverkehr.

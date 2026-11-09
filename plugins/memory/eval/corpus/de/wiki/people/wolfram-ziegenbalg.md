@@ -1,3 +1,6 @@
+---
+categories: [versicherung]
+---
 # Wolfram Ziegenbalg
 
 Versicherungsmakler (Ziegenbalg Finanz, Kaltenbach), betreut Jürgens Antrag auf Berufsunfähigkeitsversicherung.

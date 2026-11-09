@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Wolfgang Szymańska
 
 Treasurer — Wiesenfeld mixed choir.

@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Beate Beck
 
 Member — Hollerbach beekeepers' association.

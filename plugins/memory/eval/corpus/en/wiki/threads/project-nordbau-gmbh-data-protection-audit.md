@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Nordbau GmbH: Data protection audit
 
 Consulting project for Nordbau GmbH: data protection audit.

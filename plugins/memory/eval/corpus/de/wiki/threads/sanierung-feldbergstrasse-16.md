@@ -1,3 +1,6 @@
+---
+categories: [handwerk, nachbarschaft]
+---
 # Sanierung Feldbergstraße 16
 
 Sanierung des Nachbarhauses Feldbergstraße 16: Absprachen, Lärm, Parkplätze.

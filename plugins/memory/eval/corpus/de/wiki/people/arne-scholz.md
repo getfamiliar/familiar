@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Arne Scholz
 
 Schornsteinfeger, Betrieb Kaminkehrer Scholz in Rotenfels.

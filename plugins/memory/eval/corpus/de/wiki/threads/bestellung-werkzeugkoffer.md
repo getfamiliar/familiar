@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Werkzeugkoffer
 
 Bestellung „Werkzeugkoffer" bei Hausfreund, Versand mit Logistiq.

@@ -1,3 +1,6 @@
+---
+categories: [software, hobby]
+---
 # Agnieszka Winkler
 
 Softwareentwicklerin aus Eschenrode, betreut das Open-Source-Projekt Taktgeber.

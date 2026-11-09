@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Nele Hoffmann
 
 Organisatorin des [[threads/gruenderstammtisch-kaltenbach|Gründerstammtischs Kaltenbach]].

@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Ralf Jansen
 
 Working student at Lumina Logistik in Hollerbach; contact from a consulting project.

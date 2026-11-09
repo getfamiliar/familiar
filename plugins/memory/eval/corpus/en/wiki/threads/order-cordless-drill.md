@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order cordless drill
 
 Order of a cordless drill from Gartenglück, shipped by Logistiq.

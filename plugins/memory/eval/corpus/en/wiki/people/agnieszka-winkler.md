@@ -1,3 +1,6 @@
+---
+categories: [software, hobbies]
+---
 # Agnieszka Winkler
 
 Software developer from Eschenrode, maintains the open-source project Taktgeber.

@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Förderverein Freibad Kaltenbach
 
 Notizen: Förderverein Freibad Kaltenbach — Termine, Kontakte, Beiträge.

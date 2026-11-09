@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Carla Osterkamp
 
 Mutter von Anton (2. Klasse, Realschule Eschenrode).

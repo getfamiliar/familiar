@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order toolbox
 
 Order of a toolbox from Hausfreund, shipped by Logistiq.

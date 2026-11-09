@@ -1,3 +1,6 @@
+---
+categories: [gesundheit]
+---
 # Hanna Grosser
 
 Physiotherapeutin, Praxis Grosser in Oberweiler.

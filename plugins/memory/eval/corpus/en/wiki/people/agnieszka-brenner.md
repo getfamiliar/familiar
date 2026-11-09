@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Agnieszka Brenner
 
 Project lead at Weidenhof Bio in Oberweiler; contact from a consulting project.

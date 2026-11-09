@@ -1,3 +1,6 @@
+---
+categories: [handwerk, nachbarschaft]
+---
 # Sanierung Talweg 15
 
 Sanierung des Nachbarhauses Talweg 15: Absprachen, Lärm, Parkplätze.

@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Lauftreff Eschenrode
 
 Notizen: Lauftreff Eschenrode — Termine, Kontakte, Beiträge.

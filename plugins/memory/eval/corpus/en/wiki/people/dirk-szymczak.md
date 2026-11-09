@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Dirk Szymczak
 
 Master electrician, business Elektro Szymczak in Rotenfels.

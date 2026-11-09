@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Agnieszka Szymon
 
 Fliesenlegerin, Betrieb Fliesen Szymon in Wiesenfeld.

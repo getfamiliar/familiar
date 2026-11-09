@@ -1,27 +1,20 @@
 import { markdownTable } from "@getfamiliar/shared";
+import type { AgentCaseRunResult, AgentEvalResult } from "./EvalAgent.js";
 import { EVAL_CATEGORIES } from "./EvalCases.js";
-import {
-    aggregateMetrics,
-    percentiles,
-    type ScorePercentiles,
-    separationAuc,
-    sweepThresholds,
-} from "./EvalMetrics.js";
+import { aggregateMetrics } from "./EvalMetrics.js";
 import type { CaseRunResult, EvalRunLabel, MemoryEvalResult } from "./EvalRunner.js";
+import type { DateQuery } from "./WikiSearch.js";
 
 /**
  * Renders a {@link MemoryEvalResult} as the markdown report of `familiar memory eval`.
  */
 
-/** Score floors evaluated by the threshold sweep. */
-const SWEEP_THRESHOLDS = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9];
-
-/** Maximum query length shown in the failure list. */
+/** Maximum query preview length in table cells. */
 const QUERY_PREVIEW_CHARS = 60;
 
 /** Report display options. */
 export interface EvalReportOptions {
-    /** Also list every positive case whose top file is not relevant, and every negative case. */
+    /** Also list every positive case with a must-have file missing from the top 5. */
     readonly isFailureListShown: boolean;
 }
 
@@ -32,26 +25,34 @@ export interface EvalReportOptions {
  * @param opts - Display options.
  * @returns Markdown.
  */
-export function renderEvalReport(result: MemoryEvalResult, opts: EvalReportOptions): string {
+export function renderEvalReport(
+    result: MemoryEvalResult | AgentEvalResult,
+    opts: EvalReportOptions,
+): string {
     const runs = listRuns(result.results);
-    const { settings } = result;
+    const { weights, similarityThreshold } = result.settings;
+    const agentResults = "modelLabel" in result ? result.results : undefined;
     const sections: string[] = [
-        "# Memory eval",
+        agentResults ? "# Memory eval — LLM stage" : "# Memory eval",
         [
-            `- Embedding: \`${result.embedding}\``,
-            `- Tokenizer language: \`${settings.language}\``,
-            `- Hybrid weights: vector ${settings.hybridWeights.vector}, text ${settings.hybridWeights.text}`,
-            `- minVectorSimilarity: ${settings.minVectorSimilarity}, minScoreToMention: ${settings.minScoreToMention}, maxChunkChars: ${settings.maxChunkChars}`,
+            ...("modelLabel" in result
+                ? [
+                      `- Model: \`${result.modelLabel}\` formulates the searches from each case's prompt`,
+                  ]
+                : []),
+            `- Similarity threshold: ${similarityThreshold}`,
+            `- Field weights: title ${weights.title}, category ${weights.category}, description ${weights.description}, heading ${weights.heading}, body ${weights.body}`,
             `- Started: ${result.startedAt}`,
         ].join("\n"),
         renderIndexingSection(result),
         renderOverview(result.results, runs),
         renderCategoryTable(result.results, runs),
-        renderScoreDistribution(result.results, runs),
-        renderThresholdSweep(result.results, runs, settings.minScoreToMention),
+        agentResults ? renderAgentOverview(agentResults, runs) : renderNegatives(result.results),
     ];
     if (opts.isFailureListShown) {
-        sections.push(renderFailures(result.results));
+        sections.push(
+            agentResults ? renderAgentFailures(agentResults) : renderFailures(result.results),
+        );
     }
     return `${sections.filter((section) => section.length > 0).join("\n\n")}\n`;
 }
@@ -76,14 +77,14 @@ function listRuns(results: readonly CaseRunResult[]): EvalRunLabel[] {
 function renderIndexingSection(result: MemoryEvalResult): string {
     const rows = result.corpora.map((corpus) => [
         corpus.language,
-        String(corpus.corpusFiles),
+        `\`${corpus.schema}\``,
+        String(corpus.wikiFiles),
         String(corpus.indexedFiles),
-        String(corpus.chunks),
-        corpus.missingFiles.length === 0 ? "—" : corpus.missingFiles.join(", "),
+        String(corpus.written),
     ]);
     const lines = [
         "## Index",
-        markdownTable(["Corpus", "Files", "Indexed", "Chunks", "Missing"], rows),
+        markdownTable(["Corpus", "Schema", "Wiki files", "Indexed", "Written now"], rows),
     ];
     if (result.caseProblems.length > 0) {
         lines.push(
@@ -94,7 +95,7 @@ function renderIndexingSection(result: MemoryEvalResult): string {
 }
 
 /**
- * Renders the per-run overview: ranking metrics and score separability.
+ * Renders the per-run overview of the ranking metrics.
  *
  * @param results - Case results.
  * @param runs - Runs to show.
@@ -102,53 +103,28 @@ function renderIndexingSection(result: MemoryEvalResult): string {
  */
 function renderOverview(results: readonly CaseRunResult[], runs: readonly EvalRunLabel[]): string {
     const rows = runs.map((run) => {
-        const runResults = results.filter((result) => result.run === run);
-        const metrics = runResults.map((result) => result.metrics);
-        const aggregate = aggregateMetrics(metrics);
-        const auc = separationAuc(
-            metrics.flatMap((entry) =>
-                entry.bestRelevantScore === null ? [] : [entry.bestRelevantScore],
-            ),
-            collectIrrelevantScores(runResults),
+        const aggregate = aggregateMetrics(
+            results.filter((result) => result.run === run).map((result) => result.metrics),
         );
         return [
             run,
             String(aggregate.caseCount),
-            formatPercent(aggregate.hitAt1),
             formatPercent(aggregate.recallAt5),
+            formatPercent(aggregate.recallAt10),
+            formatPercent(aggregate.hitAt1),
             formatDecimal(aggregate.mrr),
             formatDecimal(aggregate.ndcgAt10),
-            auc === null ? "—" : formatDecimal(auc),
         ];
     });
     return [
         "## Overview",
-        "Ranking over positive cases. *Separation AUC*: probability that a case's best relevant file scores higher than an irrelevant top-10 file or a negative case's top file — 1.0 means one global score floor could separate them, 0.5 is chance.",
-        markdownTable(
-            ["Run", "Cases", "Hit@1", "Recall@5", "MRR", "nDCG@10", "Separation AUC"],
-            rows,
-        ),
+        "Over positive cases. The agent reads the whole result table, so *Recall@5* (share of must-have files within the top 5) is the main measure; Hit@1, MRR and nDCG@10 are for comparison.",
+        markdownTable(["Run", "Cases", "Recall@5", "Recall@10", "Hit@1", "MRR", "nDCG@10"], rows),
     ].join("\n\n");
 }
 
 /**
- * Collects the scores that should stay below a score floor: irrelevant top-10 files of positive
- * cases and the top file of each negative case.
- *
- * @param runResults - Case results of one run.
- * @returns The scores.
- */
-function collectIrrelevantScores(runResults: readonly CaseRunResult[]): number[] {
-    return runResults.flatMap((result) => {
-        if (result.metrics.isHitAt1 === null) {
-            return result.metrics.topScore === null ? [] : [result.metrics.topScore];
-        }
-        return [...result.metrics.irrelevantScores];
-    });
-}
-
-/**
- * Renders hit@1 and MRR per category and run.
+ * Renders Recall@5 and Hit@1 per category and run.
  *
  * @param results - Case results.
  * @param runs - Runs to show.
@@ -158,7 +134,7 @@ function renderCategoryTable(
     results: readonly CaseRunResult[],
     runs: readonly EvalRunLabel[],
 ): string {
-    const headers = ["Category", ...runs.flatMap((run) => [`${run} Hit@1`, `${run} MRR`])];
+    const headers = ["Category", ...runs.flatMap((run) => [`${run} R@5`, `${run} Hit@1`])];
     const rows = EVAL_CATEGORIES.filter(
         (category) =>
             category !== "negative" && results.some((result) => result.category === category),
@@ -173,8 +149,8 @@ function renderCategoryTable(
             }
             const aggregate = aggregateMetrics(metrics);
             return [
-                `${formatPercent(aggregate.hitAt1)} (${aggregate.caseCount})`,
-                formatDecimal(aggregate.mrr),
+                `${formatPercent(aggregate.recallAt5)} (${aggregate.caseCount})`,
+                formatPercent(aggregate.hitAt1),
             ];
         }),
     ]);
@@ -182,146 +158,182 @@ function renderCategoryTable(
 }
 
 /**
- * Renders score percentiles of relevant files, irrelevant files and negative cases per run.
+ * Renders the negative cases: how many files came back and how well the top one matched. An empty
+ * result or a top file matching only some terms is what lets the agent conclude "nothing known".
  *
  * @param results - Case results.
+ * @returns Markdown section (empty when no negative case ran).
+ */
+function renderNegatives(results: readonly CaseRunResult[]): string {
+    const rows = results
+        .filter((result) => result.metrics.isHitAt1 === null)
+        .map((result) => {
+            const top = result.ranked[0];
+            return [
+                result.caseId,
+                result.run,
+                describeQuery(result.terms, result.dates),
+                String(result.metrics.resultCount),
+                top
+                    ? `${shortPath(top.path)} (${top.matchedTermCount}/${result.terms.length} terms)`
+                    : "—",
+            ];
+        });
+    if (rows.length === 0) {
+        return "";
+    }
+    return [
+        "## Negative cases",
+        "Nothing relevant exists. Fewer results, and a top file that matches only some of the terms, make it easier for the agent to conclude that.",
+        markdownTable(["Case", "Run", "Terms", "Results", "Top file"], rows),
+    ].join("\n\n");
+}
+
+/**
+ * Renders what the model did per run: whether its answer named the must-have files, how many
+ * searches it needed, and how often it answered "none" on negative cases.
+ *
+ * @param results - Case results with traces.
  * @param runs - Runs to show.
  * @returns Markdown section.
  */
-function renderScoreDistribution(
-    results: readonly CaseRunResult[],
+function renderAgentOverview(
+    results: readonly AgentCaseRunResult[],
     runs: readonly EvalRunLabel[],
 ): string {
-    const rows = runs.flatMap((run) => {
+    const rows = runs.map((run) => {
         const runResults = results.filter((result) => result.run === run);
-        const positives = runResults.filter((result) => result.metrics.isHitAt1 !== null);
-        const negatives = runResults.filter((result) => result.metrics.isHitAt1 === null);
+        const positives = runResults.filter((result) => result.agent.answerRecall !== null);
+        const negatives = runResults.filter((result) => result.agent.answerRecall === null);
+        const mean = (values: readonly number[]): number =>
+            values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
         return [
-            percentileRow(
-                run,
-                "best relevant file",
-                percentiles(
+            run,
+            formatPercent(mean(positives.map((result) => result.agent.answerRecall ?? 0))),
+            formatPercent(
+                mean(
                     positives.flatMap((result) =>
-                        result.metrics.bestRelevantScore === null
-                            ? []
-                            : [result.metrics.bestRelevantScore],
+                        result.agent.answerPrecision === null ? [] : [result.agent.answerPrecision],
                     ),
                 ),
             ),
-            percentileRow(
-                run,
-                "irrelevant top-10 file",
-                percentiles(positives.flatMap((result) => result.metrics.irrelevantScores)),
-            ),
-            percentileRow(
-                run,
-                "negative case, top file",
-                percentiles(
-                    negatives.flatMap((result) =>
-                        result.metrics.topScore === null ? [] : [result.metrics.topScore],
-                    ),
-                ),
-            ),
+            formatDecimal(mean(positives.map((result) => result.agent.answer.length))),
+            negatives.length === 0
+                ? "—"
+                : `${negatives.filter((result) => result.agent.answer.length === 0).length}/${negatives.length}`,
+            formatDecimal(mean(runResults.map((result) => result.agent.calls.length))),
+            String(runResults.filter((result) => result.agent.calls.length === 0).length),
+            `${runResults.filter((result) => result.agent.isCached).length}/${runResults.length}`,
         ];
     });
     return [
-        "## Score distribution",
-        markdownTable(["Run", "Scores of", "n", "p10", "p50", "p90"], rows),
+        "## Agent",
+        "*Answer recall*: share of must-have files the model named in its final `FILES:` line; *answer precision*: share of named files that are graded relevant (positive cases). The ranking metrics above use every file the model saw in its search results, in order of appearance.",
+        markdownTable(
+            [
+                "Run",
+                "Answer recall",
+                "Answer precision",
+                "Files / answer",
+                "Negatives answered none",
+                "Tool calls / case",
+                "No search",
+                "Cached",
+            ],
+            rows,
+        ),
     ].join("\n\n");
 }
 
 /**
- * Formats one percentile row.
+ * Lists cases whose answer misses a must-have file, or negative cases answered with files, with
+ * the model's searches.
  *
- * @param run - Run label.
- * @param label - What the scores are.
- * @param stats - The percentiles.
- * @returns Table row.
- */
-function percentileRow(run: string, label: string, stats: ScorePercentiles): string[] {
-    const show = (value: number | null): string => (value === null ? "—" : formatDecimal(value));
-    return [run, label, String(stats.count), show(stats.p10), show(stats.p50), show(stats.p90)];
-}
-
-/**
- * Renders the threshold sweep per run.
- *
- * @param results - Case results.
- * @param runs - Runs to show.
- * @param currentThreshold - Configured `minScoreToMention`, marked in the table.
+ * @param results - Case results with traces.
  * @returns Markdown section.
  */
-function renderThresholdSweep(
-    results: readonly CaseRunResult[],
-    runs: readonly EvalRunLabel[],
-    currentThreshold: number,
-): string {
-    const thresholds = [...new Set([...SWEEP_THRESHOLDS, currentThreshold])].sort((a, b) => a - b);
-    const sweeps = runs.map((run) =>
-        sweepThresholds(
-            results.filter((result) => result.run === run).map((result) => result.metrics),
-            thresholds,
-        ),
-    );
-    const headers = [
-        "Floor",
-        ...runs.flatMap((run) => [
-            `${run} relevant kept`,
-            `${run} irrelevant kept`,
-            `${run} negatives empty`,
-        ]),
-    ];
-    const rows = thresholds.map((threshold, index) => [
-        threshold === currentThreshold ? `**${threshold}** (current)` : String(threshold),
-        ...sweeps.flatMap((sweep) => [
-            formatPercent(sweep[index].relevantKept),
-            formatPercent(sweep[index].irrelevantKept),
-            formatPercent(sweep[index].negativesSuppressed),
-        ]),
-    ]);
+function renderAgentFailures(results: readonly AgentCaseRunResult[]): string {
+    const rows = results
+        .filter((result) =>
+            result.agent.answerRecall === null
+                ? result.agent.answer.length > 0
+                : result.agent.answerRecall < 1,
+        )
+        .map((result) => [
+            result.caseId,
+            result.run,
+            result.agent.calls
+                .map((call) =>
+                    call.tool === "memory_search"
+                        ? `search ${JSON.stringify(call.args.terms ?? [])}`
+                        : `dates ${JSON.stringify(call.args)}`,
+                )
+                .join("; ") || "(no search)",
+            Object.entries(result.grades)
+                .filter(([, grade]) => grade === 2)
+                .map(([filePath]) => shortPath(filePath))
+                .join(", ") || "(nothing)",
+            result.agent.answer.map((filePath) => shortPath(filePath)).join(", ") || "none",
+        ]);
     return [
-        "## Threshold sweep",
-        "What a `minScoreToMention` floor would do: share of positive cases whose best relevant file stays visible, share of irrelevant top-10 files that stay visible, share of negative cases that would show nothing.",
-        markdownTable(headers, rows),
+        "## Agent misses",
+        rows.length === 0
+            ? "Every answer named all must-have files, and every negative case was answered with none."
+            : markdownTable(["Case", "Run", "Searches", "Expected", "Answer"], rows),
     ].join("\n\n");
 }
 
 /**
- * Lists positive cases whose top file is not relevant, and every negative case with its top hit.
+ * Lists positive cases with a must-have file missing from the top 5.
  *
  * @param results - Case results.
  * @returns Markdown section.
  */
 function renderFailures(results: readonly CaseRunResult[]): string {
     const rows = results
-        .filter((result) => result.metrics.isHitAt1 !== true)
+        .filter((result) => result.metrics.recallAt5 !== null && result.metrics.recallAt5 < 1)
         .map((result) => {
-            const isNegative = result.metrics.isHitAt1 === null;
             const expected = Object.entries(result.grades)
                 .filter(([, grade]) => grade === 2)
                 .map(([filePath]) => filePath);
-            const expectedCell = isNegative
-                ? "(nothing)"
-                : expected.map((filePath) => shortPath(filePath)).join(", ") || "(grade 1 only)";
             const rank = result.metrics.firstRelevantRank;
             return [
                 result.caseId,
                 result.run,
-                previewQuery(result.query),
-                expectedCell,
-                isNegative ? "—" : rank === null ? "not found" : `#${rank}`,
+                describeQuery(result.terms, result.dates),
+                expected.map((filePath) => shortPath(filePath)).join(", ") || "(grade 1 only)",
+                rank === null ? "not found" : `#${rank}`,
                 result.ranked
                     .slice(0, 3)
-                    .map((file) => `${shortPath(file.path)} ${formatDecimal(file.score)}`)
+                    .map((file) => `${shortPath(file.path)} (${file.matchedTermCount})`)
                     .join("; "),
             ];
         });
     return [
         "## Misses",
         rows.length === 0
-            ? "Every positive case has a relevant file at rank 1."
-            : markdownTable(["Case", "Run", "Query", "Expected", "First relevant", "Top 3"], rows),
+            ? "Every positive case has all must-have files within the top 5."
+            : markdownTable(
+                  ["Case", "Run", "Terms", "Expected", "First relevant", "Top 3 (terms matched)"],
+                  rows,
+              ),
     ].join("\n\n");
+}
+
+/**
+ * Summarizes a case's search input for a table cell.
+ *
+ * @param terms - The terms.
+ * @param dates - The date query.
+ * @returns E.g. `Tobias Hartl · day 05-25`.
+ */
+function describeQuery(terms: readonly string[], dates: DateQuery | undefined): string {
+    const parts = terms.length > 0 ? [terms.join(", ")] : [];
+    if (dates) {
+        parts.push("day" in dates ? `day ${dates.day}` : `${dates.from}…${dates.to}`);
+    }
+    const flat = parts.join(" · ");
+    return flat.length <= QUERY_PREVIEW_CHARS ? flat : `${flat.slice(0, QUERY_PREVIEW_CHARS - 1)}…`;
 }
 
 /**
@@ -335,17 +347,6 @@ function shortPath(filePath: string): string {
 }
 
 /**
- * Collapses whitespace and truncates a query for a table cell.
- *
- * @param query - The query.
- * @returns The preview.
- */
-function previewQuery(query: string): string {
-    const flat = query.replace(/\s+/g, " ").trim();
-    return flat.length <= QUERY_PREVIEW_CHARS ? flat : `${flat.slice(0, QUERY_PREVIEW_CHARS - 1)}…`;
-}
-
-/**
  * Formats a share as a whole percentage.
  *
  * @param share - Value in [0, 1].
@@ -356,7 +357,7 @@ function formatPercent(share: number): string {
 }
 
 /**
- * Formats a score or mean with two decimals.
+ * Formats a mean with two decimals.
  *
  * @param value - The number.
  * @returns E.g. `"0.62"`.

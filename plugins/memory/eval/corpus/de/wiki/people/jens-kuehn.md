@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Jens Kühn
 
 Werkstudent bei Nordbau GmbH in Eschenrode; Kontakt aus einem Beratungsprojekt.

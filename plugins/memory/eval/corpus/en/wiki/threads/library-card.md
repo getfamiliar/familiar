@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Library card
 
 Library card with Stadtbücherei Kaltenbach: terms and correspondence.

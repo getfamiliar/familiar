@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Tag der offenen Tür Thermo-Tech 2025
 
 Tag der offenen Tür Thermo-Tech 2025: Organisation und Beteiligte.

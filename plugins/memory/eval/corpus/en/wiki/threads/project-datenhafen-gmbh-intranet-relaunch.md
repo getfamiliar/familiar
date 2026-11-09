@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Datenhafen GmbH: Intranet relaunch
 
 Consulting project for Datenhafen GmbH: intranet relaunch.

@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Mara Lindqvist
 
 Project lead at Brightwater GmbH, Jürgen's main contact in the [[threads/brightwater-project]].

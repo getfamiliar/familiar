@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Hanna Fuchs
 
 Mitglied — Lauftreff Eschenrode.

@@ -1,3 +1,6 @@
+---
+categories: [handwerk, nachbarschaft]
+---
 # Sanierung Mühlbacher Weg 33
 
 Sanierung des Nachbarhauses Mühlbacher Weg 33: Absprachen, Lärm, Parkplätze.

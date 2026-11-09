@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Hendrik Wendtner
 
 Vater von Pia (7. Klasse, Grundschule Hollerbach).

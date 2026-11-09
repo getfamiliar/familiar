@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Eschenrode startup breakfast 2024
 
 Eschenrode startup breakfast 2024: organisation and people involved.

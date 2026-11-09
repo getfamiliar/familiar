@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Florian Behrens
 
 Gründer von Fahrplanfux (Mitfahr-App für Pendler), Eschenrode.

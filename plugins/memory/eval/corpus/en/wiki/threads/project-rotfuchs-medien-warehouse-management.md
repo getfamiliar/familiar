@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Rotfuchs Medien: Warehouse management
 
 Consulting project for Rotfuchs Medien: warehouse management.

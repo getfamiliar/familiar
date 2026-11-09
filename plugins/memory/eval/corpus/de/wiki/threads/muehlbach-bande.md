@@ -1,3 +1,6 @@
+---
+categories: [freunde]
+---
 # Mühlbach-Bande
 
 WhatsApp-Gruppe alter Schulfreunde von [[people/juergen-weiss|Jürgen]] aus der Grundschule am Mühlbach; „Mühlbach-Bande“ ist der Spitzname der Gruppe.

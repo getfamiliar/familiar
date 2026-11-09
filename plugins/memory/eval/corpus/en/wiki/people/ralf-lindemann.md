@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Ralf Lindemann
 
 Founder of Kiezkasse (point-of-sale systems for small shops), Eschenrode.

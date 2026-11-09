@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Gründerstammtisch Kaltenbach
 
 Monatlicher Stammtisch für Gründerinnen, Gründer und Business Angels aus der Region, organisiert von [[people/nele-hoffmann]].

@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Arne Lindquist
 
 Maler, Betrieb Malerbetrieb Lindquist in Hollerbach.

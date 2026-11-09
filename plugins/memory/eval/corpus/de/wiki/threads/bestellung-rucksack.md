@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Rucksack
 
 Bestellung „Rucksack" bei Bürowelt Direkt, Versand mit Logistiq.

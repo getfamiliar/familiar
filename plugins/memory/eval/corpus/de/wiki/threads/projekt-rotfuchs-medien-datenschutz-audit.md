@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Rotfuchs Medien: Datenschutz-Audit
 
 Beratungsprojekt für Rotfuchs Medien: Datenschutz-Audit.

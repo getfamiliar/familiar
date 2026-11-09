@@ -1,3 +1,6 @@
+---
+categories: [work]
+---
 # Nils Walter
 
 Former colleague at Datastrom GmbH (2011–2014).

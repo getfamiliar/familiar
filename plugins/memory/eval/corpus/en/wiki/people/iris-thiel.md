@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Iris Thiel
 
 Treasurer — Eschenrode photo club.

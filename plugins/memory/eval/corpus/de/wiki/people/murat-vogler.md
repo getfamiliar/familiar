@@ -1,3 +1,6 @@
+---
+categories: [gesundheit]
+---
 # Murat Vogler
 
 Logopäde, Praxis Vogler in Kaltenbach.

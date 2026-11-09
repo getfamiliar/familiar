@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Nils Ziegenhorn
 
 Neighbour at Feldbergstraße 1, Hollerbach.

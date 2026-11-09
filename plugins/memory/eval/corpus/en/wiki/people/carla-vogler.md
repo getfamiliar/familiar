@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Carla Vogler
 
 Mother of Hugo (year 1, Hollerbach primary school).

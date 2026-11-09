@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Emre Ernst
 
 Managing director at Hansa Datenwerk in Kaltenbach; contact from a consulting project.

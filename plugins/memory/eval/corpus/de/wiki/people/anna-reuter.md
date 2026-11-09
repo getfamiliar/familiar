@@ -1,3 +1,6 @@
+---
+categories: [gesundheit]
+---
 # Anna Reuter
 
 Dr. Anna Reuter, Hausärztin der Familie in der Praxis Bahnhofstraße 12, Kaltenbach.

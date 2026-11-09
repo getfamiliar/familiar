@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Emre Hansen
 
 Managing director at Rotfuchs Medien in Oberweiler; contact from a consulting project.

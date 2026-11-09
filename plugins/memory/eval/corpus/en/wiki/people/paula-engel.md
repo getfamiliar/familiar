@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Paula Engel
 
 Head of IT at Weidenhof Bio in Wiesenfeld; contact from a consulting project.

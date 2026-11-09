@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Kai Wendt
 
 Gründer des Startups **Lumora** (smarte Brillen für die Kommissionierung im Lager), hat beim Gründerstammtisch gepitcht.

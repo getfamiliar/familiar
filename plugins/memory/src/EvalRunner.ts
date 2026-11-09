@@ -1,25 +1,42 @@
-import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { HostContext, Logger, WorkspaceFile, WorkspaceWatcherApi } from "@getfamiliar/shared";
-import { buildMemoryStore } from "./BuildStore.js";
-import type { MemoryConfig } from "./Config.js";
+import type { DatabaseApi, Logger } from "@getfamiliar/shared";
 import { type EvalCase, type EvalCategory, type EvalLanguage, loadEvalCases } from "./EvalCases.js";
 import { type CaseMetrics, type RankedFile, scoreCase } from "./EvalMetrics.js";
-import type { MemoryStore } from "./MemoryStore.js";
+import { listWikiFiles, WikiIndex } from "./WikiIndex.js";
+import {
+    type DateQuery,
+    DEFAULT_FIELD_WEIGHTS,
+    DEFAULT_SIMILARITY_THRESHOLD,
+    type FieldWeights,
+    searchDates,
+    searchFiles,
+} from "./WikiSearch.js";
 
 /**
- * Runs the memory eval set (`eval/cases.yml`) against the real {@link MemoryStore}: indexes each
- * corpus into a cached throwaway index, runs every query and scores the ranked files.
+ * Runs the memory eval set (`eval/cases.yml`) against the real wiki index: indexes each corpus's
+ * `wiki/` into its own postgres schema (`memory_eval_<lang>`), runs every case's terms and dates
+ * and scores the ranked files.
  */
 
-/** Provider resolver, as exposed by `ctx.inference.resolveProvider`. */
-type ResolveProvider = HostContext["inference"]["resolveProvider"];
-
 /**
- * A run: the query language and the corpus it is searched against. `en→de` runs the English
- * query of cross-language cases against the German corpus.
+ * A run: the term language and the corpus it is searched against. `en→de` runs the English terms
+ * of cross-language cases against the German corpus.
  */
 export type EvalRunLabel = "de" | "en" | "en→de";
+
+/** Search knobs the eval can vary. */
+export interface EvalSearchSettings {
+    /** Word-similarity threshold. */
+    readonly similarityThreshold: number;
+    /** Field weights. */
+    readonly weights: FieldWeights;
+}
+
+/** Default {@link EvalSearchSettings}: the production defaults. */
+export const DEFAULT_EVAL_SETTINGS: EvalSearchSettings = {
+    similarityThreshold: DEFAULT_SIMILARITY_THRESHOLD,
+    weights: DEFAULT_FIELD_WEIGHTS,
+};
 
 /** Inputs of {@link runMemoryEval}. */
 export interface MemoryEvalOptions {
@@ -31,15 +48,15 @@ export interface MemoryEvalOptions {
     readonly categories: readonly string[];
     /** Only run cases whose id contains one of these substrings (all when empty). */
     readonly caseIdFilters: readonly string[];
-    /** Effective memory config, including any CLI overrides. */
-    readonly config: MemoryConfig;
-    /** Directory holding one cached index per corpus language and config identity. */
-    readonly cacheDir: string;
-    /** Provider resolution for the embedding model. */
-    readonly resolveProvider: ResolveProvider;
-    /** Logger for the store; the CLI passes one that only forwards warnings and errors. */
+    /** Search knobs. */
+    readonly settings: EvalSearchSettings;
+    /** Drop and rebuild the eval schemas instead of syncing them. */
+    readonly isReindexForced: boolean;
+    /** SQL access (`ctx.database`). */
+    readonly database: DatabaseApi;
+    /** Logger for indexing warnings. */
     readonly log: Logger;
-    /** Receives one short progress line per step (indexing, running a run). */
+    /** Receives one short progress line per step. */
     readonly onProgress: (message: string) => void;
 }
 
@@ -51,8 +68,10 @@ export interface CaseRunResult {
     readonly category: EvalCategory;
     /** Run the case was executed in. */
     readonly run: EvalRunLabel;
-    /** The query as sent to the store. */
-    readonly query: string;
+    /** The terms sent (empty for date-only cases). */
+    readonly terms: readonly string[];
+    /** The date search run, if any. */
+    readonly dates: DateQuery | undefined;
     /** Expected files with grades, judged against the run's corpus. */
     readonly grades: Readonly<Record<string, number>>;
     /** Result files, best first (up to {@link RANKED_FILE_LIMIT}). */
@@ -65,28 +84,20 @@ export interface CaseRunResult {
 export interface CorpusIndexSummary {
     /** Corpus language. */
     readonly language: EvalLanguage;
-    /** Markdown files in the corpus. */
-    readonly corpusFiles: number;
-    /** Files present in the index after the sync. */
+    /** Postgres schema of the corpus index. */
+    readonly schema: string;
+    /** Markdown files under the corpus's `wiki/`. */
+    readonly wikiFiles: number;
+    /** Files in the index after the sync. */
     readonly indexedFiles: number;
-    /** Chunks in the index after the sync. */
-    readonly chunks: number;
-    /** Corpus files missing from the index (indexing failed; see log). */
-    readonly missingFiles: readonly string[];
+    /** Files (re)written by this sync. */
+    readonly written: number;
 }
 
 /** Everything {@link runMemoryEval} measured. */
 export interface MemoryEvalResult {
-    /** Embedding provider/model label. */
-    readonly embedding: string;
-    /** The search-relevant config the run used. */
-    readonly settings: {
-        readonly language: string;
-        readonly hybridWeights: { readonly vector: number; readonly text: number };
-        readonly minVectorSimilarity: number;
-        readonly minScoreToMention: number;
-        readonly maxChunkChars: number;
-    };
+    /** The search knobs the run used. */
+    readonly settings: EvalSearchSettings;
     /** ISO timestamp of the run. */
     readonly startedAt: string;
     /** Problems found in `cases.yml`; invalid cases are skipped. */
@@ -97,27 +108,31 @@ export interface MemoryEvalResult {
     readonly results: readonly CaseRunResult[];
 }
 
-/** Chunk hits requested per query; aggregated to files afterwards. */
-const CHUNK_HIT_LIMIT = 60;
-
-/** Files kept per query after aggregating chunk hits. */
+/** Files kept per case. */
 const RANKED_FILE_LIMIT = 20;
 
-/** Queries in flight at once (each one embedding call). */
+/** Date lines fetched per date search before grouping them by file. */
+const DATE_LINE_LIMIT = 500;
+
+/** Cases in flight at once. */
 const QUERY_CONCURRENCY = 4;
 
-/** Longest time to wait for a corpus to be indexed. */
-const INDEX_TIMEOUT_MS = 15 * 60 * 1000;
-
-/** Poll interval while waiting for the index to become ready. */
-const INDEX_POLL_MS = 250;
+/**
+ * Postgres schema of a corpus's eval index.
+ *
+ * @param language - Corpus language.
+ * @returns E.g. `memory_eval_de`.
+ */
+export function evalSchemaName(language: EvalLanguage): string {
+    return `memory_eval_${language}`;
+}
 
 /**
  * Indexes the selected corpora and runs every selected case.
  *
  * @param opts - Eval inputs.
- * @returns All case results plus indexing and config metadata.
- * @throws {Error} When the embedding handshake fails or a corpus cannot be indexed in time.
+ * @returns All case results plus indexing metadata.
+ * @throws {Error} When postgres is unreachable or a query fails.
  */
 export async function runMemoryEval(opts: MemoryEvalOptions): Promise<MemoryEvalResult> {
     const startedAt = new Date().toISOString();
@@ -127,46 +142,33 @@ export async function runMemoryEval(opts: MemoryEvalOptions): Promise<MemoryEval
 
     const corpora: CorpusIndexSummary[] = [];
     const results: CaseRunResult[] = [];
-    let embedding = "";
     for (const language of opts.languages) {
-        opts.onProgress(`indexing corpus/${language} …`);
-        const opened = await openCorpusStore(language, opts);
+        opts.onProgress(`indexing corpus/${language}/wiki …`);
+        const { index, summary } = await openCorpusIndex(language, opts);
+        corpora.push(summary);
         opts.onProgress(
-            `corpus/${language}: ${opened.summary.indexedFiles}/${opened.summary.corpusFiles} files, ${opened.summary.chunks} chunks — running ${cases.length} cases`,
+            `corpus/${language}: ${summary.indexedFiles} files (${summary.written} written) — running ${cases.length} cases`,
         );
-        embedding = opened.embedding;
-        corpora.push(opened.summary);
-        try {
+        results.push(
+            ...(await runCases(index, cases, language, opts.settings, (evalCase) => ({
+                terms: evalCase.terms?.[language] ?? [],
+                grades: evalCase.relevant[language],
+            }))),
+        );
+        if (language === "de" && isCrossRunSelected) {
+            const crossCases = cases.filter((evalCase) => evalCase.crossLanguage);
+            opts.onProgress(`running ${crossCases.length} cross-language cases (en→de)`);
             results.push(
-                ...(await runCases(opened.store, cases, language, (evalCase) => ({
-                    query: evalCase.query[language],
-                    grades: evalCase.relevant[language],
+                ...(await runCases(index, crossCases, "en→de", opts.settings, (evalCase) => ({
+                    terms: evalCase.terms?.en ?? [],
+                    grades: evalCase.relevant.de,
                 }))),
             );
-            if (language === "de" && isCrossRunSelected) {
-                const crossCases = cases.filter((evalCase) => evalCase.crossLanguage);
-                opts.onProgress(`running ${crossCases.length} cross-language cases (en→de)`);
-                results.push(
-                    ...(await runCases(opened.store, crossCases, "en→de", (evalCase) => ({
-                        query: evalCase.query.en,
-                        grades: evalCase.relevant.de,
-                    }))),
-                );
-            }
-        } finally {
-            await opened.store.close();
         }
     }
 
     return {
-        embedding,
-        settings: {
-            language: opts.config.language,
-            hybridWeights: opts.config.hybridWeights,
-            minVectorSimilarity: opts.config.minVectorSimilarity,
-            minScoreToMention: opts.config.minScoreToMention,
-            maxChunkChars: opts.config.maxChunkChars,
-        },
+        settings: opts.settings,
         startedAt,
         caseProblems: caseSet.problems,
         corpora,
@@ -191,133 +193,54 @@ function isCaseSelected(evalCase: EvalCase, opts: MemoryEvalOptions): boolean {
 }
 
 /**
- * Builds the store for one corpus and brings its cached index up to date.
- *
- * The cache directory is keyed by corpus language and tokenizer language: the persisted Orama
- * index carries token trees built with the tokenizer, so a different stemmer needs its own index.
- * Embedding identity changes are handled by the store's own handshake (rebuild on model change),
- * chunk changes by its diff-aware re-embed.
+ * Brings one corpus's eval index up to date.
  *
  * @param language - Corpus language.
  * @param opts - Eval inputs.
- * @returns The ready store, the embedding label and the indexing summary.
- * @throws {Error} When the embedding handshake fails or indexing times out.
+ * @returns The index and its summary.
+ * @throws {Error} When postgres is unreachable.
  */
-async function openCorpusStore(
+export async function openCorpusIndex(
     language: EvalLanguage,
-    opts: MemoryEvalOptions,
-): Promise<{
-    readonly store: MemoryStore;
-    readonly embedding: string;
-    readonly summary: CorpusIndexSummary;
-}> {
+    opts: Pick<MemoryEvalOptions, "evalDir" | "database" | "log" | "isReindexForced">,
+): Promise<{ readonly index: WikiIndex; readonly summary: CorpusIndexSummary }> {
     const corpusDir = path.join(opts.evalDir, "corpus", language);
-    const cacheKey = `${language}-${opts.config.language}-${opts.config.maxChunkChars}`;
-    const built = await buildMemoryStore(
-        opts.config,
-        opts.resolveProvider,
-        path.join(opts.cacheDir, cacheKey),
-        corpusDir,
-        opts.log,
-    );
-    if (!built) {
-        throw new Error(
-            "memory eval: embedding handshake failed — check memory.embeddings in config.yml",
-        );
+    const index = new WikiIndex(opts.database, evalSchemaName(language), opts.log);
+    if (opts.isReindexForced) {
+        await index.dropSchema();
     }
-    const store = built.store;
-    const corpusFiles = await listCorpusMarkdownFiles(corpusDir);
-    await store.init();
-    store.kickoffBackgroundSync(staticWorkspace(corpusFiles));
-    await waitUntilReady(store, language);
-
-    const indexed = store.listFiles();
-    const indexedPaths = new Set(indexed.map((file) => file.relativePath));
+    await index.ensureSchema();
+    const sync = await index.syncAll(corpusDir);
     return {
-        store,
-        embedding: built.providerLabel,
+        index,
         summary: {
             language,
-            corpusFiles: corpusFiles.length,
-            indexedFiles: indexed.length,
-            chunks: indexed.reduce((sum, file) => sum + file.chunkCount, 0),
-            missingFiles: corpusFiles
-                .map((file) => file.relativePath)
-                .filter((relativePath) => !indexedPaths.has(relativePath)),
+            schema: index.schema,
+            wikiFiles: (await listWikiFiles(corpusDir)).length,
+            indexedFiles: await index.countFiles(),
+            written: sync.written,
         },
     };
 }
 
 /**
- * Lists every markdown file below a corpus directory.
+ * Runs a list of cases against one index, a few at a time.
  *
- * @param corpusDir - Absolute path of `corpus/<language>/`.
- * @returns The files with POSIX workspace-relative paths, sorted.
- * @throws {Error} When the directory cannot be read.
- */
-async function listCorpusMarkdownFiles(corpusDir: string): Promise<WorkspaceFile[]> {
-    const entries = await fs.readdir(corpusDir, { recursive: true, withFileTypes: true });
-    return entries
-        .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-        .map((entry) => {
-            const absolutePath = path.join(entry.parentPath, entry.name);
-            return {
-                relativePath: path.relative(corpusDir, absolutePath).split(path.sep).join("/"),
-                absolutePath,
-            };
-        })
-        .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
-}
-
-/**
- * Wraps a fixed file list in the workspace watcher interface the store syncs from. The corpus
- * does not change during a run, so there are no live transitions.
- *
- * @param files - The corpus files.
- * @returns A watcher whose snapshot is the file list and whose subscription never fires.
- */
-function staticWorkspace(files: readonly WorkspaceFile[]): WorkspaceWatcherApi {
-    return {
-        listMarkdownFiles: async () => files,
-        onMarkdownFileUpdate: () => () => {},
-    };
-}
-
-/**
- * Waits until the store has drained its initial indexing batch.
- *
- * @param store - The syncing store.
- * @param language - Corpus language, for the timeout message.
- * @throws {Error} When the index is not ready within {@link INDEX_TIMEOUT_MS}.
- */
-async function waitUntilReady(store: MemoryStore, language: EvalLanguage): Promise<void> {
-    const deadline = Date.now() + INDEX_TIMEOUT_MS;
-    while (!store.isReady()) {
-        if (Date.now() > deadline) {
-            throw new Error(
-                `memory eval: indexing corpus/${language} did not finish within ${INDEX_TIMEOUT_MS / 60000} minutes`,
-            );
-        }
-        await new Promise((resolve) => setTimeout(resolve, INDEX_POLL_MS));
-    }
-}
-
-/**
- * Runs a list of cases against one store, a few queries at a time.
- *
- * @param store - The ready store.
+ * @param index - The corpus index.
  * @param cases - Cases to run.
  * @param run - Run label recorded on each result.
- * @param pick - Selects the query and the judging grades of a case for this run.
+ * @param settings - Search knobs.
+ * @param pick - Selects the terms and the judging grades of a case for this run.
  * @returns One result per case, in case order.
- * @throws {Error} When a search fails (e.g. the embedding call).
+ * @throws {Error} When a search fails.
  */
 async function runCases(
-    store: MemoryStore,
+    index: WikiIndex,
     cases: readonly EvalCase[],
     run: EvalRunLabel,
+    settings: EvalSearchSettings,
     pick: (evalCase: EvalCase) => {
-        readonly query: string;
+        readonly terms: readonly string[];
         readonly grades: ReadonlyMap<string, number>;
     },
 ): Promise<CaseRunResult[]> {
@@ -325,16 +248,16 @@ async function runCases(
     let nextIndex = 0;
     const worker = async (): Promise<void> => {
         while (nextIndex < cases.length) {
-            const index = nextIndex++;
-            const evalCase = cases[index];
-            const { query, grades } = pick(evalCase);
-            const hits = await store.search(query, { limit: CHUNK_HIT_LIMIT });
-            const ranked = rankFiles(hits);
-            results[index] = {
+            const position = nextIndex++;
+            const evalCase = cases[position];
+            const { terms, grades } = pick(evalCase);
+            const ranked = await rankCase(index, terms, evalCase.dates, settings);
+            results[position] = {
                 caseId: evalCase.id,
                 category: evalCase.category,
                 run,
-                query,
+                terms,
+                dates: evalCase.dates,
                 grades: Object.fromEntries(grades),
                 ranked,
                 metrics: scoreCase(ranked, grades),
@@ -346,23 +269,69 @@ async function runCases(
 }
 
 /**
- * Collapses chunk hits to one entry per file (best score), as the prompt appender does.
+ * Runs a case's term search and/or date search and merges them into one ranked file list: files
+ * found by both first (in term order), then term-only, then date-only files (most date lines
+ * first).
  *
- * @param hits - Chunk hits from the store.
- * @returns Files sorted by best score, capped at {@link RANKED_FILE_LIMIT}.
+ * @param index - The corpus index.
+ * @param terms - Search terms (may be empty).
+ * @param dates - Date query, if any.
+ * @param settings - Search knobs.
+ * @returns The ranked files, capped at {@link RANKED_FILE_LIMIT}.
  */
-function rankFiles(
-    hits: readonly { readonly relativePath: string; readonly score: number }[],
-): RankedFile[] {
-    const bestByPath = new Map<string, number>();
-    for (const hit of hits) {
-        bestByPath.set(
-            hit.relativePath,
-            Math.max(bestByPath.get(hit.relativePath) ?? 0, hit.score),
-        );
+export async function rankCase(
+    index: WikiIndex,
+    terms: readonly string[],
+    dates: DateQuery | undefined,
+    settings: EvalSearchSettings,
+): Promise<RankedFile[]> {
+    const termFiles: RankedFile[] =
+        terms.length === 0
+            ? []
+            : (
+                  await searchFiles(index, terms, {
+                      limit: RANKED_FILE_LIMIT,
+                      similarityThreshold: settings.similarityThreshold,
+                      weights: settings.weights,
+                  })
+              ).map((hit) => ({ path: hit.path, matchedTermCount: hit.matchedTerms.length }));
+    if (!dates) {
+        return termFiles;
     }
-    return [...bestByPath]
-        .map(([filePath, score]) => ({ path: filePath, score }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, RANKED_FILE_LIMIT);
+    const dateFiles = await rankDateFiles(index, dates);
+    if (termFiles.length === 0) {
+        return dateFiles.slice(0, RANKED_FILE_LIMIT);
+    }
+    const datePaths = new Set(dateFiles.map((file) => file.path));
+    const both = termFiles.filter((file) => datePaths.has(file.path));
+    const termOnly = termFiles.filter((file) => !datePaths.has(file.path));
+    const termPaths = new Set(termFiles.map((file) => file.path));
+    const dateOnly = dateFiles.filter((file) => !termPaths.has(file.path));
+    return [...both, ...termOnly, ...dateOnly].slice(0, RANKED_FILE_LIMIT);
+}
+
+/**
+ * Groups date-search lines by file, most lines first, then earliest date.
+ *
+ * @param index - The corpus index.
+ * @param dates - The date query.
+ * @returns One entry per file.
+ */
+async function rankDateFiles(index: WikiIndex, dates: DateQuery): Promise<RankedFile[]> {
+    const { hits } = await searchDates(index, dates, DATE_LINE_LIMIT);
+    const byPath = new Map<string, { count: number; first: string }>();
+    for (const hit of hits) {
+        const entry = byPath.get(hit.path);
+        if (entry) {
+            entry.count++;
+        } else {
+            byPath.set(hit.path, { count: 1, first: hit.from });
+        }
+    }
+    return [...byPath]
+        .sort(
+            ([pathA, a], [pathB, b]) =>
+                b.count - a.count || a.first.localeCompare(b.first) || pathA.localeCompare(pathB),
+        )
+        .map(([filePath]) => ({ path: filePath, matchedTermCount: 0 }));
 }

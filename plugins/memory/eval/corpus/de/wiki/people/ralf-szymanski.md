@@ -1,3 +1,6 @@
+---
+categories: [immobilien]
+---
 # Ralf Szymanski
 
 Immobilienmakler (Szymanski Immobilien, Unterbrunn), war mit dem Verkauf der Alten Mühle beauftragt.

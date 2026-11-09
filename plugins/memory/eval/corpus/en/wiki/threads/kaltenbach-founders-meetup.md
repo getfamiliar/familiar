@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Kaltenbach founders' meetup
 
 Monthly meetup for founders and business angels from the region, organized by [[people/nele-hoffmann]].

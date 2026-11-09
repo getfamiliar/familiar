@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Emre Keller
 
 Vater von Oskar (2. Klasse, Grundschule Hollerbach).

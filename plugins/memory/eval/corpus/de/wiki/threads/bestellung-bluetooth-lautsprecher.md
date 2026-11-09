@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Bluetooth-Lautsprecher
 
 Bestellung „Bluetooth-Lautsprecher" bei Kaltenbacher Kaufhaus, Versand mit Logistiq.

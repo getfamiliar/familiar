@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Vera Scholz
 
 Kassiererin — Freiwillige Feuerwehr Rotenfels.

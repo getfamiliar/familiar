@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Carla Szymczak
 
 Nachbarin, Eichendorffstraße 38 in Oberweiler.

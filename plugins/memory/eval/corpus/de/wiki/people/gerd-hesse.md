@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Gerd Hesse
 
 Schriftführer — Obst- und Gartenbauverein Oberweiler.

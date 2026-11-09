@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Bernd Graf
 
 Dachdecker, Betrieb Dachbau Graf in Wiesenfeld.

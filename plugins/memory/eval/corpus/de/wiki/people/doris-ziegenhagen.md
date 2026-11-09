@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Doris Ziegenhagen
 
 Einkäuferin bei Feldmann Maschinenbau in Kaltenbach; Kontakt aus einem Beratungsprojekt.

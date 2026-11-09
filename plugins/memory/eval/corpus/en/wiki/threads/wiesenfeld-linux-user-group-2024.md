@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Wiesenfeld Linux user group 2024
 
 Wiesenfeld Linux user group 2024: organisation and people involved.

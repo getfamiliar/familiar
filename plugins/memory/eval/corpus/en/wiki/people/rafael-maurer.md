@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Rafael Maurer
 
 Managing director at Thermo-Tech AG in Wiesenfeld; contact from a consulting project.

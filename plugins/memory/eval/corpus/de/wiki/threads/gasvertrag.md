@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Gasvertrag
 
 Gasvertrag bei Stadtwerke Eschenrode: Konditionen und Schriftverkehr.

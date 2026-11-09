@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Joost Haddad
 
 Father of Vincent (year 2, Eschenrode secondary school).

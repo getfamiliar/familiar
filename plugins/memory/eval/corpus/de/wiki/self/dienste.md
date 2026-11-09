@@ -1,3 +1,6 @@
+---
+categories: [vertraege, finanzen]
+---
 # Dienste
 
 Liste der Konten, Verträge und Abos von [[people/juergen-weiss|Jürgen]] und der Familie, mit Zuständigkeit und Rhythmus der Rechnungen.

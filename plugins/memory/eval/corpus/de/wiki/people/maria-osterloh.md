@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Maria Osterloh
 
 Kassiererin — Gemischter Chor Wiesenfeld.

@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Lisa Neumann
 
 Neighbour at Ulmenring 40, Wiesenfeld.

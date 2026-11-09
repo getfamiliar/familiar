@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Freiwillige Feuerwehr Rotenfels
 
 Notizen: Freiwillige Feuerwehr Rotenfels — Termine, Kontakte, Beiträge.

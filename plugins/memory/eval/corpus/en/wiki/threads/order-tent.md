@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order tent
 
 Order of a tent from Gartenglück, shipped by PostNova.

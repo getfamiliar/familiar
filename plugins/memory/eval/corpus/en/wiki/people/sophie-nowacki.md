@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Sophie Nowacki
 
 Secretary — Oberweiler fruit and garden club.

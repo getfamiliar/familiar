@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Sommerfeld-Grillfest 2026
 
 Sommerfeld-Grillfest 2026: Organisation und Beteiligte.

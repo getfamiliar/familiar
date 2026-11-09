@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Startup-Frühstück Eschenrode 2024
 
 Startup-Frühstück Eschenrode 2024: Organisation und Beteiligte.

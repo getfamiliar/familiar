@@ -1,3 +1,6 @@
+---
+categories: [gruender, finanzen]
+---
 # Dealflow
 
 Übersicht der Start-up-Beteiligungsanfragen, die [[people/juergen-weiss|Jürgen]] als kleiner Business Angel prüft.

@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Rasenmäher-Messer
 
 Bestellung „Rasenmäher-Messer" bei Hausfreund, Versand mit Kurierwerk.

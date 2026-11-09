@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Hansa Datenwerk: Warehouse management
 
 Consulting project for Hansa Datenwerk: warehouse management.

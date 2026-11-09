@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Agnieszka Vogel
 
 Mother of Greta (year 3, Hollerbach primary school).

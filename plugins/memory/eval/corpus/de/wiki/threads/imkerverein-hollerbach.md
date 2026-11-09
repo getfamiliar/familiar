@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Imkerverein Hollerbach
 
 Notizen: Imkerverein Hollerbach — Termine, Kontakte, Beiträge.

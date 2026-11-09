@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Svenja Winkler
 
 Head of IT at Rotfuchs Medien in Rotenfels; contact from a consulting project.

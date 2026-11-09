@@ -17,6 +17,8 @@ import {
     type ChatUnsubscribe,
     type ConfigService,
     DaemonStoppedError,
+    type DatabaseApi,
+    type DatabaseQuery,
     type EmitHandle,
     type EmitOptions,
     EVENTS_STATE_CHANNEL,
@@ -263,6 +265,47 @@ export class HostContextImpl implements HostContext {
     readonly banners = {
         listActive: async (): Promise<readonly BannerRow[]> =>
             new BannerBus(await this.deps.ensureConnection()).listActive(),
+    };
+
+    readonly database: DatabaseApi = {
+        query: async <Row extends Record<string, unknown>>(
+            sql: string,
+            values?: readonly unknown[],
+        ): Promise<readonly Row[]> => {
+            const conn = await this.deps.ensureConnection();
+            const result = await conn.getPool().query<Row>(sql, values ? [...values] : undefined);
+            return result.rows;
+        },
+        transaction: async <T>(work: (query: DatabaseQuery) => Promise<T>): Promise<T> => {
+            const conn = await this.deps.ensureConnection();
+            const client = await conn.getPool().connect();
+            const query: DatabaseQuery = async <Row extends Record<string, unknown>>(
+                sql: string,
+                values?: readonly unknown[],
+            ): Promise<readonly Row[]> =>
+                (await client.query<Row>(sql, values ? [...values] : undefined)).rows;
+            try {
+                await client.query("BEGIN");
+                const result = await work(query);
+                await client.query("COMMIT");
+                return result;
+            } catch (err) {
+                await client.query("ROLLBACK").catch((rollbackErr: unknown) => {
+                    this.deps.log.warn(
+                        {
+                            err:
+                                rollbackErr instanceof Error
+                                    ? rollbackErr.message
+                                    : String(rollbackErr),
+                        },
+                        `database: rollback failed after a failed transaction of plugin ${this.deps.pluginId}`,
+                    );
+                });
+                throw err;
+            } finally {
+                client.release();
+            }
+        },
     };
 
     readonly mcp = {

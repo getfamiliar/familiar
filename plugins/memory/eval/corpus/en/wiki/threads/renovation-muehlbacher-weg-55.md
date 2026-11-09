@@ -1,3 +1,6 @@
+---
+categories: [trades, neighbourhood]
+---
 # Renovation Mühlbacher Weg 55
 
 Conversion at Mühlbacher Weg 55, affects the neighbourhood.

@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Kestrel Software: Data protection audit
 
 Consulting project for Kestrel Software: data protection audit.

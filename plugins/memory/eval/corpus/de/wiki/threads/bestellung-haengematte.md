@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Hängematte
 
 Bestellung „Hängematte" bei Gartenglück, Versand mit Logistiq.

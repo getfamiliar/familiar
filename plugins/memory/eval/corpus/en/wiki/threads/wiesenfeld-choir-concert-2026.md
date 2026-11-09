@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Wiesenfeld choir concert 2026
 
 Wiesenfeld choir concert 2026: organisation and people involved.

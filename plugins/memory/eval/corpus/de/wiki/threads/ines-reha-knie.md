@@ -1,3 +1,6 @@
+---
+categories: [gesundheit, familie]
+---
 # Ines: Knie-OP und Reha
 
 Knieprothese (Knie-TEP) links bei [[people/ines-weiss|Ines]] im Juni 2026 und anschließende stationäre Reha.

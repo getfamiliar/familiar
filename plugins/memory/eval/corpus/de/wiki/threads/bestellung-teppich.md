@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Teppich
 
 Bestellung „Teppich" bei Gartenglück, Versand mit PostNova.

@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Greta Szymczak
 
 Neighbour at Feldbergstraße 1, Wiesenfeld.

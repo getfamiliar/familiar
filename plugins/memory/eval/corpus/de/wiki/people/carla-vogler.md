@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Carla Vogler
 
 Mutter von Hugo (1. Klasse, Grundschule Hollerbach).

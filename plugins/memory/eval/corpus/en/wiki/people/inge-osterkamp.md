@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Inge Osterkamp
 
 Buyer at Brightline GmbH in Hollerbach; contact from a consulting project.

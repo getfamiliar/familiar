@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Newspaper subscription
 
 Newspaper subscription with Kaltenbacher Anzeiger: terms and correspondence.

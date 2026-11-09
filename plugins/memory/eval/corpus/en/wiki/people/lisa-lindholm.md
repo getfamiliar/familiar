@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Lisa Lindholm
 
 Tiler, business Fliesen Lindholm in Rotenfels.

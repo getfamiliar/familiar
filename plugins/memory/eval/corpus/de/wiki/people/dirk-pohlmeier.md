@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Dirk Pohlmeier
 
 Geschäftsführer bei Datenhafen GmbH in Kaltenbach; Kontakt aus einem Beratungsprojekt.

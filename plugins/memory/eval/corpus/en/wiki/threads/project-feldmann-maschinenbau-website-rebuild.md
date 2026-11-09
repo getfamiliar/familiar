@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Feldmann Maschinenbau: Website rebuild
 
 Consulting project for Feldmann Maschinenbau: website rebuild.

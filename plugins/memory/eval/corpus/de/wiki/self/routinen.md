@@ -1,3 +1,6 @@
+---
+categories: [alltag, sport]
+---
 # Routinen
 
 Feste Gewohnheiten von [[people/juergen-weiss|Jürgen]] im Wochenablauf.

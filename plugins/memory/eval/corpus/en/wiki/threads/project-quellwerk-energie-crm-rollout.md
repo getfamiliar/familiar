@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Quellwerk Energie: CRM rollout
 
 Consulting project for Quellwerk Energie: crm rollout.

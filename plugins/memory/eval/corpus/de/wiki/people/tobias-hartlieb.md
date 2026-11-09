@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Tobias Hartlieb
 
 Gründer von Paketpause (Abholstationen für Dörfer), Eschenrode.

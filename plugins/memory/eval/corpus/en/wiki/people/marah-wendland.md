@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Marah Wendland
 
 Neighbour at Lerchenweg 28, Kaltenbach.

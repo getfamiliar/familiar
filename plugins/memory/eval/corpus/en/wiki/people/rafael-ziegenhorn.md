@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Rafael Ziegenhorn
 
 Project lead at Nordbau GmbH in Oberweiler; contact from a consulting project.

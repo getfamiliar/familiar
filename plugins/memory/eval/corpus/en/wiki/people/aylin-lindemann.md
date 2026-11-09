@@ -1,3 +1,6 @@
+---
+categories: [work]
+---
 # Aylin Lindemann
 
 Former colleague at Datastrom GmbH (2012–2014).

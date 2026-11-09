@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Rafael Ritter
 
 Vorsitzender — Heimatverein Kaltenbach.

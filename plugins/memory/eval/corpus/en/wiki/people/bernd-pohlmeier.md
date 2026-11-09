@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Bernd Pohlmeier
 
 Treasurer — Eschenrode running group.

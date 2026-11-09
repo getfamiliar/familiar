@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Gemischter Chor Wiesenfeld
 
 Notizen: Gemischter Chor Wiesenfeld — Termine, Kontakte, Beiträge.

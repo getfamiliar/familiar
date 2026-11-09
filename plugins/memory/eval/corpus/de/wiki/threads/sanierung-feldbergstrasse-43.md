@@ -1,3 +1,6 @@
+---
+categories: [handwerk, nachbarschaft]
+---
 # Sanierung Feldbergstraße 43
 
 Umbau im Haus Feldbergstraße 43, betrifft die Nachbarschaft.

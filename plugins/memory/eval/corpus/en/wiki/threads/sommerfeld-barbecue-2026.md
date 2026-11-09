@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Sommerfeld barbecue 2026
 
 Sommerfeld barbecue 2026: organisation and people involved.

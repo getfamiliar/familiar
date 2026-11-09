@@ -1,3 +1,6 @@
+---
+categories: [gesundheit]
+---
 # Praxis Dr. Reuter
 
 Hausarztpraxis von [[people/anna-reuter|Dr. Anna Reuter]] in der Bahnhofstraße 12, Kaltenbach — Hausärztin der ganzen Familie.

@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Dirk Pohlmann
 
 CTO der Brightwater GmbH, Auftraggeber im [[threads/brightwater-projekt]].

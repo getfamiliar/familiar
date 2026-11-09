@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Gartenbank
 
 Bestellung „Gartenbank" bei Werkbank24, Versand mit Logistiq.

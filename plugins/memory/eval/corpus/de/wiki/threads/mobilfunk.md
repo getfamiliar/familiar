@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Mobilfunk
 
 Mobilfunkverträge der Familie bei FunkFix, inklusive der Kindertarife.

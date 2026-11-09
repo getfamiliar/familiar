@@ -1,3 +1,6 @@
+---
+categories: [insurance]
+---
 # Disability insurance – application
 
 Application for occupational disability insurance for [[people/juergen-weiss|Jürgen]] via insurance broker [[people/wolfram-ziegenbalg]] (Ziegenbalg Finanz).

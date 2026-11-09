@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Silberstreif Consulting: Prozessanalyse Einkauf
 
 Beratungsprojekt für Silberstreif Consulting: Prozessanalyse Einkauf.

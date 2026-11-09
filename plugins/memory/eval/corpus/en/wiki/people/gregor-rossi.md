@@ -1,3 +1,6 @@
+---
+categories: [software, hobbies]
+---
 # Gregor Rossi
 
 Software developer from Kaltenbach, maintains the open-source project Feldpost.

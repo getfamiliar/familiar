@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Dirk Szymczak
 
 Elektromeister, Betrieb Elektro Szymczak in Rotenfels.

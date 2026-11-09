@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Paula Becker
 
 Nachbarin, Talweg 20 in Kaltenbach.

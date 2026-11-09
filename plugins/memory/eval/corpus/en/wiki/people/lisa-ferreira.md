@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Lisa Ferreira
 
 Mother of Marlies (year 4, Hollerbach primary school).

@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Rotenfels repair café 2025
 
 Rotenfels repair café 2025: organisation and people involved.

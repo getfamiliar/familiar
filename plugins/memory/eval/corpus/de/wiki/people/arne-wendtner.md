@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Arne Wendtner
 
 Kassierer — Fotoclub Eschenrode.

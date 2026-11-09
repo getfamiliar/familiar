@@ -1,3 +1,6 @@
+---
+categories: [trades, neighbourhood]
+---
 # Renovation Gartenstraße 20
 
 Renovation of the neighbouring house Gartenstraße 20: arrangements, noise, parking.

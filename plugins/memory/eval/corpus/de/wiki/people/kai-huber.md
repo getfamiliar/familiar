@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Kai Huber
 
 Schriftführer — Förderverein Freibad Kaltenbach.

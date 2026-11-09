@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Wanderschuhe
 
 Bestellung „Wanderschuhe" bei Kaltenbacher Kaufhaus, Versand mit Kurierwerk.

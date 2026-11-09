@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Taktgeber open-source sprint 2024
 
 Taktgeber open-source sprint 2024: organisation and people involved.

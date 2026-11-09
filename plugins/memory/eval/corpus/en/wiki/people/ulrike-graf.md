@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Ulrike Graf
 
 Treasurer — Hollerbach beekeepers' association.

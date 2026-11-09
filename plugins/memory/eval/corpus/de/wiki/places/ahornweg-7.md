@@ -1,3 +1,6 @@
+---
+categories: [immobilien, nachbarschaft]
+---
 # Ahornweg 7
 
 Unser Zuhause: Eigentumswohnung im 3. OG eines Hauses mit sechs Wohnungen, Ahornweg 7, 35791 Kaltenbach.

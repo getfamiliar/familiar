@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Datenhafen GmbH: Lagerverwaltung
 
 Beratungsprojekt für Datenhafen GmbH: Lagerverwaltung.

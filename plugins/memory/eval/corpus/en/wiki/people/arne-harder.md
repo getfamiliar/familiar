@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Arne Harder
 
 Tiler, business Fliesen Harder in Oberweiler.

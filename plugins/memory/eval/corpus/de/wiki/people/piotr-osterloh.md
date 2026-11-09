@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Piotr Osterloh
 
 Schriftführer — Förderverein Freibad Kaltenbach.

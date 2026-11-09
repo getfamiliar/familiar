@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order bike lock
 
 Order of a bike lock from Bürowelt Direkt, shipped by Kurierwerk.

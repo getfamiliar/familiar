@@ -1,3 +1,6 @@
+---
+categories: [steuern, finanzen]
+---
 # Tobias Harter
 
 Steuerberater bei der **KRW Partner Steuerberatung**, betreut Jürgens Jahresabschlüsse.

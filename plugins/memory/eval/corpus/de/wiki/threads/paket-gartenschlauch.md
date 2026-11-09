@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Paket Gartenschlauch
 
 Paketsendung mit einem Gartenschlauch und Zubehör, bestellt beim Gartenversand „Grünzeug“.

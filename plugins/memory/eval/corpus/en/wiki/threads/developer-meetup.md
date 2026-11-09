@@ -1,3 +1,7 @@
+---
+categories: [software, hobbies]
+review_at: 2026-11-30
+---
 # Side Project Meetup (SPM)
 
 Meetup for software developers with their own projects, **SPM** for short, organized by [[people/yusuf-demir]]; [[people/juergen-weiss|Jürgen]] takes part with [[threads/thermo-pi]].

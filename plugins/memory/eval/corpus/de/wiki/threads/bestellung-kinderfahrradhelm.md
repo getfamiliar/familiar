@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Kinderfahrradhelm
 
 Bestellung „Kinderfahrradhelm" bei Kaltenbacher Kaufhaus, Versand mit Kurierwerk.

@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Kochbuch
 
 Bestellung „Kochbuch" bei Gartenglück, Versand mit Logistiq.

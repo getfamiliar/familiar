@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Timo Wendtner
 
 IT-Leiter bei Lumina Logistik in Hollerbach; Kontakt aus einem Beratungsprojekt.

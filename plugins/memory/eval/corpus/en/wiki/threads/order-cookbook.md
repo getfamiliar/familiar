@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order cookbook
 
 Order of a cookbook from Gartenglück, shipped by Logistiq.

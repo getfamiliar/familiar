@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Paul Wendtner
 
 Schriftführer — Imkerverein Hollerbach.

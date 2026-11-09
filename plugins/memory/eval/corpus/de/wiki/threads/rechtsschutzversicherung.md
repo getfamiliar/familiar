@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Rechtsschutzversicherung
 
 Rechtsschutzversicherung bei Wegweiser Rechtsschutz: Konditionen und Schriftverkehr.

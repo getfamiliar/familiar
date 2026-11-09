@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Fotoclub Eschenrode
 
 Notizen: Fotoclub Eschenrode — Termine, Kontakte, Beiträge.

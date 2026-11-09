@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order hammock
 
 Order of a hammock from Gartenglück, shipped by Logistiq.

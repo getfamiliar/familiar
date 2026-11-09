@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Anna Wendland
 
 Kassiererin — Freiwillige Feuerwehr Rotenfels.

@@ -1,3 +1,6 @@
+---
+categories: [friends, hobbies]
+---
 # Tobias Hartl
 
 Player in the [[threads/board-game-night]], IT administrator at Klinikum Kaltenbach.

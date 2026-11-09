@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Bibliotheksausweis
 
 Bibliotheksausweis bei Stadtbücherei Kaltenbach: Konditionen und Schriftverkehr.

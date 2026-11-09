@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Quellwerk Energie: Ticketsystem
 
 Beratungsprojekt für Quellwerk Energie: Ticketsystem.

@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Doris Albrecht
 
 Treasurer — Hollerbach beekeepers' association.

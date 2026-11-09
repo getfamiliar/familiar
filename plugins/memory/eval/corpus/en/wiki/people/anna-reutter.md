@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Anna Reutter
 
 Mother of Vincent (year 9, Eschenrode secondary school).

@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Vera Szymańska
 
 Product manager at Nordbau GmbH in Rotenfels; contact from a consulting project.

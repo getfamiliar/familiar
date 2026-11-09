@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Lukas Horn
 
 Schornsteinfeger, Betrieb Kaminkehrer Horn in Wiesenfeld.

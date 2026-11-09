@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Year 6 class trip 2024
 
 Year 6 class trip 2024: organisation and people involved.

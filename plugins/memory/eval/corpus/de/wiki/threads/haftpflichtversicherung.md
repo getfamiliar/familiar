@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Haftpflichtversicherung
 
 Haftpflichtversicherung bei Talgrund Versicherung: Konditionen und Schriftverkehr.

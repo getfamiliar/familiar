@@ -1,3 +1,6 @@
+---
+categories: [trades, neighbourhood]
+---
 # Renovation Am Hang 24
 
 Renovation of the neighbouring house Am Hang 24: arrangements, noise, parking.

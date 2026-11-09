@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Nachbarschaftshilfe Kastanienweg 2026
 
 Nachbarschaftshilfe Kastanienweg 2026: Organisation und Beteiligte.

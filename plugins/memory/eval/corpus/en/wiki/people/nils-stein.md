@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Nils Stein
 
 Tiler, business Fliesen Stein in Eschenrode.

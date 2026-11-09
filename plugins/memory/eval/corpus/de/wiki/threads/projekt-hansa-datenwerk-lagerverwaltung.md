@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Hansa Datenwerk: Lagerverwaltung
 
 Beratungsprojekt für Hansa Datenwerk: Lagerverwaltung.

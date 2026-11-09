@@ -1,3 +1,6 @@
+---
+categories: [software, hobbies]
+---
 # Björn Größner
 
 Software developer from Oberweiler, maintains the open-source project Taktgeber.

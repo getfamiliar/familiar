@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Sophie Nowacki
 
 Schriftführerin — Obst- und Gartenbauverein Oberweiler.

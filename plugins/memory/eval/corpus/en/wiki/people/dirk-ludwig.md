@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Dirk Ludwig
 
 Working student at Nordbau GmbH in Wiesenfeld; contact from a consulting project.

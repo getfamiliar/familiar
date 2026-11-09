@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Kaltenbach Christmas market 2025
 
 Kaltenbach Christmas market 2025: organisation and people involved.

@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Weinfest Oberweiler 2025
 
 Weinfest Oberweiler 2025: Organisation und Beteiligte.

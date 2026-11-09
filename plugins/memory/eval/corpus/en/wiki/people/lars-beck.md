@@ -1,3 +1,6 @@
+---
+categories: [software, hobbies]
+---
 # Lars Beck
 
 Software developer from Oberweiler, maintains the open-source project Feldpost.

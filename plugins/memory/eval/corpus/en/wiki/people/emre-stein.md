@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Emre Stein
 
 Working student at Datenhafen GmbH in Rotenfels; contact from a consulting project.

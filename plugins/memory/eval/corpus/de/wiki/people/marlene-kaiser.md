@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Marlene Kaiser
 
 Mutter von Marlies (10. Klasse, Grundschule Hollerbach).

@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Wolfgang Brenner
 
 Vorsitzender — Gemischter Chor Wiesenfeld.

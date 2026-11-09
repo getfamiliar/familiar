@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Tobias Harder
 
 Nachbar, Talweg 40 in Wiesenfeld.

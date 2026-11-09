@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Inge Ziegenhagen
 
 Geschäftsführerin bei Hansa Datenwerk in Wiesenfeld; Kontakt aus einem Beratungsprojekt.

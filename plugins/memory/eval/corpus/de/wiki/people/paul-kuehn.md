@@ -1,3 +1,6 @@
+---
+categories: [sport, kinder]
+---
 # Paul Kühn
 
 Vater von Rosa, C-Jugend Handball beim TV Eschenrode.

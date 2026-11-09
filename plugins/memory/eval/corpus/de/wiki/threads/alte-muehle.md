@@ -1,3 +1,6 @@
+---
+categories: [immobilien, erbe]
+---
 # Alte Mühle
 
 Das geerbte Anwesen von [[people/oma-gisela|Oma Gisela]] im Mühlweg 2, 35796 Unterbrunn; seit 2024 im Besitz von [[people/juergen-weiss|Jürgen]].

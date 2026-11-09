@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Inês Szymańska
 
 Mother of Rosa (year 4, Eschenrode secondary school).

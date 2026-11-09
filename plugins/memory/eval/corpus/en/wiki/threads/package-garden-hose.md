@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Package garden hose
 
 Parcel with a garden hose and accessories, ordered from the garden shop "Grünzeug".

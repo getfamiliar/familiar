@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # TV Eschenrode handball tournament 2025
 
 TV Eschenrode handball tournament 2025: organisation and people involved.

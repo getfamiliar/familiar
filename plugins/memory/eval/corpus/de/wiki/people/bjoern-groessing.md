@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Björn Grössing
 
 Einkäufer bei Datenhafen GmbH in Eschenrode; Kontakt aus einem Beratungsprojekt.

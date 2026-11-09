@@ -1,3 +1,6 @@
+---
+categories: [friends, travel]
+---
 # Family Nowak
 
 Friends of the family (Marek and Julia Nowak with twins Ole and Ida, 9), sharing the Norway cabin with us in 2027.

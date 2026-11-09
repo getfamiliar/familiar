@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Sven Ostmann
 
 Father of Mats (year 10, Eschenrode secondary school).

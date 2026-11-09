@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Kai Huber
 
 Secretary — Friends of the Kaltenbach open-air pool.

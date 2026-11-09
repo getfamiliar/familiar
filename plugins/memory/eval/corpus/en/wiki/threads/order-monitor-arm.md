@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order monitor arm
 
 Order of a monitor arm from Werkbank24, shipped by PostNova.

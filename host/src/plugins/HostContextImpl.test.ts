@@ -142,3 +142,70 @@ describe("HostContextImpl ctx.scratch listing", () => {
         }
     });
 });
+
+describe("HostContextImpl ctx.database", () => {
+    /**
+     * Build a context whose connection is a fake pool recording every
+     * statement; `failOn` makes the matching statement reject.
+     *
+     * @param failOn - SQL text that throws when executed.
+     * @returns The context, the recorded statements and the release counter.
+     */
+    function buildDatabaseContext(failOn?: string): {
+        ctx: HostContextImpl;
+        statements: string[];
+        releases: { count: number };
+    } {
+        const statements: string[] = [];
+        const releases = { count: 0 };
+        const run = async (sql: string) => {
+            statements.push(sql);
+            if (sql === failOn) {
+                throw new Error(`failed: ${sql}`);
+            }
+            return { rows: [{ sql }] };
+        };
+        const pool = {
+            query: run,
+            connect: async () => ({
+                query: run,
+                release: () => {
+                    releases.count += 1;
+                },
+            }),
+        };
+        const noop = () => {};
+        const ctx = new HostContextImpl({
+            pluginId: "memory",
+            log: { debug: noop, info: noop, warn: noop, error: noop },
+            ensureConnection: async () => ({ getPool: () => pool }),
+        } as unknown as HostContextImplDeps);
+        return { ctx, statements, releases };
+    }
+
+    it("returns the rows of a plain query", async () => {
+        const { ctx } = buildDatabaseContext();
+        assert.deepEqual(await ctx.database.query("SELECT 1"), [{ sql: "SELECT 1" }]);
+    });
+
+    it("commits a successful transaction and releases the client", async () => {
+        const { ctx, statements, releases } = buildDatabaseContext();
+        const result = await ctx.database.transaction(async (query) => {
+            await query("INSERT 1");
+            return "ok";
+        });
+        assert.equal(result, "ok");
+        assert.deepEqual(statements, ["BEGIN", "INSERT 1", "COMMIT"]);
+        assert.equal(releases.count, 1);
+    });
+
+    it("rolls back and rethrows when the work fails", async () => {
+        const { ctx, statements, releases } = buildDatabaseContext("INSERT 1");
+        await assert.rejects(
+            ctx.database.transaction((query) => query("INSERT 1")),
+            /failed: INSERT 1/,
+        );
+        assert.deepEqual(statements, ["BEGIN", "INSERT 1", "ROLLBACK"]);
+        assert.equal(releases.count, 1);
+    });
+});

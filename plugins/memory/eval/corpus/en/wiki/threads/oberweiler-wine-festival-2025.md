@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Oberweiler wine festival 2025
 
 Oberweiler wine festival 2025: organisation and people involved.

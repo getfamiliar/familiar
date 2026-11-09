@@ -1,3 +1,6 @@
+---
+categories: [property]
+---
 # Ralf Szymanski
 
 Real-estate broker (Szymanski Immobilien, Unterbrunn), was commissioned with selling the Alte Mühle.

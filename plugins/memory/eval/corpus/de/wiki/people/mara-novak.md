@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Mara Novak
 
 Mutter von Jakob (6. Klasse, Gesamtschule Wiesenfeld).

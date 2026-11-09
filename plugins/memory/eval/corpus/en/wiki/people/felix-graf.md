@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Felix Graf
 
 Buyer at Nordbau GmbH in Wiesenfeld; contact from a consulting project.

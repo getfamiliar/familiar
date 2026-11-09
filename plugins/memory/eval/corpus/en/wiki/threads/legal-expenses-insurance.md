@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Legal expenses insurance
 
 Legal expenses insurance with Wegweiser Rechtsschutz: terms and correspondence.

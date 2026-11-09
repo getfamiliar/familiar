@@ -1,3 +1,6 @@
+---
+categories: [friends]
+---
 # Muehlbach Gang
 
 WhatsApp group of [[people/juergen-weiss|Jürgen]]'s old school friends from the Mühlbach primary school; "Muehlbach Gang" (Mühlbach-Bande) is the group's nickname.

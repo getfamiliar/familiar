@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Ilka Neumann
 
 Nachbarin, Gartenstraße 10 in Wiesenfeld.

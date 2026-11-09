@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Felix Graf
 
 Einkäufer bei Nordbau GmbH in Wiesenfeld; Kontakt aus einem Beratungsprojekt.

@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Gerd Ziegler
 
 Nachbar, Schulstraße 36 in Oberweiler.

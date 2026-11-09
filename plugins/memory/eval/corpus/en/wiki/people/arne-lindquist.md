@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Arne Lindquist
 
 Painter, business Malerbetrieb Lindquist in Hollerbach.

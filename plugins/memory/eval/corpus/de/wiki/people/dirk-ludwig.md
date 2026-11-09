@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Dirk Ludwig
 
 Werkstudent bei Nordbau GmbH in Wiesenfeld; Kontakt aus einem Beratungsprojekt.

@@ -1,3 +1,6 @@
+---
+categories: [posteingang]
+---
 # Newsletters
 
 Übersicht der Newsletter und Massenmails, die bei [[people/juergen-weiss|Jürgen]] eingehen, und wie sie behandelt werden.

@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft, freunde]
+---
 # Henrik Sommer
 
 Nachbar im [[places/ahornweg-7|Ahornweg 7]] (2. OG), Schulfreund aus der [[threads/muehlbach-bande|Mühlbach-Bande]].

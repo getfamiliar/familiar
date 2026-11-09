@@ -1,3 +1,6 @@
+---
+categories: [contracts, finances]
+---
 # Services
 
 List of the accounts, contracts and subscriptions of [[people/juergen-weiss|Jürgen]] and the family, with responsibility and invoice rhythm.

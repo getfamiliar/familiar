@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Ronja Ernst
 
 Schriftführerin — Lauftreff Eschenrode.

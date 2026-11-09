@@ -1,3 +1,6 @@
+---
+categories: [handwerk, nachbarschaft]
+---
 # Sanierung Am Hang 24
 
 Sanierung des Nachbarhauses Am Hang 24: Absprachen, Lärm, Parkplätze.

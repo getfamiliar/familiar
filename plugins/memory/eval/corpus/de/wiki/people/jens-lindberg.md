@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Jens Lindberg
 
 Vater von Theo (10. Klasse, Realschule Eschenrode).

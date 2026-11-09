@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Eschenrode running group
 
 Notes: Eschenrode running group — dates, contacts, fees.

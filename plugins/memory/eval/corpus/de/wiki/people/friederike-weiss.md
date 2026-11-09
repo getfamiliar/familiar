@@ -1,3 +1,6 @@
+---
+categories: [familie, kinder]
+---
 # Friederike Weiß
 
 Tochter von [[people/juergen-weiss|Jürgen]] und [[people/ines-weiss|Ines]], alle nennen sie **Fritzi**; 14 Jahre, 9. Klasse am Gymnasium Kaltenbach.

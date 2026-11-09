@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Gym contract
 
 Gym contract with Kraftraum Kaltenbach: terms and correspondence.

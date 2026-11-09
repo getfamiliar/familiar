@@ -1,3 +1,6 @@
+---
+categories: [trades, neighbourhood]
+---
 # Renovation Ulmenring 31
 
 Renovation of the neighbouring house Ulmenring 31: arrangements, noise, parking.

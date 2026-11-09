@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Dorfputz Hollerbach 2026
 
 Dorfputz Hollerbach 2026: Organisation und Beteiligte.

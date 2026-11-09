@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Anna Wendland
 
 Treasurer — Rotenfels volunteer fire brigade.

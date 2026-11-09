@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Bernd Pohlmeier
 
 Kassierer — Lauftreff Eschenrode.

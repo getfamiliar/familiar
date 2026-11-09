@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Holger Kranzler
 
 Vater von Lina (5. Klasse, Grundschule Hollerbach).

@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Beate Pfaffinger
 
 Schreinerin, Betrieb Schreinerei Pfaffinger in Eschenrode.

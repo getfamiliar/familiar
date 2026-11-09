@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Akkubohrer
 
 Bestellung „Akkubohrer" bei Gartenglück, Versand mit Logistiq.

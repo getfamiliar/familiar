@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Eschenrode photo club
 
 Notes: Eschenrode photo club — dates, contacts, fees.

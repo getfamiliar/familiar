@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Freya Jansen
 
 Neighbour at Feldbergstraße 2, Wiesenfeld.

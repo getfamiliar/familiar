@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Bernd Vogler
 
 Father of Oskar (year 2, Wiesenfeld comprehensive school).

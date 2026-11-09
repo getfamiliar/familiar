@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Feldmann Maschinenbau: Warehouse management
 
 Consulting project for Feldmann Maschinenbau: warehouse management.

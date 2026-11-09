@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Arne Wendtner
 
 Treasurer — Eschenrode photo club.

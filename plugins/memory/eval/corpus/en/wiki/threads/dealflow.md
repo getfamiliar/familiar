@@ -1,3 +1,6 @@
+---
+categories: [startups, finances]
+---
 # Dealflow
 
 Overview of the startup investment requests that [[people/juergen-weiss|Jürgen]] reviews as a small business angel.

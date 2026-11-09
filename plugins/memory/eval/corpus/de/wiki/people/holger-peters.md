@@ -1,3 +1,6 @@
+---
+categories: [software, hobby]
+---
 # Holger Peters
 
 Softwareentwickler aus Hollerbach, betreut das Open-Source-Projekt Wetterfrosch-API.

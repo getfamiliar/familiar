@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Mara Maurer
 
 Nachbarin, Eichendorffstraße 29 in Eschenrode.

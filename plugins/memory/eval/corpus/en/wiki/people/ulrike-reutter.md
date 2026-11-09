@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Ulrike Reutter
 
 Chair — Eschenrode photo club.

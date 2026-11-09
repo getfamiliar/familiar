@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Buildings insurance
 
 Buildings insurance with Talgrund Versicherung: terms and correspondence.

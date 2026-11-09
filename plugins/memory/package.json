@@ -2,7 +2,7 @@
     "name": "@getfamiliar/plugin-memory",
     "type": "module",
     "version": "0.0.1",
-    "description": "Familiar plugin: long-term memory for the agent. Search backend pending replacement; memory_save handler still active.",
+    "description": "Familiar plugin: long-term memory for the agent — wiki index in postgres (pg_trgm), memory_search, memory_datesearch and memory_save.",
     "publishConfig": {
         "access": "public"
     },
@@ -29,19 +29,11 @@
     },
     "license": "MIT",
     "dependencies": {
-        "@ai-sdk/google": "^4.0.112",
-        "@ai-sdk/mistral": "^4.0.80",
         "@ai-sdk/openai": "^4.0.109",
         "@ai-sdk/openai-compatible": "^3.0.85",
         "@getfamiliar/shared": "*",
-        "@msgpack/msgpack": "^3.1.2",
-        "@orama/orama": "^3.1.13",
-        "@orama/plugin-data-persistence": "^3.1.13",
-        "@orama/stemmers": "^3.1.13",
-        "@orama/stopwords": "^3.1.13",
         "ai": "^7.0.163",
         "citty": "^0.1.6",
-        "marked": "^15.0.12",
         "yaml": "^2.8.4"
     },
     "devDependencies": {

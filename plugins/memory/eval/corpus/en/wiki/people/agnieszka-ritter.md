@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Agnieszka Ritter
 
 Project lead at Datenhafen GmbH in Rotenfels; contact from a consulting project.

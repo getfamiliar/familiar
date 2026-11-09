@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Elternbeirat Realschule Eschenrode 2026
 
 Elternbeirat Realschule Eschenrode 2026: Organisation und Beteiligte.

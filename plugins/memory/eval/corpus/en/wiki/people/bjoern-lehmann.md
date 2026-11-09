@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Björn Lehmann
 
 Neighbour at Ulmenring 19, Wiesenfeld.

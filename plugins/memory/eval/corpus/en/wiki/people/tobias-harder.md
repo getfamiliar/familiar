@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Tobias Harder
 
 Neighbour at Talweg 40, Wiesenfeld.

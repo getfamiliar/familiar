@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Dirk Pohlmann
 
 CTO of Brightwater GmbH, the client sponsor in the [[threads/brightwater-project]].

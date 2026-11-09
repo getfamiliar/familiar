@@ -1,3 +1,6 @@
+---
+categories: [sports, kids]
+---
 # Frank Schmitt
 
 Father of Lina, B-Jugend handball at TV Eschenrode.

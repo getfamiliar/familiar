@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Svenja Winkler
 
 IT-Leiterin bei Rotfuchs Medien in Rotenfels; Kontakt aus einem Beratungsprojekt.

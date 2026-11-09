@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Holger Walter
 
 Founder of Paketpause (parcel lockers for villages), Rotenfels.

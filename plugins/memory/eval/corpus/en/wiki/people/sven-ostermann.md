@@ -1,3 +1,6 @@
+---
+categories: [software, hobbies]
+---
 # Sven Ostermann
 
 Main contributor (maintainer) of [[threads/thermo-pi]], GitHub handle `svost`.

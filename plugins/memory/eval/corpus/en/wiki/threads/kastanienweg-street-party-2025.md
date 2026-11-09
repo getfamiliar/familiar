@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Kastanienweg street party 2025
 
 Kastanienweg street party 2025: organisation and people involved.

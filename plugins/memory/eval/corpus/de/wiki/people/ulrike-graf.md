@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Ulrike Graf
 
 Kassiererin — Imkerverein Hollerbach.

@@ -1,3 +1,6 @@
+---
+categories: [security, inbox]
+---
 # Phishing patterns
 
 Collection of phishing and scam mails [[people/juergen-weiss|Jürgen]] has received, with typical warning signs.

@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Lisa Winkler
 
 Product manager at Datenhafen GmbH in Kaltenbach; contact from a consulting project.

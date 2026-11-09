@@ -1,3 +1,6 @@
+---
+categories: [erbe]
+---
 # Helga Brünnich
 
 Notarin Dr. Helga Brünnich in Unterbrunn; hat den Erbscheinsantrag nach Oma Giselas Tod beurkundet.

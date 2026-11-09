@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Electricity contract
 
 Electricity contract with Quellwerk Energie: terms and correspondence.

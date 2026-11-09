@@ -1,23 +1,21 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import {
-    aggregateMetrics,
-    percentiles,
-    type RankedFile,
-    scoreCase,
-    separationAuc,
-    sweepThresholds,
-} from "./EvalMetrics.js";
+import { aggregateMetrics, type RankedFile, scoreCase } from "./EvalMetrics.js";
 
-/** Builds a ranked list from `[path, score]` pairs. */
-function ranked(...entries: [string, number][]): RankedFile[] {
-    return entries.map(([path, score]) => ({ path, score }));
+/**
+ * Builds a ranked list from paths.
+ *
+ * @param paths - Paths, best first.
+ * @returns The ranked files.
+ */
+function ranked(...paths: string[]): RankedFile[] {
+    return paths.map((path) => ({ path, matchedTermCount: 1 }));
 }
 
 describe("scoreCase", () => {
     it("scores a top-ranked must-have file as a perfect hit", () => {
         const metrics = scoreCase(
-            ranked(["a.md", 0.9], ["b.md", 0.5], ["x.md", 0.4]),
+            ranked("a.md", "b.md", "x.md"),
             new Map([
                 ["a.md", 2],
                 ["b.md", 1],
@@ -27,13 +25,12 @@ describe("scoreCase", () => {
         assert.equal(metrics.recallAt5, 1);
         assert.equal(metrics.reciprocalRank, 1);
         assert.equal(metrics.ndcgAt10, 1);
-        assert.equal(metrics.bestRelevantScore, 0.9);
-        assert.deepEqual(metrics.irrelevantScores, [0.4]);
+        assert.equal(metrics.resultCount, 3);
     });
 
     it("counts a grade-1 file as the first relevant rank but not for must-have recall", () => {
         const metrics = scoreCase(
-            ranked(["x.md", 0.8], ["b.md", 0.7], ["y.md", 0.6]),
+            ranked("x.md", "b.md", "y.md"),
             new Map([
                 ["a.md", 2],
                 ["b.md", 1],
@@ -43,70 +40,41 @@ describe("scoreCase", () => {
         assert.equal(metrics.firstRelevantRank, 2);
         assert.equal(metrics.reciprocalRank, 0.5);
         assert.equal(metrics.recallAt5, 0);
-        assert.equal(metrics.bestRelevantScore, null);
+    });
+
+    it("tells recall at 5 and at 10 apart", () => {
+        const metrics = scoreCase(
+            ranked("1.md", "2.md", "3.md", "4.md", "5.md", "6.md", "a.md"),
+            new Map([["a.md", 2]]),
+        );
+        assert.equal(metrics.recallAt5, 0);
+        assert.equal(metrics.recallAt10, 1);
+        assert.equal(metrics.firstRelevantRank, 7);
     });
 
     it("falls back to grade-1 files when a case has no must-have file", () => {
-        const metrics = scoreCase(ranked(["b.md", 0.6]), new Map([["b.md", 1]]));
+        const metrics = scoreCase(ranked("b.md"), new Map([["b.md", 1]]));
         assert.equal(metrics.recallAt5, 1);
-        assert.equal(metrics.bestRelevantScore, 0.6);
     });
 
-    it("reports only the top score for negative cases", () => {
-        const metrics = scoreCase(ranked(["x.md", 0.7], ["y.md", 0.5]), new Map());
+    it("reports only the result count for negative cases", () => {
+        const metrics = scoreCase(ranked("x.md", "y.md"), new Map());
         assert.equal(metrics.isHitAt1, null);
-        assert.equal(metrics.topScore, 0.7);
-        assert.deepEqual(metrics.irrelevantScores, [0.7, 0.5]);
+        assert.equal(metrics.recallAt5, null);
+        assert.equal(metrics.resultCount, 2);
     });
 });
 
 describe("aggregateMetrics", () => {
-    it("averages positive cases and skips negatives", () => {
-        const hit = scoreCase(ranked(["a.md", 0.9]), new Map([["a.md", 2]]));
-        const miss = scoreCase(ranked(["x.md", 0.9]), new Map([["a.md", 2]]));
-        const negative = scoreCase(ranked(["x.md", 0.9]), new Map());
-        const aggregate = aggregateMetrics([hit, miss, negative]);
+    it("averages positive cases and skips negative ones", () => {
+        const aggregate = aggregateMetrics([
+            scoreCase(ranked("a.md"), new Map([["a.md", 2]])),
+            scoreCase(ranked("x.md", "a.md"), new Map([["a.md", 2]])),
+            scoreCase(ranked("x.md"), new Map()),
+        ]);
         assert.equal(aggregate.caseCount, 2);
         assert.equal(aggregate.hitAt1, 0.5);
-        assert.equal(aggregate.mrr, 0.5);
-    });
-});
-
-describe("percentiles", () => {
-    it("uses nearest-rank percentiles", () => {
-        const stats = percentiles([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]);
-        assert.deepEqual(stats, { count: 10, p10: 0.1, p50: 0.5, p90: 0.9 });
-    });
-
-    it("returns nulls for an empty list", () => {
-        assert.deepEqual(percentiles([]), { count: 0, p10: null, p50: null, p90: null });
-    });
-});
-
-describe("separationAuc", () => {
-    it("is 1 for perfectly separated scores and 0.5 for identical ones", () => {
-        assert.equal(separationAuc([0.8, 0.9], [0.1, 0.2]), 1);
-        assert.equal(separationAuc([0.5], [0.5]), 0.5);
-        assert.equal(separationAuc([], [0.5]), null);
-    });
-});
-
-describe("sweepThresholds", () => {
-    it("keeps files strictly above the floor and counts empty negatives", () => {
-        const positive = scoreCase(ranked(["a.md", 0.6], ["x.md", 0.5]), new Map([["a.md", 2]]));
-        const negative = scoreCase(ranked(["y.md", 0.55]), new Map());
-        const [low, high] = sweepThresholds([positive, negative], [0.5, 0.6]);
-        assert.deepEqual(low, {
-            threshold: 0.5,
-            relevantKept: 1,
-            irrelevantKept: 0,
-            negativesSuppressed: 0,
-        });
-        assert.deepEqual(high, {
-            threshold: 0.6,
-            relevantKept: 0,
-            irrelevantKept: 0,
-            negativesSuppressed: 1,
-        });
+        assert.equal(aggregate.recallAt5, 1);
+        assert.equal(aggregate.mrr, 0.75);
     });
 });

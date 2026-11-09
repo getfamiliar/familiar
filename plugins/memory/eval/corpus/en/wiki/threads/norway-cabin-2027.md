@@ -1,3 +1,7 @@
+---
+categories: [travel]
+review_at: 2027-01-05
+---
 # Norway cabin 2027
 
 Shared summer holiday 2027 in a holiday cabin near Ålesund with [[people/family-nowak]] and the family of [[people/henrik-sommer]].

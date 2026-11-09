@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Vogelhaus
 
 Bestellung „Vogelhaus" bei Gartenglück, Versand mit Logistiq.

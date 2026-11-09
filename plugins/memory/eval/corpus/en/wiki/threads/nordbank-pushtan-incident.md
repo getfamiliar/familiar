@@ -1,3 +1,6 @@
+---
+categories: [banking, security]
+---
 # Nordbank pushTAN incident
 
 Unexpected pushTAN request to activate a new device at Nordbank in August 2026; not confirmed, access secured.

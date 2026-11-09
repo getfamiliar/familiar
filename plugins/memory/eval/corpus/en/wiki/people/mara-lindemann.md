@@ -1,3 +1,6 @@
+---
+categories: [health]
+---
 # Mara Lindemann
 
 Paediatrician, Praxis Lindemann in Wiesenfeld.

@@ -1,3 +1,6 @@
+---
+categories: [health]
+---
 # Judith Reutter
 
 Paediatrician, Praxis Reutter in Oberweiler.

@@ -117,9 +117,33 @@ Slugs are identical in both languages except family/relatives (localized prefixe
 
 `2026-05.md`, `2026-06.md` (same names in both languages), one `##` per entry, `## YYYY-MM-DD: title`. Include 2026-05-14 (first swim in the lake), 2026-05-25 (tax meeting, also in thread), 2026-06-09 (Ines' surgery), 2026-06-20 (Fritzi handball tournament, classmate Leo).
 
+## Categories (frontmatter)
+
+Every wiki file carries 1–3 `categories` from this closed vocabulary (German / English). Crowd files get theirs from `GenerateCrowd.ts` (per person role and thread group), hand-written files by hand.
+
+| de | en | de | en |
+|---|---|---|---|
+| familie | family | freunde | friends |
+| nachbarschaft | neighbourhood | kinder | kids |
+| schule | school | sport | sports |
+| gesundheit | health | finanzen | finances |
+| versicherung | insurance | steuern | taxes |
+| bank | banking | immobilien | property |
+| erbe | inheritance | auto | car |
+| urlaub | travel | arbeit | work |
+| kunden | clients | gruender | startups |
+| software | software | hobby | hobbies |
+| vertraege | contracts | einkauf | shopping |
+| sicherheit | security | handwerk | trades |
+| vereine | clubs | veranstaltungen | events |
+| essen | food | alltag | routines |
+| journal | journal | posteingang | inbox |
+
+`review_at` is set on three threads: the Norway cabin (2027-01-05, book the ferry), WEG Ahornweg 7 (2026-12-03, meter reading) and the developer meetup (2026-11-30, hackathon deposit).
+
 ## Distractors outside the wiki
 
-Identical in both languages unless the content is prose (then translated):
+Not indexed — only `wiki/` is part of the memory, and no case expects these files. Identical in both languages unless the content is prose (then translated):
 
 - `chat/telegram.md`, `mail/index.md` — handler files with frontmatter (`description:`), English agent instructions in both corpora (as in real workspaces).
 - `files/mail/rules/@funkfix.example.md`, `files/mail/rules/@retech.example.md`, `files/mail/rules/@nordbank.example.md` — short mail rules ("archive invoices from FunkFix, note amount").

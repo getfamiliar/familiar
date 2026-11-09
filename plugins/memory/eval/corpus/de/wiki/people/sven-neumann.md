@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Sven Neumann
 
 Maler, Betrieb Malerbetrieb Neumann in Oberweiler.

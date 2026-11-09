@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Hendrik Sommerfeld
 
 Vater von Smilla (1. Klasse, Grundschule Hollerbach).

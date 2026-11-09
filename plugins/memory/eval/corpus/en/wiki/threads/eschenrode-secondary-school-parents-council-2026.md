@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Eschenrode secondary school parents' council 2026
 
 Eschenrode secondary school parents' council 2026: organisation and people involved.

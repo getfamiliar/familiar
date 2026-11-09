@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Thermo-Tech AG: Intranet-Relaunch
 
 Beratungsprojekt für Thermo-Tech AG: Intranet-Relaunch.

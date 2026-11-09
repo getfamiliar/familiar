@@ -1,3 +1,6 @@
+---
+categories: [family]
+---
 # Aunt Roswitha
 
 Roswitha Pfaff, sister of Jürgen's late father; almost always visits the family together with [[people/aunt-hedi|Aunt Hedi]].

@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Piotr Nowacki
 
 Elektromeister, Betrieb Elektro Nowacki in Hollerbach.

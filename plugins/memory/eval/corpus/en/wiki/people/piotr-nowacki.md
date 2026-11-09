@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Piotr Nowacki
 
 Master electrician, business Elektro Nowacki in Hollerbach.

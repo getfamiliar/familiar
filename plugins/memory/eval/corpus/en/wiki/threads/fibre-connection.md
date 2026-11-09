@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Fibre connection
 
 Fibre connection with Lichtleiter Hessen: terms and correspondence.

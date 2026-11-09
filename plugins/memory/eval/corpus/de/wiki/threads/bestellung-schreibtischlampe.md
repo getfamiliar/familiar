@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Schreibtischlampe
 
 Bestellung „Schreibtischlampe" bei Werkbank24, Versand mit PostNova.

@@ -1,3 +1,6 @@
+---
+categories: [hobbies, events]
+---
 # Burg Falkenstein Youth Hostel
 
 Youth hostel in a castle in the Lauterbrunn forest; planned venue for the hackathon weekend of the [[threads/developer-meetup|Side Project Meetup]].

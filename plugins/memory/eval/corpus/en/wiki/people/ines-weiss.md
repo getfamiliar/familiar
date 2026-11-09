@@ -1,3 +1,6 @@
+---
+categories: [family]
+---
 # Ines Weiß
 
 Partner of [[people/juergen-weiss|Jürgen]], physiotherapist (46), mother of [[people/paul-weiss|Paul]] and [[people/friederike-weiss|Fritzi]].

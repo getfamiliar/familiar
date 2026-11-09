@@ -1,3 +1,6 @@
+---
+categories: [versicherung, auto]
+---
 # Kfz-Versicherung
 
 Versicherung der beiden Familienautos (siehe [[threads/fahrzeuge]]): Mazda6 Kombi und Hyundai i10.

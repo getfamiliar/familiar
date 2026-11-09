@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Katrin Engel
 
 Treasurer — Rotenfels volunteer fire brigade.

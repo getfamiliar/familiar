@@ -1,3 +1,6 @@
+---
+categories: [posteingang]
+---
 # WhatsApp-Gruppen-Digest
 
 Tägliche Kurzzusammenfassungen der WhatsApp-Gruppen, in denen Jürgen Mitglied ist (Mühlbach-Bande, Elternrat 4b, Handball U16, Ahornweg 7 Nachbarn). Nur Überblick, keine Handlungspunkte.

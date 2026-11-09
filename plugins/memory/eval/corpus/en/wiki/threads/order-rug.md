@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order rug
 
 Order of a rug from Gartenglück, shipped by PostNova.

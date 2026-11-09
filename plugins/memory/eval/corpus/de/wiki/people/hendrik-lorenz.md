@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Hendrik Lorenz
 
 Geschäftsführer bei Quellwerk Energie in Oberweiler; Kontakt aus einem Beratungsprojekt.

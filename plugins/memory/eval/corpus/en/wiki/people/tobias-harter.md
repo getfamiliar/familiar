@@ -1,3 +1,6 @@
+---
+categories: [taxes, finances]
+---
 # Tobias Harter
 
 Tax advisor at **KRW Partner Steuerberatung**, handles Jürgen's annual accounts.

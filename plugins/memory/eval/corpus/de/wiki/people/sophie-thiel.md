@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Sophie Thiel
 
 Werkstudentin bei Rotfuchs Medien in Hollerbach; Kontakt aus einem Beratungsprojekt.

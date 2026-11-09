@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Heimatverein Kaltenbach
 
 Notizen: Heimatverein Kaltenbach — Termine, Kontakte, Beiträge.

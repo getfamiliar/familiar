@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Hansa Datenwerk: Data protection audit
 
 Consulting project for Hansa Datenwerk: data protection audit.

@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Selin Aydin
 
 Einkäuferin bei der Brightwater GmbH; zuständig für Bestellung und Rechnungen im [[threads/brightwater-projekt]].

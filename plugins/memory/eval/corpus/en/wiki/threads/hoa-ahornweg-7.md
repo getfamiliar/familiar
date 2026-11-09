@@ -1,3 +1,7 @@
+---
+categories: [property, neighbourhood]
+review_at: 2026-12-03
+---
 # Owners' association Ahornweg 7
 
 Owners' association (WEG) of the building at Ahornweg 7 in Kaltenbach where [[people/juergen-weiss|Jürgen]] lives with his family; managed by Hausverwaltung Lenz.

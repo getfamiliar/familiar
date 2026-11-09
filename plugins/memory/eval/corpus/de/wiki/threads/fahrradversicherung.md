@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Fahrradversicherung
 
 Fahrradversicherung bei Speiche & Co.: Konditionen und Schriftverkehr.

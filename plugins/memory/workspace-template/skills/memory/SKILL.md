@@ -6,7 +6,7 @@ tools: memory
 
 # The wiki
 
-Long-term memory lives in markdown under `wiki/`. Every `.md` file in the workspace is indexed and searchable via `memory_search`, but the wiki is where memories the agent creates deliberately land.
+Long-term memory lives in markdown under `wiki/`. Every `.md` file there is indexed and searchable via `memory_search` (terms) and `memory_datesearch` (dates); files outside `wiki/` are not part of the memory.
 
 ## Folder and file structure
 
@@ -22,19 +22,31 @@ Other folders can grow under `wiki/` as the need surfaces — invent a folder wh
 
 Filenames are kebab-case slugs: `alice-smith.md`, `acme-rollout.md`, `office-berlin.md`. Use the most identifying name available — a person's full name beats their first name.
 
-## How chunking works
+## How the memory is searched
 
-A memory file is **not** indexed as one big blob. The indexer splits each file on every heading at level `#`, `##` and `###` and treats each section as its own memory chunk. A search hit returns the matching chunk together with its headline trail (`# Alice Smith > ## Meetings > ### Atlanta 2026-05-12`), so the structure of the file directly shapes how memories are addressable.
+The search is deliberately simple and literal — **you** do the thinking:
+
+- `memory_search` takes 1–8 terms (OR) and matches them, tolerating small typos, against each file's title (the h1), its description (the paragraph under the h1), its categories, its headings and every line of text. Files matching more terms rank first. The result is a table of files with the best matching line; read the files you need with `fs_read`.
+- There is no semantic matching. Searching `Steuerberater` does not find `tax advisor` or `Buchhaltung` — send synonyms, related words and both languages yourself: `["Steuerberater", "Steuerberatung", "tax advisor"]`.
+- The categories listed in the prompt are search terms too: a category lists a whole set of files, e.g. every property or every insurance, even when the files don't spell out the word.
+- `memory_datesearch` lists every line with an ISO date in a range (`from` / `to`) or on a day of the year (`day: "07-12"`). This only works because every date is written as an ISO date (see below).
+
+Matches are literal, too: the `Matched` column shows how many of your terms a file contains, and a file that only shares a first name or a generic word is not about your subject. When no file is really about it, the memory doesn't know it — say so instead of citing loosely related files.
+
+So a file is only findable through the words it contains. Write titles and descriptions with the concrete names, places and counterparts a later search would use.
 
 ## How to structure wiki files
 
-1. Start each file with a h1 heading with the name of the subject (`# Alice Smith`, `# Acme Rollout`, `# Berlin Office`).
-2. The first thing after the headline has to be a plain paragraph. It is the file-wide context, which is prepended to every chunk for search and retrieval. Use it to summarize in one sentence what this file is about.
-3. Use h2 and h3 headings to break the file into distinct facts or episodes. Each section becomes a separate chunk in the index, so use headings to mark natural memory boundaries: a new meeting, a new decision, a new fact about a different relationship. Don't pile everything under one heading; the search engine can't tell them apart.
-4. Headings h4+ don't create new chunks but stay within their parent chunk, so use them for structure within a memory, not to mark new memories.
-5. Keep each section self-contained enough that someone reading it without seeing the headline trail still roughly understands what it's about.
+1. Start the file with a frontmatter block holding its `categories`, if one fits (see below).
+2. Then an h1 heading with the name of the subject (`# Alice Smith`, `# Acme Rollout`, `# Berlin Office`). This is the file's **title**: name the entity, not the category (`# Alte Mühle Unterbrunn`, not `# Immobilie`).
+3. The first thing after the h1 has to be a plain paragraph: the file's **description**, one sentence of at most ~160 characters that names the concrete people, places and counterparts (`Sale of the inherited house "Alte Mühle" in Unterbrunn via broker Ralf Szymanski; notary date pending.`). It is shown in every search result, so it decides whether a later reader opens the file.
+4. Use h2 and h3 headings to break the file into distinct facts or episodes: a new meeting, a new decision, a new fact about a different relationship. Headings are searched with a higher weight than plain lines and show up as the context of a matching line.
+5. Keep each section self-contained enough that someone reading it without the heading still roughly understands what it's about.
 
 ```markdown
+---
+categories: [clients, work]
+---
 # Adam Smith
 
 Senior PM at Acme; primary contact for the GTM workstream. Based in Atlanta.
@@ -43,7 +55,14 @@ Senior PM at Acme; primary contact for the GTM workstream. Based in Atlanta.
 ...
 ```
 
-If the file leads with a list, sub-heading, or code fence directly under the h1, the context is empty and every chunk loses that document-wide framing. So: always write that one-line description right under the h1.
+If the file leads with a list, sub-heading, or code fence directly under the h1, the description is empty and search results show nothing about the file. So: always write that one-line description right under the h1.
+
+### Frontmatter
+
+Only two fields, both optional, nothing else:
+
+- `categories`: 0–3 lower-case words, most important first, e.g. `[property, inheritance]`. A category names a **set someone would ask for as a whole** ("which properties do I have?", "who is in the EO?"), using the word such a question contains. **Reuse the categories listed in the prompt.** Add one only when the file really belongs to such a set; a file with no fitting category gets none — never file it under a vague catch-all (`misc`, `culture`, `services`). Invent a new category only for a new set of several files that will grow, never for a single file.
+- `review_at`: an ISO date (`2026-11-20`) when the file should be looked at again — a pending decision, an expiring contract, a follow-up. Leave it out for files that don't need a follow-up.
 
 ### Wikilinks
 
@@ -56,11 +75,23 @@ Cross-link liberally: `[[people/alice-smith]]`, `[[threads/acme-rollout]]`. Wiki
 - **Don't repeat what's already there.** Your job is to add, not duplicate. If the same fact is already recorded, leave the file alone.
 - **Note uncertainty.** If something is a guess, mark it: `- (probably) lives in Berlin`.
 
-**Important**: Always write dates in the format `YYYY-MM-DD` so they can easily be searched and understood. A search for "-07-12" should find all facts related to July 12th, regardless of the year.
+### Dates: ISO 8601 only
+
+**Every date in a memory file must be an ISO date, `YYYY-MM-DD`.** Never write `12.07.2026`, `07/12/2026`, `12. Juli 2026` or `July 12, 2026` — not in bullets, not in headings, not in prose. Convert dates from mails, chats and calendar entries before writing them down. Consistent ISO dates are what makes them searchable: `memory_datesearch` with `day: "07-12"` finds every fact on a July 12th in any year, and `from: 2026-07-01, to: 2026-07-31` finds the whole month.
+
+A time of day is optional. When it matters, add it after the date as `HH:MM` (24-hour clock, local time): `2026-07-12 14:30`.
+
+```markdown
+- 2026-07-12: signed the NDA
+- 2026-07-12 14:30: call with Alice about the rollout
+## 2026-07-12: Dinner with the Smiths
+```
+
+When only the month or year is known, shorten the ISO form: `2026-07` or `2026`.
 
 ## Read-before-write discipline
 
-Before writing a new memory, **always** run `memory_search` for the subject. If a file already exists, extend it rather than creating a parallel one. Only create a new file when no good home exists for the new fact.
+Before writing a new memory, **always** run `memory_search` for the subject — with its names, synonyms and categories as separate terms. If a file already exists, extend it rather than creating a parallel one. Only create a new file when no good home exists for the new fact.
 
 If you modify an existing memory file, do **NOT** use `fs_write` to overwrite the whole file as this might overwrite changes from other agent runs. Instead, use `fs_str_replace` or `fs_append` to add new facts without losing existing ones.
 
@@ -71,6 +102,8 @@ For calendar events, the fact that our user is the creator / organizer of an eve
 ## Cleanup discipline
 
 You are in charge of the wiki's quality. If you find duplicate files, merge them. If you find outdated facts, update them. If you find typos, fix them. The wiki is your baby; take care of it.
+
+Collect open questions about the wiki in `wiki/questions.md` — a person whose relationship to our user is unknown, a thread whose purpose is unclear, contradicting facts. One bullet per question with a wikilink: `- [[people/alice]]: How does the user know Alice?`. They are asked in a clarifying conversation with the user later; remove a bullet once the answer is recorded in the file.
 
 If you find a slug that is misleading, too short or wrong, rename the file and update all links to it. Example: `wiki/people/alice.md` is too vague and you just learned her last name, so rename to `wiki/people/alice-smith.md` and update all links from `[[people/alice]]` to `[[people/alice-smith]]`.
 

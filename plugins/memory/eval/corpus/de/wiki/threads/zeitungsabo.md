@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Zeitungsabo
 
 Zeitungsabo bei Kaltenbacher Anzeiger: Konditionen und Schriftverkehr.

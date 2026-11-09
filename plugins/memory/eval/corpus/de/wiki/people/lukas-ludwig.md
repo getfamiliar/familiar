@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Lukas Ludwig
 
 Werkstudent bei Weidenhof Bio in Rotenfels; Kontakt aus einem Beratungsprojekt.

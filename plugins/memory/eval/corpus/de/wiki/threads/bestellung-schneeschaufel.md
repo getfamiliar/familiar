@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Schneeschaufel
 
 Bestellung „Schneeschaufel" bei Hausfreund, Versand mit Kurierwerk.

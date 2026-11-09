@@ -1,3 +1,6 @@
+---
+categories: [sports, kids]
+---
 # Paul Maurer
 
 Father of Hugo, C-Jugend handball at TV Eschenrode.

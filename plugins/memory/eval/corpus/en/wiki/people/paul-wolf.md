@@ -1,3 +1,6 @@
+---
+categories: [software, hobbies]
+---
 # Paul Wolf
 
 Software developer from Hollerbach, maintains the open-source project Kalenderbrücke.

@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Holger Arnold
 
 Werkstudent bei Nordbau GmbH in Eschenrode; Kontakt aus einem Beratungsprojekt.

@@ -1,3 +1,6 @@
+---
+categories: [arbeit]
+---
 # Tobias Yilmaz
 
 Ehemaliger Kollege bei Datastrom GmbH (2010–2013).

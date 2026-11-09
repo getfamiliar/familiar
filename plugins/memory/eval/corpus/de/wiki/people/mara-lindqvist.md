@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Mara Lindqvist
 
 Projektleiterin bei der Brightwater GmbH, Jürgens Hauptansprechpartnerin im [[threads/brightwater-projekt]].

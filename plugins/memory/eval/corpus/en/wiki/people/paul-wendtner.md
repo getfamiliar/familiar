@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Paul Wendtner
 
 Secretary — Hollerbach beekeepers' association.

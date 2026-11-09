@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Kathrin Wendel
 
 Founder of Fahrplanfux (ride-sharing app for commuters), Eschenrode.

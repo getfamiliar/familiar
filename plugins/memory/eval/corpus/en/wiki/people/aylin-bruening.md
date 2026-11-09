@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Aylin Brüning
 
 Master electrician, business Elektro Brüning in Wiesenfeld.

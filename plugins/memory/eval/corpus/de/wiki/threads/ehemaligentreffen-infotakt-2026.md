@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Ehemaligentreffen Infotakt 2026
 
 Ehemaligentreffen Infotakt 2026: Organisation und Beteiligte.

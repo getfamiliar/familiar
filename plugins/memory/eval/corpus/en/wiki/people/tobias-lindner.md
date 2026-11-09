@@ -1,3 +1,6 @@
+---
+categories: [work]
+---
 # Tobias Lindner
 
 Former colleague at Datastrom GmbH (2014–2016).

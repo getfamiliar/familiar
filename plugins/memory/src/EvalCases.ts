@@ -1,6 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse } from "yaml";
+import { type DateQuery, MAX_SEARCH_TERMS } from "./WikiSearch.js";
+import { isIsoDate, isMonthDay } from "./WikiText.js";
 
 /**
  * Loader and structural validator for the memory eval set (`eval/cases.yml`, format described in
@@ -44,6 +46,8 @@ const ALLOWED_CASE_KEYS = new Set([
     "category",
     "origin",
     "query",
+    "terms",
+    "dates",
     "relevant",
     "crossLanguage",
 ]);
@@ -56,8 +60,15 @@ export interface EvalCase {
     readonly category: EvalCategory;
     /** One generic sentence on the real-world problem the case mirrors. */
     readonly origin: string;
-    /** The query per language. */
+    /** The user's prompt per language (input of the LLM stage). */
     readonly query: Readonly<Record<EvalLanguage, string>>;
+    /**
+     * The search terms a careful agent would send per language (input of the deterministic stage);
+     * absent for pure date cases.
+     */
+    readonly terms: Readonly<Record<EvalLanguage, readonly string[]>> | undefined;
+    /** The date search a careful agent would run (same in both languages), if any. */
+    readonly dates: DateQuery | undefined;
     /** Workspace-relative path → grade (1 or 2) per language; empty for negative cases. */
     readonly relevant: Readonly<Record<EvalLanguage, ReadonlyMap<string, number>>>;
     /** When true, the EN query is additionally run against the DE corpus, judged by `relevant.de`. */
@@ -142,6 +153,11 @@ function readRelevanceMap(
                 `${caseId}: relevant.${language} "${relativePath}" has grade ${String(grade)}, expected 1 or 2`,
             );
         }
+        if (!relativePath.startsWith("wiki/")) {
+            problems.push(
+                `${caseId}: relevant.${language} "${relativePath}" is outside wiki/ (only the wiki is indexed)`,
+            );
+        }
         if (!relativePath.endsWith(".md")) {
             problems.push(
                 `${caseId}: relevant.${language} "${relativePath}" is not a markdown file`,
@@ -155,6 +171,77 @@ function readRelevanceMap(
         grades.set(relativePath, grade as number);
     }
     return { problems, grades };
+}
+
+/**
+ * Validates the `terms` map of a case: per language a list of 1–8 non-blank strings.
+ *
+ * @param caseId - Id of the case, for messages.
+ * @param value - The parsed `terms` value.
+ * @param problems - Collects problem messages.
+ * @returns The terms, or `undefined` when absent or invalid.
+ */
+function readTerms(
+    caseId: string,
+    value: unknown,
+    problems: string[],
+): Record<EvalLanguage, string[]> | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!isPlainObject(value)) {
+        problems.push(`${caseId}: terms must be a map of language → list`);
+        return undefined;
+    }
+    const terms: Partial<Record<EvalLanguage, string[]>> = {};
+    for (const language of EVAL_LANGUAGES) {
+        const list = value[language];
+        if (
+            !Array.isArray(list) ||
+            list.length === 0 ||
+            list.length > MAX_SEARCH_TERMS ||
+            !list.every(isNonBlankString)
+        ) {
+            problems.push(
+                `${caseId}: terms.${language} must be a list of 1–${MAX_SEARCH_TERMS} non-blank strings`,
+            );
+            continue;
+        }
+        terms[language] = list as string[];
+    }
+    return terms.de && terms.en ? (terms as Record<EvalLanguage, string[]>) : undefined;
+}
+
+/**
+ * Validates the `dates` of a case: `{from, to}` (ISO dates) or `{day}` (`MM-DD`).
+ *
+ * @param caseId - Id of the case, for messages.
+ * @param value - The parsed `dates` value.
+ * @param problems - Collects problem messages.
+ * @returns The date query, or `undefined` when absent or invalid.
+ */
+function readDates(caseId: string, value: unknown, problems: string[]): DateQuery | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (isPlainObject(value) && typeof value.day === "string" && Object.keys(value).length === 1) {
+        if (isMonthDay(value.day)) {
+            return { day: value.day };
+        }
+    } else if (
+        isPlainObject(value) &&
+        typeof value.from === "string" &&
+        typeof value.to === "string" &&
+        Object.keys(value).length === 2
+    ) {
+        if (isIsoDate(value.from) && isIsoDate(value.to) && value.from <= value.to) {
+            return { from: value.from, to: value.to };
+        }
+    }
+    problems.push(
+        `${caseId}: dates must be { from: YYYY-MM-DD, to: YYYY-MM-DD } or { day: MM-DD }`,
+    );
+    return undefined;
 }
 
 /**
@@ -233,6 +320,12 @@ function readCase(
         }
     }
 
+    const terms = readTerms(caseId, rawCase.terms, problems);
+    const dates = readDates(caseId, rawCase.dates, problems);
+    if (terms === undefined && dates === undefined) {
+        problems.push(`${caseId}: needs terms, dates or both`);
+    }
+
     if (problems.length > 0 || !isEvalCategory(category)) {
         return { problems, evalCase: null };
     }
@@ -243,6 +336,8 @@ function readCase(
             category,
             origin: rawCase.origin as string,
             query: query as Record<EvalLanguage, string>,
+            terms,
+            dates,
             relevant: relevant as Record<EvalLanguage, Map<string, number>>,
             crossLanguage: rawCase.crossLanguage === true,
         },

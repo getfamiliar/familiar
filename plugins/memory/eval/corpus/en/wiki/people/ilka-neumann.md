@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Ilka Neumann
 
 Neighbour at Gartenstraße 10, Wiesenfeld.

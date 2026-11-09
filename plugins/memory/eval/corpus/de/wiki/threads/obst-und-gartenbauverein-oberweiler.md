@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Obst- und Gartenbauverein Oberweiler
 
 Notizen: Obst- und Gartenbauverein Oberweiler — Termine, Kontakte, Beiträge.

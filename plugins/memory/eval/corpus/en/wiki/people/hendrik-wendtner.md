@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Hendrik Wendtner
 
 Father of Pia (year 7, Hollerbach primary school).

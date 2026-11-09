@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Kaltenbach local history society
 
 Notes: Kaltenbach local history society — dates, contacts, fees.

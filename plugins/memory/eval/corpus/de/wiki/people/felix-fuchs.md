@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Felix Fuchs
 
 Mitglied — Fotoclub Eschenrode.

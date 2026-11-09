@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Silke Albrecht
 
 Nachbarin, Kastanienweg 28 in Wiesenfeld.

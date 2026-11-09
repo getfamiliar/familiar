@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Inge Ziegenhagen
 
 Managing director at Hansa Datenwerk in Wiesenfeld; contact from a consulting project.

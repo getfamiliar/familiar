@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Emre Keller
 
 Father of Oskar (year 2, Hollerbach primary school).

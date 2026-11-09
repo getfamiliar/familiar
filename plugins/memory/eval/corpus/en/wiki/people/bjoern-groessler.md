@@ -1,3 +1,6 @@
+---
+categories: [friends, hobbies]
+---
 # Björn Größler
 
 Old school friend of Jürgen, member of the [[threads/board-game-night]] and the [[threads/muehlbach-gang|Mühlbach-Bande]]; lives in Lauterbrunn.

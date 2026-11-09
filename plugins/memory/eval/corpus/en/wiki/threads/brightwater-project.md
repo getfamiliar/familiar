@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Brightwater project
 
 [[people/juergen-weiss|Jürgen]]'s consulting engagement at Brightwater GmbH: migrating the data platform to the cloud.

@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Clara Fuchs
 
 Member — Eschenrode photo club.

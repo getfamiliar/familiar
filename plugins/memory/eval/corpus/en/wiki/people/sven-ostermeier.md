@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Sven Ostermeier
 
 Founder of Paketpause (parcel lockers for villages), Eschenrode.

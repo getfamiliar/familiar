@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Katrin Brünning
 
 Project lead at Hansa Datenwerk in Wiesenfeld; contact from a consulting project.

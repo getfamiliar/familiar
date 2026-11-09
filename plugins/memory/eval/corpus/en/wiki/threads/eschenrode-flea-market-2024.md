@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Eschenrode flea market 2024
 
 Eschenrode flea market 2024: organisation and people involved.

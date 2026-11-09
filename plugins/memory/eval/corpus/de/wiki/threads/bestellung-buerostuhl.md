@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Bürostuhl
 
 Bestellung „Bürostuhl" bei Bürowelt Direkt, Versand mit Logistiq.

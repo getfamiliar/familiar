@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Kestrel Software: Ticketsystem
 
 Beratungsprojekt für Kestrel Software: Ticketsystem.

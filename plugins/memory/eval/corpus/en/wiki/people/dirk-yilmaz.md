@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Dirk Yilmaz
 
 Treasurer — Rotenfels volunteer fire brigade.

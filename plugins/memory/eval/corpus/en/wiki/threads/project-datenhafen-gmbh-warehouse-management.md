@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Datenhafen GmbH: Warehouse management
 
 Consulting project for Datenhafen GmbH: warehouse management.

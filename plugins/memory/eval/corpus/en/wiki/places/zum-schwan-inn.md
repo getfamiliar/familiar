@@ -1,3 +1,6 @@
+---
+categories: [food, hobbies]
+---
 # Gasthaus Zum Schwan
 
 Traditional inn at Marktplatz 4 in Kaltenbach; meeting place of the [[threads/developer-meetup|Side Project Meetup]].

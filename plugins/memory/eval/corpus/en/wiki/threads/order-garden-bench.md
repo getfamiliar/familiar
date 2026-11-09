@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order garden bench
 
 Order of a garden bench from Werkbank24, shipped by Logistiq.

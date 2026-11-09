@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Kathrin Wendel
 
 Gründerin von Fahrplanfux (Mitfahr-App für Pendler), Eschenrode.

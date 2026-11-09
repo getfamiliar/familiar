@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Sophie Hartlieb
 
 Joiner, business Schreinerei Hartlieb in Rotenfels.

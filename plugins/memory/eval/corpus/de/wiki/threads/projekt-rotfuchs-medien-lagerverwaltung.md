@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Rotfuchs Medien: Lagerverwaltung
 
 Beratungsprojekt für Rotfuchs Medien: Lagerverwaltung.

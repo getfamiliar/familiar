@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Bernd Graf
 
 Roofer, business Dachbau Graf in Wiesenfeld.

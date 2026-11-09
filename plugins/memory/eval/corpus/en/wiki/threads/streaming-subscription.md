@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Streaming subscription
 
 Streaming subscription with Flimmerkiste+: terms and correspondence.

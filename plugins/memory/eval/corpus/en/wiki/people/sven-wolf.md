@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Sven Wolf
 
 Working student at Brightline GmbH in Kaltenbach; contact from a consulting project.

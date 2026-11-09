@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Svenja Roth
 
 Tiler, business Fliesen Roth in Eschenrode.

@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Friends of the Kaltenbach open-air pool
 
 Notes: Friends of the Kaltenbach open-air pool — dates, contacts, fees.

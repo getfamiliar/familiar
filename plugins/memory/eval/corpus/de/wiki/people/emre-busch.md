@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Emre Busch
 
 Schriftführer — Freiwillige Feuerwehr Rotenfels.

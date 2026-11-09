@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Felix Fuchs
 
 Member — Eschenrode photo club.

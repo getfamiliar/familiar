@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Holger Walter
 
 Gründer von Paketpause (Abholstationen für Dörfer), Rotenfels.

@@ -1,3 +1,6 @@
+---
+categories: [health]
+---
 # Rafael Busch
 
 Osteopath, Praxis Busch in Rotenfels.

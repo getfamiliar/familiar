@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Paul Wendland
 
 Treasurer — Eschenrode running group.

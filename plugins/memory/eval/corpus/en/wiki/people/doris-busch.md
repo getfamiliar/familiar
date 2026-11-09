@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Doris Busch
 
 Mother of Smilla (year 8, Hollerbach primary school).

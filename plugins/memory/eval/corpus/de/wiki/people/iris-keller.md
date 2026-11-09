@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Iris Keller
 
 Werkstudentin bei Lumina Logistik in Hollerbach; Kontakt aus einem Beratungsprojekt.

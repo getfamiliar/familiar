@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Katrin Ziegler
 
 Mitglied — Förderverein Freibad Kaltenbach.

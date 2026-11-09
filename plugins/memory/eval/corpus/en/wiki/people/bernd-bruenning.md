@@ -1,3 +1,6 @@
+---
+categories: [work]
+---
 # Bernd Brünning
 
 Former colleague at Infotakt AG (2013–2015).

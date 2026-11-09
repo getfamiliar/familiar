@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Jens Kühn
 
 Working student at Nordbau GmbH in Eschenrode; contact from a consulting project.

@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Iris Ostmann
 
 Head of IT at Rotfuchs Medien in Wiesenfeld; contact from a consulting project.

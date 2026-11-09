@@ -1,3 +1,6 @@
+---
+categories: [gesundheit]
+---
 # Sven Osterkamp
 
 Physiotherapeut, Praxis Osterkamp in Wiesenfeld.

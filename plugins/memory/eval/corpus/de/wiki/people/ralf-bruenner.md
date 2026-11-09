@@ -1,3 +1,6 @@
+---
+categories: [arbeit]
+---
 # Ralf Brünner
 
 Ehemaliger Kollege bei Bergwerk Digital (2015–2018).

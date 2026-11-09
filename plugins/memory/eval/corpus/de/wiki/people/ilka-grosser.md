@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Ilka Grosser
 
 IT-Leiterin bei Hansa Datenwerk in Hollerbach; Kontakt aus einem Beratungsprojekt.

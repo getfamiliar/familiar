@@ -1,3 +1,6 @@
+---
+categories: [family]
+---
 # Jürgen Weiß
 
 Our user: freelance software consultant (48) from Kaltenbach, lives with [[people/ines-weiss|Ines]] and their two children at Ahornweg 7.

@@ -1,3 +1,6 @@
+---
+categories: [kinder]
+---
 # Ferienbetreuung Sommer 2026
 
 Betreuung für [[people/paul-weiss|Paul]] in den Sommerferien 2026, organisiert zusammen mit [[people/katrin-brandt]], der Mutter von Pauls Freund [[people/jannis-brandt|Jannis]].

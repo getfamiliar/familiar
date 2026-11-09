@@ -1,3 +1,6 @@
+---
+categories: [software, hobby]
+---
 # Lars Beck
 
 Softwareentwickler aus Oberweiler, betreut das Open-Source-Projekt Feldpost.

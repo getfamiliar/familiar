@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Stadtlauf Kaltenbach 2024
 
 Stadtlauf Kaltenbach 2024: Organisation und Beteiligte.

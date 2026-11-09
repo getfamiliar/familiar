@@ -1,3 +1,6 @@
+---
+categories: [sports, kids]
+---
 # Maria Harting
 
 Mother of Oskar, B-Jugend handball at TV Eschenrode.

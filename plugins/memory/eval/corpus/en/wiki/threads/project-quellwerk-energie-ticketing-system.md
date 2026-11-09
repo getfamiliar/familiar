@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Quellwerk Energie: Ticketing system
 
 Consulting project for Quellwerk Energie: ticketing system.

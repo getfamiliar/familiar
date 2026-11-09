@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Sven Neumann
 
 Painter, business Malerbetrieb Neumann in Oberweiler.

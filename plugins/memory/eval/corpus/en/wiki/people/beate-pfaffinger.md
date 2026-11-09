@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Beate Pfaffinger
 
 Joiner, business Schreinerei Pfaffinger in Eschenrode.

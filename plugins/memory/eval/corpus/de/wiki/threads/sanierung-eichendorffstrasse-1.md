@@ -1,3 +1,6 @@
+---
+categories: [handwerk, nachbarschaft]
+---
 # Sanierung Eichendorffstraße 1
 
 Sanierung des Nachbarhauses Eichendorffstraße 1: Absprachen, Lärm, Parkplätze.

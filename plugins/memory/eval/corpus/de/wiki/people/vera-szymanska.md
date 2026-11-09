@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Vera Szymańska
 
 Produktmanagerin bei Nordbau GmbH in Rotenfels; Kontakt aus einem Beratungsprojekt.

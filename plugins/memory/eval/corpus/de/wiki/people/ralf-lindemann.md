@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Ralf Lindemann
 
 Gründer von Kiezkasse (Kassensysteme für Hofläden), Eschenrode.

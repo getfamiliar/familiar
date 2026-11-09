@@ -1,3 +1,6 @@
+---
+categories: [sport, kinder]
+---
 # Maria Lindquist
 
 Mutter von Jakob, E-Jugend Handball beim TV Eschenrode.

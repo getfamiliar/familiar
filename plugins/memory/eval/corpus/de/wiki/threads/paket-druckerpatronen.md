@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Paket Druckerpatronen
 
 Paketsendung mit Druckerpatronen für das Büro von [[people/juergen-weiss|Jürgen]], bestellt beim Bürobedarf-Händler „Papierwelt“.

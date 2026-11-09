@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Jens Haddad
 
 Neighbour at Gartenstraße 4, Wiesenfeld.

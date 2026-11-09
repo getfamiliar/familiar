@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Kai Stein
 
 Product manager at Thermo-Tech AG in Kaltenbach; contact from a consulting project.

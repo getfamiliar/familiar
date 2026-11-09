@@ -1,3 +1,6 @@
+---
+categories: [familie]
+---
 # Timeline
 
 Wichtige Ereignisse im Leben von [[people/juergen-weiss|Jürgen]].

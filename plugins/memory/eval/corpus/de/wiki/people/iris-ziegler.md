@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Iris Ziegler
 
 IT-Leiterin bei Datenhafen GmbH in Oberweiler; Kontakt aus einem Beratungsprojekt.

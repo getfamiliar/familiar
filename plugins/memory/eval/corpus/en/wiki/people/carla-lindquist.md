@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Carla Lindquist
 
 Neighbour at Kastanienweg 9, Kaltenbach.

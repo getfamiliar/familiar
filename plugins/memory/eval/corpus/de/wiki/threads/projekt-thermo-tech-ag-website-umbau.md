@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Thermo-Tech AG: Website-Umbau
 
 Beratungsprojekt für Thermo-Tech AG: Website-Umbau.

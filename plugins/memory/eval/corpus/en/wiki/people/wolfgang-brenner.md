@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Wolfgang Brenner
 
 Chair — Wiesenfeld mixed choir.

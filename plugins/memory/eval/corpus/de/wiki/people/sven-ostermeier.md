@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Sven Ostermeier
 
 Gründer von Paketpause (Abholstationen für Dörfer), Eschenrode.

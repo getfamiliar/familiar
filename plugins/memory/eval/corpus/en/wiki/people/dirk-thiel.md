@@ -1,3 +1,6 @@
+---
+categories: [sports, kids]
+---
 # Dirk Thiel
 
 Father of Emil, D-Jugend handball at TV Eschenrode.

@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Kestrel Software: Ticketing system
 
 Consulting project for Kestrel Software: ticketing system.

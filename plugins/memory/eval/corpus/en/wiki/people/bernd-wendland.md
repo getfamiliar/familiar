@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Bernd Wendland
 
 Member — Kaltenbach local history society.

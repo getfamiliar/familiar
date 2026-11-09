@@ -1,3 +1,6 @@
+---
+categories: [software, hobby]
+---
 # Thermo-Pi
 
 Jürgens Open-Source-Heizungssteuerung für den Raspberry Pi (GitHub-Repository `juergenweiss/thermo-pi`): Regelung mehrerer Heizkörper über Relais und Temperatursensoren, Web-UI und MQTT. Hier landen alle Benachrichtigungen zum Projekt — Releases, CI, Issues, Forum.

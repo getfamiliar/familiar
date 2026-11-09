@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Hollerbach village clean-up 2026
 
 Hollerbach village clean-up 2026: organisation and people involved.

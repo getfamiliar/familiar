@@ -1,3 +1,6 @@
+---
+categories: [arbeit]
+---
 # Ulrike Pfaffinger
 
 Ehemalige Kollegin bei Infotakt AG (2011–2016).

@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Mobile contracts
 
 The family's mobile contracts at FunkFix, including the kids' tariffs.

@@ -1,3 +1,6 @@
+---
+categories: [inheritance, property]
+---
 # Inheritance certificate and land registry
 
 Certificate of inheritance after the death of [[people/grandma-gisela|Grandma Gisela]] and land-registry correction for the [[threads/alte-muehle]].

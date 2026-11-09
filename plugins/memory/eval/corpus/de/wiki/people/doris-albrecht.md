@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Doris Albrecht
 
 Kassiererin — Imkerverein Hollerbach.

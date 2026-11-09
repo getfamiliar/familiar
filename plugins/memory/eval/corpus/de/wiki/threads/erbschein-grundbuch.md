@@ -1,3 +1,6 @@
+---
+categories: [erbe, immobilien]
+---
 # Erbschein und Grundbuch
 
 Erbschein nach dem Tod von [[people/oma-gisela|Oma Gisela]] und Grundbuchberichtigung für die [[threads/alte-muehle]].

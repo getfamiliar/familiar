@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order usb docking station
 
 Order of a usb docking station from Hausfreund, shipped by PostNova.

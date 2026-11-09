@@ -1,3 +1,6 @@
+---
+categories: [veranstaltungen]
+---
 # Weihnachtsmarkt Kaltenbach 2025
 
 Weihnachtsmarkt Kaltenbach 2025: Organisation und Beteiligte.

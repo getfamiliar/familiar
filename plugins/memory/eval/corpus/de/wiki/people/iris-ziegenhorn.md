@@ -1,3 +1,6 @@
+---
+categories: [software, hobby]
+---
 # Iris Ziegenhorn
 
 Softwareentwicklerin aus Oberweiler, betreut das Open-Source-Projekt Feldpost.

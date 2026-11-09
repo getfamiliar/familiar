@@ -1,3 +1,6 @@
+---
+categories: [family, kids]
+---
 # Paul Weiß
 
 Son of [[people/juergen-weiss|Jürgen]] and [[people/ines-weiss|Ines]], 10 years old, 4th grade at Grundschule am Mühlbach (primary school).

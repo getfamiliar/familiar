@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Wolfgang Ziegler
 
 Treasurer — Kaltenbach local history society.

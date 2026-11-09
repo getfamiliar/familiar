@@ -1,3 +1,6 @@
+---
+categories: [software, hobby]
+---
 # Beate Böhm
 
 Softwareentwicklerin aus Kaltenbach, betreut das Open-Source-Projekt Rechnungsfuchs.

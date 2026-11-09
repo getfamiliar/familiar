@@ -1,3 +1,6 @@
+---
+categories: [sports, kids]
+---
 # Anna Albrecht
 
 Mother of Oskar, D-Jugend handball at TV Eschenrode.

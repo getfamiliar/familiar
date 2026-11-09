@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Mara Lindholm
 
 Fliesenlegerin, Betrieb Fliesen Lindholm in Wiesenfeld.

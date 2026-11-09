@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Lars Graf
 
 IT-Leiter bei Thermo-Tech AG in Rotenfels; Kontakt aus einem Beratungsprojekt.

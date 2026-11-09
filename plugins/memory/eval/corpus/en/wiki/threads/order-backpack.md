@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order backpack
 
 Order of a backpack from Bürowelt Direkt, shipped by Logistiq.

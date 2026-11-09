@@ -1,3 +1,6 @@
+---
+categories: [property, inheritance]
+---
 # Alte Mühle
 
 The inherited estate of [[people/grandma-gisela|Grandma Gisela]] at Mühlweg 2, 35796 Unterbrunn; owned by [[people/juergen-weiss|Jürgen]] since 2024.

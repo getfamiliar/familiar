@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Clara Peters
 
 Working student at Nordbau GmbH in Oberweiler; contact from a consulting project.

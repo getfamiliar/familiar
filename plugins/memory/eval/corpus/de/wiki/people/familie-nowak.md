@@ -1,3 +1,6 @@
+---
+categories: [freunde, urlaub]
+---
 # Familie Nowak
 
 Befreundete Familie (Marek und Julia Nowak mit Zwillingen Ole und Ida, 9), teilen sich 2027 das Ferienhaus in Norwegen mit uns.

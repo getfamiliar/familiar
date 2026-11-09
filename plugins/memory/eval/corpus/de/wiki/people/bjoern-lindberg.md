@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Björn Lindberg
 
 Werkstudent bei Kestrel Software in Kaltenbach; Kontakt aus einem Beratungsprojekt.

@@ -1,3 +1,6 @@
+---
+categories: [neighbourhood]
+---
 # Henrik
 
 Neighbour from upstairs.

@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Kai Wendt
 
 Founder of the startup **Lumora** (smart glasses for warehouse order picking), pitched at the founders' meetup.

@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Arne Scholz
 
 Chimney sweep, business Kaminkehrer Scholz in Rotenfels.

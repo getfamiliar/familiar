@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Oberweiler fruit and garden club
 
 Notes: Oberweiler fruit and garden club — dates, contacts, fees.

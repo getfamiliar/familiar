@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Sophie Thiel
 
 Working student at Rotfuchs Medien in Hollerbach; contact from a consulting project.

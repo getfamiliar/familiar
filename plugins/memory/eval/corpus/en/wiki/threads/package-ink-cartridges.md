@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Package ink cartridges
 
 Parcel with printer ink cartridges for [[people/juergen-weiss|Jürgen]]'s office, ordered from the office supplies shop "Papierwelt".

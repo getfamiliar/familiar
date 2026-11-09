@@ -1,3 +1,6 @@
+---
+categories: [routines, sports]
+---
 # Routines
 
 Fixed weekly habits of [[people/juergen-weiss|Jürgen]].

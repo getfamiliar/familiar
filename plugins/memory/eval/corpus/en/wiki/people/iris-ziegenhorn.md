@@ -1,3 +1,6 @@
+---
+categories: [software, hobbies]
+---
 # Iris Ziegenhorn
 
 Software developer from Oberweiler, maintains the open-source project Feldpost.

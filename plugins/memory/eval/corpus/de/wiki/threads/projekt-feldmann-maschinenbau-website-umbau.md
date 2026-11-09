@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Feldmann Maschinenbau: Website-Umbau
 
 Beratungsprojekt für Feldmann Maschinenbau: Website-Umbau.

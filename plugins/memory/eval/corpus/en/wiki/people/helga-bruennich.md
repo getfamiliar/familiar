@@ -1,3 +1,6 @@
+---
+categories: [inheritance]
+---
 # Helga Brünnich
 
 Notary Dr. Helga Brünnich in Unterbrunn; notarized the application for the certificate of inheritance after Grandma Gisela's death.

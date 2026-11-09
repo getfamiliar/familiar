@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Handball car pool 2025
 
 Handball car pool 2025: organisation and people involved.

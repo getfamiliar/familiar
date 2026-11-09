@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Anna Reutter
 
 Mutter von Vincent (9. Klasse, Realschule Eschenrode).

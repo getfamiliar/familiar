@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Tobias Hartlieb
 
 Founder of Paketpause (parcel lockers for villages), Eschenrode.

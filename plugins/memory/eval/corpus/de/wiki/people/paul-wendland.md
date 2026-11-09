@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Paul Wendland
 
 Kassierer — Lauftreff Eschenrode.

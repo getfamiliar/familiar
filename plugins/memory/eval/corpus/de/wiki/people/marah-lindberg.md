@@ -1,3 +1,6 @@
+---
+categories: [gruender]
+---
 # Marah Lindberg
 
 Gründerin von Lernlicht (Lernsoftware für Grundschulen), Kaltenbach.

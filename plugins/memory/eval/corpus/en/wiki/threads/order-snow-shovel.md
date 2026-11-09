@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order snow shovel
 
 Order of a snow shovel from Hausfreund, shipped by Kurierwerk.

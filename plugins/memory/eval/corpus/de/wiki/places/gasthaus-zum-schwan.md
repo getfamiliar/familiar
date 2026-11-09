@@ -1,3 +1,6 @@
+---
+categories: [essen, hobby]
+---
 # Gasthaus Zum Schwan
 
 Traditionsgasthaus am Marktplatz 4 in Kaltenbach; Treffpunkt des [[threads/entwickler-stammtisch|Side-Project-Stammtischs]].

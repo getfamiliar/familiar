@@ -1,3 +1,6 @@
+---
+categories: [trades, neighbourhood]
+---
 # Renovation Eichendorffstraße 1
 
 Renovation of the neighbouring house Eichendorffstraße 1: arrangements, noise, parking.

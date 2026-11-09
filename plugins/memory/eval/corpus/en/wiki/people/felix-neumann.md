@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Felix Neumann
 
 Buyer at Feldmann Maschinenbau in Rotenfels; contact from a consulting project.

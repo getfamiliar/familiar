@@ -1,3 +1,6 @@
+---
+categories: [freunde, hobby]
+---
 # Björn Größler
 
 Alter Schulfreund von Jürgen, Mitglied im [[threads/brettspielabend]] und in der [[threads/muehlbach-bande|Mühlbach-Bande]]; wohnt in Lauterbrunn.

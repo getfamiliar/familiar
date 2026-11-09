@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Elif Ostmann
 
 Master electrician, business Elektro Ostmann in Rotenfels.

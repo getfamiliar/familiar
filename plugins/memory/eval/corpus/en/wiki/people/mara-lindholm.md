@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Mara Lindholm
 
 Tiler, business Fliesen Lindholm in Wiesenfeld.

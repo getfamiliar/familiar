@@ -1,3 +1,6 @@
+---
+categories: [sports, kids]
+---
 # Arne Stein
 
 Father of Wilma, C-Jugend handball at TV Eschenrode.

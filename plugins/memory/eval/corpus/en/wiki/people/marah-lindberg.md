@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Marah Lindberg
 
 Founder of Lernlicht (learning software for primary schools), Kaltenbach.

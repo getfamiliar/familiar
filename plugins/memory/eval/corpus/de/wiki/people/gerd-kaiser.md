@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Gerd Kaiser
 
 Kassierer — Freiwillige Feuerwehr Rotenfels.

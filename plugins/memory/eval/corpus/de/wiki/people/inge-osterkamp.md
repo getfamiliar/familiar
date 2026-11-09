@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Inge Osterkamp
 
 Einkäuferin bei Brightline GmbH in Hollerbach; Kontakt aus einem Beratungsprojekt.

@@ -1,3 +1,6 @@
+---
+categories: [clients, work]
+---
 # Silberstreif Consulting: Purchasing process analysis
 
 Consulting project for Silberstreif Consulting: purchasing process analysis.

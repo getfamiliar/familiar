@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Fußmatte
 
 Bestellung „Fußmatte" bei Kaltenbacher Kaufhaus, Versand mit Logistiq.

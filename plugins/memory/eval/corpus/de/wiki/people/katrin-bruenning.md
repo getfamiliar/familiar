@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Katrin Brünning
 
 Projektleiterin bei Hansa Datenwerk in Wiesenfeld; Kontakt aus einem Beratungsprojekt.

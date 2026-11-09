@@ -1,3 +1,6 @@
+---
+categories: [nachbarschaft]
+---
 # Maria Vogel
 
 Nachbarin, Gartenstraße 18 in Kaltenbach.

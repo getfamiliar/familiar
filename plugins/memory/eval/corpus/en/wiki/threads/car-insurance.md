@@ -1,3 +1,6 @@
+---
+categories: [insurance, car]
+---
 # Car insurance
 
 Insurance for the two family cars (see [[threads/vehicles]]): Mazda6 estate and Hyundai i10.

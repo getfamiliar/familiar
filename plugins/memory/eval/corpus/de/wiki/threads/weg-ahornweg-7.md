@@ -1,3 +1,7 @@
+---
+categories: [immobilien, nachbarschaft]
+review_at: 2026-12-03
+---
 # WEG Ahornweg 7
 
 Eigentümergemeinschaft des Hauses Ahornweg 7 in Kaltenbach, in dem [[people/juergen-weiss|Jürgen]] mit der Familie wohnt; Verwaltung durch die Hausverwaltung Lenz.

@@ -1,3 +1,6 @@
+---
+categories: [kinder, freunde]
+---
 # Jannis Brandt
 
 Bester Freund von [[people/paul-weiss|Paul]], 10 Jahre, gleiche Klasse an der Grundschule am Mühlbach.

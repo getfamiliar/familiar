@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Zofia Dietrich
 
 Roofer, business Dachbau Dietrich in Kaltenbach.

@@ -1,3 +1,6 @@
+---
+categories: [software, hobbies]
+---
 # Beate Böhm
 
 Software developer from Kaltenbach, maintains the open-source project Rechnungsfuchs.

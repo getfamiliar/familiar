@@ -1,3 +1,6 @@
+---
+categories: [events]
+---
 # Community health day 2025
 
 Community health day 2025: organisation and people involved.

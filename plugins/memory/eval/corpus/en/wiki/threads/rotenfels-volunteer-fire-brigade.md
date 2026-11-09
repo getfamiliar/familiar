@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Rotenfels volunteer fire brigade
 
 Notes: Rotenfels volunteer fire brigade — dates, contacts, fees.

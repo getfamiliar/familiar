@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Emre Ernst
 
 Geschäftsführer bei Hansa Datenwerk in Kaltenbach; Kontakt aus einem Beratungsprojekt.

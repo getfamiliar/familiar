@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Regenjacke
 
 Bestellung „Regenjacke" bei Bürowelt Direkt, Versand mit PostNova.

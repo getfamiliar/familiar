@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Emre Okafor
 
 Werkstudent bei Feldmann Maschinenbau in Eschenrode; Kontakt aus einem Beratungsprojekt.

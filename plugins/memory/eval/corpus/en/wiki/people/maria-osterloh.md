@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Maria Osterloh
 
 Treasurer — Wiesenfeld mixed choir.

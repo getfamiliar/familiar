@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Zofia Roth
 
 Mother of Smilla (year 10, Eschenrode secondary school).

@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Gerd Kaiser
 
 Treasurer — Rotenfels volunteer fire brigade.

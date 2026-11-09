@@ -1,3 +1,6 @@
+---
+categories: [trades]
+---
 # Agnieszka Szymon
 
 Tiler, business Fliesen Szymon in Wiesenfeld.

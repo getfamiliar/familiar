@@ -1,3 +1,6 @@
+---
+categories: [trades, neighbourhood]
+---
 # Renovation Lerchenweg 31
 
 Renovation of the neighbouring house Lerchenweg 31: arrangements, noise, parking.

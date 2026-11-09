@@ -1,3 +1,6 @@
+---
+categories: [schule, kinder]
+---
 # Nils Scholz
 
 Vater von Emil (10. Klasse, Gesamtschule Wiesenfeld).

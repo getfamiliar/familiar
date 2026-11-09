@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Brightwater-Projekt
 
 Beratungsmandat von [[people/juergen-weiss|Jürgen]] bei der Brightwater GmbH: Migration der Datenplattform in die Cloud.

@@ -1,3 +1,6 @@
+---
+categories: [einkauf]
+---
 # Bestellung Wasserfilter
 
 Bestellung „Wasserfilter" bei Bürowelt Direkt, Versand mit Logistiq.

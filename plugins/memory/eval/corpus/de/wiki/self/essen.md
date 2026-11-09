@@ -1,3 +1,6 @@
+---
+categories: [essen]
+---
 # Essen
 
 Essensvorlieben von [[people/juergen-weiss|Jürgen]] und Familie.

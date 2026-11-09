@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Order bird house
 
 Order of a bird house from Gartenglück, shipped by Logistiq.

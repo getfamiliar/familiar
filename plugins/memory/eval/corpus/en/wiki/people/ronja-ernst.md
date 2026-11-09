@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Ronja Ernst
 
 Secretary — Eschenrode running group.

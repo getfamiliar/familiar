@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Florian Behrens
 
 Founder of Fahrplanfux (ride-sharing app for commuters), Eschenrode.

@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Tanja Peters
 
 Einkäuferin bei Datenhafen GmbH in Kaltenbach; Kontakt aus einem Beratungsprojekt.

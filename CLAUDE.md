@@ -123,6 +123,8 @@ Postgres database, owned by the host. Both host and container access it via the 
 
 Further tables back individual features, e.g. `scheduled_subagents`, `chatmessages`, `tool_calls` and `banners` — short-lived notes (`text`, `expires_at`, creator lineage) that every agentrun sees through the `{BANNER_LIST}` placeholder. The container tools `banner_create` (`privileged`: a banner reaches every later prompt, so non-privileged runs must not plant one) / `banner_remove` / `banner_list` and the CLI `familiar banners list|remove` go through `BannerBus` (`shared/src/BannerBus.ts`), which deletes expired rows on every read.
 
+Plugins keep their own tables through `ctx.database` (`query` / `transaction`, `shared/src/Plugin.ts`, implemented on the shared pool in `HostContextImpl`): each plugin creates its tables idempotently in a postgres schema named after itself and never touches the bus tables. The memory plugin's wiki index lives in schema `memory` (`files` / `lines` / `dates`, `pg_trgm`); its eval uses throwaway schemas `memory_eval_<lang>`.
+
 Three NOTIFY channels: `events_new` (INSERT into events; wakes the input-event watcher), `events_state` (state UPDATE on events; for host-side completion waiters), `agentruns_changed` (INSERT and state UPDATE on agentruns; wakes the agentrun scheduler).
 
 Planned but not yet implemented: `pending_actions` (approval gate), `scheduled_triggers` (one-shot triggers from workflows, e.g. "30 min before this meeting"), `audit_log`.
@@ -316,7 +318,7 @@ Template syntax (`shared/src/PromptTemplate.ts`, also used by host plugins such 
 Core placeholders are defined (name, description, kind) in `CORE_PROMPT_PLACEHOLDERS` (`shared/src/PromptPlaceholders.ts`) and resolved by `CORE_PLACEHOLDER_RESOLVERS` (`container/src/prompt/CorePlaceholders.ts`). Plugins extend the prompt two ways, both served to the container by the bastion's `PromptGateway`:
 
 - `ctx.prompt.registerPlaceholder({name, description, provide})` — a named, per-run placeholder (`/prompt-placeholders/`, only names a template uses are resolved). Register in `prepare()` so the CLI sees it; colliding or malformed names throw `PromptPlaceholderConflictError`.
-- `ctx.prompt.registerPromptAppender(fn)` — free text appended to the user-message head (`/prompt-appenders/`), e.g. the memory plugin's `# Memories` table.
+- `ctx.prompt.registerPromptAppender(fn)` — free text appended to the user-message head (`/prompt-appenders/`).
 
 CLI: `familiar prompt placeholders` lists every placeholder (works without the daemon). `familiar prompt dry-run <topic> [--privileged] [--prompt] [--full]` renders a handler's prompt inside the running agent container (`docker exec` → `container/src/prompt/PromptDryRun.ts`) with the real tool set and plugin values, without inserting an agentrun or calling a model.
 

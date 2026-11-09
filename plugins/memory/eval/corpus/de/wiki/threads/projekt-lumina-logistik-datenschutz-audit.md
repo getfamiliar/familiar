@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Lumina Logistik: Datenschutz-Audit
 
 Beratungsprojekt für Lumina Logistik: Datenschutz-Audit.

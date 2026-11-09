@@ -1,3 +1,6 @@
+---
+categories: [shopping]
+---
 # Package headphones
 
 Parcel with over-ear headphones for [[people/juergen-weiss|Jürgen]], ordered from the electronics shop "Klangwerk".

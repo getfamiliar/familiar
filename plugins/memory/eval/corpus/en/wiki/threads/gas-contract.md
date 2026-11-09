@@ -1,3 +1,6 @@
+---
+categories: [contracts]
+---
 # Gas contract
 
 Gas contract with Stadtwerke Eschenrode: terms and correspondence.

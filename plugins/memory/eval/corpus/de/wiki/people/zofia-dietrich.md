@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Zofia Dietrich
 
 Dachdeckerin, Betrieb Dachbau Dietrich in Kaltenbach.

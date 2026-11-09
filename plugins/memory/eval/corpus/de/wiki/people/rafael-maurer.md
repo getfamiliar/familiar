@@ -1,3 +1,6 @@
+---
+categories: [kunden, arbeit]
+---
 # Rafael Maurer
 
 Geschäftsführer bei Thermo-Tech AG in Wiesenfeld; Kontakt aus einem Beratungsprojekt.

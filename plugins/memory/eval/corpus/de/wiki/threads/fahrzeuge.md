@@ -1,3 +1,6 @@
+---
+categories: [auto]
+---
 # Fahrzeuge
 
 Die Autos der Familie Weiß: ein Mazda6 Kombi, den überwiegend [[people/juergen-weiss|Jürgen]] fährt, und ein Hyundai i10 als Kleinwagen, überwiegend gefahren von [[people/ines-weiss|Ines]].

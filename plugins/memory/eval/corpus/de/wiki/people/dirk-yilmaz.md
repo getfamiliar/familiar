@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Dirk Yilmaz
 
 Kassierer — Freiwillige Feuerwehr Rotenfels.

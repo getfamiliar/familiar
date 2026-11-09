@@ -1,3 +1,6 @@
+---
+categories: [family]
+---
 # Aunt Hedi
 
 Hedi Kranz, sister of Jürgen's late father; usually visits together with [[people/aunt-roswitha|Aunt Roswitha]].

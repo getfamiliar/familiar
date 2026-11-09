@@ -1,3 +1,7 @@
+---
+categories: [urlaub]
+review_at: 2027-01-05
+---
 # Ferienhaus Norwegen 2027
 
 Gemeinsamer Sommerurlaub 2027 in einem Ferienhaus bei Ålesund mit [[people/familie-nowak]] und der Familie von [[people/henrik-sommer]].

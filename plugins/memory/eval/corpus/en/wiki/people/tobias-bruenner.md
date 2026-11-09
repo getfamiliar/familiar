@@ -1,3 +1,6 @@
+---
+categories: [software, hobbies]
+---
 # Tobias Brünner
 
 Software developer from Wiesenfeld, maintains the open-source project Taktgeber.

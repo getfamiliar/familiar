@@ -1,3 +1,6 @@
+---
+categories: [gesundheit]
+---
 # Judith Reutter
 
 Kinderärztin, Praxis Reutter in Oberweiler.

@@ -1,3 +1,6 @@
+---
+categories: [work]
+---
 # Aylin Ziegler
 
 Former colleague at Datastrom GmbH (2011–2014).

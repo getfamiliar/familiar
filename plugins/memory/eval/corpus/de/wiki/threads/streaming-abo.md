@@ -1,3 +1,6 @@
+---
+categories: [vertraege]
+---
 # Streaming-Abo
 
 Streaming-Abo bei Flimmerkiste+: Konditionen und Schriftverkehr.

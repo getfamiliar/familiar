@@ -1,3 +1,6 @@
+---
+categories: [handwerk]
+---
 # Nils Stein
 
 Fliesenleger, Betrieb Fliesen Stein in Eschenrode.

@@ -1,3 +1,6 @@
+---
+categories: [startups]
+---
 # Nele Hoffmann
 
 Organizer of the [[threads/kaltenbach-founders-meetup|Kaltenbach founders' meetup]].

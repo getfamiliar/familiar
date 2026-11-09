@@ -1,3 +1,6 @@
+---
+categories: [vereine]
+---
 # Hanna Reutter
 
 Vorsitzende — Lauftreff Eschenrode.

@@ -1,3 +1,6 @@
+---
+categories: [school, kids]
+---
 # Jens Lindberg
 
 Father of Theo (year 10, Eschenrode secondary school).

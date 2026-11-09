@@ -1,3 +1,6 @@
+---
+categories: [clubs]
+---
 # Lena Lindquist
 
 Member — Eschenrode running group.

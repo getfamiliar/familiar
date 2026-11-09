@@ -1,3 +1,6 @@
+---
+categories: [handwerk, nachbarschaft]
+---
 # Sanierung Kastanienweg 17
 
 Sanierung des Nachbarhauses Kastanienweg 17: Absprachen, Lärm, Parkplätze.
