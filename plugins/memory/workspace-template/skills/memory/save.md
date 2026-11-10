@@ -7,11 +7,7 @@ model: smart
 
 # File this memory
 
-A piece of information arrived. Decide where in the wiki it belongs and write it there.
-
-The content to file:
-
-> {{prompt}}
+A piece of information arrived. Decide where in the wiki it belongs and write it there. The content to file is the prompt of this run.
 
 Procedure:
 

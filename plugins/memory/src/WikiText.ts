@@ -160,3 +160,186 @@ export function isMonthDay(value: string): boolean {
     const day = Number(match[2]);
     return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth(2024, month);
 }
+
+/** A date in a non-ISO notation found in a line. */
+export interface NonIsoDate {
+    /** The date as written, e.g. `12.07.2026` or `July 12, 2026`. */
+    readonly text: string;
+    /** 0-based column in the line. */
+    readonly column: number;
+    /** The ISO form (`2026-07-12`, `2026-07` for a month), when it is unambiguous. */
+    readonly iso: string | undefined;
+}
+
+/** Month names and abbreviations (German and English), lower case, mapped to 1–12. */
+const MONTH_NUMBERS: ReadonlyMap<string, number> = new Map(
+    (
+        [
+            [1, ["januar", "jänner", "january", "jan"]],
+            [2, ["februar", "february", "feb"]],
+            [3, ["märz", "maerz", "march", "mär", "mar"]],
+            [4, ["april", "apr"]],
+            [5, ["mai", "may"]],
+            [6, ["juni", "june", "jun"]],
+            [7, ["juli", "july", "jul"]],
+            [8, ["august", "aug"]],
+            [9, ["september", "sept", "sep"]],
+            [10, ["oktober", "october", "okt", "oct"]],
+            [11, ["november", "nov"]],
+            [12, ["dezember", "december", "dez", "dec"]],
+        ] as const
+    ).flatMap(([month, names]) => names.map((name) => [name, month] as const)),
+);
+
+/** Alternation of every month name, longest first so `Juni` wins over `Jun`. */
+const MONTH_ALTERNATION = [...MONTH_NUMBERS.keys()].sort((a, b) => b.length - a.length).join("|");
+
+/**
+ * Non-ISO date notations, each with a function that turns the match into year / month / day
+ * candidates. Order matters: earlier patterns claim their span first, so `12. Juli 2026` is one
+ * finding, not also `Juli 2026`.
+ */
+const NON_ISO_PATTERNS: readonly {
+    readonly pattern: RegExp;
+    readonly toIso: (match: RegExpMatchArray) => string | undefined | null;
+}[] = [
+    {
+        // 12.07.2026, 12.7.26 — always day first.
+        pattern: /(?<![\w.])(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2})(?![\w]|\.\d)/g,
+        toIso: (m) => isoFromParts(fullYear(m[3]), Number(m[2]), Number(m[1])),
+    },
+    {
+        // 07/12/2026 — day or month first; only unambiguous when one part is above 12. A four-digit
+        // year is required: `8/10/11` is far more often a list (tram lines) than a date.
+        pattern: /(?<![\w/.:])(\d{1,2})\/(\d{1,2})\/(\d{4})(?![\w/])/g,
+        toIso: (m) => {
+            const first = Number(m[1]);
+            const second = Number(m[2]);
+            const year = fullYear(m[3]);
+            if (first > 12 && second <= 12) {
+                return isoFromParts(year, second, first);
+            }
+            if (second > 12 && first <= 12) {
+                return isoFromParts(year, first, second);
+            }
+            const dayFirst = isoFromParts(year, second, first);
+            const monthFirst = isoFromParts(year, first, second);
+            if (dayFirst === null && monthFirst === null) {
+                return null;
+            }
+            return first === second ? (dayFirst ?? undefined) : undefined;
+        },
+    },
+    {
+        // 12. Juli 2026, 12 July 2026, 12th of July, 2026
+        pattern: new RegExp(
+            `(?<![\\w.])(\\d{1,2})(?:\\.|st|nd|rd|th)?\\s*(?:of\\s+)?(${MONTH_ALTERNATION})\\.?,?\\s+(\\d{4})(?![\\w-])`,
+            "giu",
+        ),
+        toIso: (m) => isoFromParts(Number(m[3]), monthNumber(m[2]), Number(m[1])),
+    },
+    {
+        // July 12, 2026 / Jul 12th 2026
+        pattern: new RegExp(
+            `(?<![\\w])(${MONTH_ALTERNATION})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})(?![\\w-])`,
+            "giu",
+        ),
+        toIso: (m) => isoFromParts(Number(m[3]), monthNumber(m[1]), Number(m[2])),
+    },
+    {
+        // Juli 2026, July 2026 — a month without a day.
+        pattern: new RegExp(`(?<![\\w.])(${MONTH_ALTERNATION})\\.?\\s+(\\d{4})(?![\\w-])`, "giu"),
+        toIso: (m) => {
+            const year = Number(m[2]);
+            const month = monthNumber(m[1]);
+            return year >= MIN_YEAR && year <= MAX_YEAR && month !== undefined
+                ? `${String(year)}-${String(month).padStart(2, "0")}`
+                : null;
+        },
+    },
+];
+
+/**
+ * Finds dates written in a notation other than ISO 8601: `12.07.2026`, `07/12/2026` (four-digit
+ * year only),
+ * `12. Juli 2026`, `July 12, 2026`, `Juli 2026` (German and English month names). Inline code
+ * spans, URLs and wikilinks are skipped; impossible dates (`31.02.2026`, `13/13/2026`) don't count,
+ * which keeps version numbers like `1.2.3` out. Dates without a year (`12. Mai`) are not reported:
+ * they have no ISO form.
+ *
+ * @param line - One line of text (outside code fences).
+ * @returns The findings in order of appearance.
+ */
+export function findNonIsoDates(line: string): NonIsoDate[] {
+    const masked = maskIgnoredSpans(line);
+    const claimed: boolean[] = new Array(line.length).fill(false);
+    const found: NonIsoDate[] = [];
+    for (const { pattern, toIso } of NON_ISO_PATTERNS) {
+        for (const match of masked.matchAll(pattern)) {
+            const column = match.index ?? 0;
+            const end = column + match[0].length;
+            if (claimed.slice(column, end).some(Boolean)) {
+                continue;
+            }
+            const iso = toIso(match);
+            if (iso === null) {
+                continue;
+            }
+            claimed.fill(true, column, end);
+            found.push({ text: line.slice(column, end), column, iso });
+        }
+    }
+    return found.sort((a, b) => a.column - b.column);
+}
+
+/**
+ * Replaces inline code, URLs and wikilinks with spaces of the same length, so pattern matches keep
+ * their column but never fire inside them.
+ *
+ * @param line - The line.
+ * @returns The masked line.
+ */
+function maskIgnoredSpans(line: string): string {
+    return line.replace(/`[^`]*`|\[\[[^\]]*\]\]|\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, (span) =>
+        " ".repeat(span.length),
+    );
+}
+
+/**
+ * Turns a two- or four-digit year into a full year (`26 → 2026`, `85 → 1985`).
+ *
+ * @param raw - The digits.
+ * @returns The full year.
+ */
+function fullYear(raw: string): number {
+    const value = Number(raw);
+    if (raw.length === 4) {
+        return value;
+    }
+    return value < 70 ? 2000 + value : 1900 + value;
+}
+
+/**
+ * Looks up a month name.
+ *
+ * @param name - Month name or abbreviation, any case.
+ * @returns 1–12, or `undefined` for an unknown name.
+ */
+function monthNumber(name: string): number | undefined {
+    return MONTH_NUMBERS.get(name.toLowerCase());
+}
+
+/**
+ * Validates year / month / day and formats them as ISO.
+ *
+ * @param year - Full year.
+ * @param month - Month 1–12 (or `undefined`).
+ * @param day - Day of month.
+ * @returns The ISO date, or `null` when no such day exists (then the match is not a date at all).
+ */
+function isoFromParts(year: number, month: number | undefined, day: number): string | null {
+    if (month === undefined || month < 1 || month > 12 || year < MIN_YEAR || year > MAX_YEAR) {
+        return null;
+    }
+    return dayRange(year, month, day)?.from ?? null;
+}

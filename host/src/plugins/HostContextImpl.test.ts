@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -207,5 +207,58 @@ describe("HostContextImpl ctx.database", () => {
         );
         assert.deepEqual(statements, ["BEGIN", "INSERT 1", "ROLLBACK"]);
         assert.equal(releases.count, 1);
+    });
+});
+
+describe("HostContextImpl ctx.workspaceHistory.commitFiles", () => {
+    /**
+     * Build a context on a temp workspace with the given `core.autoUpdate`.
+     *
+     * @param workspaceDir - Temp workspace.
+     * @param isAutoUpdateEnabled - Value of `core.autoUpdate`.
+     * @returns The context.
+     */
+    function buildHistoryContext(
+        workspaceDir: string,
+        isAutoUpdateEnabled: boolean,
+    ): HostContextImpl {
+        const config = {
+            getBool: ((key: string, def?: unknown) =>
+                key === "core.autoUpdate" ? isAutoUpdateEnabled : def) as ConfigService["getBool"],
+        } as ConfigService;
+        return new HostContextImpl({
+            pluginId: "memory",
+            config,
+            workspaceDir,
+        } as unknown as HostContextImplDeps);
+    }
+
+    it("commits exactly the given paths and leaves other changes uncommitted", async () => {
+        const workspaceDir = mkdtempSync(path.join(tmpdir(), "familiar-history-"));
+        try {
+            mkdirSync(path.join(workspaceDir, "wiki"));
+            writeFileSync(path.join(workspaceDir, "wiki", "a.md"), "# A\n");
+            writeFileSync(path.join(workspaceDir, "wiki", "b.md"), "# B\n");
+            const ctx = buildHistoryContext(workspaceDir, true);
+
+            const commitId = await ctx.workspaceHistory.commitFiles(["wiki/a.md"], "test: a");
+            assert.match(commitId ?? "", /^[0-9a-f]{7}$/);
+            assert.equal(await ctx.workspaceHistory.commitFiles(["wiki/a.md"], "again"), null);
+            assert.notEqual(await ctx.workspaceHistory.commitFiles(["wiki/b.md"], "test: b"), null);
+        } finally {
+            rmSync(workspaceDir, { recursive: true, force: true });
+        }
+    });
+
+    it("commits nothing when core.autoUpdate is false", async () => {
+        const workspaceDir = mkdtempSync(path.join(tmpdir(), "familiar-history-"));
+        try {
+            writeFileSync(path.join(workspaceDir, "a.md"), "# A\n");
+            const ctx = buildHistoryContext(workspaceDir, false);
+            assert.equal(await ctx.workspaceHistory.commitFiles(["a.md"], "test"), null);
+            assert.equal(existsSync(path.join(workspaceDir, ".git")), false);
+        } finally {
+            rmSync(workspaceDir, { recursive: true, force: true });
+        }
     });
 });

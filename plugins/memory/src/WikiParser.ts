@@ -45,7 +45,8 @@ export interface ParsedWikiFile {
 }
 
 const HEADING_PATTERN = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
-const FENCE_PATTERN = /^\s*(```|~~~)/;
+/** A line opening or closing a code fence. */
+export const FENCE_PATTERN = /^\s*(```|~~~)/;
 /** Lines that start a block other than a plain paragraph. */
 const NON_PARAGRAPH_PATTERN = /^\s*([-*+]\s|\d+[.)]\s|>|\||<|```|~~~|#)/;
 
@@ -145,7 +146,7 @@ export function parseWikiFile(relativePath: string, content: string): ParsedWiki
  * @param warnings - Collects parse problems.
  * @returns Index of the first body line and the frontmatter mapping (empty when absent).
  */
-function readFrontmatter(
+export function readFrontmatter(
     lines: readonly string[],
     warnings: string[],
 ): { bodyStart: number; frontmatter: Record<string, unknown> } {

@@ -2,15 +2,22 @@
 
 **Your personal AI assistant. Loyal. Local. Markdown.**
 
-Familiar is an agent harness built to be your personal assistant. It focusses on the important things for personal assistants:
+Familiar is an agent harness built to be your personal assistant. This is not a replacement for Claude Code, Pi or the like - Familiar is meant to be the workhorse that runs in the background to keep you free from tedious tasks. It focusses on the important things for personal assistants:
 
-* **Focus on security.** A personal assistant needs access to the most sensitive data to be truly helpful. Familiar protects your data thoroughly:
-  * the agent runs in a Docker container without internet access and never sees secrets like API keys or logins.
-  * MCPs are also isolated in containers and can be set to run offline.
-  * Fine-grained settings control access to sensitive functions.
-* **Mails, Calendar, Cloud Storage, Messengers - what a personal assistant needs, out of the box.** Familiar can triage your mails, summarize your WhatsApp groups and store invoices from mails in your Sharepoint or OneDrive folders. It can even download your Tesla Supercharger invoices with the right plugin installed.
+* **Focus on security.** A personal assistant needs access to the most sensitive data to be truly helpful. Familiar protects your data thoroughly: your assistant runs in an isolated sandbox without internet access and never sees secrets like your logins or API keys. Same goes for tools like MCPs.
+* **Messengers, Phone, Web - interact with your assistant where you already are.** Get a briefing for the next meeting on Telegram, talk to your assistant via phone while in the car, send it voice messages in WhatsApp to delegate tasks.
+* **Mails, Calendar, Cloud Storage, Web - the access a personal assistant needs, out of the box.** Familiar can triage your mails, summarize your WhatsApp groups and store invoices from mails in your Sharepoint or OneDrive folders. It can even download your Tesla Supercharger invoices with the right plugin installed.
+* **The memory of an elephant (or a really good PA).** Familiar remembers people, meetings, facts, orders, places. Not sure about the last time you had lunch with James or what book you recommended to him? Your assistant helps you out - and asks about open questions.
+* **Extend with plugins and MCPs.** Your assistant can do most of the things a human with a laptop can do. The whole world of MCPs can be used with Familiar - collect data from your Whoop, upload invoices to Qonto, read the notes on your Remarkable. For special cases (or where MCPs don't work well), there are Familiar plugins.
 * **Designed to reliably do tedious tasks.** Create Standard Operating Procedures in plain and simple markdown files. Familiar will follow the SOPs for a certain event like "new mail arrived" - traceable, correctable, repeatable.
 
+## Value privacy and independence? We've got you.
+
+With Familiar, all your data is stored on your device. Familiar can use any combination of cloud LLMs you like, but only for inference, not for storage.
+
+* **Model and vendor independent.** Familiar works with most cloud LLMs. Let DeepSeek Flash do your mail triage, Opus write your briefings and Sol create your documents. Or the other way round - each event type can be assigned a different model, switching is just one line changed. It's easy to use the best tool for the job and save money doing it.
+* **All your processes and memories in markdown.** One folder structure with markdown files contains everything. No lock-in, no personal data persistently stored with some shady cloud provider.
+* **Total transparency and control.** Every word that is sent to the LLM comes from the markdown files. You can change it all, modify and tweak it. No hidden system prompts, no changing baselines.
 
 What's nice about it
 
@@ -30,16 +37,18 @@ call tools add-mcp
 * Secondary: Official MCP Registry, see
 * Custom: just go, remember the tools call-mcp command if necessary
 
-# Familiar is not (only) a chat, it's an event processing engine
+## Familiar is not (only) a chat, it's an event processing engine
 
 With Familiar, everything that happens in the world is an event. Even when you chat with it, each chat message is an event, just like a new incoming mail. There are two ways Familiar starts acting:
 
-* An event happens. Most events are emitted by Familiar plugins. Plugins can monitor your mailbox or your WhatsApp account. Each event is processed by a handler file.
-* A cronjob happens. You can schedule handlers to be executed on certain points in time. Perfect for your daily morning briefing or the monthly bookkeeping run.
+* An event happens. "New e-mail in your inbox", for example. Most events are emitted by Familiar plugins. Plugins can monitor your mailbox or your WhatsApp account. Each event is processed by a _handler file_.
+* A scheduled cronjob happens. You can schedule handlers to be executed on certain points in time. Perfect for your daily morning briefing or the monthly bookkeeping run.
+
+This structured approach makes repeatable success and improvement by reflection easy - instead of a puddle of chats and unknown, moving prompts, you have clear files and know exactly what your agent did and why. Simply ask "Why did you archive the mail from John 5mins ago?" and the agent will read the full execution report of that event and explain what it decided without guessing or hallucinating.
 
 ## Handler files: Markdown files become your standard operating procedures
 
-Events have topics - "chat:whatsapp:group" is the topic for new WhatsApp group messages, "mail:new:ms365" is the topic for new mails in your MS365 account. Each event starts a new session for the agent.
+Events have topics - "chat:whatsapp:group" is the topic for new WhatsApp group messages, "mail:new:ms365" is the topic for new mails in your MS365 account. Each event starts a new, separate run for the agent.
 
 **Fixed handler file path per event topic.** For each event, there's a markdown file in your workspace that tells the agent what to do. We call it a "handler file". The topic defines where the file is - for the WhatsApp group message example, the file is `chat/whatsapp/group.md`. This file is included in the system prompt the agent receives.
 

@@ -29,10 +29,10 @@
     },
     "license": "MIT",
     "dependencies": {
-        "@whiskeysockets/baileys": "7.0.0-rc.9",
-        "citty": "^0.1.6",
         "@getfamiliar/plugin-transcribe-whisper": "*",
         "@getfamiliar/shared": "*",
+        "@whiskeysockets/baileys": "7.0.0-rc14",
+        "citty": "^0.1.6",
         "qrcode-terminal": "^0.12.0"
     },
     "devDependencies": {

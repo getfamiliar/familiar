@@ -61,6 +61,7 @@ import type { WorkspaceWatcher } from "../utils/WorkspaceWatcher.js";
 import type { TrustedProxyRegistry } from "../web/auth/TrustedProxyRegistry.js";
 import type { WebMenuRegistry } from "../web/WebMenuRegistry.js";
 import type { WebPluginRegistry } from "../web/WebPluginRegistry.js";
+import { WorkspaceGit } from "../workspace/WorkspaceGit.js";
 import type { PromptAppenderRegistry } from "./PromptAppenderRegistry.js";
 import type { PromptPlaceholderRegistry } from "./PromptPlaceholderRegistry.js";
 
@@ -371,6 +372,20 @@ export class HostContextImpl implements HostContext {
                 );
             }
             return watcher.onMarkdownFileUpdate(filter, callback);
+        },
+    };
+
+    readonly workspaceHistory = {
+        commitFiles: async (
+            relativePaths: readonly string[],
+            message: string,
+        ): Promise<string | null> => {
+            if (!this.deps.config.getBool("core.autoUpdate", true)) {
+                return null;
+            }
+            const workspaceGit = new WorkspaceGit(this.deps.workspaceDir);
+            await workspaceGit.ensureRepository();
+            return workspaceGit.commitPaths(relativePaths, message);
         },
     };
 

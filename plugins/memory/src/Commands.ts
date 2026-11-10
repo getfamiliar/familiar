@@ -12,6 +12,15 @@ import { DEFAULT_EVAL_SETTINGS, type MemoryEvalResult, runMemoryEval } from "./E
 import { renderCategoryList, renderDateHits, renderFileHits } from "./SearchRender.js";
 import { parseDateSearchArgs } from "./Tools.js";
 import { LIVE_INDEX_SCHEMA, WikiIndex } from "./WikiIndex.js";
+import {
+    type DateFix,
+    emitReviews,
+    type HandOverSummary,
+    type LintedFile,
+    lintWiki,
+    listDueReviews,
+    runLintPass,
+} from "./WikiMaintenance.js";
 import { listCategories, searchDates, searchFiles } from "./WikiSearch.js";
 
 /**
@@ -27,6 +36,8 @@ export function buildMemoryCommands(ctx: HostContext): readonly CommandDef<any>[
         showCommand(ctx),
         categoriesCommand(ctx),
         reindexCommand(ctx),
+        lintCommand(ctx),
+        reviewsCommand(ctx),
         evalCommand(ctx),
     ];
 }
@@ -356,6 +367,140 @@ function evalCommand(ctx: HostContext): CommandDef<any> {
             });
         },
     });
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
+function lintCommand(ctx: HostContext): CommandDef<any> {
+    return defineCommand({
+        meta: {
+            name: "lint",
+            description:
+                "Check every wiki file for broken frontmatter and non-ISO dates. Without --fix it only reports.",
+        },
+        args: {
+            fix: {
+                type: "boolean",
+                required: false,
+                description:
+                    "Do what the nightly lint job does: rewrite unambiguous dates to ISO (one git commit) and hand the remaining problems to skills:memory:repair runs (needs the daemon).",
+            },
+            raw: RAW_ARG,
+        },
+        async run({ args }) {
+            const { fixes, flagged } = await lintWiki(ctx.workspaceDir);
+            const parts = [renderDateFixes(fixes), renderFlagged(flagged)];
+            if (args.fix === true) {
+                const { applied, handOver } = await runLintPass(
+                    ctx.workspaceDir,
+                    (event) => ctx.events.emit(event),
+                    (paths, message) => ctx.workspaceHistory.commitFiles(paths, message),
+                    warningsOnlyLogger(ctx.logger),
+                );
+                parts.push(
+                    `Rewrote ${applied.dates} date(s) in ${applied.files.length} file(s)${applied.commitId ? ` (commit \`${applied.commitId}\`)` : " (no commit: no workspace history)"}${applied.skipped.length > 0 ? `; skipped ${applied.skipped.length} file(s) that changed meanwhile` : ""}.`,
+                    renderHandOver(handOver, "skills:memory:repair"),
+                );
+            }
+            writeMarkdown(`${parts.join("\n\n")}\n`, { raw: args.raw === true });
+        },
+    });
+}
+
+/**
+ * Renders the dates the linter rewrites by itself, one row per file.
+ *
+ * @param fixes - From `lintWiki`.
+ * @returns Markdown.
+ */
+function renderDateFixes(fixes: readonly DateFix[]): string {
+    if (fixes.length === 0) {
+        return "No dates to rewrite.";
+    }
+    const total = fixes.reduce((sum, fix) => sum + fix.replacements.length, 0);
+    const rows = fixes.map((fix) => {
+        const examples = fix.replacements
+            .slice(0, 2)
+            .map((replacement) => `${replacement.from} → ${replacement.to}`)
+            .join(", ");
+        return [fix.path, String(fix.replacements.length), examples];
+    });
+    return `${total} date(s) in ${fixes.length} file(s) are rewritten to ISO automatically:\n\n${markdownTable(["File", "Dates", "Examples"], rows)}`;
+}
+
+/**
+ * Renders the problems left for the repair handler.
+ *
+ * @param flagged - From `lintWiki`.
+ * @returns Markdown.
+ */
+function renderFlagged(flagged: readonly LintedFile[]): string {
+    const rows = flagged.flatMap((file) =>
+        file.problems.map((problem) => [
+            file.path,
+            String(problem.lineNo),
+            problem.rule,
+            problem.message,
+        ]),
+    );
+    if (rows.length === 0) {
+        return "Nothing left for the repair handler.";
+    }
+    return `${rows.length} problem(s) in ${flagged.length} file(s) need the repair handler (\`skills:memory:repair\`):\n\n${markdownTable(["File", "Line", "Rule", "Problem"], rows)}`;
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
+function reviewsCommand(ctx: HostContext): CommandDef<any> {
+    return defineCommand({
+        meta: {
+            name: "reviews",
+            description:
+                "List the wiki files whose review_at is due (today in core.timezone or earlier), like the daily review job.",
+        },
+        args: {
+            run: {
+                type: "boolean",
+                required: false,
+                description:
+                    "Hand every due file to a skills:memory:review run now (needs the daemon).",
+            },
+            raw: RAW_ARG,
+        },
+        async run({ args }) {
+            const index = await openLiveIndex(ctx);
+            const due = await listDueReviews(
+                index,
+                ctx.config.getString("core.timezone", "UTC") ?? "UTC",
+            );
+            const parts = [
+                due.length === 0
+                    ? "No file is due for review."
+                    : markdownTable(
+                          ["File", "review_at"],
+                          due.map((review) => [review.path, review.reviewAt]),
+                      ),
+            ];
+            if (args.run === true && due.length > 0) {
+                const summary = await emitReviews(
+                    due,
+                    (event) => ctx.events.emit(event),
+                    warningsOnlyLogger(ctx.logger),
+                );
+                parts.push(renderHandOver(summary, "skills:memory:review"));
+            }
+            writeMarkdown(`${parts.join("\n\n")}\n`, { raw: args.raw === true });
+        },
+    });
+}
+
+/**
+ * Renders what a hand-over did, for the CLI.
+ *
+ * @param summary - The counts.
+ * @param topic - The handler topic.
+ * @returns One line of markdown.
+ */
+function renderHandOver(summary: HandOverSummary, topic: string): string {
+    return `Handed ${summary.emitted} file(s) to \`${topic}\`; ${summary.earlier} already handed over earlier for the same content, ${summary.failed} failed.`;
 }
 
 /**

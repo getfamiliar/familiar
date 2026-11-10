@@ -11,7 +11,17 @@ export interface MemoryConfig {
     readonly searchLimit: number;
     /** `pg_trgm` word-similarity threshold for a term to count as a hit (0–1). */
     readonly similarityThreshold: number;
+    /** When the linter checks every wiki file (friendly or raw cron expression). */
+    readonly lintSchedule: string;
+    /** When files with a due `review_at` are handed to the review handler. */
+    readonly reviewSchedule: string;
 }
+
+/** Default of `memory.lintSchedule`: at night, so repairs are done by the morning. */
+export const DEFAULT_LINT_SCHEDULE = "every day at 03:00";
+
+/** Default of `memory.reviewSchedule`: in the morning, so messages to the user arrive at a sensible hour. */
+export const DEFAULT_REVIEW_SCHEDULE = "every day at 07:00";
 
 /**
  * Reads the memory config.
@@ -34,5 +44,10 @@ export function readMemoryConfig(config: ConfigService): MemoryConfig {
     if (!(similarityThreshold > 0 && similarityThreshold <= 1)) {
         throw new Error(`memory.similarityThreshold must be in (0, 1], got ${similarityThreshold}`);
     }
-    return { searchLimit, similarityThreshold };
+    const lintSchedule =
+        config.getString("memory.lintSchedule", DEFAULT_LINT_SCHEDULE) ?? DEFAULT_LINT_SCHEDULE;
+    const reviewSchedule =
+        config.getString("memory.reviewSchedule", DEFAULT_REVIEW_SCHEDULE) ??
+        DEFAULT_REVIEW_SCHEDULE;
+    return { searchLimit, similarityThreshold, lintSchedule, reviewSchedule };
 }

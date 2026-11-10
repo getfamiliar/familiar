@@ -557,6 +557,25 @@ export interface HostContext {
      * plugins are the intended consumer.
      */
     readonly workspace: WorkspaceWatcherApi;
+    /**
+     * The workspace's git history (see "Workspace updates"). A plugin that
+     * rewrites workspace files by itself (not through an agent run)
+     * commits them here, so the user can inspect and revert the change.
+     */
+    readonly workspaceHistory: {
+        /**
+         * Stage exactly the given workspace-relative paths and commit them;
+         * other pending changes stay uncommitted. To make a rewrite revertible
+         * on its own, commit the same paths once before writing (snapshot of
+         * their previous state) and once after.
+         *
+         * Returns `null` without committing when `core.autoUpdate` is
+         * `false` (that machine's workspace is maintained elsewhere and keeps
+         * no history) or when none of the paths changed; otherwise the short
+         * commit id.
+         */
+        commitFiles(relativePaths: readonly string[], message: string): Promise<string | null>;
+    };
     readonly mcp: {
         /**
          * Snapshot of every MCP declared in `mcp.yml` as `{ key, source,

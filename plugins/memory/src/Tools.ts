@@ -27,6 +27,12 @@ import {
  */
 export const SAVE_TOPIC = "skills:memory:save";
 
+/** Topic of the run that repairs one wiki file the linter flagged (`skills/memory/repair.md`). */
+export const REPAIR_TOPIC = "skills:memory:repair";
+
+/** Topic of the run that reviews one wiki file whose `review_at` is due (`skills/memory/review.md`). */
+export const REVIEW_TOPIC = "skills:memory:review";
+
 /** Description of `memory_search`; also what the eval's LLM stage shows the model. */
 export const SEARCH_TOOL_DESCRIPTION = `Search the long-term memory (every markdown file under \`wiki/\`) for files matching ANY of 1–${MAX_SEARCH_TERMS} terms. Returns a markdown table: path, title, one-line description, categories, which of your terms matched, and the best matching line. Files matching more of your terms come first.
 

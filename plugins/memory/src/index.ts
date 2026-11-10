@@ -1,9 +1,11 @@
 import path from "node:path";
 import { definePlugin, type HostContext, type PluginTool } from "@getfamiliar/shared";
 import { buildMemoryCommands } from "./Commands.js";
+import { readMemoryConfig } from "./Config.js";
 import { renderCategoryList } from "./SearchRender.js";
-import { buildMemoryTools, SAVE_TOPIC } from "./Tools.js";
+import { buildMemoryTools, REPAIR_TOPIC, REVIEW_TOPIC, SAVE_TOPIC } from "./Tools.js";
 import { WikiIndexer } from "./WikiIndexer.js";
+import { WikiMaintenance } from "./WikiMaintenance.js";
 import { listCategories } from "./WikiSearch.js";
 
 /**
@@ -11,6 +13,9 @@ import { listCategories } from "./WikiSearch.js";
  * CLI mode, where commands open their own {@link WikiIndex} on `ctx.database`.
  */
 let liveIndexer: WikiIndexer | undefined;
+
+/** The daemon's lint and review cron jobs. Set in `start`, stopped and cleared in `stop`. */
+let maintenance: WikiMaintenance | undefined;
 
 /**
  * Long-term memory plugin.
@@ -26,11 +31,18 @@ let liveIndexer: WikiIndexer | undefined;
  *
  * The `{MEMORY_CATEGORIES}` placeholder lists the categories used in the wiki's frontmatter. The
  * plugin also ships the wiki scaffold and `skills/memory/SKILL.md` with the wiki conventions.
+ *
+ * Maintenance: two cron jobs ({@link WikiMaintenance}) lint every wiki file — rewriting unambiguous
+ * dates to ISO by themselves (one git commit) and handing the remaining problems to
+ * `skills:memory:repair` — and hand files with a due `review_at` to `skills:memory:review`. The
+ * category check is a plain cron handler (`skills/memory/categories.md`).
  */
 export default definePlugin({
     id: "memory",
     workspaceTemplate: path.join(import.meta.dirname, "..", "workspace-template"),
     host: {
+        // The maintenance cron jobs capture the time zone at start.
+        restartOnConfigChange: ["core.timezone"],
         prepare: (ctx: HostContext): void => {
             ctx.prompt.registerPlaceholder({
                 name: "MEMORY_CATEGORIES",
@@ -56,8 +68,22 @@ export default definePlugin({
             }
             liveIndexer = indexer;
             indexer.watch(ctx.workspace);
+            const config = readMemoryConfig(ctx.config);
+            maintenance = new WikiMaintenance({
+                workspaceDir: ctx.workspaceDir,
+                index: indexer.index,
+                emit: (event) => ctx.events.emit(event),
+                commit: (paths, message) => ctx.workspaceHistory.commitFiles(paths, message),
+                log: ctx.logger,
+                lintSchedule: config.lintSchedule,
+                reviewSchedule: config.reviewSchedule,
+                timezone: ctx.config.getString("core.timezone", "UTC") ?? "UTC",
+            });
+            maintenance.start();
         },
         stop: async (): Promise<void> => {
+            maintenance?.stop();
+            maintenance = undefined;
             if (liveIndexer) {
                 await liveIndexer.close();
                 liveIndexer = undefined;
@@ -70,6 +96,17 @@ export default definePlugin({
                 topic: SAVE_TOPIC,
                 isExactTopic: true,
                 description: "The agent called `memory_save` to file a memory in the background.",
+            },
+            {
+                topic: REPAIR_TOPIC,
+                isExactTopic: true,
+                description:
+                    "The nightly memory linter found a wiki file breaking the conventions (frontmatter, non-ISO dates).",
+            },
+            {
+                topic: REVIEW_TOPIC,
+                isExactTopic: true,
+                description: "A wiki file's `review_at` date is due.",
             },
         ],
         commands: (ctx: HostContext) => buildMemoryCommands(ctx),

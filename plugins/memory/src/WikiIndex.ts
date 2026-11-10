@@ -198,6 +198,20 @@ export class WikiIndex {
     }
 
     /**
+     * Lists the files whose `review_at` is due.
+     *
+     * @param today - ISO date of today in the user's time zone.
+     * @returns Path and `review_at` of every file with `review_at <= today`, oldest first.
+     */
+    async listDueReviews(today: string): Promise<readonly { path: string; reviewAt: string }[]> {
+        return this.database.query<{ path: string; reviewAt: string }>(
+            `SELECT path, to_char(review_at, 'YYYY-MM-DD') AS "reviewAt" FROM ${this.schema}.files
+             WHERE review_at <= $1::date ORDER BY review_at, path`,
+            [today],
+        );
+    }
+
+    /**
      * Runs `work` after every previously queued write.
      *
      * @param work - The write.

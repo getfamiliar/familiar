@@ -89,6 +89,8 @@ A time of day is optional. When it matters, add it after the date as `HH:MM` (24
 
 When only the month or year is known, shorten the ISO form: `2026-07` or `2026`.
 
+A nightly linter flags other date notations and frontmatter that breaks these rules, and a repair run fixes them. That is a safety net, not a licence: until the repair, such a date can't be found by `memory_datesearch`.
+
 ## Read-before-write discipline
 
 Before writing a new memory, **always** run `memory_search` for the subject — with its names, synonyms and categories as separate terms. If a file already exists, extend it rather than creating a parallel one. Only create a new file when no good home exists for the new fact.

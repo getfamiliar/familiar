@@ -28,7 +28,7 @@
     },
     "license": "MIT",
     "dependencies": {
-        "@azure/msal-node": "^5.2.1",
+        "@azure/msal-node": "^7.2.1",
         "@getfamiliar/shared": "*",
         "citty": "^0.1.6",
         "luxon": "^3.7.2"

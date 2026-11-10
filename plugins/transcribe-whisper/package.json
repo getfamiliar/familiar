@@ -28,9 +28,9 @@
     },
     "license": "MIT",
     "dependencies": {
-        "citty": "^0.1.6",
         "@getfamiliar/shared": "*",
-        "openai": "^4.77.0"
+        "citty": "^0.1.6",
+        "openai": "^7.55.0"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.4.12",

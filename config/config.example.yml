@@ -346,6 +346,8 @@ inference:
 # memory:
 #   searchLimit: 10                     # files memory_search returns
 #   similarityThreshold: 0.6            # pg_trgm word similarity a search term needs to count as a hit (0–1)
+#   lintSchedule: every day at 03:00    # linter run; flagged files go to skills/memory/repair.md
+#   reviewSchedule: every day at 07:00  # files with a due review_at go to skills/memory/review.md
 
 # Telegram plugin. botToken comes from BotFather (/newbot). Leave the
 # user id null on first boot — the bot enters discovery mode and

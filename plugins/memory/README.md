@@ -65,6 +65,8 @@ The commands work on the live index and need postgres running (`familiar start`)
 | `familiar memory show <path>` | What the index stores for one file: title, description, categories, `review_at`, dates. |
 | `familiar memory categories` | The category list as `{MEMORY_CATEGORIES}` renders it. |
 | `familiar memory reindex [--full]` | Syncs the index with `wiki/` now; `--full` drops it first. |
+| `familiar memory lint [--fix]` | Reports which dates the linter rewrites by itself and which problems are left for the repair handler. `--fix` runs the nightly lint pass right away (rewrite + commit, then repair runs; daemon running). |
+| `familiar memory reviews [--run]` | The files whose `review_at` is due. `--run` hands them to review runs right away (daemon running). |
 | `familiar memory eval` | Runs the eval set in `eval/` (fictional bilingual corpus, ~115 cases) against throwaway schemas `memory_eval_de` / `memory_eval_en` and reports Recall@5/@10, Hit@1, MRR and nDCG. See `eval/README.md`. |
 
 ## Configuration
@@ -75,9 +77,23 @@ Everything is optional:
 memory:
   searchLimit: 10             # files memory_search returns
   similarityThreshold: 0.6    # pg_trgm word similarity a term needs to count as a hit (0–1)
+  lintSchedule: every day at 03:00    # when the linter runs
+  reviewSchedule: every day at 07:00  # when due reviews are handed over
 ```
 
-Both are read per call, so `familiar config reload` applies them immediately.
+`searchLimit` and `similarityThreshold` are read per call, so `familiar config reload` applies them immediately. The schedules (friendly or raw cron, in `core.timezone`) apply when the plugin restarts, which a reload does whenever a `memory.*` key or `core.timezone` changed.
+
+## Maintenance
+
+Three daily jobs keep the wiki searchable. The plugin only detects and schedules; what happens to a file is decided by handlers next to `save.md`, which the user can edit.
+
+| Job | Trigger | Handler |
+|-----|---------|---------|
+| Category check | `cron:` of the handler (default 04:00) | `skills/memory/categories.md` merges synonymous categories, removes catch-alls and one-off categories. It uses `bash` (`grep` / `sed` over the `categories:` lines), so a category spread over many files is changed in one step. |
+| Linter | `memory.lintSchedule` (default 03:00) | Code in `WikiLint.ts` checks every file: frontmatter parses, only `categories` (inline list of up to three distinct lower-case words) and `review_at` (ISO date), and no dates in other notations (`12.07.2026`, `07/12/2026`, `12. Juli 2026`, `July 12, 2026`, `Juli 2026`; code, URLs and wikilinks are skipped). Dates with an unambiguous ISO form (`12.07.2026 → 2026-07-12`, `Juli 2026 → 2026-07`) are rewritten by the code itself, exactly in place — no judgement, no agent run — and committed to the workspace history (a snapshot commit of the affected files first, so the fix commit holds nothing but the rewrite and can be reverted on its own). Every file with problems left (ambiguous dates like `03/04/2026`, foreign frontmatter keys, broken YAML, categories) goes to one `skills:memory:repair` run (`skills/memory/repair.md`) with the problem list as its prompt. |
+| Reviewer | `memory.reviewSchedule` (default 07:00) | Every file with `review_at <= today` (in `core.timezone`) goes to one `skills:memory:review` run (`skills/memory/review.md`). It checks where the matter stands, records it, sets a new `review_at` or removes it, and messages the user only when they have to act. |
+
+All runs are exact-topic background events, and the handlers are `serial`, so they work one file after the other. Idempotency keys stop repeats: a repair is handed over once per file content (`memory-repair:<path>:<content hash>`), so a file the handler can't fix waits until it changes; a review is handed over once per `review_at` value (`memory-review:<path>:<date>`).
 
 ## Workspace template
 
@@ -86,13 +102,10 @@ Ships:
 - `wiki/people/`, `wiki/threads/`, `wiki/places/` — folders where the agent files memories.
 - `skills/memory/SKILL.md` — the wiki conventions: folders, slugs, title / description / frontmatter, ISO dates, how the search works and how to search well.
 - `skills/memory/save.md` — the handler that `memory_save` dispatches to.
+- `skills/memory/categories.md`, `repair.md`, `review.md` — the maintenance handlers (see "Maintenance").
 
 ### `skills/memory/save.md` — the save handler
 
 When any agent calls `memory_save("...")`, the plugin emits an exact-topic `skills:memory:save` event with the snippet as the prompt. The topic is the handler's address, so the container loads `workspace/skills/memory/save.md` and runs an agentrun against it. The handler is the policy that turns a one-line "remember this" into a markdown file under `wiki/` — the plugin itself never decides slugs, folder placement, or whether two facts should merge.
 
 The handler reads the skill, searches for every distinctive name and noun in the snippet (with synonyms and categories), reads candidate files, then extends one or creates a new file with frontmatter, title and description, and replies with a one-line summary (`extended wiki/people/alice.md`, `created wiki/threads/acme-rollout.md`, or `noop — already recorded`). These are judgement calls, so `save.md` runs under the `smart` model alias.
-
-## Leftovers from the Orama index
-
-Earlier versions kept an Orama index in `data/memory/` (`memory.msp`, `embedding.json`). Nothing reads it any more; delete the folder. The `memory.embeddings`, `memory.hybridWeights` & co. keys in `config.yml` are ignored and can be removed.
