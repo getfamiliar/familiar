@@ -162,6 +162,27 @@ const SHIPPED_PROMPT_TEMPLATE = path.resolve(
     "../../host/workspace-template/PROMPT.md",
 );
 
+/**
+ * Plugin placeholders the shipped PROMPT.md uses. The tests render it without plugin access
+ * (`plugins: null`), so each of them yields one expected "unknown placeholder" warning.
+ */
+const SHIPPED_PLUGIN_PLACEHOLDERS = ["MEMORY_CATEGORIES"];
+
+/**
+ * Drop the expected warnings about the shipped template's plugin placeholders.
+ *
+ * @param warnings - the warnings of a `buildPromptParts` result
+ * @returns the remaining warnings, which the core rendering itself produced
+ */
+function withoutShippedPluginWarnings(warnings: readonly string[]): string[] {
+    const expected = new Set(
+        SHIPPED_PLUGIN_PLACEHOLDERS.map(
+            (name) => `PROMPT.md: unknown placeholder {${name}} kept verbatim`,
+        ),
+    );
+    return warnings.filter((warning) => !expected.has(warning));
+}
+
 describe("buildPromptParts", () => {
     let workspaceRoot: string;
     let previousWorkspaceRoot: string;
@@ -235,7 +256,7 @@ describe("buildPromptParts", () => {
         assert.match(parts.userHead, /^- Event topic: `chat:telegram`$/m);
         assert.match(parts.userHead, /^- privileged: no$/m);
         assert.equal(parts.templatePath, "PROMPT.md");
-        assert.deepEqual(parts.warnings, []);
+        assert.deepEqual(withoutShippedPluginWarnings(parts.warnings), []);
     });
 
     it("keeps the system prompt byte-identical across runs (cacheable prefix)", async () => {
@@ -326,7 +347,7 @@ describe("buildPromptParts", () => {
             /^\* \[ID:123\] 2026-11-06 \d\d:30 \(until 2026-11-0\d \d\d:59\): User is setting up a new phone today\.$/m,
         );
         assert.equal(parts.system.includes("[ID:123]"), false);
-        assert.deepEqual(parts.warnings, []);
+        assert.deepEqual(withoutShippedPluginWarnings(parts.warnings), []);
     });
 
     it("renders (none) and warns when loading banners fails", async () => {
