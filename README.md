@@ -21,27 +21,9 @@ With Familiar, all your data is stored on your device. Familiar can use any comb
 * **All your processes and memories in markdown.** One folder structure with markdown files contains everything. No lock-in, no personal data persistently stored with some shady cloud provider.
 * **Total transparency and control.** Every word that is sent to the LLM comes from the markdown files. You can change it all, modify and tweak it. No hidden system prompts, no changing baselines.
 
-## No time to look after software? Familiar manages itself.
+## Easy setup: just talk to your assistant.
 
-
-
-What's nice about it
-
-Explain whole event-based system: events, handlers, etc.
-
-Tools
-
-Plugins emitting events
-
-Architecture
-
-MCP Integration
-
-call tools add-mcp
-
-* Prefered source: Docker MCP Registry, see
-* Secondary: Official MCP Registry, see
-* Custom: just go, remember the tools call-mcp command if necessary
+...
 
 # How Familiar works
 
@@ -87,4 +69,26 @@ Combine all that to a motivating and inspiring briefing for the user to start th
 
 ...
 ```
+
+## Tools: Plugins and MCPs to do (almost) anything
+
+Tools
+
+MCP Integration
+
+call tools add-mcp
+
+* Prefered source: Docker MCP Registry, see
+* Secondary: Official MCP Registry, see
+* Custom: just go, remember the tools call-mcp command if necessary
+
+# Architecture
+
+## Containers for everything
+
+...
+
+## Security Model
+
+...
 

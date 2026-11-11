@@ -14,6 +14,7 @@ Long-term memory lives in markdown under `wiki/`. Every `.md` file there is inde
 - `wiki/threads/<slug>.md` — one file per ongoing topic, project or conversation that spans more than a single event. Examples are "acme-rollout", "budget-2025", "alice-school". Related threads may sit in one cluster folder, `wiki/threads/<cluster>/<slug>.md` (see "Thread clusters").
 - `wiki/self/<slug>.md` - facts about our user themself, their preferences, routines, important events in their life. Preferences about places go here too: favourite restaurants in `self/food-preferences.md`, hotels in `self/hotel-preferences.md`.
 - `wiki/journal/YYYY-MM.md` - a monthly journal of events, meetings, and notes.
+- `wiki/questions.md` — the open questions about the memory, to be asked to the user (see "Open questions").
 
 Other folders can grow under `wiki/` as the need surfaces — invent a folder when an existing one feels wrong.
 
@@ -80,7 +81,7 @@ Cross-link liberally: `[[people/alice-smith]]`, `[[threads/acme-rollout]]`. Wiki
 - **Bullet points over prose.** Memories are reference material, not essays.
 - **Date facts when the date matters.** Use absolute dates the reader can interpret without context: `- 2026-05-22: signed the NDA`.
 - **Don't repeat what's already there.** Your job is to add, not duplicate. If the same fact is already recorded, leave the file alone.
-- **Note uncertainty.** If something is a guess, mark it: `- (probably) lives in Berlin`.
+- **Note uncertainty.** If something is a guess, mark it: `- (probably) lives in Berlin` — and write a question for it right away (see "Open questions").
 
 ### Dates: ISO 8601 only
 
@@ -122,6 +123,17 @@ Good: - 2026-10-05: order 12345 (running shoes) delivered
 
 When a matter is settled, condense it: keep the outcome and the dates that still matter, drop the steps that led there.
 
+## Open questions
+
+The memory has one place for what it doesn't know: `wiki/questions.md`. Whenever you write a memory that leaves something unclear, add a question there **in the same step** — don't wait for a later cleanup, the uncertainty is only obvious while you write. Typical cases:
+
+- a person whose relationship to our user is unknown, or a first name you can't match to anyone;
+- a thread whose purpose or outcome is unclear;
+- facts that contradict each other, or a date, amount or spelling you had to guess;
+- a fact that may belong to one of two people or matters.
+
+One bullet per question, with a wikilink to the file it is about: `- [[people/alice]]: How does the user know Alice?`. Search the file for the subject first and don't ask the same thing twice. The questions are asked in a clarifying conversation with the user later; once the answer is recorded in the file, remove the bullet.
+
 ## Read-before-write discipline
 
 Before writing a new memory, **always** run `memory_search` for the subject — with its names, synonyms and categories as separate terms. If a file already exists, extend it rather than creating a parallel one. Only create a new file when no good home exists for the new fact.
@@ -136,7 +148,7 @@ For calendar events, the fact that our user is the creator / organizer of an eve
 
 You are in charge of the wiki's quality. If you find duplicate files, merge them. If you find outdated facts, update them. If you find processing logs or overtaken status sections (see "What belongs in the memory"), condense them to the facts. If you find typos, fix them. The wiki is your baby; take care of it.
 
-Collect open questions about the wiki in `wiki/questions.md` — a person whose relationship to our user is unknown, a thread whose purpose is unclear, contradicting facts. One bullet per question with a wikilink: `- [[people/alice]]: How does the user know Alice?`. They are asked in a clarifying conversation with the user later; remove a bullet once the answer is recorded in the file.
+Questions you come across while cleaning up go to `wiki/questions.md` as well (see "Open questions"); remove bullets whose answer is now recorded.
 
 If you find a slug that is misleading, too short or wrong, rename the file and update all links to it. Example: `wiki/people/alice.md` is too vague and you just learned her last name, so rename to `wiki/people/alice-smith.md` and update all links from `[[people/alice]]` to `[[people/alice-smith]]`.
 

@@ -27,9 +27,9 @@ At night you revisit a few memories, the way sleep consolidates what was learned
    - merge files that turn out to be about the same subject;
    - add wikilinks between files that belong together;
    - sharpen title, description and categories so a search finds the file;
-   - set `review_at` for a matter that is still open and needs a follow-up, remove it when nothing is left to follow up;
-   - add a question to `wiki/questions.md` when something stays unclear.
-4. **Delete the file** when nothing in it would still be useful in three months — a settled one-off matter, an empty shell, a duplicate whose facts now live elsewhere.
+   - set `review_at` for a matter that is still open and needs a follow-up, remove it when nothing is left to follow up.
+4. **Write down every question you find.** Dreaming is when gaps show: a person whose relationship to the user is unknown, a first name you can't match, facts that contradict each other across the cluster, a guessed date or spelling, a matter whose outcome is missing. Whatever you can't resolve from the wiki goes to `wiki/questions.md` in this run — one bullet with a wikilink (`- [[people/alice]]: How does the user know Alice?`), unless the same question is already there (see "Open questions" in the skill). Also look at the questions already listed for this file and its cluster: remove a bullet whose answer the wiki now holds.
+5. **Delete the file** when nothing in it would still be useful in three months — a settled one-off matter, an empty shell, a duplicate whose facts now live elsewhere.
 
 Never invent facts; only rearrange, condense, connect and correct what the wiki already knows. Change files with `fs_str_replace` or rewrite them once with `fs_write` after reading them completely.
 
@@ -48,4 +48,4 @@ Run the `grep` again afterwards: it must find nothing. Also check `wiki/question
 
 ## Your output
 
-A short summary of what you did. The first line is a one-line headline — it goes into the commit message (`condensed the renovation log, merged people/jordan.md into people/jordan-miller.md`, or `nothing to improve`). Then, if there was more, one bullet per change.
+A short summary of what you did, including the questions you added. The first line is a one-line headline — it goes into the commit message (`condensed the renovation log, merged people/jordan.md into people/jordan-miller.md`, or `nothing to improve`). Then, if there was more, one bullet per change.
