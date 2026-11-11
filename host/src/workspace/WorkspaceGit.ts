@@ -100,6 +100,29 @@ export class WorkspaceGit {
     }
 
     /**
+     * Stage every change below one folder (added, modified or deleted files,
+     * respecting `.gitignore`) and commit. Changes elsewhere stay
+     * uncommitted.
+     *
+     * @param relativeDir Workspace-relative folder, e.g. `wiki`.
+     * @param message Commit message.
+     * @returns The short commit id, or `null` when nothing below the folder changed.
+     */
+    async commitDirectory(relativeDir: string, message: string): Promise<string | null> {
+        const prefix = `${relativeDir.replace(/\/+$/, "")}/`;
+        const matrix = await git.statusMatrix({
+            fs,
+            dir: this.dir,
+            filepaths: [prefix.slice(0, -1)],
+        });
+        // filepaths matches name prefixes (`wiki` also matches `wiki-old/…`), so keep the folder only.
+        return this.stageAndCommit(
+            matrix.filter(([filepath]) => filepath.startsWith(prefix)),
+            message,
+        );
+    }
+
+    /**
      * Apply a status matrix to the index and commit when it changed anything.
      *
      * @param matrix Rows of `[filepath, head, workdir, stage]` from statusMatrix.

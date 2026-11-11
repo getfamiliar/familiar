@@ -387,6 +387,14 @@ export class HostContextImpl implements HostContext {
             await workspaceGit.ensureRepository();
             return workspaceGit.commitPaths(relativePaths, message);
         },
+        commitDirectory: async (relativeDir: string, message: string): Promise<string | null> => {
+            if (!this.deps.config.getBool("core.autoUpdate", true)) {
+                return null;
+            }
+            const workspaceGit = new WorkspaceGit(this.deps.workspaceDir);
+            await workspaceGit.ensureRepository();
+            return workspaceGit.commitDirectory(relativeDir, message);
+        },
     };
 
     get logger(): Logger {

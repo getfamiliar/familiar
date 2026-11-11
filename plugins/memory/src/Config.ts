@@ -15,6 +15,12 @@ export interface MemoryConfig {
     readonly lintSchedule: string;
     /** When files with a due `review_at` are handed to the review handler. */
     readonly reviewSchedule: string;
+    /** Size in bytes above which a wiki file is handed to the split handler. */
+    readonly maxFileBytes: number;
+    /** When oversized files are handed to the split handler. */
+    readonly splitSchedule: string;
+    /** When the wiki is scanned for duplicates. */
+    readonly dedupSchedule: string;
 }
 
 /** Default of `memory.lintSchedule`: at night, so repairs are done by the morning. */
@@ -22,6 +28,15 @@ export const DEFAULT_LINT_SCHEDULE = "every day at 03:00";
 
 /** Default of `memory.reviewSchedule`: in the morning, so messages to the user arrive at a sensible hour. */
 export const DEFAULT_REVIEW_SCHEDULE = "every day at 07:00";
+
+/** Default of `memory.maxFileBytes`: about 4–5k tokens, so a run can read several files whole. */
+export const DEFAULT_MAX_FILE_BYTES = 15000;
+
+/** Default of `memory.splitSchedule`: before the linter, so it lints the split results. */
+export const DEFAULT_SPLIT_SCHEDULE = "every day at 02:00";
+
+/** Default of `memory.dedupSchedule`: once a week, at night. */
+export const DEFAULT_DEDUP_SCHEDULE = "every saturday at 03:00";
 
 /**
  * Reads the memory config.
@@ -49,5 +64,23 @@ export function readMemoryConfig(config: ConfigService): MemoryConfig {
     const reviewSchedule =
         config.getString("memory.reviewSchedule", DEFAULT_REVIEW_SCHEDULE) ??
         DEFAULT_REVIEW_SCHEDULE;
-    return { searchLimit, similarityThreshold, lintSchedule, reviewSchedule };
+    const maxFileBytes = config.getNumber("memory.maxFileBytes", DEFAULT_MAX_FILE_BYTES);
+    if (!Number.isInteger(maxFileBytes) || maxFileBytes < 2000) {
+        throw new Error(
+            `memory.maxFileBytes must be an integer of at least 2000, got ${maxFileBytes}`,
+        );
+    }
+    const splitSchedule =
+        config.getString("memory.splitSchedule", DEFAULT_SPLIT_SCHEDULE) ?? DEFAULT_SPLIT_SCHEDULE;
+    const dedupSchedule =
+        config.getString("memory.dedupSchedule", DEFAULT_DEDUP_SCHEDULE) ?? DEFAULT_DEDUP_SCHEDULE;
+    return {
+        searchLimit,
+        similarityThreshold,
+        lintSchedule,
+        reviewSchedule,
+        maxFileBytes,
+        splitSchedule,
+        dedupSchedule,
+    };
 }

@@ -33,6 +33,15 @@ export const REPAIR_TOPIC = "skills:memory:repair";
 /** Topic of the run that reviews one wiki file whose `review_at` is due (`skills/memory/review.md`). */
 export const REVIEW_TOPIC = "skills:memory:review";
 
+/** Topic of the split handler (`skills/memory/split.md`): one oversized wiki file. */
+export const SPLIT_TOPIC = "skills:memory:split";
+
+/** Topic of the dedup scan (`skills/memory/dedup-scan.md`): one wiki folder's file list. */
+export const DEDUP_SCAN_TOPIC = "skills:memory:dedup-scan";
+
+/** Topic of the deduplicate handler (`skills/memory/deduplicate.md`): one candidate group. */
+export const DEDUPLICATE_TOPIC = "skills:memory:deduplicate";
+
 /** Description of `memory_search`; also what the eval's LLM stage shows the model. */
 export const SEARCH_TOOL_DESCRIPTION = `Search the long-term memory (every markdown file under \`wiki/\`) for files matching ANY of 1–${MAX_SEARCH_TERMS} terms. Returns a markdown table: path, title, one-line description, categories, which of your terms matched, and the best matching line. Files matching more of your terms come first.
 

@@ -348,6 +348,9 @@ inference:
 #   similarityThreshold: 0.6            # pg_trgm word similarity a search term needs to count as a hit (0–1)
 #   lintSchedule: every day at 03:00    # linter run; flagged files go to skills/memory/repair.md
 #   reviewSchedule: every day at 07:00  # files with a due review_at go to skills/memory/review.md
+#   maxFileBytes: 15000                 # wiki files above this size go to skills/memory/split.md
+#   splitSchedule: every day at 02:00   # when oversized files are handed over (wiki/ committed before and after)
+#   dedupSchedule: every saturday at 03:00  # weekly duplicate scan per wiki folder → skills/memory/deduplicate.md
 
 # Telegram plugin. botToken comes from BotFather (/newbot). Leave the
 # user id null on first boot — the bot enters discovery mode and

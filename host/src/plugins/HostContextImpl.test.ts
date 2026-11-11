@@ -1,9 +1,10 @@
 import { strict as assert } from "node:assert";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import type { ConfigService, Logger, NewEvent } from "@getfamiliar/shared";
+import git from "isomorphic-git";
 import { HostContextImpl, type HostContextImplDeps, isUsableChannelId } from "./HostContextImpl.js";
 
 describe("isUsableChannelId", () => {
@@ -245,6 +246,35 @@ describe("HostContextImpl ctx.workspaceHistory.commitFiles", () => {
             assert.match(commitId ?? "", /^[0-9a-f]{7}$/);
             assert.equal(await ctx.workspaceHistory.commitFiles(["wiki/a.md"], "again"), null);
             assert.notEqual(await ctx.workspaceHistory.commitFiles(["wiki/b.md"], "test: b"), null);
+        } finally {
+            rmSync(workspaceDir, { recursive: true, force: true });
+        }
+    });
+
+    it("commits every change below a folder, deletions included, and nothing outside", async () => {
+        const workspaceDir = mkdtempSync(path.join(tmpdir(), "familiar-history-"));
+        try {
+            mkdirSync(path.join(workspaceDir, "wiki", "people"), { recursive: true });
+            mkdirSync(path.join(workspaceDir, "wiki-old"));
+            writeFileSync(path.join(workspaceDir, "wiki", "a.md"), "# A\n");
+            writeFileSync(path.join(workspaceDir, "wiki", "people", "b.md"), "# B\n");
+            writeFileSync(path.join(workspaceDir, "wiki-old", "c.md"), "# C\n");
+            const ctx = buildHistoryContext(workspaceDir, true);
+
+            assert.notEqual(await ctx.workspaceHistory.commitDirectory("wiki", "snapshot"), null);
+            rmSync(path.join(workspaceDir, "wiki", "a.md"));
+            writeFileSync(path.join(workspaceDir, "wiki", "people", "b-2.md"), "# B 2\n");
+            assert.notEqual(await ctx.workspaceHistory.commitDirectory("wiki", "after"), null);
+            assert.equal(await ctx.workspaceHistory.commitDirectory("wiki", "again"), null);
+            assert.deepEqual(await git.listFiles({ fs, dir: workspaceDir, ref: "HEAD" }), [
+                "wiki/people/b-2.md",
+                "wiki/people/b.md",
+            ]);
+            // wiki-old/ was never part of a wiki commit, so it is still uncommitted.
+            assert.notEqual(
+                await ctx.workspaceHistory.commitFiles(["wiki-old/c.md"], "test: c"),
+                null,
+            );
         } finally {
             rmSync(workspaceDir, { recursive: true, force: true });
         }

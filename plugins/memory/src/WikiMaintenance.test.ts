@@ -9,12 +9,16 @@ import {
     type Logger,
     type NewEvent,
 } from "@getfamiliar/shared";
+import type { WikiIndex } from "./WikiIndex.js";
 import {
     emitRepairs,
     emitReviews,
     lintWiki,
+    type PassDeps,
     renderRepairPrompt,
+    runDedupPass,
     runLintPass,
+    runSplitPass,
 } from "./WikiMaintenance.js";
 
 /** A logger that drops everything. */
@@ -179,5 +183,266 @@ describe("wiki maintenance", () => {
                 ["skills:memory:review", "path: wiki/threads/sale.md\nreview_at: 2026-12-01"],
             ],
         );
+    });
+});
+
+/** A fake run: what the handler does to the workspace, and its reply. */
+type FakeRun = (event: NewEvent) => string;
+
+/**
+ * Fake `ctx.events.emit` whose `settled` runs `onRun` first, like a handler run that edits files.
+ *
+ * @param onRun - The fake handler.
+ * @returns The emit function and the recorded events.
+ */
+function fakeRunningEmit(onRun: FakeRun): {
+    emit: (event: NewEvent) => Promise<EmitHandle>;
+    events: NewEvent[];
+} {
+    const events: NewEvent[] = [];
+    const emit = async (event: NewEvent): Promise<EmitHandle> => {
+        events.push(event);
+        return { id: String(events.length), settled: Promise.resolve().then(() => onRun(event)) };
+    };
+    return { emit, events };
+}
+
+/**
+ * Fake wiki index: titles from a map, `dedup_pairs` in memory.
+ *
+ * @param titles - Path → title of the indexed files.
+ * @returns The index and the pair table.
+ */
+function fakeIndex(titles: ReadonlyMap<string, string>): {
+    index: WikiIndex;
+    pairs: Map<string, { pathA: string; pathB: string; sizeA: number; sizeB: number }>;
+} {
+    const pairs = new Map<string, { pathA: string; pathB: string; sizeA: number; sizeB: number }>();
+    const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
+        if (sql.includes("SELECT path_a")) {
+            return [...pairs.values()];
+        }
+        if (sql.includes("DELETE FROM memory.dedup_pairs")) {
+            pairs.delete(`${params[0]}\n${params[1]}`);
+            return [];
+        }
+        if (sql.includes("INSERT INTO memory.dedup_pairs")) {
+            const [pathA, pathB, sizeA, sizeB] = params as [string, string, number, number];
+            pairs.set(`${pathA}\n${pathB}`, { pathA, pathB, sizeA, sizeB });
+            return [];
+        }
+        throw new Error(`unexpected SQL: ${sql}`);
+    };
+    const index = {
+        schema: "memory",
+        db: { query },
+        listFolderEntries: async (prefix: string) =>
+            [...titles.entries()]
+                .filter(([p]) => p.startsWith(`${prefix}/`))
+                .map(([p, title]) => ({ path: p, title, description: "" })),
+    } as unknown as WikiIndex;
+    return { index, pairs };
+}
+
+/**
+ * Pass deps on a workspace with a recording commit.
+ *
+ * @param workspaceDir - Workspace.
+ * @param index - Index.
+ * @param emit - Emission.
+ * @param commits - Receives every commit message.
+ * @returns The deps.
+ */
+function passDeps(
+    workspaceDir: string,
+    index: WikiIndex,
+    emit: (event: NewEvent) => Promise<EmitHandle>,
+    commits: string[],
+): PassDeps {
+    return {
+        workspaceDir,
+        index,
+        emit,
+        commitDirectory: async (dir, message) => {
+            commits.push(`${dir}: ${message.split("\n")[0]}`);
+            return String(commits.length);
+        },
+        log: silentLog,
+        maxFileBytes: 2000,
+        timezone: "UTC",
+        shouldStop: () => false,
+    };
+}
+
+describe("split pass", () => {
+    it("hands every oversized file over in turn and cuts what is still too big", async () => {
+        const workspaceDir = mkdtempSync(path.join(tmpdir(), "familiar-memory-split-pass-"));
+        try {
+            const threads = path.join(workspaceDir, "wiki", "threads");
+            mkdirSync(threads, { recursive: true });
+            const body = (heading: string): string =>
+                `${heading}\n\n${"- a fact worth keeping\n".repeat(60)}`;
+            writeFileSync(
+                path.join(threads, "log.md"),
+                `# Log\n\nA log.\n\n${body("## A")}\n${body("## B")}\n${body("## C")}`,
+            );
+            writeFileSync(
+                path.join(threads, "stubborn.md"),
+                `# Stubborn\n\nToo big.\n\n${body("## A")}\n${body("## B")}`,
+            );
+            const { emit, events } = fakeRunningEmit((event) => {
+                const target = String((event.payload as { path: string }).path);
+                if (target.endsWith("log.md")) {
+                    writeFileSync(path.join(workspaceDir, target), "# Log\n\nCondensed.\n");
+                    return "condensed wiki/threads/log.md";
+                }
+                return "noop";
+            });
+            const commits: string[] = [];
+            const summary = await runSplitPass(
+                passDeps(workspaceDir, fakeIndex(new Map()).index, emit, commits),
+            );
+
+            assert.deepEqual(
+                events.map((event) => [event.topic, (event.payload as { path: string }).path]),
+                [
+                    ["skills:memory:split", "wiki/threads/log.md"],
+                    ["skills:memory:split", "wiki/threads/stubborn.md"],
+                ],
+            );
+            assert.deepEqual(
+                summary.outcomes.map((outcome) => [outcome.path, outcome.harnessSecondPath]),
+                [
+                    ["wiki/threads/log.md", undefined],
+                    ["wiki/threads/stubborn.md", "wiki/threads/stubborn-2.md"],
+                ],
+            );
+            assert.match(
+                readFileSync(path.join(threads, "stubborn-2.md"), "utf8"),
+                /^# Stubborn \(2\)/,
+            );
+            assert.deepEqual(commits, [
+                "wiki: memory split: snapshot before handling 2 file(s) over 2000 bytes",
+                "wiki: memory split: 2 oversized file(s) handled, 1 cut by the harness",
+            ]);
+        } finally {
+            rmSync(workspaceDir, { recursive: true, force: true });
+        }
+    });
+
+    it("starts at most maxRuns split runs", async () => {
+        const workspaceDir = mkdtempSync(path.join(tmpdir(), "familiar-memory-split-pass-"));
+        try {
+            const threads = path.join(workspaceDir, "wiki", "threads");
+            mkdirSync(threads, { recursive: true });
+            for (const slug of ["a", "b", "c"]) {
+                writeFileSync(
+                    path.join(threads, `${slug}.md`),
+                    `# ${slug}\n\nBig.\n\n## One\n\n${"- fact\n".repeat(400)}\n## Two\n\n${"- fact\n".repeat(400)}`,
+                );
+            }
+            const { emit, events } = fakeRunningEmit(() => "noop");
+            const summary = await runSplitPass({
+                ...passDeps(workspaceDir, fakeIndex(new Map()).index, emit, []),
+                maxRuns: 2,
+            });
+            assert.equal(events.length, 2);
+            assert.equal(summary.outcomes.length, 2);
+        } finally {
+            rmSync(workspaceDir, { recursive: true, force: true });
+        }
+    });
+
+    it("commits nothing when no file is too big", async () => {
+        const workspaceDir = mkdtempSync(path.join(tmpdir(), "familiar-memory-split-pass-"));
+        try {
+            mkdirSync(path.join(workspaceDir, "wiki"), { recursive: true });
+            writeFileSync(path.join(workspaceDir, "wiki", "small.md"), "# Small\n");
+            const commits: string[] = [];
+            const { emit, events } = fakeRunningEmit(() => "");
+            await runSplitPass(passDeps(workspaceDir, fakeIndex(new Map()).index, emit, commits));
+            assert.equal(events.length, 0);
+            assert.deepEqual(commits, []);
+        } finally {
+            rmSync(workspaceDir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe("dedup pass", () => {
+    it("scans each folder, runs new groups once and remembers their pairs", async () => {
+        const workspaceDir = mkdtempSync(path.join(tmpdir(), "familiar-memory-dedup-pass-"));
+        try {
+            const people = path.join(workspaceDir, "wiki", "people");
+            mkdirSync(people, { recursive: true });
+            mkdirSync(path.join(workspaceDir, "wiki", "self"), { recursive: true });
+            for (const slug of ["udo", "udo-sperling", "alice", "bob"]) {
+                writeFileSync(path.join(people, `${slug}.md`), `# ${slug}\n\nPerson.\n`);
+            }
+            writeFileSync(path.join(workspaceDir, "wiki", "self", "only.md"), "# Only\n");
+            const titles = new Map(
+                ["udo", "udo-sperling", "alice", "bob"].map((slug) => [
+                    `wiki/people/${slug}.md`,
+                    slug,
+                ]),
+            );
+            const { index, pairs } = fakeIndex(titles);
+            const { emit, events } = fakeRunningEmit((event) => {
+                if (event.topic === "skills:memory:dedup-scan") {
+                    return "wiki/people/udo.md, wiki/people/udo-sperling.md\nwiki/people/alice.md, wiki/people/bob.md";
+                }
+                const paths = (event.payload as { paths: string[] }).paths;
+                if (paths.includes("wiki/people/udo.md")) {
+                    rmSync(path.join(people, "udo.md"));
+                    return "merged wiki/people/udo.md into wiki/people/udo-sperling.md";
+                }
+                return "different people — left as they are";
+            });
+            const commits: string[] = [];
+            const first = await runDedupPass(passDeps(workspaceDir, index, emit, commits));
+
+            assert.deepEqual(
+                events.map((event) => event.topic),
+                [
+                    "skills:memory:dedup-scan",
+                    "skills:memory:deduplicate",
+                    "skills:memory:deduplicate",
+                ],
+            );
+            assert.match(events[0].prompt ?? "", /folder: wiki\/people/);
+            assert.ok(events[1].prompt?.includes('<file path="wiki/people/udo.md">'));
+            assert.deepEqual(
+                first.outcomes.map((outcome) => outcome.recordedPairs),
+                [0, 1],
+            );
+            assert.deepEqual([...pairs.keys()], ["wiki/people/alice.md\nwiki/people/bob.md"]);
+            assert.equal(commits.length, 2);
+
+            // Next week: the scan reports alice/bob again — already handled, no run, no commit.
+            events.length = 0;
+            commits.length = 0;
+            const second = await runDedupPass(passDeps(workspaceDir, index, emit, commits));
+            assert.equal(second.knownGroups, 1);
+            assert.deepEqual(
+                events.map((event) => event.topic),
+                ["skills:memory:dedup-scan"],
+            );
+            assert.deepEqual(commits, []);
+
+            // bob grows by more than 20 % and 500 bytes: the pair is forgotten and runs again.
+            writeFileSync(
+                path.join(people, "bob.md"),
+                `# bob\n\nPerson.\n\n${"- fact\n".repeat(100)}`,
+            );
+            events.length = 0;
+            const third = await runDedupPass(passDeps(workspaceDir, index, emit, commits));
+            assert.equal(third.prunedPairs, 1);
+            assert.deepEqual(
+                events.map((event) => event.topic),
+                ["skills:memory:dedup-scan", "skills:memory:deduplicate"],
+            );
+        } finally {
+            rmSync(workspaceDir, { recursive: true, force: true });
+        }
     });
 });

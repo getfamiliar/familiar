@@ -67,6 +67,8 @@ The commands work on the live index and need postgres running (`familiar start`)
 | `familiar memory reindex [--full]` | Syncs the index with `wiki/` now; `--full` drops it first. |
 | `familiar memory lint [--fix]` | Reports which dates the linter rewrites by itself and which problems are left for the repair handler. `--fix` runs the nightly lint pass right away (rewrite + commit, then repair runs; daemon running). |
 | `familiar memory reviews [--run]` | The files whose `review_at` is due. `--run` hands them to review runs right away (daemon running). |
+| `familiar memory split [--run] [-n <count>]` | The files above `memory.maxFileBytes`. `--run` runs the split pass now and waits for it (daemon running); `-n` starts at most that many split runs. |
+| `familiar memory dedup [--run] [-n <count>]` | The file pairs earlier deduplicate runs handled. `--run` runs the dedup pass now and waits for it (daemon running); `-n` starts at most that many deduplicate runs (the folder scans always run). |
 | `familiar memory eval` | Runs the eval set in `eval/` (fictional bilingual corpus, ~115 cases) against throwaway schemas `memory_eval_de` / `memory_eval_en` and reports Recall@5/@10, Hit@1, MRR and nDCG. See `eval/README.md`. |
 
 ## Configuration
@@ -79,21 +81,26 @@ memory:
   similarityThreshold: 0.6    # pg_trgm word similarity a term needs to count as a hit (0–1)
   lintSchedule: every day at 03:00    # when the linter runs
   reviewSchedule: every day at 07:00  # when due reviews are handed over
+  maxFileBytes: 15000                 # wiki files above this size are split
+  splitSchedule: every day at 02:00   # when oversized files are handed over
+  dedupSchedule: every saturday at 03:00  # when the wiki is scanned for duplicates
 ```
 
 `searchLimit` and `similarityThreshold` are read per call, so `familiar config reload` applies them immediately. The schedules (friendly or raw cron, in `core.timezone`) apply when the plugin restarts, which a reload does whenever a `memory.*` key or `core.timezone` changed.
 
 ## Maintenance
 
-Three daily jobs keep the wiki searchable. The plugin only detects and schedules; what happens to a file is decided by handlers next to `save.md`, which the user can edit.
+Five jobs keep the wiki searchable. The plugin detects and schedules, and does only the mechanical parts itself (ISO date rewrite, harness cut, commits); what happens to a file is decided by handlers next to `save.md`, which the user can edit.
 
 | Job | Trigger | Handler |
 |-----|---------|---------|
 | Category check | `cron:` of the handler (default 04:00) | `skills/memory/categories.md` merges synonymous categories, removes catch-alls and one-off categories. It uses `bash` (`grep` / `sed` over the `categories:` lines), so a category spread over many files is changed in one step. |
 | Linter | `memory.lintSchedule` (default 03:00) | Code in `WikiLint.ts` checks every file: frontmatter parses, only `categories` (inline list of up to three distinct lower-case words) and `review_at` (ISO date), and no dates in other notations (`12.07.2026`, `07/12/2026`, `12. Juli 2026`, `July 12, 2026`, `Juli 2026`; code, URLs and wikilinks are skipped). Dates with an unambiguous ISO form (`12.07.2026 → 2026-07-12`, `Juli 2026 → 2026-07`, and ranges or enumerations with a shortened start as a whole: `22.09.–20.10.2026 → 2026-09-22 – 2026-10-20`, `03./04.08.2026 → 2026-08-03 / 2026-08-04`) are rewritten by the code itself, exactly in place — no judgement, no agent run — and committed to the workspace history (a snapshot commit of the affected files first, so the fix commit holds nothing but the rewrite and can be reverted on its own). Every file with problems left (ambiguous dates like `03/04/2026`, foreign frontmatter keys, broken YAML, categories) goes to one `skills:memory:repair` run (`skills/memory/repair.md`) with the problem list as its prompt. |
+| Splitter | `memory.splitSchedule` (default 02:00) | Every file above `memory.maxFileBytes` (default 15000 bytes) goes to one `skills:memory:split` run (`skills/memory/split.md`), largest first, one after the other. The handler condenses process logs to facts, moves sub-threads out of person / self files and splits threads that hold several. A file still over the limit afterwards is cut in half by the code: at the `##` heading closest to the middle (else `###`, a paragraph break, any line — never in a code fence), the first half stays `<slug>.md` with a link to the second, `<slug>-2.md` (same frontmatter, title with ` (2)`, the description). `wiki/` is committed once before and once after the pass. |
+| Deduplicator | `memory.dedupSchedule` (default Saturday 03:00) | Each top-level wiki folder (`people`, `threads` with its clusters, `self`, `journal`) goes as a `path \| title \| description` list to one `skills:memory:dedup-scan` run, which replies with candidate groups (one per line, comma-separated, at most five paths). Every group with at least one pair not handled before goes to one `skills:memory:deduplicate` run (`skills/memory/deduplicate.md`; file contents inlined up to 40 000 bytes), one after the other; the handler merges, deletes, renames and rewrites the wikilinks. After a successful run the group's pairs of surviving files are stored in `memory.dedup_pairs` with their sizes; a pair is forgotten once a file is gone or changed by at least 20 % and 500 bytes. `wiki/` is committed before and after the deduplicate runs. |
 | Reviewer | `memory.reviewSchedule` (default 07:00) | Every file with `review_at <= today` (in `core.timezone`) goes to one `skills:memory:review` run (`skills/memory/review.md`). It checks where the matter stands, records it, sets a new `review_at` or removes it, and messages the user only when they have to act. |
 
-All runs are exact-topic background events, and the handlers are `serial`, so they work one file after the other. Idempotency keys stop repeats: a repair is handed over once per file content (`memory-repair:<path>:<content hash>`), so a file the handler can't fix waits until it changes; a review is handed over once per `review_at` value (`memory-review:<path>:<date>`).
+All runs are exact-topic background events, and the handlers are `serial`, so they work one file after the other. Split and dedup passes wait for every run before the next and never overlap each other; `familiar memory reindex --full` drops `dedup_pairs` along with the index, so every group is looked at again. Idempotency keys stop repeats: a repair is handed over once per file content (`memory-repair:<path>:<content hash>`), so a file the handler can't fix waits until it changes; a review is handed over once per `review_at` value (`memory-review:<path>:<date>`).
 
 ## Workspace template
 
@@ -101,7 +108,7 @@ Ships:
 
 - `skills/memory/SKILL.md` — the wiki conventions: folders (`people/`, `threads/` with optional one-level clusters, `self/`, `journal/`), what belongs in the memory, slugs, title / description / frontmatter, ISO dates, how the search works and how to search well.
 - `skills/memory/save.md` — the handler that `memory_save` dispatches to.
-- `skills/memory/categories.md`, `repair.md`, `review.md` — the maintenance handlers (see "Maintenance").
+- `skills/memory/categories.md`, `repair.md`, `review.md`, `split.md`, `dedup-scan.md`, `deduplicate.md` — the maintenance handlers (see "Maintenance").
 
 ### `skills/memory/save.md` — the save handler
 

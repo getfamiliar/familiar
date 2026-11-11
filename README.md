@@ -37,6 +37,8 @@ call tools add-mcp
 * Secondary: Official MCP Registry, see
 * Custom: just go, remember the tools call-mcp command if necessary
 
+# How Familiar works
+
 ## Familiar is not (only) a chat, it's an event processing engine
 
 With Familiar, everything that happens in the world is an event. Even when you chat with it, each chat message is an event, just like a new incoming mail. There are two ways Familiar starts acting:

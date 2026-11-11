@@ -10,14 +10,31 @@ import {
     parseCron,
 } from "@getfamiliar/shared";
 import { Cron } from "croner";
-import { REPAIR_TOPIC, REVIEW_TOPIC } from "./Tools.js";
-import { listWikiFiles, type WikiIndex } from "./WikiIndex.js";
+import {
+    DEDUP_SCAN_TOPIC,
+    DEDUPLICATE_TOPIC,
+    REPAIR_TOPIC,
+    REVIEW_TOPIC,
+    SPLIT_TOPIC,
+} from "./Tools.js";
+import {
+    DedupPairStore,
+    groupByTopFolder,
+    type HandledPair,
+    pairKey,
+    pairsOf,
+    parseScanReply,
+    renderDeduplicatePrompt,
+    renderScanPrompt,
+} from "./WikiDedup.js";
+import { listWikiFiles, WIKI_FOLDER, type WikiIndex } from "./WikiIndex.js";
 import {
     type DateReplacement,
     fixUnambiguousDates,
     type LintProblem,
     lintWikiFile,
 } from "./WikiLint.js";
+import { applyHarnessSplit, fileBytes, findOversizedFiles } from "./WikiSplit.js";
 
 /** One wiki file the linter flagged. */
 export interface LintedFile {
@@ -55,6 +72,83 @@ export type CommitFiles = (
     relativePaths: readonly string[],
     message: string,
 ) => Promise<string | null>;
+
+/** Commit of everything below a workspace folder (`ctx.workspaceHistory.commitDirectory`). */
+export type CommitDirectory = (relativeDir: string, message: string) => Promise<string | null>;
+
+/** How a handler run that a pass waited for ended. */
+export type HandlerRunResult =
+    | { readonly status: "done"; readonly text: string }
+    | { readonly status: "failed"; readonly message: string }
+    /** An earlier pass handed the same item over already (same idempotency key). */
+    | { readonly status: "earlier" };
+
+/** What the split pass did with one oversized file. */
+export interface SplitOutcome {
+    readonly path: string;
+    /** Size when the pass found it. */
+    readonly bytesBefore: number;
+    /** Size after the run (and the harness split), `undefined` when the file is gone. */
+    readonly bytesAfter: number | undefined;
+    /** The split run, `undefined` when the file was no longer too big when its turn came. */
+    readonly run: HandlerRunResult | undefined;
+    /** Path of the second half when the harness had to cut the file. */
+    readonly harnessSecondPath: string | undefined;
+}
+
+/** Everything one split pass did. */
+export interface SplitPassSummary {
+    readonly outcomes: readonly SplitOutcome[];
+    /** Commit before the runs, `null` without history or changes. */
+    readonly snapshotCommitId: string | null;
+    /** Commit after the runs. */
+    readonly finalCommitId: string | null;
+}
+
+/** What the dedup pass did with one candidate group. */
+export interface DedupOutcome {
+    /** The group as the scan reported it. */
+    readonly group: readonly string[];
+    /** The deduplicate run, `undefined` when fewer than two files were left when its turn came. */
+    readonly run: HandlerRunResult | undefined;
+    /** Pairs stored as handled after the run. */
+    readonly recordedPairs: number;
+}
+
+/** Everything one dedup pass did. */
+export interface DedupPassSummary {
+    /** Stored pairs forgotten because a file is gone or changed. */
+    readonly prunedPairs: number;
+    /** Folders scanned, with the scan run's result. */
+    readonly scans: readonly { readonly folder: string; readonly run: HandlerRunResult }[];
+    /** Groups the scans reported (after parsing). */
+    readonly reportedGroups: number;
+    /** Groups skipped because every pair of them was handled before. */
+    readonly knownGroups: number;
+    readonly outcomes: readonly DedupOutcome[];
+    readonly snapshotCommitId: string | null;
+    readonly finalCommitId: string | null;
+}
+
+/** Dependencies of the split and dedup passes. */
+export interface PassDeps {
+    readonly workspaceDir: string;
+    readonly index: WikiIndex;
+    readonly emit: EmitEvent;
+    readonly commitDirectory: CommitDirectory;
+    readonly log: Logger;
+    /** `memory.maxFileBytes`. */
+    readonly maxFileBytes: number;
+    /** `core.timezone`, for the date in idempotency keys. */
+    readonly timezone: string;
+    /** Checked between items; `true` ends the pass early (plugin stopping). */
+    readonly shouldStop: () => boolean;
+    /**
+     * Most split / deduplicate runs one pass starts (the CLI's `-n`); `undefined` = no limit.
+     * Dedup scans don't count.
+     */
+    readonly maxRuns?: number;
+}
 
 /** The dates the linter can rewrite in one file by itself. */
 export interface DateFix {
@@ -277,30 +371,400 @@ export function renderRepairPrompt(file: LintedFile): string {
     return `path: ${file.path}\n\nProblems found by the linter:\n${bullets.join("\n")}`;
 }
 
+/**
+ * One split pass, as the daily job runs it: every wiki file above `memory.maxFileBytes` goes to
+ * one `skills:memory:split` run, one after the other; a file still too big afterwards is cut in
+ * half by the harness. The whole `wiki/` folder is committed once before and once after.
+ *
+ * @param deps - Paths, emission, history, limits.
+ * @returns What happened.
+ */
+export async function runSplitPass(deps: PassDeps): Promise<SplitPassSummary> {
+    const { workspaceDir, emit, commitDirectory, log, maxFileBytes } = deps;
+    const oversized = await findOversizedFiles(workspaceDir, maxFileBytes);
+    if (oversized.length === 0) {
+        return { outcomes: [], snapshotCommitId: null, finalCommitId: null };
+    }
+    const snapshotCommitId = await commitDirectory(
+        WIKI_FOLDER,
+        `memory split: snapshot before handling ${oversized.length} file(s) over ${maxFileBytes} bytes`,
+    );
+    const outcomes: SplitOutcome[] = [];
+    let startedRuns = 0;
+    for (const file of oversized) {
+        if (deps.shouldStop()) {
+            log.info("memory: split pass stopped early — the plugin is stopping");
+            break;
+        }
+        if (deps.maxRuns !== undefined && startedRuns >= deps.maxRuns) {
+            log.info(`memory: split pass stopped after ${startedRuns} run(s) — limit reached`);
+            break;
+        }
+        const bytesNow = await fileBytes(workspaceDir, file.path);
+        if (bytesNow === undefined || bytesNow <= maxFileBytes) {
+            outcomes.push({
+                path: file.path,
+                bytesBefore: file.bytes,
+                bytesAfter: bytesNow,
+                run: undefined,
+                harnessSecondPath: undefined,
+            });
+            continue;
+        }
+        const content = await fs.readFile(path.join(workspaceDir, file.path), "utf8");
+        startedRuns++;
+        const run = await runAndWait(
+            {
+                topic: SPLIT_TOPIC,
+                isExactTopic: true,
+                priority: EVENT_PRIORITY.BACKGROUND,
+                idempotencyKey: `memory-split:${file.path}:${shortHash(content)}`,
+                prompt: `path: ${file.path}\nsize: ${bytesNow} bytes\nlimit: ${maxFileBytes} bytes`,
+                payload: { path: file.path, bytes: bytesNow, maxFileBytes },
+            },
+            file.path,
+            emit,
+            log,
+        );
+        let bytesAfter = await fileBytes(workspaceDir, file.path);
+        let harnessSecondPath: string | undefined;
+        if (bytesAfter !== undefined && bytesAfter > maxFileBytes) {
+            const split = await applyHarnessSplit(workspaceDir, file.path);
+            if (split === undefined) {
+                log.warn(
+                    `memory: ${file.path} is still ${bytesAfter} bytes (limit ${maxFileBytes}) and has no line to cut at — left as it is`,
+                );
+            } else {
+                harnessSecondPath = split.secondPath;
+                bytesAfter = await fileBytes(workspaceDir, file.path);
+                log.info(
+                    `memory: ${file.path} was still over ${maxFileBytes} bytes after the split run — the harness cut it in half, second half ${split.secondPath}`,
+                );
+            }
+        }
+        outcomes.push({
+            path: file.path,
+            bytesBefore: file.bytes,
+            bytesAfter,
+            run,
+            harnessSecondPath,
+        });
+    }
+    const finalCommitId = await commitDirectory(WIKI_FOLDER, renderSplitCommitMessage(outcomes));
+    return { outcomes, snapshotCommitId, finalCommitId };
+}
+
+/**
+ * One dedup pass, as the weekly job runs it: forget stale handled pairs, hand every top-level
+ * wiki folder's file list to a `skills:memory:dedup-scan` run, then every reported group with at
+ * least one pair not handled before to a `skills:memory:deduplicate` run — all one after the
+ * other. The pairs of a group whose run succeeded are stored with the files' sizes after the run.
+ * The whole `wiki/` folder is committed before and after the deduplicate runs.
+ *
+ * @param deps - Paths, index, emission, history.
+ * @returns What happened.
+ */
+export async function runDedupPass(deps: PassDeps): Promise<DedupPassSummary> {
+    const { workspaceDir, index, emit, commitDirectory, log } = deps;
+    const store = new DedupPairStore(index);
+    const paths = await listWikiFiles(workspaceDir);
+    const prunedPairs = await store.prune(await sizesOf(workspaceDir, paths));
+    const existing = new Set(paths);
+    const scans: { folder: string; run: HandlerRunResult }[] = [];
+    const reported: (readonly string[])[] = [];
+    for (const [folder, folderPaths] of groupByTopFolder(paths)) {
+        if (folderPaths.length < 2) {
+            continue;
+        }
+        if (deps.shouldStop()) {
+            log.info("memory: dedup pass stopped early — the plugin is stopping");
+            break;
+        }
+        const entries = (await index.listFolderEntries(`${WIKI_FOLDER}/${folder}`)).filter(
+            (entry) => existing.has(entry.path),
+        );
+        const run = await runAndWait(
+            {
+                topic: DEDUP_SCAN_TOPIC,
+                isExactTopic: true,
+                priority: EVENT_PRIORITY.BACKGROUND,
+                idempotencyKey: `memory-dedup-scan:${folder}:${new Date().toISOString()}`,
+                prompt: renderScanPrompt(folder, entries),
+                payload: { folder: `${WIKI_FOLDER}/${folder}`, files: entries.length },
+            },
+            `${WIKI_FOLDER}/${folder}`,
+            emit,
+            log,
+        );
+        scans.push({ folder, run });
+        if (run.status !== "done") {
+            continue;
+        }
+        const parsed = parseScanReply(run.text, existing);
+        for (const warning of parsed.warnings) {
+            log.warn(`memory: dedup scan of ${WIKI_FOLDER}/${folder}: ${warning}`);
+        }
+        log.info(
+            `memory: dedup scan of ${WIKI_FOLDER}/${folder} (${entries.length} files) reported ${parsed.groups.length} candidate group(s)`,
+        );
+        reported.push(...parsed.groups);
+    }
+    const known = await store.listKeys();
+    const fresh = reported.filter((group) =>
+        pairsOf(group).some(([pathA, pathB]) => !known.has(pairKey(pathA, pathB))),
+    );
+    const base = {
+        prunedPairs,
+        scans,
+        reportedGroups: reported.length,
+        knownGroups: reported.length - fresh.length,
+    };
+    if (fresh.length === 0) {
+        return { ...base, outcomes: [], snapshotCommitId: null, finalCommitId: null };
+    }
+    const snapshotCommitId = await commitDirectory(
+        WIKI_FOLDER,
+        `memory dedup: snapshot before handling ${fresh.length} candidate group(s)`,
+    );
+    const outcomes: DedupOutcome[] = [];
+    let startedRuns = 0;
+    for (const group of fresh) {
+        if (deps.shouldStop()) {
+            log.info("memory: dedup pass stopped early — the plugin is stopping");
+            break;
+        }
+        if (deps.maxRuns !== undefined && startedRuns >= deps.maxRuns) {
+            log.info(`memory: dedup pass stopped after ${startedRuns} run(s) — limit reached`);
+            break;
+        }
+        const contents = new Map<string, string>();
+        for (const groupPath of group) {
+            const content = await readIfExists(workspaceDir, groupPath);
+            if (content !== undefined) {
+                contents.set(groupPath, content);
+            }
+        }
+        if (contents.size < 2) {
+            outcomes.push({ group, run: undefined, recordedPairs: 0 });
+            continue;
+        }
+        const fingerprint = [...contents.entries()]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([groupPath, content]) => `${groupPath}:${shortHash(content)}`)
+            .join("\n");
+        startedRuns++;
+        const run = await runAndWait(
+            {
+                topic: DEDUPLICATE_TOPIC,
+                isExactTopic: true,
+                priority: EVENT_PRIORITY.BACKGROUND,
+                idempotencyKey: `memory-deduplicate:${todayIn(deps.timezone)}:${shortHash(fingerprint)}`,
+                prompt: renderDeduplicatePrompt(contents),
+                payload: { paths: [...contents.keys()] },
+            },
+            [...contents.keys()].join(", "),
+            emit,
+            log,
+        );
+        let recordedPairs = 0;
+        if (run.status === "done") {
+            const handled: HandledPair[] = [];
+            for (const [pathA, pathB] of pairsOf([...contents.keys()])) {
+                const sizeA = await fileBytes(workspaceDir, pathA);
+                const sizeB = await fileBytes(workspaceDir, pathB);
+                // A pair with a file merged away is settled for good; only pairs of files that
+                // both survived are remembered, so they aren't looked at again until one changes.
+                if (sizeA !== undefined && sizeB !== undefined) {
+                    handled.push({ pathA, pathB, sizeA, sizeB });
+                }
+            }
+            await store.record(handled);
+            recordedPairs = handled.length;
+        }
+        outcomes.push({ group, run, recordedPairs });
+    }
+    const finalCommitId = await commitDirectory(WIKI_FOLDER, renderDedupCommitMessage(outcomes));
+    return { ...base, outcomes, snapshotCommitId, finalCommitId };
+}
+
+/**
+ * Emits one event and waits until its run settled. Never rejects: a failed run and a failed
+ * emission come back as `failed`, a repeated idempotency key as `earlier`.
+ *
+ * @param event - The event.
+ * @param label - What the run is about, for the log.
+ * @param emit - Event emission.
+ * @param log - Logger.
+ * @returns How the run ended.
+ */
+async function runAndWait(
+    event: NewEvent,
+    label: string,
+    emit: EmitEvent,
+    log: Logger,
+): Promise<HandlerRunResult> {
+    let handle: EmitHandle;
+    try {
+        handle = await emit(event);
+    } catch (err) {
+        if (err instanceof DuplicateIdempotencyKeyError) {
+            log.info(
+                `memory: ${label} was handed to ${event.topic} before with the same content — skipped`,
+            );
+            return { status: "earlier" };
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        log.warn(`memory: emitting ${event.topic} for ${label} failed: ${message}`);
+        return { status: "failed", message };
+    }
+    log.info(`memory: ${label} → ${event.topic} event ${handle.id}, waiting for it`);
+    try {
+        const text = await handle.settled;
+        log.info(`memory: ${event.topic} event ${handle.id} for ${label} done: ${firstLine(text)}`);
+        return { status: "done", text };
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        log.warn(`memory: ${event.topic} event ${handle.id} for ${label} failed: ${message}`);
+        return { status: "failed", message };
+    }
+}
+
+/**
+ * Renders the commit message after a split pass.
+ *
+ * @param outcomes - Per file.
+ * @returns The message.
+ */
+function renderSplitCommitMessage(outcomes: readonly SplitOutcome[]): string {
+    const cut = outcomes.filter((outcome) => outcome.harnessSecondPath !== undefined).length;
+    const lines = outcomes.map((outcome) => {
+        const after = outcome.bytesAfter === undefined ? "gone" : `${outcome.bytesAfter} bytes`;
+        const harness = outcome.harnessSecondPath
+            ? `, cut by the harness → ${outcome.harnessSecondPath}`
+            : "";
+        return `- ${outcome.path}: ${outcome.bytesBefore} → ${after} (${describeRun(outcome.run)}${harness})`;
+    });
+    return `memory split: ${outcomes.length} oversized file(s) handled, ${cut} cut by the harness\n\n${lines.join("\n")}`;
+}
+
+/**
+ * Renders the commit message after a dedup pass.
+ *
+ * @param outcomes - Per group.
+ * @returns The message.
+ */
+function renderDedupCommitMessage(outcomes: readonly DedupOutcome[]): string {
+    const lines = outcomes.map(
+        (outcome) => `- ${outcome.group.join(", ")} (${describeRun(outcome.run)})`,
+    );
+    return `memory dedup: ${outcomes.length} candidate group(s) handled\n\n${lines.join("\n")}`;
+}
+
+/**
+ * Describes how a run ended, in one short phrase.
+ *
+ * @param run - The run result, `undefined` when there was no run.
+ * @returns The phrase.
+ */
+export function describeRun(run: HandlerRunResult | undefined): string {
+    if (run === undefined) {
+        return "no run needed";
+    }
+    if (run.status === "done") {
+        return firstLine(run.text) || "done";
+    }
+    return run.status === "earlier" ? "handed over earlier" : `failed: ${firstLine(run.message)}`;
+}
+
+/**
+ * The first non-blank line of a text, at most 200 characters.
+ *
+ * @param text - Text.
+ * @returns The line.
+ */
+function firstLine(text: string): string {
+    const line = text.split(/\r?\n/).find((candidate) => candidate.trim() !== "") ?? "";
+    return line.length > 200 ? `${line.slice(0, 199)}…` : line.trim();
+}
+
+/**
+ * Sizes of files on disk.
+ *
+ * @param workspaceDir - Absolute workspace path.
+ * @param paths - Workspace-relative paths.
+ * @returns Path → bytes, for the files that exist.
+ */
+async function sizesOf(
+    workspaceDir: string,
+    paths: readonly string[],
+): Promise<ReadonlyMap<string, number>> {
+    const sizes = new Map<string, number>();
+    for (const relativePath of paths) {
+        const bytes = await fileBytes(workspaceDir, relativePath);
+        if (bytes !== undefined) {
+            sizes.set(relativePath, bytes);
+        }
+    }
+    return sizes;
+}
+
+/**
+ * Reads a file, tolerating that it is gone.
+ *
+ * @param workspaceDir - Absolute workspace path.
+ * @param relativePath - Workspace-relative path.
+ * @returns The content, or `undefined` when the file doesn't exist.
+ */
+async function readIfExists(
+    workspaceDir: string,
+    relativePath: string,
+): Promise<string | undefined> {
+    try {
+        return await fs.readFile(path.join(workspaceDir, relativePath), "utf8");
+    } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+            return undefined;
+        }
+        throw err;
+    }
+}
+
 /** Dependencies of {@link WikiMaintenance}. */
 export interface WikiMaintenanceDeps {
     readonly workspaceDir: string;
     readonly index: WikiIndex;
     readonly emit: EmitEvent;
     readonly commit: CommitFiles;
+    readonly commitDirectory: CommitDirectory;
     readonly log: Logger;
     /** `memory.lintSchedule`. */
     readonly lintSchedule: string;
     /** `memory.reviewSchedule`. */
     readonly reviewSchedule: string;
+    /** `memory.maxFileBytes`. */
+    readonly maxFileBytes: number;
+    /** `memory.splitSchedule`. */
+    readonly splitSchedule: string;
+    /** `memory.dedupSchedule`. */
+    readonly dedupSchedule: string;
     /** `core.timezone`: the cron jobs fire and "today" is computed in it. */
     readonly timezone: string;
 }
 
 /**
- * The daemon's two maintenance cron jobs: the linter (unambiguous dates rewritten to ISO by itself,
- * every file with problems left → a repair run) and the
- * reviewer (every file with a due `review_at` → a review run). Only detection and scheduling live
- * here; what a repair or a review does is up to the handlers in `skills/memory/`.
+ * The daemon's maintenance cron jobs: the linter (unambiguous dates rewritten to ISO by itself,
+ * every file with problems left → a repair run), the reviewer (every file with a due `review_at` →
+ * a review run), the splitter (every oversized file → a split run) and the deduplicator (folder
+ * scans → deduplicate runs). Only detection, scheduling and the harness fallbacks live here; what
+ * happens to a file is up to the handlers in `skills/memory/`. Split and dedup passes never run
+ * at the same time.
  */
 export class WikiMaintenance {
     private readonly deps: WikiMaintenanceDeps;
     private readonly jobs: Cron[] = [];
+    /** Serializes the split and dedup passes. */
+    private passChain: Promise<void> = Promise.resolve();
+    private isStopped = false;
 
     /**
      * @param deps - Paths, index, emission, logger, schedules.
@@ -309,14 +773,24 @@ export class WikiMaintenance {
         this.deps = deps;
     }
 
-    /** Registers both cron jobs. An invalid expression is logged and its job skipped. */
+    /** Registers the cron jobs. An invalid expression is logged and its job skipped. */
     start(): void {
         this.schedule("lint", this.deps.lintSchedule, () => this.runLint());
         this.schedule("review", this.deps.reviewSchedule, () => this.runReviews());
+        this.schedule("split", this.deps.splitSchedule, () =>
+            this.exclusive(() => this.runSplit()),
+        );
+        this.schedule("dedup", this.deps.dedupSchedule, () =>
+            this.exclusive(() => this.runDedup()),
+        );
     }
 
-    /** Stops both cron jobs. A pass in progress finishes its emissions. */
+    /**
+     * Stops the cron jobs. A lint or review pass in progress finishes its emissions; a split or
+     * dedup pass ends after the run it is waiting for.
+     */
     stop(): void {
+        this.isStopped = true;
         for (const job of this.jobs) {
             job.stop();
         }
@@ -368,9 +842,80 @@ export class WikiMaintenance {
     }
 
     /**
+     * One split pass.
+     *
+     * @returns Resolves when the pass is over; never rejects (failures are logged).
+     */
+    async runSplit(): Promise<void> {
+        const { log, maxFileBytes } = this.deps;
+        try {
+            const { outcomes, finalCommitId } = await runSplitPass(this.passDeps());
+            const cut = outcomes.filter((outcome) => outcome.harnessSecondPath !== undefined);
+            log.info(
+                `memory: split pass handled ${outcomes.length} file(s) over ${maxFileBytes} bytes, ${cut.length} cut by the harness${finalCommitId ? ` (commit ${finalCommitId})` : ""}`,
+            );
+        } catch (err) {
+            log.error(
+                `memory: split pass failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
+    }
+
+    /**
+     * One dedup pass.
+     *
+     * @returns Resolves when the pass is over; never rejects (failures are logged).
+     */
+    async runDedup(): Promise<void> {
+        const { log } = this.deps;
+        try {
+            const summary = await runDedupPass(this.passDeps());
+            log.info(
+                `memory: dedup pass scanned ${summary.scans.length} folder(s), ${summary.reportedGroups} candidate group(s) reported, ${summary.knownGroups} handled before, ${summary.outcomes.length} handed to ${DEDUPLICATE_TOPIC}; ${summary.prunedPairs} stale pair(s) forgotten${summary.finalCommitId ? ` (commit ${summary.finalCommitId})` : ""}`,
+            );
+        } catch (err) {
+            log.error(
+                `memory: dedup pass failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
+    }
+
+    /**
+     * The pass dependencies, stopping when this instance is stopped.
+     *
+     * @returns The deps.
+     */
+    private passDeps(): PassDeps {
+        const { workspaceDir, index, emit, commitDirectory, log, maxFileBytes, timezone } =
+            this.deps;
+        return {
+            workspaceDir,
+            index,
+            emit,
+            commitDirectory,
+            log,
+            maxFileBytes,
+            timezone,
+            shouldStop: () => this.isStopped,
+        };
+    }
+
+    /**
+     * Runs a pass after every split or dedup pass queued before it.
+     *
+     * @param pass - The pass.
+     * @returns Resolves when it is over.
+     */
+    private exclusive(pass: () => Promise<void>): Promise<void> {
+        const next = this.passChain.then(pass);
+        this.passChain = next.catch(() => undefined);
+        return next;
+    }
+
+    /**
      * Registers one cron job.
      *
-     * @param name - `lint` or `review`, for the log.
+     * @param name - `lint`, `review`, `split` or `dedup`, for the log.
      * @param verbatim - The configured expression.
      * @param pass - The pass to run on each firing.
      */

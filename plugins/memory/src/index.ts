@@ -3,7 +3,15 @@ import { definePlugin, type HostContext, type PluginTool } from "@getfamiliar/sh
 import { buildMemoryCommands } from "./Commands.js";
 import { readMemoryConfig } from "./Config.js";
 import { renderCategoryList } from "./SearchRender.js";
-import { buildMemoryTools, REPAIR_TOPIC, REVIEW_TOPIC, SAVE_TOPIC } from "./Tools.js";
+import {
+    buildMemoryTools,
+    DEDUP_SCAN_TOPIC,
+    DEDUPLICATE_TOPIC,
+    REPAIR_TOPIC,
+    REVIEW_TOPIC,
+    SAVE_TOPIC,
+    SPLIT_TOPIC,
+} from "./Tools.js";
 import { WikiIndexer } from "./WikiIndexer.js";
 import { WikiMaintenance } from "./WikiMaintenance.js";
 import { listCategories } from "./WikiSearch.js";
@@ -35,7 +43,10 @@ let maintenance: WikiMaintenance | undefined;
  * Maintenance: two cron jobs ({@link WikiMaintenance}) lint every wiki file — rewriting unambiguous
  * dates to ISO by themselves (one git commit) and handing the remaining problems to
  * `skills:memory:repair` — and hand files with a due `review_at` to `skills:memory:review`. The
- * category check is a plain cron handler (`skills/memory/categories.md`).
+ * category check is a plain cron handler (`skills/memory/categories.md`). Two more jobs hand files
+ * above `memory.maxFileBytes` to `skills:memory:split` (cutting them in half when still too big)
+ * and let `skills:memory:dedup-scan` find duplicate candidates per folder, each new group going to
+ * `skills:memory:deduplicate`; both commit `wiki/` before and after.
  */
 export default definePlugin({
     id: "memory",
@@ -74,9 +85,14 @@ export default definePlugin({
                 index: indexer.index,
                 emit: (event) => ctx.events.emit(event),
                 commit: (paths, message) => ctx.workspaceHistory.commitFiles(paths, message),
+                commitDirectory: (dir, message) =>
+                    ctx.workspaceHistory.commitDirectory(dir, message),
                 log: ctx.logger,
                 lintSchedule: config.lintSchedule,
                 reviewSchedule: config.reviewSchedule,
+                maxFileBytes: config.maxFileBytes,
+                splitSchedule: config.splitSchedule,
+                dedupSchedule: config.dedupSchedule,
                 timezone: ctx.config.getString("core.timezone", "UTC") ?? "UTC",
             });
             maintenance.start();
@@ -107,6 +123,24 @@ export default definePlugin({
                 topic: REVIEW_TOPIC,
                 isExactTopic: true,
                 description: "A wiki file's `review_at` date is due.",
+            },
+            {
+                topic: SPLIT_TOPIC,
+                isExactTopic: true,
+                description:
+                    "A wiki file is larger than `memory.maxFileBytes` and has to be condensed or split.",
+            },
+            {
+                topic: DEDUP_SCAN_TOPIC,
+                isExactTopic: true,
+                description:
+                    "The weekly dedup pass hands one wiki folder's file list over to find duplicate candidates.",
+            },
+            {
+                topic: DEDUPLICATE_TOPIC,
+                isExactTopic: true,
+                description:
+                    "A group of wiki files that may be about the same subject, to be merged or told apart.",
             },
         ],
         commands: (ctx: HostContext) => buildMemoryCommands(ctx),

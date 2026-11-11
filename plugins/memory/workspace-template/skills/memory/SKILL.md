@@ -19,7 +19,7 @@ Other folders can grow under `wiki/` as the need surfaces — invent a folder wh
 
 ### Thread clusters
 
-Threads — and only threads — may be grouped one level deep: `wiki/threads/<cluster>/<slug>.md`, e.g. `wiki/threads/properties/weg-mauerstrasse32.md` next to `wiki/threads/properties/weg-julius-reiber-strasse.md`. People, self and journal stay flat, and a cluster never gets a subfolder of its own.
+Threads — and only threads — may be grouped one level deep: `wiki/threads/<cluster>/<slug>.md`, e.g. `wiki/threads/properties/lake-house.md` next to `wiki/threads/properties/city-flat.md`. People, self and journal stay flat, and a cluster never gets a subfolder of its own.
 
 Create a cluster only when **at least four threads** clearly share one topic (the user's properties, the products of one company, one club or organization). Until then, threads stay directly in `wiki/threads/` — a cluster names a group that already exists, it is not a filing scheme to fill up. Two or three related threads are better connected by a shared category and wikilinks. When in doubt, leave the thread flat.
 
@@ -109,15 +109,15 @@ Before you write anything, ask: **Will this still be useful to someone reading t
 Never record:
 
 - **Your own processing**: that a mail, event or message arrived, its ids (mail ids, `internetMessageId`, calendar ids), that you archived or trashed it, put it in a digest, marked it read, verified something via an API, found nothing new or decided not to notify the user.
-- **Delivery mechanics**: duplicate or late notifications, re-syncs, "the same message again", the status mails of a shipment or ticket. Only the outcome counts: `- 2026-10-05: iHerb order (BPC-157 probiotic) delivered`.
-- **Copies of source material**: full mail or forum texts, ticket changelogs, every field of a calendar entry (meeting links, organizer addresses, `isCancelled`). Write the fact in one line; name the source when it helps (`(mail from Lotte)`).
+- **Delivery mechanics**: duplicate or late notifications, re-syncs, "the same message again", the status mails of a shipment or ticket. Only the outcome counts: `- 2026-10-05: running shoes delivered`.
+- **Copies of source material**: full mail or forum texts, ticket changelogs, every field of a calendar entry (meeting links, organizer addresses, `isCancelled`). Write the fact in one line; name the source when it helps (`(mail from the landlord)`).
 - **Overtaken intermediate states**: update the current state in place instead of appending a new "Status (date)", "Update" or "Addendum" section. A dated bullet is for an event that still matters on its own — a decision, a deadline, a meeting, a change of plan.
 - **Handling rules** for mails, newsletters or other inputs ("archive and add to the digest") — they belong to the rule files of the handler that processes those inputs, not to the wiki.
 
 ```markdown
-Bad:  ## Addendum 2026-10-05 (Hermes "arriving today" — order 556795372)
+Bad:  ## Addendum 2026-10-05 (parcel service "arriving today" — order 12345)
       Mail from noreply@… (08:01 UTC) → archived + digest, no action needed. Delivery window 11:35–13:05 …
-Good: - 2026-10-05: order 556795372 delivered by Hermes
+Good: - 2026-10-05: order 12345 (running shoes) delivered
 ```
 
 When a matter is settled, condense it: keep the outcome and the dates that still matter, drop the steps that led there.

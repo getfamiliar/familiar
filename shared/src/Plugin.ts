@@ -575,6 +575,18 @@ export interface HostContext {
          * commit id.
          */
         commitFiles(relativePaths: readonly string[], message: string): Promise<string | null>;
+        /**
+         * Stage every change below one workspace-relative folder — added,
+         * modified and deleted files — and commit it; changes elsewhere stay
+         * uncommitted. For rewrites whose files aren't known up front (agent
+         * runs that create, rename or delete files): commit the folder once
+         * before and once after.
+         *
+         * Returns `null` without committing when `core.autoUpdate` is `false`
+         * or when nothing below the folder changed; otherwise the short
+         * commit id.
+         */
+        commitDirectory(relativeDir: string, message: string): Promise<string | null>;
     };
     readonly mcp: {
         /**

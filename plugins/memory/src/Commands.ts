@@ -11,17 +11,25 @@ import { renderEvalReport } from "./EvalReport.js";
 import { DEFAULT_EVAL_SETTINGS, type MemoryEvalResult, runMemoryEval } from "./EvalRunner.js";
 import { renderCategoryList, renderDateHits, renderFileHits } from "./SearchRender.js";
 import { parseDateSearchArgs } from "./Tools.js";
+import { DedupPairStore } from "./WikiDedup.js";
 import { LIVE_INDEX_SCHEMA, WikiIndex } from "./WikiIndex.js";
 import {
     type DateFix,
+    type DedupPassSummary,
+    describeRun,
     emitReviews,
     type HandOverSummary,
     type LintedFile,
     lintWiki,
     listDueReviews,
+    type PassDeps,
+    runDedupPass,
     runLintPass,
+    runSplitPass,
+    type SplitPassSummary,
 } from "./WikiMaintenance.js";
 import { listCategories, searchDates, searchFiles } from "./WikiSearch.js";
+import { findOversizedFiles } from "./WikiSplit.js";
 
 /**
  * CLI subcommands of the memory plugin. They work on the live index in postgres (schema
@@ -38,6 +46,8 @@ export function buildMemoryCommands(ctx: HostContext): readonly CommandDef<any>[
         reindexCommand(ctx),
         lintCommand(ctx),
         reviewsCommand(ctx),
+        splitCommand(ctx),
+        dedupCommand(ctx),
         evalCommand(ctx),
     ];
 }
@@ -490,6 +500,189 @@ function reviewsCommand(ctx: HostContext): CommandDef<any> {
             writeMarkdown(`${parts.join("\n\n")}\n`, { raw: args.raw === true });
         },
     });
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
+function splitCommand(ctx: HostContext): CommandDef<any> {
+    return defineCommand({
+        meta: {
+            name: "split",
+            description:
+                "List the wiki files larger than memory.maxFileBytes, which the daily split job hands to skills:memory:split.",
+        },
+        args: {
+            run: {
+                type: "boolean",
+                required: false,
+                description:
+                    "Run the split pass now and wait for it: one split run per file after the other, harness cut for files still too big, wiki/ committed before and after (needs the daemon).",
+            },
+            n: {
+                type: "string",
+                required: false,
+                description: "With --run: start at most this many skills:memory:split runs.",
+            },
+            raw: RAW_ARG,
+        },
+        async run({ args }) {
+            const { maxFileBytes } = readMemoryConfig(ctx.config);
+            const oversized = await findOversizedFiles(ctx.workspaceDir, maxFileBytes);
+            const parts = [
+                oversized.length === 0
+                    ? `No wiki file is larger than ${maxFileBytes} bytes.`
+                    : `${oversized.length} file(s) larger than ${maxFileBytes} bytes:\n\n${markdownTable(
+                          ["File", "Bytes"],
+                          oversized.map((file) => [file.path, String(file.bytes)]),
+                      )}`,
+            ];
+            if (args.run === true && oversized.length > 0) {
+                const summary = await runSplitPass(await buildPassDeps(ctx, maxRunsArg(args.n)));
+                parts.push(renderSplitSummary(summary));
+            }
+            writeMarkdown(`${parts.join("\n\n")}\n`, { raw: args.raw === true });
+        },
+    });
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
+function dedupCommand(ctx: HostContext): CommandDef<any> {
+    return defineCommand({
+        meta: {
+            name: "dedup",
+            description:
+                "List the file pairs earlier deduplicate runs handled (they get no new run until a file is gone or changed by 20 %, at least 500 bytes).",
+        },
+        args: {
+            run: {
+                type: "boolean",
+                required: false,
+                description:
+                    "Run the dedup pass now and wait for it: one dedup-scan per wiki folder, then one deduplicate run per new candidate group, wiki/ committed before and after (needs the daemon).",
+            },
+            n: {
+                type: "string",
+                required: false,
+                description:
+                    "With --run: start at most this many skills:memory:deduplicate (the folder scans always run) runs.",
+            },
+            raw: RAW_ARG,
+        },
+        async run({ args }) {
+            const index = await openLiveIndex(ctx);
+            const pairs = await new DedupPairStore(index).list();
+            const parts = [
+                pairs.length === 0
+                    ? "No file pair has been handled yet."
+                    : `${pairs.length} handled pair(s):\n\n${markdownTable(
+                          ["File A", "Bytes", "File B", "Bytes"],
+                          pairs.map((pair) => [
+                              pair.pathA,
+                              String(pair.sizeA),
+                              pair.pathB,
+                              String(pair.sizeB),
+                          ]),
+                      )}`,
+            ];
+            if (args.run === true) {
+                const summary = await runDedupPass(
+                    await buildPassDeps(ctx, maxRunsArg(args.n), index),
+                );
+                parts.push(renderDedupSummary(summary));
+            }
+            writeMarkdown(`${parts.join("\n\n")}\n`, { raw: args.raw === true });
+        },
+    });
+}
+
+/**
+ * The dependencies of a split or dedup pass run from the CLI. Progress goes to the logger, since
+ * a pass waits for every run and can take a long time.
+ *
+ * @param ctx - Host context.
+ * @param maxRuns - Most handler runs to start (`-n`), `undefined` for all.
+ * @param index - The live index, opened when omitted.
+ * @returns The deps.
+ */
+async function buildPassDeps(
+    ctx: HostContext,
+    maxRuns: number | undefined,
+    index?: WikiIndex,
+): Promise<PassDeps> {
+    return {
+        workspaceDir: ctx.workspaceDir,
+        index: index ?? (await openLiveIndex(ctx)),
+        emit: (event) => ctx.events.emit(event),
+        commitDirectory: (dir, message) => ctx.workspaceHistory.commitDirectory(dir, message),
+        log: ctx.logger,
+        maxFileBytes: readMemoryConfig(ctx.config).maxFileBytes,
+        timezone: ctx.config.getString("core.timezone", "UTC") ?? "UTC",
+        shouldStop: () => false,
+        maxRuns,
+    };
+}
+
+/**
+ * Parses the `-n` flag.
+ *
+ * @param raw - Flag value.
+ * @returns The limit, `undefined` when not given.
+ * @throws {Error} When it is no positive integer.
+ */
+function maxRunsArg(raw: unknown): number | undefined {
+    return raw === undefined ? undefined : parsePositiveInteger(raw, "-n");
+}
+
+/**
+ * Renders a split pass for the CLI.
+ *
+ * @param summary - The pass.
+ * @returns Markdown.
+ */
+function renderSplitSummary(summary: SplitPassSummary): string {
+    const rows = summary.outcomes.map((outcome) => [
+        outcome.path,
+        String(outcome.bytesBefore),
+        outcome.bytesAfter === undefined ? "gone" : String(outcome.bytesAfter),
+        describeRun(outcome.run),
+        outcome.harnessSecondPath ?? "",
+    ]);
+    return `Split pass${renderCommits(summary.snapshotCommitId, summary.finalCommitId)}:\n\n${markdownTable(["File", "Before", "After", "Run", "Harness cut"], rows)}`;
+}
+
+/**
+ * Renders a dedup pass for the CLI.
+ *
+ * @param summary - The pass.
+ * @returns Markdown.
+ */
+function renderDedupSummary(summary: DedupPassSummary): string {
+    const scans = summary.scans
+        .map((scan) => `${scan.folder}: ${describeRun(scan.run)}`)
+        .join("; ");
+    const head = `Dedup pass${renderCommits(summary.snapshotCommitId, summary.finalCommitId)}: ${summary.prunedPairs} stale pair(s) forgotten; scans — ${scans || "none"}; ${summary.reportedGroups} group(s) reported, ${summary.knownGroups} handled before.`;
+    if (summary.outcomes.length === 0) {
+        return head;
+    }
+    const rows = summary.outcomes.map((outcome) => [
+        outcome.group.join(", "),
+        describeRun(outcome.run),
+        String(outcome.recordedPairs),
+    ]);
+    return `${head}\n\n${markdownTable(["Group", "Run", "Pairs stored"], rows)}`;
+}
+
+/**
+ * Renders the commit ids of a pass.
+ *
+ * @param snapshotCommitId - Commit before.
+ * @param finalCommitId - Commit after.
+ * @returns ` (commits a → b)` or an empty string.
+ */
+function renderCommits(snapshotCommitId: string | null, finalCommitId: string | null): string {
+    if (snapshotCommitId === null && finalCommitId === null) {
+        return "";
+    }
+    return ` (commits \`${snapshotCommitId ?? "–"}\` → \`${finalCommitId ?? "–"}\`)`;
 }
 
 /**

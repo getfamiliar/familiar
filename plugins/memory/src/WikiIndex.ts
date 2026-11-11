@@ -114,6 +114,16 @@ export class WikiIndex {
             );
             CREATE INDEX IF NOT EXISTS dates_range ON ${s}.dates (date_from, date_to);
             CREATE INDEX IF NOT EXISTS dates_month_day ON ${s}.dates (month_day) WHERE month_day IS NOT NULL;
+
+            CREATE TABLE IF NOT EXISTS ${s}.dedup_pairs (
+                path_a     text NOT NULL,
+                path_b     text NOT NULL,
+                size_a     integer NOT NULL,
+                size_b     integer NOT NULL,
+                handled_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (path_a, path_b),
+                CHECK (path_a < path_b)
+            );
         `);
     }
 
@@ -208,6 +218,22 @@ export class WikiIndex {
             `SELECT path, to_char(review_at, 'YYYY-MM-DD') AS "reviewAt" FROM ${this.schema}.files
              WHERE review_at <= $1::date ORDER BY review_at, path`,
             [today],
+        );
+    }
+
+    /**
+     * Lists title and description of every indexed file in a folder (sub-folders included).
+     *
+     * @param folderPrefix - Workspace-relative folder, e.g. `wiki/people`.
+     * @returns The files, sorted by path.
+     */
+    async listFolderEntries(
+        folderPrefix: string,
+    ): Promise<readonly { path: string; title: string; description: string }[]> {
+        return this.database.query<{ path: string; title: string; description: string }>(
+            `SELECT path, title, description FROM ${this.schema}.files
+             WHERE starts_with(path, $1) ORDER BY path`,
+            [`${folderPrefix.replace(/\/+$/, "")}/`],
         );
     }
 

@@ -2,7 +2,7 @@
     "name": "@getfamiliar/plugin-memory",
     "type": "module",
     "version": "0.0.1",
-    "description": "Familiar plugin: long-term memory for the agent — wiki index in postgres (pg_trgm), memory_search, memory_datesearch and memory_save, plus nightly lint / review maintenance.",
+    "description": "Familiar plugin: long-term memory for the agent — wiki index in postgres (pg_trgm), memory_search, memory_datesearch and memory_save, plus maintenance: lint, review, split of oversized files and weekly dedup.",
     "publishConfig": {
         "access": "public"
     },
