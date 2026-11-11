@@ -8,6 +8,7 @@ import {
     DEFAULT_WRITABLE_PATHS,
     EventBus,
     ensureNetwork,
+    FileReadBus,
     ISOLATED_NETWORK_NAME,
     jsonStdoutStream,
     type Logger,
@@ -53,6 +54,7 @@ import { ContainerToolsGateway } from "../container-bridge/ContainerToolsGateway
 import { ContainerToolsRegistry } from "../container-bridge/ContainerToolsRegistry.js";
 import { CronjobScheduler } from "../cron/CronjobScheduler.js";
 import { DirectoryGc } from "../cron/DirectoryGc.js";
+import { DEFAULT_FILE_READ_RETENTION_DAYS, FileReadsGc } from "../cron/FileReadsGc.js";
 import { ModelMetadataRefresher } from "../cron/ModelMetadataRefresher.js";
 import { ScheduledSubagentScheduler } from "../cron/ScheduledSubagentScheduler.js";
 import { ToolCallsGc } from "../cron/ToolCallsGc.js";
@@ -636,6 +638,14 @@ export const startCommand = defineCommand({
         });
         toolCallsGc.start();
 
+        const fileReadsGc = new FileReadsGc({
+            fileReadBus: new FileReadBus(await pluginHost.ensureConnection()),
+            log: log.child({ component: "file-reads-gc" }),
+            retentionDays: () =>
+                config.getNumber("core.fileReadRetentionDays", DEFAULT_FILE_READ_RETENTION_DAYS),
+        });
+        fileReadsGc.start();
+
         // The models.dev cache was already refreshed (refresh-if-stale)
         // before provider resolution above; keep it fresh daily from here.
         const modelMetadataRefresher = new ModelMetadataRefresher({
@@ -665,6 +675,7 @@ export const startCommand = defineCommand({
                 scratchGc.stop();
                 llmDebugGc.stop();
                 toolCallsGc.stop();
+                fileReadsGc.stop();
                 modelMetadataRefresher.stop();
                 await safeStop(log, "scheduled-subagent scheduler", () =>
                     scheduledSubagentScheduler.stop(),

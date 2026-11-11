@@ -301,9 +301,16 @@ export function fileReadTokenBudget(ctx: ToolRunContext, contextLimit: number | 
  * next chunk via `offset: <B + 1>`. Multi-byte UTF-8 characters at the
  * natural cut boundary are kept whole.
  */
+/**
+ * Records that a run read a workspace file (`file_reads`). Receives the
+ * workspace-relative path; never called for scratch files.
+ */
+export type RecordFileRead = (workspaceRelativePath: string) => void;
+
 function buildFsReadTool(
     ctx: ToolRunContext,
     contextLimit: number | undefined,
+    recordRead: RecordFileRead | undefined,
 ): Tool<FileReadInput, string> {
     const tokenBudget = fileReadTokenBudget(ctx, contextLimit);
     return tool<FileReadInput, string, NoToolContext>({
@@ -417,6 +424,9 @@ function buildFsReadTool(
                 `<file: ${p}, bytes ${offset1}-${lastByte1} of ${totalBytes}` +
                 `${truncated ? ", truncated" : ""}>\n`;
 
+            if (recordRead !== undefined && !absolute.startsWith(`${SCRATCH_ROOT}/`)) {
+                recordRead(path.relative(HandlerFile.getWorkspaceRoot(), absolute));
+            }
             return header + content;
         },
     });
@@ -1098,15 +1108,17 @@ function buildFsRemoveTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FsRem
  * @param parent - The agentrun the tools act for.
  * @param ctx - Its tool context.
  * @param contextLimit - The model's context window in tokens (sizes `fs_read` chunks), `undefined` when unknown.
+ * @param recordRead - Records every successful `fs_read` of a workspace file; omitted in tests / catalog paths.
  * @returns The tools.
  */
 export function buildFsTools(
     parent: AgentRunRow,
     ctx: ToolRunContext,
     contextLimit?: number,
+    recordRead?: RecordFileRead,
 ): ToolSet {
     return {
-        fs_read: buildFsReadTool(ctx, contextLimit),
+        fs_read: buildFsReadTool(ctx, contextLimit, recordRead),
         fs_write: buildFsWriteTool(parent, ctx),
         fs_str_replace: buildFsStrReplaceTool(parent, ctx),
         fs_append: buildFsAppendTool(parent, ctx),

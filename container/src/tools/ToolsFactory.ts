@@ -5,6 +5,7 @@ import {
     type ContainerToolInfo,
     DEFAULT_TOOL_LEVEL,
     estimateTokens,
+    type FileReadBus,
     type Logger,
     type ScheduledSubagentBus,
     type ToolCallBus,
@@ -16,7 +17,7 @@ import { asSchema, type Tool, type ToolSet } from "ai";
 import type { ChatManager } from "../chat/ChatManager.js";
 import { buildBannerCreateTool, buildBannerListTool, buildBannerRemoveTool } from "./banners.js";
 import { buildBashTool } from "./bash.js";
-import { buildFsTools } from "./fs.js";
+import { buildFsTools, type RecordFileRead } from "./fs.js";
 import { buildGetScheduledSubagentsTool } from "./getScheduledSubagents.js";
 import { buildScheduleSubagentTool } from "./scheduleSubagent.js";
 import { buildSendChatTool } from "./sendChat.js";
@@ -240,6 +241,12 @@ export interface ToolsFactoryContext {
      */
     readonly toolCallBus?: ToolCallBus;
     /**
+     * Read recorder. When present (together with `handlerPath` and a
+     * `parent` carrying an id), every successful `fs_read` of a workspace
+     * file is written to `file_reads`. Absent in test / catalog paths.
+     */
+    readonly fileReadBus?: FileReadBus;
+    /**
      * Resolved handler markdown path (workspace-relative, e.g.
      * `chat/telegram/index.md`). Keys the heuristic: the tools this
      * handler successfully used across its recent non-error runs are
@@ -356,7 +363,12 @@ export class ToolsFactory {
             // only privileged runs modify protected paths.
             Object.assign(
                 systemTools,
-                buildFsTools(context.parent, toolRunContext, context.contextLimit),
+                buildFsTools(
+                    context.parent,
+                    toolRunContext,
+                    context.contextLimit,
+                    buildFileReadRecorder(context),
+                ),
             );
             // The bash tool lives in its own opt-in `bash` group (handlers
             // request it via `tools: bash`). Privileged runs run as `priv`,
@@ -611,6 +623,33 @@ function errorMessage(err: unknown): string {
         return err.message;
     }
     return String(err);
+}
+
+/**
+ * Build the fire-and-forget read recorder for `fs_read`. Returns
+ * `undefined` when the recording deps (bus, handler path, agentrun id)
+ * aren't all present. Recording never faults the read — a write failure
+ * is logged and swallowed.
+ *
+ * @param context - The factory context.
+ * @returns The recorder, or `undefined`.
+ */
+function buildFileReadRecorder(context: ToolsFactoryContext): RecordFileRead | undefined {
+    const bus = context.fileReadBus;
+    const handlerPath = context.handlerPath;
+    const parent = context.parent;
+    if (bus === undefined || handlerPath === undefined || parent?.id === undefined) {
+        return undefined;
+    }
+    const agentRunId = parent.id;
+    const eventId = parent.eventId;
+    return (readPath) => {
+        void bus.add({ path: readPath, agentRunId, eventId, handlerPath }).catch((err) => {
+            context.log?.warn(
+                `failed to record the read of ${readPath} by handler ${handlerPath}: ${errorMessage(err)}`,
+            );
+        });
+    };
 }
 
 /**

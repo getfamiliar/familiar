@@ -3,7 +3,7 @@ import * as path from "node:path";
 import type { HostContext, Logger } from "@getfamiliar/shared";
 import { markdownTable, writeMarkdown } from "@getfamiliar/shared";
 import { type CommandDef, defineCommand } from "citty";
-import { readMemoryConfig } from "./Config.js";
+import { DEFAULT_FILE_READ_RETENTION_DAYS, readMemoryConfig } from "./Config.js";
 import { type AgentEvalResult, runAgentEval } from "./EvalAgent.js";
 import { defaultEvalDir, EVAL_LANGUAGES, type EvalLanguage } from "./EvalCases.js";
 import { buildEvalModel } from "./EvalModel.js";
@@ -12,10 +12,13 @@ import { DEFAULT_EVAL_SETTINGS, type MemoryEvalResult, runMemoryEval } from "./E
 import { renderCategoryList, renderDateHits, renderFileHits } from "./SearchRender.js";
 import { parseDateSearchArgs } from "./Tools.js";
 import { DedupPairStore } from "./WikiDedup.js";
+import { DreamStore } from "./WikiDream.js";
 import { LIVE_INDEX_SCHEMA, WikiIndex } from "./WikiIndex.js";
 import {
     type DateFix,
     type DedupPassSummary,
+    type DreamPassDeps,
+    type DreamPassSummary,
     describeRun,
     emitReviews,
     type HandOverSummary,
@@ -23,7 +26,9 @@ import {
     lintWiki,
     listDueReviews,
     type PassDeps,
+    planDreams,
     runDedupPass,
+    runDreamPass,
     runLintPass,
     runSplitPass,
     type SplitPassSummary,
@@ -48,6 +53,7 @@ export function buildMemoryCommands(ctx: HostContext): readonly CommandDef<any>[
         reviewsCommand(ctx),
         splitCommand(ctx),
         dedupCommand(ctx),
+        dreamCommand(ctx),
         evalCommand(ctx),
     ];
 }
@@ -592,6 +598,111 @@ function dedupCommand(ctx: HostContext): CommandDef<any> {
             writeMarkdown(`${parts.join("\n\n")}\n`, { raw: args.raw === true });
         },
     });
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: matches citty's SubCommandsDef pattern.
+function dreamCommand(ctx: HostContext): CommandDef<any> {
+    return defineCommand({
+        meta: {
+            name: "dream",
+            description:
+                "Show which wiki files the next dream pass would pick (changed, hot, cold, oldest, random) and which are locked because they were dreamed recently.",
+        },
+        args: {
+            run: {
+                type: "boolean",
+                required: false,
+                description:
+                    "Run the dream pass now and wait for it: one skills:memory:dream run per picked file after the other, wiki/ committed before and after (needs the daemon).",
+            },
+            n: {
+                type: "string",
+                required: false,
+                description: "With --run: start at most this many skills:memory:dream runs.",
+            },
+            raw: RAW_ARG,
+        },
+        async run({ args }) {
+            const index = await openLiveIndex(ctx);
+            const deps = await buildDreamPassDeps(ctx, maxRunsArg(args.n), index);
+            const { selections, locked } = await planDreams(deps);
+            const parts = [
+                selections.length === 0
+                    ? "The next dream pass would pick no file."
+                    : `The next dream pass would pick ${selections.length} file(s):\n\n${markdownTable(
+                          ["File", "Criterion", "Reason"],
+                          selections.map((selection) => [
+                              selection.path,
+                              selection.criterion,
+                              selection.reason,
+                          ]),
+                      )}`,
+            ];
+            const recent = await new DreamStore(index).listDreamsSince(
+                new Date(Date.now() - deps.dream.lockDays * 24 * 60 * 60 * 1000),
+            );
+            parts.push(
+                recent.length === 0
+                    ? `No file is locked (nothing dreamed in the last ${deps.dream.lockDays} days).`
+                    : `${locked.length} file(s) locked, dreamed in the last ${deps.dream.lockDays} days:\n\n${markdownTable(
+                          ["Dreamed", "File", "Criterion", "Event", "Summary"],
+                          recent.map((dream) => [
+                              dream.dreamedAt.toISOString().slice(0, 16).replace("T", " "),
+                              dream.path,
+                              dream.criterion,
+                              dream.eventId ?? "",
+                              dream.summary.split("\n")[0] ?? "",
+                          ]),
+                      )}`,
+            );
+            if (args.run === true && selections.length > 0) {
+                parts.push(renderDreamSummary(await runDreamPass(deps)));
+            }
+            writeMarkdown(`${parts.join("\n\n")}\n`, { raw: args.raw === true });
+        },
+    });
+}
+
+/**
+ * The dependencies of a dream pass run from the CLI.
+ *
+ * @param ctx - Host context.
+ * @param maxRuns - Most dream runs to start (`-n`), `undefined` for all.
+ * @param index - The live index.
+ * @returns The deps.
+ */
+async function buildDreamPassDeps(
+    ctx: HostContext,
+    maxRuns: number | undefined,
+    index: WikiIndex,
+): Promise<DreamPassDeps> {
+    return {
+        ...(await buildPassDeps(ctx, maxRuns, index)),
+        dream: readMemoryConfig(ctx.config).dream,
+        summarizeReads: (options) => ctx.workspaceReads.summarize(options),
+        readWindowDays: ctx.config.getNumber(
+            "core.fileReadRetentionDays",
+            DEFAULT_FILE_READ_RETENTION_DAYS,
+        ),
+    };
+}
+
+/**
+ * Renders a dream pass for the CLI.
+ *
+ * @param summary - The pass.
+ * @returns Markdown.
+ */
+function renderDreamSummary(summary: DreamPassSummary): string {
+    const rows = summary.outcomes.map((outcome) => [
+        outcome.selection.path,
+        outcome.selection.criterion,
+        outcome.bytesBefore === undefined ? "gone" : String(outcome.bytesBefore),
+        outcome.bytesAfter === undefined ? "gone" : String(outcome.bytesAfter),
+        outcome.run !== undefined && "eventId" in outcome.run ? (outcome.run.eventId ?? "") : "",
+        describeRun(outcome.run),
+    ]);
+    return `Dream pass${renderCommits(summary.snapshotCommitId, summary.finalCommitId)}:\n\n${markdownTable(["File", "Criterion", "Before", "After", "Event", "Summary"], rows)}`;
 }
 
 /**

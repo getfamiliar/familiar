@@ -2,7 +2,9 @@
 
 **Your personal AI assistant. Loyal. Local. Markdown.**
 
-Familiar is an agent harness built to be your personal assistant. This is not a replacement for Claude Code, Pi or the like - Familiar is meant to be the workhorse that runs in the background to keep you free from tedious tasks. It focusses on the important things for personal assistants:
+Familiar is an agent harness built to be your personal assistant. This is not a replacement for Claude Code, Pi or the like - Familiar is meant to be the workhorse that runs in the background to keep you free from tedious tasks. 
+
+## What are the highlights that make it especially suitable as a personal assistant?
 
 * **Focus on security.** A personal assistant needs access to your most sensitive data to be truly helpful. Familiar protects your data thoroughly: your assistant runs in an isolated sandbox without internet access and never sees secrets like your logins or API keys. Same goes for tools like MCPs. All files are stored locally on your device.
 * **Messengers, Phone, Web - interact with your assistant where you already are.** Get a briefing for the next meeting on Telegram, talk to your assistant via phone while in the car, send it voice messages in WhatsApp to delegate tasks.
@@ -18,6 +20,10 @@ With Familiar, all your data is stored on your device. Familiar can use any comb
 * **Model and vendor independent.** Familiar works with most cloud LLMs. Let DeepSeek Flash do your mail triage, Opus write your briefings and Sol create your documents. Or the other way round - each event type can be assigned a different model, switching is just one line changed. It's easy to use the best tool for the job and save money doing it.
 * **All your processes and memories in markdown.** One folder structure with markdown files contains everything. No lock-in, no personal data persistently stored with some shady cloud provider.
 * **Total transparency and control.** Every word that is sent to the LLM comes from the markdown files. You can change it all, modify and tweak it. No hidden system prompts, no changing baselines.
+
+## No time to look after software? Familiar manages itself.
+
+
 
 What's nice about it
 
@@ -82,44 +88,3 @@ Combine all that to a motivating and inspiring briefing for the user to start th
 ...
 ```
 
-## Cloud storage
-
-The agent reads, searches and (optionally) writes cloud files through ten core `storage_*` tools (`storage_list_mounts`, `storage_list`, `storage_stat`, `storage_search`, `storage_download`, `storage_write`, `storage_mkdir`, `storage_move`, `storage_copy`, `storage_delete`). Providers are plugins; today `ms365` provides OneDrive and SharePoint document libraries. Credentials stay on the host: the agent sees mount aliases, item refs, metadata and files downloaded into its scratch directory — never tokens or drive ids.
-
-### Mounts
-
-A mount is an alias for one (plugin, account, drive). Configure them in `config/config.yml` — or let the CLI do it:
-
-```bash
-familiar storage list                 # configured mounts + drives you could mount (queries providers)
-familiar storage add ms365 me@company.com --drive sites/Verwaltung/Dokumente --as verwaltung
-familiar storage lint --online        # logins, drives, write roots; --fix creates missing write roots
-familiar storage remove verwaltung
-```
-
-```yaml
-storage:
-  allowWrite: false          # master switch for every mutation
-  mounts:
-    verwaltung:
-      plugin: ms365
-      account: me@company.com
-      drive: sites/Verwaltung/Dokumente   # omitted = the account's own OneDrive
-      access: read                        # read (default) | readwrite
-      writeRoots: ["/Familiar"]           # default; where readwrite mounts may change things
-      searchByDefault: true
-```
-
-`add` and `remove` edit the file in place and keep your comments. Restart the daemon after changing mounts or `allowWrite`.
-
-### Policy defaults
-
-- Nothing is writable unless `storage.allowWrite: true` **and** the mount has `access: readwrite`; even then only below its `writeRoots` (default `/Familiar`). The write tools stay visible to the agent and fail with a `PolicyDenied` message it is told to relay to you.
-- `storage_delete` moves items to the provider's trash (never a permanent delete) and needs your approval per call.
-- Moves need both source and destination inside the write roots; copies only check the destination.
-- Each agent run may move at most `storage.runQuotaMb` (default 200) MB.
-- File contents are never interpreted on the host: the agent downloads files and converts them itself.
-
-### Refs
-
-Items are addressed as `mount:/folder/file.ext` (path form) or `mount#<id>` (id form, stable across renames). Every tool result starts with a `[…]` header line carrying provenance and the `next_cursor` for paging.

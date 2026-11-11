@@ -9,14 +9,17 @@ import {
     type Logger,
     type NewEvent,
 } from "@getfamiliar/shared";
+import type { DreamCandidate } from "./WikiDream.js";
 import type { WikiIndex } from "./WikiIndex.js";
 import {
     emitRepairs,
     emitReviews,
     lintWiki,
     type PassDeps,
+    planDreams,
     renderRepairPrompt,
     runDedupPass,
+    runDreamPass,
     runLintPass,
     runSplitPass,
 } from "./WikiMaintenance.js";
@@ -441,6 +444,150 @@ describe("dedup pass", () => {
                 events.map((event) => event.topic),
                 ["skills:memory:dedup-scan", "skills:memory:deduplicate"],
             );
+        } finally {
+            rmSync(workspaceDir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe("dream pass", () => {
+    /**
+     * Fake index with the dream tables in memory.
+     *
+     * @param candidates - Rows of `files`.
+     * @returns The index and the recorded dreams.
+     */
+    function fakeDreamIndex(candidates: DreamCandidate[]): {
+        index: WikiIndex;
+        dreams: {
+            path: string;
+            eventId: string;
+            criterion: string;
+            summary: string;
+            dreamedAt: Date;
+        }[];
+        files: DreamCandidate[];
+    } {
+        const files = [...candidates];
+        const dreams: {
+            path: string;
+            eventId: string;
+            criterion: string;
+            summary: string;
+            dreamedAt: Date;
+        }[] = [];
+        const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
+            if (sql.includes('size_bytes AS "sizeBytes"')) {
+                return files;
+            }
+            if (sql.includes("max(dreamed_at)")) {
+                const times = files.flatMap((f) => (f.dreamedAt ? [f.dreamedAt.getTime()] : []));
+                return [{ last: times.length > 0 ? new Date(Math.max(...times)) : null }];
+            }
+            if (sql.includes("FROM memory.dreams WHERE dreamed_at >=")) {
+                return dreams.filter((d) => d.dreamedAt >= (params[0] as Date));
+            }
+            if (sql.includes("DELETE FROM memory.dreams")) {
+                return [];
+            }
+            if (sql.includes("INSERT INTO memory.dreams")) {
+                const [p, eventId, criterion, summary] = params as string[];
+                dreams.push({ path: p, eventId, criterion, summary, dreamedAt: new Date() });
+                return [];
+            }
+            if (sql.includes("UPDATE memory.files SET dreamed_at")) {
+                const i = files.findIndex((f) => f.path === params[0]);
+                files[i] = { ...files[i], dreamedAt: new Date(), dreamedSize: params[1] as number };
+                return [];
+            }
+            throw new Error(`unexpected SQL: ${sql}`);
+        };
+        return {
+            index: { schema: "memory", db: { query } } as unknown as WikiIndex,
+            dreams,
+            files,
+        };
+    }
+
+    it("dreams the picked files in turn, records successes only and commits with event ids", async () => {
+        const workspaceDir = mkdtempSync(path.join(tmpdir(), "familiar-memory-dream-pass-"));
+        try {
+            const people = path.join(workspaceDir, "wiki", "people");
+            mkdirSync(people, { recursive: true });
+            for (const slug of ["anna", "ben", "carla"]) {
+                writeFileSync(path.join(people, `${slug}.md`), `# ${slug}\n\nPerson.\n`);
+            }
+            const old = new Date("2026-01-01T00:00:00Z");
+            const { index, dreams, files } = fakeDreamIndex(
+                ["anna", "ben", "carla"].map((slug, i) => ({
+                    path: `wiki/people/${slug}.md`,
+                    sizeBytes: 20,
+                    modifiedAt: new Date(old.getTime() + i * 1000),
+                    firstSeenAt: null,
+                    dreamedAt: null,
+                    dreamedSize: null,
+                })),
+            );
+            const events: NewEvent[] = [];
+            const emit = async (event: NewEvent): Promise<EmitHandle> => {
+                events.push(event);
+                const target = (event.payload as { path: string }).path;
+                const settled = target.endsWith("ben.md")
+                    ? Promise.reject(new Error("model unavailable"))
+                    : Promise.resolve(`Condensed ${target}.\nLinked two related files.`);
+                settled.catch(() => {});
+                return { id: `ev${events.length}`, settled };
+            };
+            const commits: string[] = [];
+            const deps = {
+                ...passDeps(workspaceDir, index, emit, []),
+                commitDirectory: async (_dir: string, message: string) => {
+                    commits.push(message);
+                    return String(commits.length);
+                },
+                dream: {
+                    schedule: "every day at 05:00",
+                    counts: { changed: 0, hot: 0, cold: 0, oldest: 3, random: 0 },
+                    lockDays: 7,
+                },
+                summarizeReads: async () => [],
+                readWindowDays: 14,
+            };
+            const summary = await runDreamPass(deps);
+
+            assert.deepEqual(
+                events.map((event) => (event.payload as { path: string }).path),
+                ["wiki/people/anna.md", "wiki/people/ben.md", "wiki/people/carla.md"],
+            );
+            assert.match(events[0].prompt ?? "", /selected because: oldest — never dreamed/);
+            assert.deepEqual(
+                dreams.map((dream) => [dream.path, dream.eventId]),
+                [
+                    ["wiki/people/anna.md", "ev1"],
+                    ["wiki/people/carla.md", "ev3"],
+                ],
+            );
+            assert.equal(files.find((f) => f.path === "wiki/people/anna.md")?.dreamedSize, 16);
+            assert.equal(summary.outcomes.length, 3);
+            assert.equal(commits.length, 2);
+            assert.match(commits[0], /^memory dream: snapshot before dreaming 3 file\(s\)/);
+            assert.match(commits[1], /^memory dream: 2 of 3 file\(s\) dreamed/);
+            assert.match(
+                commits[1],
+                /- wiki\/people\/anna\.md \(oldest: never dreamed\) — event ev1: Condensed wiki\/people\/anna\.md\./,
+            );
+            assert.match(
+                commits[1],
+                /wiki\/people\/ben\.md .* — event ev2: failed: model unavailable/,
+            );
+
+            // The dreamed files are locked now; only the failed one can come up again.
+            const plan = await planDreams(deps);
+            assert.deepEqual(
+                plan.selections.map((selection) => selection.path),
+                ["wiki/people/ben.md"],
+            );
+            assert.deepEqual(plan.locked, ["wiki/people/anna.md", "wiki/people/carla.md"]);
         } finally {
             rmSync(workspaceDir, { recursive: true, force: true });
         }

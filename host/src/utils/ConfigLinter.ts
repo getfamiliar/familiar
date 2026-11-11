@@ -86,6 +86,7 @@ export function lintConfigFile(path: string): ConfigLintResult {
     lintInferenceConcurrency(config, errors, warnings);
 
     optionalPositiveInt(config, "core.logRetentionDays", warnings);
+    optionalPositiveInt(config, "core.fileReadRetentionDays", warnings);
     optionalPositiveInt(config, "core.agentStepTimeout", warnings);
     optionalPositiveInt(config, "core.maxConcurrentAgentruns", warnings);
     optionalPositiveInt(config, "core.toolCallOffloadingLimit", warnings);

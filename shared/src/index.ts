@@ -102,6 +102,8 @@ export type {
 export { EVENT_PRIORITY } from "./Event.js";
 export { DuplicateIdempotencyKeyError, EventBus } from "./EventBus.js";
 export { estimateTokens } from "./estimateTokens.js";
+export type { FileReadSummary, FileReadSummaryOptions, NewFileRead } from "./FileRead.js";
+export { FileReadBus } from "./FileReadBus.js";
 export { HandlerCatalog, type HandlerPath, type ResolvedHandler } from "./HandlerCatalog.js";
 export {
     type HandlerResolution,

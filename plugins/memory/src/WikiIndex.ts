@@ -15,7 +15,7 @@ export const LIVE_INDEX_SCHEMA = "memory";
  * Mixed into every content hash. Bump it whenever the parser or the stored columns change, so
  * every file is re-indexed on the next sync even though its content is the same.
  */
-const INDEX_FORMAT_VERSION = "1";
+const INDEX_FORMAT_VERSION = "2";
 
 /** Postgres identifiers we interpolate into SQL must match this. */
 const SCHEMA_NAME_PATTERN = /^[a-z_][a-z0-9_]{0,62}$/;
@@ -114,6 +114,23 @@ export class WikiIndex {
             );
             CREATE INDEX IF NOT EXISTS dates_range ON ${s}.dates (date_from, date_to);
             CREATE INDEX IF NOT EXISTS dates_month_day ON ${s}.dates (month_day) WHERE month_day IS NOT NULL;
+
+            -- Added for dreaming; first_seen_at stays NULL for rows that existed before.
+            ALTER TABLE ${s}.files ADD COLUMN IF NOT EXISTS size_bytes integer;
+            ALTER TABLE ${s}.files ADD COLUMN IF NOT EXISTS modified_at timestamptz;
+            ALTER TABLE ${s}.files ADD COLUMN IF NOT EXISTS first_seen_at timestamptz;
+            ALTER TABLE ${s}.files ADD COLUMN IF NOT EXISTS dreamed_at timestamptz;
+            ALTER TABLE ${s}.files ADD COLUMN IF NOT EXISTS dreamed_size integer;
+
+            CREATE TABLE IF NOT EXISTS ${s}.dreams (
+                id         bigserial PRIMARY KEY,
+                path       text NOT NULL,
+                dreamed_at timestamptz NOT NULL DEFAULT now(),
+                event_id   text,
+                criterion  text NOT NULL,
+                summary    text NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS dreams_dreamed_at ON ${s}.dreams (dreamed_at);
 
             CREATE TABLE IF NOT EXISTS ${s}.dedup_pairs (
                 path_a     text NOT NULL,
@@ -262,14 +279,18 @@ export class WikiIndex {
     ): Promise<"written" | "unchanged" | "removed"> {
         const absolutePath = path.join(rootDir, relativePath);
         let content: string;
-        let lastTouched: string;
+        let stats: FileStats;
         try {
             const [text, stat] = await Promise.all([
                 fs.readFile(absolutePath, "utf8"),
                 fs.stat(absolutePath),
             ]);
             content = text;
-            lastTouched = formatLocalDate(stat.mtime);
+            stats = {
+                lastTouched: formatLocalDate(stat.mtime),
+                modifiedAt: stat.mtime,
+                sizeBytes: stat.size,
+            };
         } catch (err) {
             if ((err as NodeJS.ErrnoException).code === "ENOENT") {
                 await this.database.query(`DELETE FROM ${this.schema}.files WHERE path = $1`, [
@@ -284,15 +305,19 @@ export class WikiIndex {
             .update("\0")
             .update(content)
             .digest("hex");
-        const existing = await this.database.query<{ content_hash: string; last_touched: string }>(
-            `SELECT content_hash, to_char(last_touched, 'YYYY-MM-DD') AS last_touched FROM ${this.schema}.files WHERE path = $1`,
+        const existing = await this.database.query<{
+            content_hash: string;
+            modified_ms: string | null;
+        }>(
+            `SELECT content_hash, (extract(epoch FROM modified_at) * 1000)::bigint::text AS modified_ms
+             FROM ${this.schema}.files WHERE path = $1`,
             [relativePath],
         );
         if (existing[0]?.content_hash === contentHash) {
-            if (existing[0].last_touched !== lastTouched) {
+            if (Number(existing[0].modified_ms) !== Math.floor(stats.modifiedAt.getTime())) {
                 await this.database.query(
-                    `UPDATE ${this.schema}.files SET last_touched = $2 WHERE path = $1`,
-                    [relativePath, lastTouched],
+                    `UPDATE ${this.schema}.files SET last_touched = $2, modified_at = $3, size_bytes = $4 WHERE path = $1`,
+                    [relativePath, stats.lastTouched, stats.modifiedAt, stats.sizeBytes],
                 );
             }
             return "unchanged";
@@ -302,20 +327,30 @@ export class WikiIndex {
             this.log.warn(`memory: ${relativePath}: ${warning}`);
         }
         await this.database.transaction((query) =>
-            writeFile(query, this.schema, relativePath, parsed, lastTouched, contentHash),
+            writeFile(query, this.schema, relativePath, parsed, stats, contentHash),
         );
         return "written";
     }
 }
 
+/** What the index stores about a file on disk besides its content. */
+interface FileStats {
+    /** ISO date of the mtime in local time. */
+    readonly lastTouched: string;
+    readonly modifiedAt: Date;
+    readonly sizeBytes: number;
+}
+
 /**
- * Replaces a file's rows in one transaction.
+ * Replaces a file's rows in one transaction. The `files` row is upserted, so
+ * what the index keeps across rewrites — when the path was first seen, when
+ * it was last dreamed — survives; its lines and dates are replaced.
  *
  * @param query - Transaction-bound query function.
  * @param schema - Validated schema name.
  * @param relativePath - Indexed path.
  * @param parsed - The parsed file.
- * @param lastTouched - ISO date of the file's mtime.
+ * @param stats - mtime and size.
  * @param contentHash - SHA-256 of the content.
  * @returns Resolves once written.
  */
@@ -324,14 +359,27 @@ async function writeFile(
     schema: string,
     relativePath: string,
     parsed: ParsedWikiFile,
-    lastTouched: string,
+    stats: FileStats,
     contentHash: string,
 ): Promise<void> {
-    await query(`DELETE FROM ${schema}.files WHERE path = $1`, [relativePath]);
+    await query(`DELETE FROM ${schema}.lines WHERE path = $1`, [relativePath]);
+    await query(`DELETE FROM ${schema}.dates WHERE path = $1`, [relativePath]);
     await query(
         `INSERT INTO ${schema}.files
-            (path, title, title_norm, description, description_norm, categories, review_at, last_touched, content_hash)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            (path, title, title_norm, description, description_norm, categories, review_at, last_touched,
+             content_hash, size_bytes, modified_at, first_seen_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
+         ON CONFLICT (path) DO UPDATE SET
+            title = EXCLUDED.title,
+            title_norm = EXCLUDED.title_norm,
+            description = EXCLUDED.description,
+            description_norm = EXCLUDED.description_norm,
+            categories = EXCLUDED.categories,
+            review_at = EXCLUDED.review_at,
+            last_touched = EXCLUDED.last_touched,
+            content_hash = EXCLUDED.content_hash,
+            size_bytes = EXCLUDED.size_bytes,
+            modified_at = EXCLUDED.modified_at`,
         [
             relativePath,
             parsed.title,
@@ -340,8 +388,10 @@ async function writeFile(
             normalizeText(parsed.description),
             parsed.categories,
             parsed.reviewAt ?? null,
-            lastTouched,
+            stats.lastTouched,
             contentHash,
+            stats.sizeBytes,
+            stats.modifiedAt,
         ],
     );
     if (parsed.lines.length > 0) {

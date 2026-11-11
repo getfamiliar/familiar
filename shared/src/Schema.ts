@@ -553,6 +553,30 @@ CREATE INDEX IF NOT EXISTS tool_calls_handler_run_idx
 CREATE INDEX IF NOT EXISTS tool_calls_created_at_idx
   ON tool_calls (created_at DESC);
 
+-- ───────── file_reads ─────────
+--
+-- Append-only record of every workspace file an agentrun read with
+-- fs_read (workspace-relative path; scratch files are not recorded).
+-- Written fire-and-forget by the container's fs_read tool, read on the
+-- host through ctx.workspaceReads (e.g. the memory plugin ranks wiki
+-- files by how often they are read). The host's FileReadsGc deletes
+-- rows older than core.fileReadRetentionDays. One row per fs_read call,
+-- so a file read in several chunks appears several times; consumers
+-- count distinct agent runs.
+CREATE TABLE IF NOT EXISTS file_reads (
+  id           bigserial PRIMARY KEY,
+  path         text NOT NULL,
+  agent_run_id bigint REFERENCES agentruns(id) ON DELETE SET NULL,
+  event_id     bigint REFERENCES events(id) ON DELETE SET NULL,
+  handler_path text NOT NULL,
+  read_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS file_reads_path_idx
+  ON file_reads (path, read_at DESC);
+CREATE INDEX IF NOT EXISTS file_reads_read_at_idx
+  ON file_reads (read_at);
+
 -- ───────── web_login_tokens / web_sessions ─────────
 --
 -- Authentication state of the host webserver (host-only; the container

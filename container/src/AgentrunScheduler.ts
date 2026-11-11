@@ -4,6 +4,7 @@ import {
     type AgentRunRow,
     type BannerBus,
     type EventBus,
+    type FileReadBus,
     type InferenceEventBus,
     type Logger,
     type NewStepResult,
@@ -97,6 +98,8 @@ export interface SchedulerDeps {
      * front. Write failures are swallowed inside the tool wrapper.
      */
     readonly toolCallBus: ToolCallBus;
+    /** Read log: `fs_read` records every workspace file a run reads. Optional for tests. */
+    readonly fileReadBus?: FileReadBus;
     readonly scheduledSubagentBus: ScheduledSubagentBus;
     /** Banner store: backs the `banner_*` tools and `{BANNER_LIST}`. */
     readonly bannerBus: BannerBus;
@@ -778,6 +781,7 @@ export class AgentrunScheduler {
             stepBus,
             inferenceEventBus,
             toolCallBus,
+            fileReadBus,
             scheduledSubagentBus,
             bannerBus,
             mcpPool,
@@ -836,6 +840,7 @@ export class AgentrunScheduler {
                     toolRunContext,
                     log,
                     toolCallBus,
+                    fileReadBus,
                     handlerPath,
                     contextLimit,
                     maxToolDescriptionChars,

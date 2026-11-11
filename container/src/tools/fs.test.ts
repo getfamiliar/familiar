@@ -245,6 +245,24 @@ describe("fs_read — paginated text mode", () => {
         assert.ok(out.startsWith(`<file: ${relPath}, bytes 1-`));
     });
 
+    it("records the workspace-relative path of every successful read, not of failed ones", async () => {
+        await fs.mkdir(path.join(workspaceDir, "wiki", "people"), { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "wiki", "people", "anna.md"), "# Anna\n");
+        const recorded: string[] = [];
+        const tools = buildFsTools(
+            PARENT_ROW,
+            buildTestCtx(10_000, { calls: [] }),
+            1_000_000,
+            (p) => recorded.push(p),
+        );
+        // biome-ignore lint/suspicious/noExplicitAny: SDK's options type isn't needed for these tests.
+        const exec = tools.fs_read?.execute as any;
+        await exec({ path: "wiki/people/anna.md" }, {});
+        await exec({ path: "./wiki/people/../people/anna.md" }, {});
+        await assert.rejects(() => exec({ path: "wiki/people/nobody.md" }, {}));
+        assert.deepEqual(recorded, ["wiki/people/anna.md", "wiki/people/anna.md"]);
+    });
+
     it("ENOENT throws FileNotFound; EISDIR throws IsADirectory", async () => {
         const ctx = buildTestCtx(10_000, { calls: [] });
         await assert.rejects(() => readFile(ctx, { path: "does-not-exist.md" }), /file not found/i);

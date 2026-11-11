@@ -1,4 +1,5 @@
 import type { ConfigService } from "@getfamiliar/shared";
+import { DREAM_CRITERIA, type DreamCounts } from "./WikiDream.js";
 import { DEFAULT_SEARCH_LIMIT, DEFAULT_SIMILARITY_THRESHOLD } from "./WikiSearch.js";
 
 /**
@@ -21,7 +22,40 @@ export interface MemoryConfig {
     readonly splitSchedule: string;
     /** When the wiki is scanned for duplicates. */
     readonly dedupSchedule: string;
+    /** The dream pass (`memory.dream.*`). */
+    readonly dream: DreamConfig;
 }
+
+/** `memory.dream.*`. */
+export interface DreamConfig {
+    /** When the dream pass runs. */
+    readonly schedule: string;
+    /** Files per selection criterion. */
+    readonly counts: DreamCounts;
+    /** Days a dreamed file is not picked again. */
+    readonly lockDays: number;
+}
+
+/** Default of `memory.dream.schedule`: after the other nightly jobs, before the morning review. */
+export const DEFAULT_DREAM_SCHEDULE = "every day at 05:00";
+
+/** Defaults of `memory.dream.<criterion>`. */
+export const DEFAULT_DREAM_COUNTS: DreamCounts = {
+    changed: 3,
+    hot: 2,
+    cold: 2,
+    oldest: 1,
+    random: 1,
+};
+
+/**
+ * Default of the core key `core.fileReadRetentionDays` (how long the host keeps
+ * `file_reads`), which is also the window of the "hot" criterion.
+ */
+export const DEFAULT_FILE_READ_RETENTION_DAYS = 14;
+
+/** Default of `memory.dream.lockDays`. */
+export const DEFAULT_DREAM_LOCK_DAYS = 7;
 
 /** Default of `memory.lintSchedule`: at night, so repairs are done by the morning. */
 export const DEFAULT_LINT_SCHEDULE = "every day at 03:00";
@@ -75,6 +109,7 @@ export function readMemoryConfig(config: ConfigService): MemoryConfig {
     const dedupSchedule =
         config.getString("memory.dedupSchedule", DEFAULT_DEDUP_SCHEDULE) ?? DEFAULT_DEDUP_SCHEDULE;
     return {
+        dream: readDreamConfig(config),
         searchLimit,
         similarityThreshold,
         lintSchedule,
@@ -83,4 +118,35 @@ export function readMemoryConfig(config: ConfigService): MemoryConfig {
         splitSchedule,
         dedupSchedule,
     };
+}
+
+/**
+ * Reads `memory.dream.*`.
+ *
+ * @param config - The host config service.
+ * @returns The dream config with defaults applied.
+ * @throws {Error} When a count is no integer ≥ 0 or the lock period no integer ≥ 1.
+ */
+function readDreamConfig(config: ConfigService): DreamConfig {
+    const schedule =
+        config.getString("memory.dream.schedule", DEFAULT_DREAM_SCHEDULE) ?? DEFAULT_DREAM_SCHEDULE;
+    const counts = Object.fromEntries(
+        DREAM_CRITERIA.map((criterion) => {
+            const value = config.getNumber(
+                `memory.dream.${criterion}`,
+                DEFAULT_DREAM_COUNTS[criterion],
+            );
+            if (!Number.isInteger(value) || value < 0) {
+                throw new Error(
+                    `memory.dream.${criterion} must be an integer of at least 0, got ${value}`,
+                );
+            }
+            return [criterion, value];
+        }),
+    ) as unknown as DreamCounts;
+    const lockDays = config.getNumber("memory.dream.lockDays", DEFAULT_DREAM_LOCK_DAYS);
+    if (!Number.isInteger(lockDays) || lockDays < 1) {
+        throw new Error(`memory.dream.lockDays must be an integer of at least 1, got ${lockDays}`);
+    }
+    return { schedule, counts, lockDays };
 }

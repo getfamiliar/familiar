@@ -1,12 +1,13 @@
 import path from "node:path";
 import { definePlugin, type HostContext, type PluginTool } from "@getfamiliar/shared";
 import { buildMemoryCommands } from "./Commands.js";
-import { readMemoryConfig } from "./Config.js";
+import { DEFAULT_FILE_READ_RETENTION_DAYS, readMemoryConfig } from "./Config.js";
 import { renderCategoryList } from "./SearchRender.js";
 import {
     buildMemoryTools,
     DEDUP_SCAN_TOPIC,
     DEDUPLICATE_TOPIC,
+    DREAM_TOPIC,
     REPAIR_TOPIC,
     REVIEW_TOPIC,
     SAVE_TOPIC,
@@ -46,14 +47,16 @@ let maintenance: WikiMaintenance | undefined;
  * category check is a plain cron handler (`skills/memory/categories.md`). Two more jobs hand files
  * above `memory.maxFileBytes` to `skills:memory:split` (cutting them in half when still too big)
  * and let `skills:memory:dedup-scan` find duplicate candidates per folder, each new group going to
- * `skills:memory:deduplicate`; both commit `wiki/` before and after.
+ * `skills:memory:deduplicate`; both commit `wiki/` before and after. The dream job picks files by
+ * five criteria (changed, hot — read most by `fs_read`, cold, oldest, random) and hands each to
+ * `skills:memory:dream`, committing `wiki/` before and after.
  */
 export default definePlugin({
     id: "memory",
     workspaceTemplate: path.join(import.meta.dirname, "..", "workspace-template"),
     host: {
         // The maintenance cron jobs capture the time zone at start.
-        restartOnConfigChange: ["core.timezone"],
+        restartOnConfigChange: ["core.timezone", "core.fileReadRetentionDays"],
         prepare: (ctx: HostContext): void => {
             ctx.prompt.registerPlaceholder({
                 name: "MEMORY_CATEGORIES",
@@ -93,6 +96,12 @@ export default definePlugin({
                 maxFileBytes: config.maxFileBytes,
                 splitSchedule: config.splitSchedule,
                 dedupSchedule: config.dedupSchedule,
+                dream: config.dream,
+                summarizeReads: (options) => ctx.workspaceReads.summarize(options),
+                readWindowDays: ctx.config.getNumber(
+                    "core.fileReadRetentionDays",
+                    DEFAULT_FILE_READ_RETENTION_DAYS,
+                ),
                 timezone: ctx.config.getString("core.timezone", "UTC") ?? "UTC",
             });
             maintenance.start();
@@ -135,6 +144,12 @@ export default definePlugin({
                 isExactTopic: true,
                 description:
                     "The weekly dedup pass hands one wiki folder's file list over to find duplicate candidates.",
+            },
+            {
+                topic: DREAM_TOPIC,
+                isExactTopic: true,
+                description:
+                    "The nightly dream pass picked a wiki file (changed, hot, cold, oldest or random) to revisit in the context of its cluster.",
             },
             {
                 topic: DEDUPLICATE_TOPIC,

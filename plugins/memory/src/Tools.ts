@@ -39,6 +39,9 @@ export const SPLIT_TOPIC = "skills:memory:split";
 /** Topic of the dedup scan (`skills/memory/dedup-scan.md`): one wiki folder's file list. */
 export const DEDUP_SCAN_TOPIC = "skills:memory:dedup-scan";
 
+/** Topic of the dream handler (`skills/memory/dream.md`): one wiki file picked by the dream pass. */
+export const DREAM_TOPIC = "skills:memory:dream";
+
 /** Topic of the deduplicate handler (`skills/memory/deduplicate.md`): one candidate group. */
 export const DEDUPLICATE_TOPIC = "skills:memory:deduplicate";
 

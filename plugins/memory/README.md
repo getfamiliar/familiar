@@ -68,6 +68,7 @@ The commands work on the live index and need postgres running (`familiar start`)
 | `familiar memory lint [--fix]` | Reports which dates the linter rewrites by itself and which problems are left for the repair handler. `--fix` runs the nightly lint pass right away (rewrite + commit, then repair runs; daemon running). |
 | `familiar memory reviews [--run]` | The files whose `review_at` is due. `--run` hands them to review runs right away (daemon running). |
 | `familiar memory split [--run] [-n <count>]` | The files above `memory.maxFileBytes`. `--run` runs the split pass now and waits for it (daemon running); `-n` starts at most that many split runs. |
+| `familiar memory dream [--run] [-n <count>]` | The files the next dream pass would pick (criterion, reason) and the files locked by recent dreams with their summaries. `--run` runs the dream pass now and waits for it (daemon running); `-n` starts at most that many dream runs. |
 | `familiar memory dedup [--run] [-n <count>]` | The file pairs earlier deduplicate runs handled. `--run` runs the dedup pass now and waits for it (daemon running); `-n` starts at most that many deduplicate runs (the folder scans always run). |
 | `familiar memory eval` | Runs the eval set in `eval/` (fictional bilingual corpus, ~115 cases) against throwaway schemas `memory_eval_de` / `memory_eval_en` and reports Recall@5/@10, Hit@1, MRR and nDCG. See `eval/README.md`. |
 
@@ -84,13 +85,21 @@ memory:
   maxFileBytes: 15000                 # wiki files above this size are split
   splitSchedule: every day at 02:00   # when oversized files are handed over
   dedupSchedule: every saturday at 03:00  # when the wiki is scanned for duplicates
+  dream:
+    schedule: every day at 05:00      # when the dream pass runs
+    changed: 3                        # files per selection criterion (see "Dreaming")
+    hot: 2
+    cold: 2
+    oldest: 1
+    random: 1
+    lockDays: 7                       # a dreamed file isn't picked again for this long
 ```
 
 `searchLimit` and `similarityThreshold` are read per call, so `familiar config reload` applies them immediately. The schedules (friendly or raw cron, in `core.timezone`) apply when the plugin restarts, which a reload does whenever a `memory.*` key or `core.timezone` changed.
 
 ## Maintenance
 
-Five jobs keep the wiki searchable. The plugin detects and schedules, and does only the mechanical parts itself (ISO date rewrite, harness cut, commits); what happens to a file is decided by handlers next to `save.md`, which the user can edit.
+Six jobs keep the wiki searchable. The plugin detects and schedules, and does only the mechanical parts itself (ISO date rewrite, harness cut, commits); what happens to a file is decided by handlers next to `save.md`, which the user can edit.
 
 | Job | Trigger | Handler |
 |-----|---------|---------|
@@ -98,9 +107,24 @@ Five jobs keep the wiki searchable. The plugin detects and schedules, and does o
 | Linter | `memory.lintSchedule` (default 03:00) | Code in `WikiLint.ts` checks every file: frontmatter parses, only `categories` (inline list of up to three distinct lower-case words) and `review_at` (ISO date), and no dates in other notations (`12.07.2026`, `07/12/2026`, `12. Juli 2026`, `July 12, 2026`, `Juli 2026`; code, URLs and wikilinks are skipped). Dates with an unambiguous ISO form (`12.07.2026 → 2026-07-12`, `Juli 2026 → 2026-07`, and ranges or enumerations with a shortened start as a whole: `22.09.–20.10.2026 → 2026-09-22 – 2026-10-20`, `03./04.08.2026 → 2026-08-03 / 2026-08-04`) are rewritten by the code itself, exactly in place — no judgement, no agent run — and committed to the workspace history (a snapshot commit of the affected files first, so the fix commit holds nothing but the rewrite and can be reverted on its own). Every file with problems left (ambiguous dates like `03/04/2026`, foreign frontmatter keys, broken YAML, categories) goes to one `skills:memory:repair` run (`skills/memory/repair.md`) with the problem list as its prompt. |
 | Splitter | `memory.splitSchedule` (default 02:00) | Every file above `memory.maxFileBytes` (default 15000 bytes) goes to one `skills:memory:split` run (`skills/memory/split.md`), largest first, one after the other. The handler condenses process logs to facts, moves sub-threads out of person / self files and splits threads that hold several. A file still over the limit afterwards is cut in half by the code: at the `##` heading closest to the middle (else `###`, a paragraph break, any line — never in a code fence), the first half stays `<slug>.md` with a link to the second, `<slug>-2.md` (same frontmatter, title with ` (2)`, the description). `wiki/` is committed once before and once after the pass. |
 | Deduplicator | `memory.dedupSchedule` (default Saturday 03:00) | Each top-level wiki folder (`people`, `threads` with its clusters, `self`, `journal`) goes as a `path \| title \| description` list to one `skills:memory:dedup-scan` run, which replies with candidate groups (one per line, comma-separated, at most five paths). Every group with at least one pair not handled before goes to one `skills:memory:deduplicate` run (`skills/memory/deduplicate.md`; file contents inlined up to 40 000 bytes), one after the other; the handler merges, deletes, renames and rewrites the wikilinks. After a successful run the group's pairs of surviving files are stored in `memory.dedup_pairs` with their sizes; a pair is forgotten once a file is gone or changed by at least 20 % and 500 bytes. `wiki/` is committed before and after the deduplicate runs. |
+| Dreamer | `memory.dream.schedule` (default 05:00) | Picks a few files (see "Dreaming") and hands each to one `skills:memory:dream` run (`skills/memory/dream.md`), one after the other. The handler revisits the file with its cluster (`memory_search`), condenses, updates, merges, links or deletes, and replies with a summary. `wiki/` is committed before and after; the final commit lists every file with its reason, event id and the first line of the summary. |
 | Reviewer | `memory.reviewSchedule` (default 07:00) | Every file with `review_at <= today` (in `core.timezone`) goes to one `skills:memory:review` run (`skills/memory/review.md`). It checks where the matter stands, records it, sets a new `review_at` or removes it, and messages the user only when they have to act. |
 
 All runs are exact-topic background events, and the handlers are `serial`, so they work one file after the other. Split and dedup passes wait for every run before the next and never overlap each other; `familiar memory reindex --full` drops `dedup_pairs` along with the index, so every group is looked at again. Idempotency keys stop repeats: a repair is handed over once per file content (`memory-repair:<path>:<content hash>`), so a file the handler can't fix waits until it changes; a review is handed over once per `review_at` value (`memory-review:<path>:<date>`).
+
+### Dreaming
+
+The dream pass fills five criteria in this order; a file picked once is not available to the later ones, and a file dreamed within `memory.dream.lockDays` (table `memory.dreams`) is not picked at all.
+
+| Criterion | Default | Picks |
+|---|---|---|
+| `changed` | 3 | Files modified since their last dream (never dreamed: since the last pass). New files first, then the largest growth since the last dream (`files.dreamed_size`; a never-dreamed file counts with its whole size). |
+| `hot` | 2 | Files read by the most agent runs with `fs_read` within `core.fileReadRetentionDays` (default 14). Several chunks of one run count once; runs of the memory maintenance handlers (`skills/memory/*`) don't count. |
+| `cold` | 2 | Files longest neither modified nor read. |
+| `oldest` | 1 | Never-dreamed files first, then the longest ago dreamed. |
+| `random` | 1 | Uniformly from the rest. |
+
+A successful run sets `files.dreamed_at` / `dreamed_size` and adds a `dreams` row; a failed run records nothing, so the file can come up again. The reads come from the core table `file_reads` through `ctx.workspaceReads.summarize`. `familiar memory reindex --full` drops the dream state with the index.
 
 ## Workspace template
 
@@ -108,7 +132,7 @@ Ships:
 
 - `skills/memory/SKILL.md` — the wiki conventions: folders (`people/`, `threads/` with optional one-level clusters, `self/`, `journal/`), what belongs in the memory, slugs, title / description / frontmatter, ISO dates, how the search works and how to search well.
 - `skills/memory/save.md` — the handler that `memory_save` dispatches to.
-- `skills/memory/categories.md`, `repair.md`, `review.md`, `split.md`, `dedup-scan.md`, `deduplicate.md` — the maintenance handlers (see "Maintenance").
+- `skills/memory/categories.md`, `repair.md`, `review.md`, `split.md`, `dedup-scan.md`, `deduplicate.md`, `dream.md` — the maintenance handlers (see "Maintenance").
 
 ### `skills/memory/save.md` — the save handler
 

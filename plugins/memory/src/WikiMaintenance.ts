@@ -5,14 +5,18 @@ import {
     DuplicateIdempotencyKeyError,
     type EmitHandle,
     EVENT_PRIORITY,
+    type FileReadSummary,
+    type FileReadSummaryOptions,
     type Logger,
     type NewEvent,
     parseCron,
 } from "@getfamiliar/shared";
 import { Cron } from "croner";
+import type { DreamConfig } from "./Config.js";
 import {
     DEDUP_SCAN_TOPIC,
     DEDUPLICATE_TOPIC,
+    DREAM_TOPIC,
     REPAIR_TOPIC,
     REVIEW_TOPIC,
     SPLIT_TOPIC,
@@ -27,6 +31,13 @@ import {
     renderDeduplicatePrompt,
     renderScanPrompt,
 } from "./WikiDedup.js";
+import {
+    type DreamReadStats,
+    type DreamSelection,
+    DreamStore,
+    renderDreamPrompt,
+    selectDreams,
+} from "./WikiDream.js";
 import { listWikiFiles, WIKI_FOLDER, type WikiIndex } from "./WikiIndex.js";
 import {
     type DateReplacement,
@@ -78,8 +89,9 @@ export type CommitDirectory = (relativeDir: string, message: string) => Promise<
 
 /** How a handler run that a pass waited for ended. */
 export type HandlerRunResult =
-    | { readonly status: "done"; readonly text: string }
-    | { readonly status: "failed"; readonly message: string }
+    | { readonly status: "done"; readonly text: string; readonly eventId: string }
+    /** `eventId` is missing when the event could not even be emitted. */
+    | { readonly status: "failed"; readonly message: string; readonly eventId?: string }
     /** An earlier pass handed the same item over already (same idempotency key). */
     | { readonly status: "earlier" };
 
@@ -144,10 +156,55 @@ export interface PassDeps {
     /** Checked between items; `true` ends the pass early (plugin stopping). */
     readonly shouldStop: () => boolean;
     /**
-     * Most split / deduplicate runs one pass starts (the CLI's `-n`); `undefined` = no limit.
+     * Most split / deduplicate / dream runs one pass starts (the CLI's `-n`); `undefined` = no limit.
      * Dedup scans don't count.
      */
     readonly maxRuns?: number;
+}
+
+/** Reads of workspace files (`ctx.workspaceReads.summarize`). */
+export type SummarizeReads = (
+    options: FileReadSummaryOptions,
+) => Promise<readonly FileReadSummary[]>;
+
+/** Dependencies of the dream pass. */
+export interface DreamPassDeps extends PassDeps {
+    /** `memory.dream.*`. */
+    readonly dream: DreamConfig;
+    readonly summarizeReads: SummarizeReads;
+    /** `core.fileReadRetentionDays`: the window the read stats cover. */
+    readonly readWindowDays: number;
+    /** Uniform random in [0, 1); `Math.random` unless a test injects one. */
+    readonly random?: () => number;
+    /** The current time; `new Date()` unless a test injects one. */
+    readonly now?: () => Date;
+}
+
+/** Handler runs whose reads don't make a file "hot": the memory maintenance itself. */
+const MAINTENANCE_HANDLER_PREFIX = "skills/memory/";
+
+/** What the next dream pass would pick, and what is locked. */
+export interface DreamPlan {
+    readonly selections: readonly DreamSelection[];
+    /** Paths dreamed within the lock period. */
+    readonly locked: readonly string[];
+}
+
+/** What the dream pass did with one file. */
+export interface DreamOutcome {
+    readonly selection: DreamSelection;
+    /** Size before the run, `undefined` when the file was gone when its turn came. */
+    readonly bytesBefore: number | undefined;
+    /** Size after the run, `undefined` when the file is gone. */
+    readonly bytesAfter: number | undefined;
+    readonly run: HandlerRunResult | undefined;
+}
+
+/** Everything one dream pass did. */
+export interface DreamPassSummary {
+    readonly outcomes: readonly DreamOutcome[];
+    readonly snapshotCommitId: string | null;
+    readonly finalCommitId: string | null;
 }
 
 /** The dates the linter can rewrite in one file by itself. */
@@ -588,6 +645,136 @@ export async function runDedupPass(deps: PassDeps): Promise<DedupPassSummary> {
 }
 
 /**
+ * Works out what the next dream pass picks: forgets dreams older than the lock
+ * period, then selects among the indexed files on disk that are not locked.
+ *
+ * @param deps - Index, reads, config.
+ * @returns The selections and the locked paths.
+ */
+export async function planDreams(deps: DreamPassDeps): Promise<DreamPlan> {
+    const now = (deps.now ?? (() => new Date()))();
+    const lockStart = new Date(now.getTime() - deps.dream.lockDays * ONE_DAY_MS);
+    const store = new DreamStore(deps.index);
+    await store.pruneBefore(lockStart);
+    const onDisk = new Set(await listWikiFiles(deps.workspaceDir));
+    const candidates = (await store.listCandidates()).filter((candidate) =>
+        onDisk.has(candidate.path),
+    );
+    const locked = [
+        ...new Set((await store.listDreamsSince(lockStart)).map((dream) => dream.path)),
+    ];
+    const summaries = await deps.summarizeReads({
+        pathPrefix: `${WIKI_FOLDER}/`,
+        since: new Date(now.getTime() - deps.readWindowDays * ONE_DAY_MS),
+        excludeHandlerPrefixes: [MAINTENANCE_HANDLER_PREFIX],
+    });
+    const reads = new Map<string, DreamReadStats>(
+        summaries.map((summary) => [summary.path, summary]),
+    );
+    const selections = selectDreams({
+        candidates,
+        reads,
+        locked: new Set(locked),
+        counts: deps.dream.counts,
+        lastPassAt: (await store.lastDreamedAt()) ?? lockStart,
+        readWindowDays: deps.readWindowDays,
+        random: deps.random ?? Math.random,
+    });
+    return { selections, locked: locked.sort() };
+}
+
+/**
+ * One dream pass, as the daily job runs it: every selected file goes to one
+ * `skills:memory:dream` run, one after the other. A successful run is recorded
+ * (the file is locked for `memory.dream.lockDays`, its `dreamed_at` /
+ * `dreamed_size` set); a failed one is not, so the file can come up again.
+ * `wiki/` is committed before and after, the final commit listing every file
+ * with its reason, event id and the run's summary.
+ *
+ * @param deps - Paths, index, emission, history, reads, config.
+ * @returns What happened.
+ */
+export async function runDreamPass(deps: DreamPassDeps): Promise<DreamPassSummary> {
+    const { workspaceDir, index, emit, commitDirectory, log } = deps;
+    const { selections } = await planDreams(deps);
+    if (selections.length === 0) {
+        return { outcomes: [], snapshotCommitId: null, finalCommitId: null };
+    }
+    const snapshotCommitId = await commitDirectory(
+        WIKI_FOLDER,
+        `memory dream: snapshot before dreaming ${selections.length} file(s)\n\n${selections
+            .map((selection) => `- ${selection.path} (${selection.criterion}: ${selection.reason})`)
+            .join("\n")}`,
+    );
+    const store = new DreamStore(index);
+    const outcomes: DreamOutcome[] = [];
+    let startedRuns = 0;
+    for (const selection of selections) {
+        if (deps.shouldStop()) {
+            log.info("memory: dream pass stopped early — the plugin is stopping");
+            break;
+        }
+        if (deps.maxRuns !== undefined && startedRuns >= deps.maxRuns) {
+            log.info(`memory: dream pass stopped after ${startedRuns} run(s) — limit reached`);
+            break;
+        }
+        const bytesBefore = await fileBytes(workspaceDir, selection.path);
+        if (bytesBefore === undefined) {
+            outcomes.push({ selection, bytesBefore, bytesAfter: undefined, run: undefined });
+            continue;
+        }
+        startedRuns++;
+        const run = await runAndWait(
+            {
+                topic: DREAM_TOPIC,
+                isExactTopic: true,
+                priority: EVENT_PRIORITY.BACKGROUND,
+                idempotencyKey: `memory-dream:${selection.path}:${todayIn(deps.timezone)}`,
+                prompt: renderDreamPrompt(selection, bytesBefore),
+                payload: { path: selection.path, criterion: selection.criterion },
+            },
+            selection.path,
+            emit,
+            log,
+        );
+        const bytesAfter = await fileBytes(workspaceDir, selection.path);
+        if (run.status === "done") {
+            await store.record({
+                path: selection.path,
+                eventId: run.eventId,
+                criterion: selection.criterion,
+                summary: run.text.trim(),
+                sizeAfter: bytesAfter,
+            });
+        }
+        outcomes.push({ selection, bytesBefore, bytesAfter, run });
+    }
+    const finalCommitId = await commitDirectory(WIKI_FOLDER, renderDreamCommitMessage(outcomes));
+    return { outcomes, snapshotCommitId, finalCommitId };
+}
+
+/**
+ * Renders the commit message after a dream pass: one line per file with its
+ * reason, the event id and the first line of the run's summary.
+ *
+ * @param outcomes - Per file.
+ * @returns The message.
+ */
+function renderDreamCommitMessage(outcomes: readonly DreamOutcome[]): string {
+    const dreamed = outcomes.filter((outcome) => outcome.run?.status === "done").length;
+    const lines = outcomes.map((outcome) => {
+        const { selection, run } = outcome;
+        const event =
+            run !== undefined && "eventId" in run && run.eventId ? ` — event ${run.eventId}` : "";
+        return `- ${selection.path} (${selection.criterion}: ${selection.reason})${event}: ${describeRun(run)}`;
+    });
+    return `memory dream: ${dreamed} of ${outcomes.length} file(s) dreamed\n\n${lines.join("\n")}`;
+}
+
+/** Milliseconds per day. */
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
  * Emits one event and waits until its run settled. Never rejects: a failed run and a failed
  * emission come back as `failed`, a repeated idempotency key as `earlier`.
  *
@@ -621,11 +808,11 @@ async function runAndWait(
     try {
         const text = await handle.settled;
         log.info(`memory: ${event.topic} event ${handle.id} for ${label} done: ${firstLine(text)}`);
-        return { status: "done", text };
+        return { status: "done", text, eventId: handle.id };
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         log.warn(`memory: ${event.topic} event ${handle.id} for ${label} failed: ${message}`);
-        return { status: "failed", message };
+        return { status: "failed", message, eventId: handle.id };
     }
 }
 
@@ -747,6 +934,12 @@ export interface WikiMaintenanceDeps {
     readonly splitSchedule: string;
     /** `memory.dedupSchedule`. */
     readonly dedupSchedule: string;
+    /** `memory.dream.*`. */
+    readonly dream: DreamConfig;
+    /** `ctx.workspaceReads.summarize`. */
+    readonly summarizeReads: SummarizeReads;
+    /** `core.fileReadRetentionDays`. */
+    readonly readWindowDays: number;
     /** `core.timezone`: the cron jobs fire and "today" is computed in it. */
     readonly timezone: string;
 }
@@ -782,6 +975,9 @@ export class WikiMaintenance {
         );
         this.schedule("dedup", this.deps.dedupSchedule, () =>
             this.exclusive(() => this.runDedup()),
+        );
+        this.schedule("dream", this.deps.dream.schedule, () =>
+            this.exclusive(() => this.runDream()),
         );
     }
 
@@ -881,6 +1077,31 @@ export class WikiMaintenance {
     }
 
     /**
+     * One dream pass.
+     *
+     * @returns Resolves when the pass is over; never rejects (failures are logged).
+     */
+    async runDream(): Promise<void> {
+        const { log, dream, summarizeReads, readWindowDays } = this.deps;
+        try {
+            const summary = await runDreamPass({
+                ...this.passDeps(),
+                dream,
+                summarizeReads,
+                readWindowDays,
+            });
+            const dreamed = summary.outcomes.filter((outcome) => outcome.run?.status === "done");
+            log.info(
+                `memory: dream pass dreamed ${dreamed.length} of ${summary.outcomes.length} selected file(s)${summary.finalCommitId ? ` (commit ${summary.finalCommitId})` : ""}`,
+            );
+        } catch (err) {
+            log.error(
+                `memory: dream pass failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
+    }
+
+    /**
      * The pass dependencies, stopping when this instance is stopped.
      *
      * @returns The deps.
@@ -915,7 +1136,7 @@ export class WikiMaintenance {
     /**
      * Registers one cron job.
      *
-     * @param name - `lint`, `review`, `split` or `dedup`, for the log.
+     * @param name - `lint`, `review`, `split`, `dedup` or `dream`, for the log.
      * @param verbatim - The configured expression.
      * @param pass - The pass to run on each firing.
      */

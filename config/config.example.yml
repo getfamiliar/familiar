@@ -64,6 +64,11 @@ core:
   # Optional; falls back to 7 when omitted.
   logRetentionDays: 7
 
+  # Days the record of which workspace files agent runs read with fs_read
+  # (table file_reads) is kept. The memory plugin's "hot" dream criterion
+  # counts the reads within this window. Optional; falls back to 14.
+  # fileReadRetentionDays: 14
+
   # Hard cap (seconds) on a *single SDK step* of `agent.generate()`.
   # The timer resets on every completed step (and pauses while the
   # runner is parked on `start_subagent`/`waitForSubagent`), so this
@@ -351,6 +356,14 @@ inference:
 #   maxFileBytes: 15000                 # wiki files above this size go to skills/memory/split.md
 #   splitSchedule: every day at 02:00   # when oversized files are handed over (wiki/ committed before and after)
 #   dedupSchedule: every saturday at 03:00  # weekly duplicate scan per wiki folder → skills/memory/deduplicate.md
+#   dream:                              # nightly dreams: picked files go to skills/memory/dream.md
+#     schedule: every day at 05:00
+#     changed: 3                        # new or grown since their last dream
+#     hot: 2                            # read by the most agent runs (core.fileReadRetentionDays)
+#     cold: 2                           # longest neither changed nor read
+#     oldest: 1                         # never or longest ago dreamed
+#     random: 1                         # anything else, at random
+#     lockDays: 7                       # a dreamed file isn't picked again for this long
 
 # Telegram plugin. botToken comes from BotFather (/newbot). Leave the
 # user id null on first boot — the bot enters discovery mode and

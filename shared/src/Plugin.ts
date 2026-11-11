@@ -8,6 +8,7 @@ import type { ChatFilter, ChatHistoryQuery, ChatMessage } from "./ChatMessage.js
 import type { ChatHandler, ChatUnsubscribe } from "./ChatMessageBus.js";
 import type { ConfigService } from "./Config.js";
 import type { EventFile, EventRow, NewEvent } from "./Event.js";
+import type { FileReadSummary, FileReadSummaryOptions } from "./FileRead.js";
 import type { Logger } from "./logging/Logger.js";
 import type { MailApi } from "./Mail.js";
 import type { MailStyleTemplate } from "./MailStyleTemplate.js";
@@ -307,6 +308,20 @@ export interface HostContext {
          * `formatBannerList(banners, timezone)`.
          */
         listActive(): Promise<readonly BannerRow[]>;
+    };
+    /**
+     * Read-only view of which workspace files agent runs read with
+     * `fs_read` (table `file_reads`, kept `core.fileReadRetentionDays`
+     * days). Scratch files are not recorded.
+     */
+    readonly workspaceReads: {
+        /**
+         * Counts, per file below `pathPrefix`, the distinct agent runs that
+         * read it since `since` (several chunks of one run count once),
+         * leaving out runs of handlers below `excludeHandlerPrefixes`.
+         * Most-read first; files never read are absent.
+         */
+        summarize(options: FileReadSummaryOptions): Promise<readonly FileReadSummary[]>;
     };
     /**
      * Plain SQL access to the host's postgres database, for plugins that

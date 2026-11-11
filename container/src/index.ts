@@ -4,6 +4,7 @@ import {
     ChatMessageBus,
     createLogger,
     EventBus,
+    FileReadBus,
     InferenceEventBus,
     jsonStdoutStream,
     type LogLevel,
@@ -118,6 +119,7 @@ async function main(): Promise<void> {
     const stepBus = new StepResultBus(connection, log.child({ component: "step-bus" }));
     const inferenceEventBus = new InferenceEventBus(connection);
     const toolCallBus = new ToolCallBus(connection);
+    const fileReadBus = new FileReadBus(connection);
     const scheduledSubagentBus = new ScheduledSubagentBus(
         connection,
         log.child({ component: "scheduled-subagent-bus" }),
@@ -133,6 +135,7 @@ async function main(): Promise<void> {
         stepBus,
         inferenceEventBus,
         toolCallBus,
+        fileReadBus,
         scheduledSubagentBus,
         bannerBus,
         log: log.child({ component: "agentrun-scheduler" }),

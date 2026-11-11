@@ -25,6 +25,9 @@ import {
     EventBus,
     type EventFile,
     type EventRow,
+    FileReadBus,
+    type FileReadSummary,
+    type FileReadSummaryOptions,
     type HostContext,
     type Logger,
     MAX_CHAT_HISTORY_PAGE,
@@ -266,6 +269,11 @@ export class HostContextImpl implements HostContext {
     readonly banners = {
         listActive: async (): Promise<readonly BannerRow[]> =>
             new BannerBus(await this.deps.ensureConnection()).listActive(),
+    };
+
+    readonly workspaceReads = {
+        summarize: async (options: FileReadSummaryOptions): Promise<readonly FileReadSummary[]> =>
+            new FileReadBus(await this.deps.ensureConnection()).summarize(options),
     };
 
     readonly database: DatabaseApi = {
