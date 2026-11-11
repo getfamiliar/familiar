@@ -36,6 +36,53 @@ describe("findNonIsoDates", () => {
         assert.deepEqual(found("call on 05/05/2026"), ["05/05/2026 → 2026-05-05"]);
     });
 
+    it("takes a range with a shortened start as one finding", () => {
+        assert.deepEqual(found("Reha 22.09.–20.10.2026"), [
+            "22.09.–20.10.2026 → 2026-09-22 – 2026-10-20",
+        ]);
+        assert.deepEqual(found("(10.–12.07.2026)"), ["10.–12.07.2026 → 2026-07-10 – 2026-07-12"]);
+        assert.deepEqual(found("seit 03./04.08.2026"), [
+            "03./04.08.2026 → 2026-08-03 / 2026-08-04",
+        ]);
+        assert.deepEqual(found("22.09. - 20.10.2026"), [
+            "22.09. - 20.10.2026 → 2026-09-22 – 2026-10-20",
+        ]);
+        assert.deepEqual(found("12., 13. und 14. Juli 2026"), [
+            "12., 13. und 14. Juli 2026 → 2026-07-12, 2026-07-13 und 2026-07-14",
+        ]);
+    });
+
+    it("repairs a range whose end is ISO already", () => {
+        assert.deepEqual(found("22.09.–2026-10-20"), [
+            "22.09.–2026-10-20 → 2026-09-22 – 2026-10-20",
+        ]);
+        assert.deepEqual(found("09.–2026-10-21"), ["09.–2026-10-21 → 2026-10-09 – 2026-10-21"]);
+        assert.deepEqual(found("03./2026-08-04"), ["03./2026-08-04 → 2026-08-03 / 2026-08-04"]);
+    });
+
+    it("steps back a month or a year for a start after the end", () => {
+        assert.deepEqual(found("28.12.–03.01.2027"), [
+            "28.12.–03.01.2027 → 2026-12-28 – 2027-01-03",
+        ]);
+        assert.deepEqual(found("28.–03.01.2027"), ["28.–03.01.2027 → 2026-12-28 – 2027-01-03"]);
+        assert.deepEqual(found("30.–02.10.2026"), ["30.–02.10.2026 → 2026-09-30 – 2026-10-02"]);
+    });
+
+    it("keeps an enumeration in its month and year, even when it runs backwards", () => {
+        assert.deepEqual(found("27.10., 06.10. und 05.10.2026"), [
+            "27.10., 06.10. und 05.10.2026 → 2026-10-27, 2026-10-06 und 2026-10-05",
+        ]);
+        assert.deepEqual(found("29. und 27.10.2026"), [
+            "29. und 27.10.2026 → 2026-10-29 und 2026-10-27",
+        ]);
+    });
+
+    it("leaves ordinals and impossible starts out of the span", () => {
+        assert.deepEqual(found("2027-11-04 der 41., 2027-11-18 der 42."), []);
+        assert.deepEqual(found("2027-11-04 der 5., 2027-11-18 der 6."), []);
+        assert.deepEqual(found("Kapitel 41.–12.07.2026"), ["12.07.2026 → 2026-07-12"]);
+    });
+
     it("ignores ISO dates, version numbers, impossible dates and dates without a year", () => {
         assert.deepEqual(found("- 2026-07-12: signed; 2026-07 trip"), []);
         assert.deepEqual(found("upgraded to 1.2.3 and 10.4.1.2"), []);

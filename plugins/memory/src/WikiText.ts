@@ -167,7 +167,10 @@ export interface NonIsoDate {
     readonly text: string;
     /** 0-based column in the line. */
     readonly column: number;
-    /** The ISO form (`2026-07-12`, `2026-07` for a month), when it is unambiguous. */
+    /**
+     * The ISO form (`2026-07-12`, `2026-07` for a month, `2026-09-22 – 2026-10-20` for a range), when
+     * it is unambiguous.
+     */
     readonly iso: string | undefined;
 }
 
@@ -194,6 +197,96 @@ const MONTH_NUMBERS: ReadonlyMap<string, number> = new Map(
 /** Alternation of every month name, longest first so `Juni` wins over `Jun`. */
 const MONTH_ALTERNATION = [...MONTH_NUMBERS.keys()].sort((a, b) => b.length - a.length).join("|");
 
+/** The start of a range without its year: `22.09.` or just the day `10.`. */
+const PARTIAL_DATE = String.raw`\d{1,2}\.(?:\d{1,2}\.)?`;
+
+/** What stands between the parts of a range or an enumeration of days. */
+const RANGE_SEPARATOR = String.raw`\s*(?:–|—|-|\/|bis|und|u\.|oder|&|,)\s*`;
+
+/** One start part of a range with its separator, for splitting the captured chain. */
+const PARTIAL_DATE_PART = new RegExp(`(\\d{1,2})\\.(?:(\\d{1,2})\\.)?(${RANGE_SEPARATOR})`, "giu");
+
+/** Separators that span a period (`22.09.–20.10.`), as opposed to listing days (`3. und 5.10.`). */
+const PERIOD_SEPARATOR = /^\s*(?:–|—|-|bis)\s*$/u;
+
+/**
+ * Converts a range or enumeration whose start parts lack the year (and maybe the month) into ISO.
+ * Each start part takes the missing month and year from the date to its right. Only a period steps
+ * back a month or a year when its start would otherwise lie after it (`28.–03.01.2027` starts on
+ * 2026-12-28); an enumeration may run backwards (`27.10. und 05.10.2026`).
+ *
+ * @param chain - The start parts with their separators, e.g. `22.09.–` or `12., 13. und `.
+ * @param end - The ISO end date.
+ * @returns The ISO form of the whole span; `null` when it is no date span after all — a start part
+ *   is no valid day, or a bare number stands before a comma (`der 41., 2027-11-18` is an ordinal).
+ */
+function rangeToIso(chain: string, end: string): string | null {
+    const parts = [...chain.matchAll(PARTIAL_DATE_PART)];
+    const last = parts[parts.length - 1];
+    if (last[2] === undefined && last[3].trim() === ",") {
+        return null;
+    }
+    const starts: string[] = [];
+    let next = end;
+    for (const part of [...parts].reverse()) {
+        const isPeriod = PERIOD_SEPARATOR.test(part[3]);
+        const start = resolvePartialDate(Number(part[1]), part[2], next, isPeriod);
+        if (start === null) {
+            return null;
+        }
+        starts.unshift(`${start}${normalizeRangeSeparator(part[3])}`);
+        next = start;
+    }
+    return `${starts.join("")}${end}`;
+}
+
+/**
+ * Completes a start part from the date after it.
+ *
+ * @param day - Day of the start.
+ * @param rawMonth - Month digits of the start, `undefined` when only the day is written.
+ * @param next - ISO date the start precedes.
+ * @param isPeriod - Whether the start opens a period, so it must not lie after `next`.
+ * @returns The ISO start date, or `null` when no such day exists.
+ */
+function resolvePartialDate(
+    day: number,
+    rawMonth: string | undefined,
+    next: string,
+    isPeriod: boolean,
+): string | null {
+    const nextYear = Number(next.slice(0, 4));
+    const nextMonth = Number(next.slice(5, 7));
+    const nextDay = Number(next.slice(8, 10));
+    if (rawMonth !== undefined) {
+        const month = Number(rawMonth);
+        const year = isPeriod && month > nextMonth ? nextYear - 1 : nextYear;
+        return isoFromParts(year, month, day);
+    }
+    if (!isPeriod || day <= nextDay) {
+        return isoFromParts(nextYear, nextMonth, day);
+    }
+    const month = nextMonth === 1 ? 12 : nextMonth - 1;
+    const year = nextMonth === 1 ? nextYear - 1 : nextYear;
+    return isoFromParts(year, month, day);
+}
+
+/**
+ * Writes a range separator in the wiki's form. A dash of a period (`–`, `—`, `-`, spaced or not)
+ * becomes ` – `, the spaced en dash; a bare `/` gets spaces too (`…/2026-08-04` looks like a path to
+ * the ISO extraction). Words and commas stay as written.
+ *
+ * @param separator - The separator as written, with its whitespace.
+ * @returns The separator for the ISO form.
+ */
+function normalizeRangeSeparator(separator: string): string {
+    const trimmed = separator.trim();
+    if (trimmed === "–" || trimmed === "—" || trimmed === "-") {
+        return " – ";
+    }
+    return separator === "/" ? " / " : separator;
+}
+
 /**
  * Non-ISO date notations, each with a function that turns the match into year / month / day
  * candidates. Order matters: earlier patterns claim their span first, so `12. Juli 2026` is one
@@ -203,6 +296,25 @@ const NON_ISO_PATTERNS: readonly {
     readonly pattern: RegExp;
     readonly toIso: (match: RegExpMatchArray) => string | undefined | null;
 }[] = [
+    {
+        // 22.09.–20.10.2026, 10.–12.07.2026, 03./04.08.2026, 12., 13. und 14. Juli 2026 — and the
+        // same with an end that is ISO already (22.09.–2026-10-20). The start borrows month and
+        // year from the end, so the whole span is one finding; matched alone, the end would be
+        // rewritten and the start left behind as a stray "22.09.–".
+        pattern: new RegExp(
+            `(?<![\\w.])((?:${PARTIAL_DATE}${RANGE_SEPARATOR})+)(?:(\\d{4})-(\\d{2})-(\\d{2})(?![\\w-])|(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4}|\\d{2})(?![\\w]|\\.\\d)|(\\d{1,2})(?:\\.|st|nd|rd|th)?\\s*(?:of\\s+)?(${MONTH_ALTERNATION})\\.?,?\\s+(\\d{4})(?![\\w-]))`,
+            "giu",
+        ),
+        toIso: (m) => {
+            const end =
+                m[2] !== undefined
+                    ? isoFromParts(Number(m[2]), Number(m[3]), Number(m[4]))
+                    : m[5] !== undefined
+                      ? isoFromParts(fullYear(m[7]), Number(m[6]), Number(m[5]))
+                      : isoFromParts(Number(m[10]), monthNumber(m[9]), Number(m[8]));
+            return end === null ? null : rangeToIso(m[1], end);
+        },
+    },
     {
         // 12.07.2026, 12.7.26 — always day first.
         pattern: /(?<![\w.])(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2})(?![\w]|\.\d)/g,
@@ -265,7 +377,9 @@ const NON_ISO_PATTERNS: readonly {
  * `12. Juli 2026`, `July 12, 2026`, `Juli 2026` (German and English month names). Inline code
  * spans, URLs and wikilinks are skipped; impossible dates (`31.02.2026`, `13/13/2026`) don't count,
  * which keeps version numbers like `1.2.3` out. Dates without a year (`12. Mai`) are not reported:
- * they have no ISO form.
+ * they have no ISO form — except as the start of a range or enumeration (`22.09.–20.10.2026`,
+ * `10.–12.07.2026`, `03./04.08.2026`, also before an ISO end: `22.09.–2026-10-20`), which is one
+ * finding for the whole span.
  *
  * @param line - One line of text (outside code fences).
  * @returns The findings in order of appearance.

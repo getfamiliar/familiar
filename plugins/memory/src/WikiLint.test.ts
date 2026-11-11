@@ -82,6 +82,16 @@ describe("fixUnambiguousDates", () => {
         ]);
     });
 
+    it("rewrites a whole range, and repairs a start left behind by an earlier pass", () => {
+        const { content } = fixUnambiguousDates(
+            "# X\n\n- Reha 22.09.–20.10.2026\n- Urlaub 03.–2026-10-19\n- 2026-07-12: ok\n",
+        );
+        assert.equal(
+            content,
+            "# X\n\n- Reha 2026-09-22 – 2026-10-20\n- Urlaub 2026-10-03 – 2026-10-19\n- 2026-07-12: ok\n",
+        );
+    });
+
     it("keeps CRLF line endings and returns unchanged content as is", () => {
         assert.equal(
             fixUnambiguousDates("# X\r\n\r\n- 1.2.2026\r\n").content,

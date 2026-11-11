@@ -89,6 +89,8 @@ A time of day is optional. When it matters, add it after the date as `HH:MM` (24
 
 When only the month or year is known, shorten the ISO form: `2026-07` or `2026`.
 
+Write a period as two full ISO dates joined by a spaced en dash, `2026-09-22 – 2026-10-20`, never with a shortened start like `22.09.–20.10.2026`; alternative days the same way with a slash, `2026-08-03 / 2026-08-04`.
+
 A nightly linter flags other date notations and frontmatter that breaks these rules, and a repair run fixes them. That is a safety net, not a licence: until the repair, such a date can't be found by `memory_datesearch`.
 
 ## Read-before-write discipline
