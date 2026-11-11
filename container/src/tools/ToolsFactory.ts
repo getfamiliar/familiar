@@ -354,7 +354,10 @@ export class ToolsFactory {
             // `parent.privileged` internally to gate everything outside
             // core.writablePaths / scratch, so every agentrun can read but
             // only privileged runs modify protected paths.
-            Object.assign(systemTools, buildFsTools(context.parent, toolRunContext));
+            Object.assign(
+                systemTools,
+                buildFsTools(context.parent, toolRunContext, context.contextLimit),
+            );
             // The bash tool lives in its own opt-in `bash` group (handlers
             // request it via `tools: bash`). Privileged runs run as `priv`,
             // non-privileged drop to `unpriv`; the OS enforces the boundary.

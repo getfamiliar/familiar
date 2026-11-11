@@ -11,6 +11,7 @@ import {
 } from "@getfamiliar/shared";
 import type { Tool, ToolSet } from "ai";
 import { jsonSchema, tool } from "ai";
+import { FALLBACK_CONTEXT_LIMIT } from "../agent-runner/ContextLimits.js";
 import { HandlerFile } from "../HandlerFile.js";
 import { PassedConfig } from "../utils/PassedConfig.js";
 import type { NoToolContext } from "./NoToolContext.js";
@@ -238,17 +239,46 @@ interface FileReadInput {
 }
 
 /**
- * Conservative upper bound on the header text the body prepends to the
- * file content. The header looks like
+ * Conservative upper bound, in tokens, on the header the body prepends to
+ * the file content. The header looks like
  * `<file: <path>, bytes <A>-<B> of <TOTAL>, truncated>\n`; long
- * workspace paths plus 8-digit byte counts come in well under this
- * value. Reserving a generous overhead means we can pre-cap the
- * content slice such that `header + content` always fits `ctx.limit`,
- * which is the load-bearing invariant that prevents the offload
- * wrapper from ever firing for `fs_read` (and thus prevents the
- * fs_read→offload→fs_read→… loop).
+ * workspace paths plus 8-digit byte counts stay well under 200
+ * characters (50 tokens). Reserving it means we can pre-cap the content
+ * slice such that `header + content` always fits `ctx.limit` (a token
+ * budget, measured with `estimateTokens`), which is the load-bearing
+ * invariant that prevents the offload wrapper from ever firing for
+ * `fs_read` (and thus prevents the fs_read→offload→fs_read→… loop).
  */
-const FILE_READ_HEADER_OVERHEAD = 200;
+const FILE_READ_HEADER_OVERHEAD_TOKENS = 50;
+
+/**
+ * Bytes of file content per token of `ctx.limit`. `estimateTokens` counts
+ * one token per four characters, and a UTF-8 character is at least one
+ * byte, so N bytes never exceed N / 4 estimated tokens.
+ */
+const FILE_READ_BYTES_PER_TOKEN = 4;
+
+/**
+ * Share of the model's context window one `fs_read` chunk may fill, so a
+ * careless read of a large file can't flood the context — least of all a
+ * small model's. The chunk is also capped by `ctx.limit`.
+ */
+const FILE_READ_CONTEXT_FRACTION = 0.1;
+
+/**
+ * Token budget of one `fs_read` chunk (header included): 10 % of the
+ * model's context window, at most `ctx.limit`.
+ *
+ * @param ctx - The run's tool context (`limit` in tokens).
+ * @param contextLimit - The model's context window in tokens, `undefined` when unknown.
+ * @returns The budget in tokens.
+ */
+export function fileReadTokenBudget(ctx: ToolRunContext, contextLimit: number | undefined): number {
+    const fromContext = Math.floor(
+        (contextLimit ?? FALLBACK_CONTEXT_LIMIT) * FILE_READ_CONTEXT_FRACTION,
+    );
+    return Math.min(ctx.limit, fromContext);
+}
 
 /**
  * Build the `fs_read` tool — text-mode and paginated. Returns the
@@ -256,7 +286,8 @@ const FILE_READ_HEADER_OVERHEAD = 200;
  * header line that names the file, the inclusive 1-based byte range
  * returned, the file's total byte size, and whether the response is
  * truncated. Pre-caps the chunk so the total output always fits
- * `ctx.limit`; consequently bypasses {@link runJsonTool} /
+ * {@link fileReadTokenBudget} (10 % of the context window, at most
+ * `ctx.limit`); consequently bypasses {@link runJsonTool} /
  * {@link runTextTool} entirely — wrapping with either would re-spill
  * an oversized result and reintroduce the offload loop the pagination
  * exists to prevent.
@@ -270,7 +301,11 @@ const FILE_READ_HEADER_OVERHEAD = 200;
  * next chunk via `offset: <B + 1>`. Multi-byte UTF-8 characters at the
  * natural cut boundary are kept whole.
  */
-function buildFsReadTool(ctx: ToolRunContext): Tool<FileReadInput, string> {
+function buildFsReadTool(
+    ctx: ToolRunContext,
+    contextLimit: number | undefined,
+): Tool<FileReadInput, string> {
+    const tokenBudget = fileReadTokenBudget(ctx, contextLimit);
     return tool<FileReadInput, string, NoToolContext>({
         description:
             "Read a chunk of a file as UTF-8. Paths are workspace-relative " +
@@ -281,7 +316,10 @@ function buildFsReadTool(ctx: ToolRunContext): Tool<FileReadInput, string> {
             "`<file: PATH, bytes A-B of TOTAL[, truncated]>` followed by a " +
             "newline and the raw file content. When the header ends in " +
             "`, truncated`, call again with `offset: <B + 1>` to read the " +
-            "next chunk. For searching very large files (e.g. offloaded tool " +
+            "next chunk. The header names the total size, so for a large file " +
+            "you can request the remaining chunks in parallel in one step " +
+            "(one call per offset) instead of one after the other. " +
+            "For searching very large files (e.g. offloaded tool " +
             "results), prefer `fs_grep` over walking the file with `fs_read`.",
         inputSchema: jsonSchema<FileReadInput>({
             type: "object",
@@ -343,7 +381,11 @@ function buildFsReadTool(ctx: ToolRunContext): Tool<FileReadInput, string> {
                 return `<file: ${p}, offset ${offset1} past end of ${totalBytes} bytes>\n`;
             }
 
-            const contentBudget = Math.max(1, ctx.limit - FILE_READ_HEADER_OVERHEAD);
+            // The budget is in tokens; the chunk is cut in bytes.
+            const contentBudget = Math.max(
+                1,
+                (tokenBudget - FILE_READ_HEADER_OVERHEAD_TOKENS) * FILE_READ_BYTES_PER_TOKEN,
+            );
             const requested =
                 params.limit !== undefined
                     ? Math.max(1, Math.min(params.limit, contentBudget))
@@ -1052,10 +1094,19 @@ function buildFsRemoveTool(parent: AgentRunRow, ctx: ToolRunContext): Tool<FsRem
  * close over `parent.privileged` so the writablePaths privilege gate is
  * decided once at registration time and the model's tool calls can't
  * bypass it.
+ *
+ * @param parent - The agentrun the tools act for.
+ * @param ctx - Its tool context.
+ * @param contextLimit - The model's context window in tokens (sizes `fs_read` chunks), `undefined` when unknown.
+ * @returns The tools.
  */
-export function buildFsTools(parent: AgentRunRow, ctx: ToolRunContext): ToolSet {
+export function buildFsTools(
+    parent: AgentRunRow,
+    ctx: ToolRunContext,
+    contextLimit?: number,
+): ToolSet {
     return {
-        fs_read: buildFsReadTool(ctx),
+        fs_read: buildFsReadTool(ctx, contextLimit),
         fs_write: buildFsWriteTool(parent, ctx),
         fs_str_replace: buildFsStrReplaceTool(parent, ctx),
         fs_append: buildFsAppendTool(parent, ctx),

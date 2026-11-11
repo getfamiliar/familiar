@@ -22,6 +22,7 @@ import { buildContainerToolRunContext } from "../tools/ContainerToolRunContext.j
 import { PassedConfig, requireConfig } from "../utils/PassedConfig.js";
 import { fetchAncestorChain } from "./AgentRunLineage.js";
 import { AgentRunTimeoutError } from "./AgentRunTimeoutError.js";
+import { FALLBACK_CONTEXT_LIMIT } from "./ContextLimits.js";
 import { ContextManager } from "./ContextManager.js";
 import { computeRetryDelay } from "./computeRetryDelay.js";
 import {
@@ -80,13 +81,6 @@ function outputFallbackFraction(): number {
 
 /** Default context-management threshold fraction of the model's context window. */
 const DEFAULT_CONTEXT_THRESHOLD_PERCENTAGE = 0.7;
-
-/**
- * Context window (tokens) assumed for tool-result eviction when the
- * model's metadata is unavailable. Conservative on purpose — at worst a
- * large tool result lands in scratch a bit early.
- */
-const FALLBACK_CONTEXT_LIMIT = 64_000;
 
 /**
  * Clamp the configured threshold fraction into `(0.3, 1.0)`. Out-of-range

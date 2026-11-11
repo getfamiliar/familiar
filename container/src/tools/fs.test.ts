@@ -3,7 +3,7 @@ import { promises as fs, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
-import type { AgentRunRow, ToolRunContext } from "@getfamiliar/shared";
+import { type AgentRunRow, estimateTokens, type ToolRunContext } from "@getfamiliar/shared";
 import { HandlerFile } from "../HandlerFile.js";
 import { buildFsTools } from "./fs.js";
 
@@ -30,8 +30,8 @@ function buildTestCtx(limit: number, capture: SpillCapture): ToolRunContext {
 const PARENT_ROW = { id: "test-parent" } as unknown as AgentRunRow;
 
 /** Locate fs_read inside the assembled fs tool set. */
-function fileReadTool(ctx: ToolRunContext) {
-    const tools = buildFsTools(PARENT_ROW, ctx);
+function fileReadTool(ctx: ToolRunContext, contextLimit?: number) {
+    const tools = buildFsTools(PARENT_ROW, ctx, contextLimit);
     const t = tools.fs_read;
     if (!t?.execute) {
         throw new Error("fs_read tool not found / has no execute");
@@ -46,8 +46,9 @@ function fileReadTool(ctx: ToolRunContext) {
 async function readFile(
     ctx: ToolRunContext,
     input: { path: string; offset?: number; limit?: number },
+    contextLimit = 1_000_000,
 ): Promise<string> {
-    const exec = fileReadTool(ctx);
+    const exec = fileReadTool(ctx, contextLimit);
     // biome-ignore lint/suspicious/noExplicitAny: SDK's options type isn't needed for these tests.
     const result = await (exec as any)(input, {} as any);
     return result as string;
@@ -91,10 +92,35 @@ describe("fs_read — paginated text mode", () => {
         assert.ok(out.startsWith("<file: big.txt, bytes 1-"));
         assert.ok(out.includes(" of 50000, truncated>"));
         assert.ok(
-            Buffer.byteLength(out, "utf8") <= limit,
-            `response ${Buffer.byteLength(out, "utf8")} > ctx.limit ${limit}`,
+            estimateTokens(out) <= limit,
+            `response ${estimateTokens(out)} tokens > ctx.limit ${limit}`,
         );
         assert.equal(capture.calls.length, 0, "fs_read must not trigger the offload spill");
+    });
+
+    it("a chunk fills at most 10 % of the context window, at most ctx.limit, four bytes per token", async () => {
+        const body = "x".repeat(200_000);
+        await fs.writeFile(path.join(workspaceDir, "tokens.txt"), body, "utf8");
+        const ctx = buildTestCtx(16_000, { calls: [] });
+        const contentLength = async (contextLimit: number | undefined): Promise<number> => {
+            const exec = fileReadTool(ctx, contextLimit);
+            // biome-ignore lint/suspicious/noExplicitAny: SDK's options type isn't needed for these tests.
+            const out = (await (exec as any)({ path: "tokens.txt" }, {} as any)) as string;
+            assert.ok(estimateTokens(out) <= 16_000);
+            return out.length - out.indexOf("\n") - 1;
+        };
+        assert.equal(await contentLength(128_000), (12_800 - 50) * 4);
+        assert.equal(await contentLength(32_000), (3_200 - 50) * 4);
+        // A huge window is capped by ctx.limit, an unknown one falls back to 64k.
+        assert.equal(await contentLength(1_000_000), (16_000 - 50) * 4);
+        assert.equal(await contentLength(undefined), (6_400 - 50) * 4);
+    });
+
+    it("multi-byte text stays within the token budget", async () => {
+        const body = "äöüß€".repeat(20_000);
+        await fs.writeFile(path.join(workspaceDir, "umlauts.txt"), body, "utf8");
+        const out = await readFile(buildTestCtx(2_000, { calls: [] }), { path: "umlauts.txt" });
+        assert.ok(estimateTokens(out) <= 2_000, `response ${estimateTokens(out)} tokens > 2000`);
     });
 
     it("continuation: offset = previousLastByte + 1 returns the next chunk; concat reproduces file", async () => {
@@ -149,12 +175,12 @@ describe("fs_read — paginated text mode", () => {
         const total = Buffer.byteLength(body, "utf8");
         await fs.writeFile(path.join(workspaceDir, "emoji.txt"), body, "utf8");
 
-        const ctx = buildTestCtx(200 + 91, { calls: [] }); // content budget = 91 bytes (prefix + 1)
+        const ctx = buildTestCtx(10_000, { calls: [] });
         // 91 bytes of content would include the full prefix (90) and try
         // to add 1 byte of the 4-byte emoji. truncateUtf8 must back off
         // to the 90-byte boundary so the emoji is kept whole on the next read.
 
-        const first = await readFile(ctx, { path: "emoji.txt" });
+        const first = await readFile(ctx, { path: "emoji.txt", limit: 91 });
         const firstBody = first.slice(first.indexOf("\n") + 1);
         assert.equal(firstBody, prefix, "first chunk must stop at the code-point boundary");
 
@@ -196,7 +222,7 @@ describe("fs_read — paginated text mode", () => {
         const ctx = buildTestCtx(limit, capture);
 
         const out = await readFile(ctx, { path: "huge.txt" });
-        assert.ok(Buffer.byteLength(out, "utf8") <= limit);
+        assert.ok(estimateTokens(out) <= limit);
         assert.ok(!out.includes('truncated":true'), "no JSON sentinel from offload wrapper");
         assert.equal(capture.calls.length, 0, "ctx.spill must not be called");
     });
@@ -206,15 +232,15 @@ describe("fs_read — paginated text mode", () => {
         await fs.mkdir(deepDir, { recursive: true });
         const fileName = "deep.txt";
         const relPath = path.join("a".repeat(50), "b".repeat(50), fileName);
-        const body = "y".repeat(5_000);
+        const body = "y".repeat(20_000);
         await fs.writeFile(path.join(deepDir, fileName), body, "utf8");
 
         const limit = 2_000;
         const ctx = buildTestCtx(limit, { calls: [] });
         const out = await readFile(ctx, { path: relPath });
         assert.ok(
-            Buffer.byteLength(out, "utf8") <= limit,
-            `response ${Buffer.byteLength(out, "utf8")} > ctx.limit ${limit}`,
+            estimateTokens(out) <= limit,
+            `response ${estimateTokens(out)} tokens > ctx.limit ${limit}`,
         );
         assert.ok(out.startsWith(`<file: ${relPath}, bytes 1-`));
     });
