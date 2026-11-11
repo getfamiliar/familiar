@@ -99,8 +99,7 @@ All runs are exact-topic background events, and the handlers are `serial`, so th
 
 Ships:
 
-- `wiki/people/`, `wiki/threads/`, `wiki/places/` — folders where the agent files memories.
-- `skills/memory/SKILL.md` — the wiki conventions: folders, slugs, title / description / frontmatter, ISO dates, how the search works and how to search well.
+- `skills/memory/SKILL.md` — the wiki conventions: folders (`people/`, `threads/` with optional one-level clusters, `self/`, `journal/`), what belongs in the memory, slugs, title / description / frontmatter, ISO dates, how the search works and how to search well.
 - `skills/memory/save.md` — the handler that `memory_save` dispatches to.
 - `skills/memory/categories.md`, `repair.md`, `review.md` — the maintenance handlers (see "Maintenance").
 

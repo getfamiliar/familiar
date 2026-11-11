@@ -204,7 +204,7 @@ export function buildMemoryTools(
         name: "save",
         groups: ["core"],
         description:
-            "Save facts, observations, notes into long-term memory. Content is handed to a dedicated reasoning agentrun, this toolcall does not wait and returns immediately. Remember to include identifying facts in the content (email addresses, names etc.)",
+            "Save facts, observations, notes into long-term memory. Content is handed to a dedicated reasoning agentrun, this toolcall does not wait and returns immediately. Remember to include identifying facts in the content (email addresses, names etc.). Save facts about the world that will still matter in three months — not a protocol of your processing.",
         inputSchema: {
             type: "object",
             required: ["content"],

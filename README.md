@@ -4,7 +4,7 @@
 
 Familiar is an agent harness built to be your personal assistant. This is not a replacement for Claude Code, Pi or the like - Familiar is meant to be the workhorse that runs in the background to keep you free from tedious tasks. It focusses on the important things for personal assistants:
 
-* **Focus on security.** A personal assistant needs access to the most sensitive data to be truly helpful. Familiar protects your data thoroughly: your assistant runs in an isolated sandbox without internet access and never sees secrets like your logins or API keys. Same goes for tools like MCPs.
+* **Focus on security.** A personal assistant needs access to your most sensitive data to be truly helpful. Familiar protects your data thoroughly: your assistant runs in an isolated sandbox without internet access and never sees secrets like your logins or API keys. Same goes for tools like MCPs. All files are stored locally on your device.
 * **Messengers, Phone, Web - interact with your assistant where you already are.** Get a briefing for the next meeting on Telegram, talk to your assistant via phone while in the car, send it voice messages in WhatsApp to delegate tasks.
 * **Mails, Calendar, Cloud Storage, Web - the access a personal assistant needs, out of the box.** Familiar can triage your mails, summarize your WhatsApp groups and store invoices from mails in your Sharepoint or OneDrive folders. It can even download your Tesla Supercharger invoices with the right plugin installed.
 * **The memory of an elephant (or a really good PA).** Familiar remembers people, meetings, facts, orders, places. Not sure about the last time you had lunch with James or what book you recommended to him? Your assistant helps you out - and asks about open questions.
