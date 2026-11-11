@@ -3,11 +3,6 @@ NEXT:
 * Freigabefunktionen
 * tool_call in der Reflection unwrappen?
 
-* Memory enhancements:
-  - List of questions.md in the wiki that can be used to ask the user for more information about uncertainties in the memories.
-  - Summarize memory files and segments that get too long, over the 6000 char limit
-  - add more stuff here, this memory grows like weed
-
 * Whatsapp Single Mode
 
 * Mail: Lass ihn alle ausgehenden Mails verarbeiten und im Original speichern, mit limit.
@@ -21,10 +16,7 @@ NEXT:
 Features:
 
 * Host-side LLM chat with access to console tools for selections, prompts etc. as a service - used for setup and plugin CLI tools.
-* Diff Tool for the workspace vs default workspace
 * Sane setup process
-
-* NEW MEMORY? The wiki approach seems to mangle stuff up - maybe give Hindsight a shot?
 
 Neues CLI Tool: `logs`
 * `logs tail` tails the current data/logs/ log file but pretty prints the JSON objects in it.
@@ -79,9 +71,6 @@ Extreme:
 
 plugins:
 - Check for events that are emitted but not processed.
-
-- Check if chat/compaction/index.md exists and is parseable
-- Check if skills/memory/save.md exists and is parseable
 
 ## Before release
 

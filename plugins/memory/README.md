@@ -70,7 +70,7 @@ The commands work on the live index and need postgres running (`familiar start`)
 | `familiar memory split [--run] [-n <count>]` | The files above `memory.maxFileBytes`. `--run` runs the split pass now and waits for it (daemon running); `-n` starts at most that many split runs. |
 | `familiar memory dream [--run] [-n <count>]` | The files the next dream pass would pick (criterion, reason) and the files locked by recent dreams with their summaries. `--run` runs the dream pass now and waits for it (daemon running); `-n` starts at most that many dream runs. |
 | `familiar memory dedup [--run] [-n <count>]` | The file pairs earlier deduplicate runs handled. `--run` runs the dedup pass now and waits for it (daemon running); `-n` starts at most that many deduplicate runs (the folder scans always run). |
-| `familiar memory eval` | Runs the eval set in `eval/` (fictional bilingual corpus, ~115 cases) against throwaway schemas `memory_eval_de` / `memory_eval_en` and reports Recall@5/@10, Hit@1, MRR and nDCG. See `eval/README.md`. |
+| `familiar memory eval` | Only in a source checkout — the published package ships neither the corpus nor the eval code (`build/Eval*` is excluded, its model dependencies are dev dependencies). Runs the eval set in `eval/` (fictional bilingual corpus, ~115 cases) against throwaway schemas `memory_eval_de` / `memory_eval_en` and reports Recall@5/@10, Hit@1, MRR and nDCG. See `eval/README.md`. |
 
 ## Configuration
 
