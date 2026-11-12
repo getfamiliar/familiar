@@ -61,6 +61,17 @@ export function Chat({ apiBase }: { readonly apiBase: string }) {
     /** Nested dragenter / dragleave pairs of child elements. */
     const dragDepth = React.useRef(0);
 
+    /**
+     * Newest message id of the initial load. Only user messages after it
+     * are scroll anchors (pinned to the top when they arrive): the
+     * scroller jumps to any anchor it has not handled yet, so anchors in
+     * the loaded history would pull the start position away from the end.
+     */
+    const [newestAtLoad, setNewestAtLoad] = React.useState<string | null>(null);
+    if (chat.isLoaded && newestAtLoad === null) {
+        setNewestAtLoad(chat.messages.at(-1)?.id ?? "0");
+    }
+
     /** The last assistant message of each event: produced files show under it. */
     const lastReplyOfEvent = React.useMemo(() => {
         const last = new Map<string, string>();
@@ -178,7 +189,7 @@ export function Chat({ apiBase }: { readonly apiBase: string }) {
                     </Empty>
                 </div>
             ) : (
-                <MessageScrollerProvider>
+                <MessageScrollerProvider autoScroll>
                     <MessageScroller className="min-h-0 flex-1">
                         <MessageScrollerViewport>
                             <MessageScrollerContent className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-6">
@@ -199,7 +210,10 @@ export function Chat({ apiBase }: { readonly apiBase: string }) {
                                         <MessageScrollerItem
                                             key={`m${item.message.id}`}
                                             messageId={`m${item.message.id}`}
-                                            scrollAnchor={item.message.role === "user"}
+                                            scrollAnchor={
+                                                item.message.role === "user" &&
+                                                isNewerThan(item.message.id, newestAtLoad)
+                                            }
                                         >
                                             <ChatMessage
                                                 message={item.message}
@@ -282,11 +296,23 @@ export function Chat({ apiBase }: { readonly apiBase: string }) {
                             current.filter((_, position) => position !== index),
                         )
                     }
+                    isBusy={chat.isBusy}
                     onSubmit={onSubmit}
                 />
             </div>
         </section>
     );
+}
+
+/**
+ * Whether a message id (bigint string) is newer than a reference id.
+ *
+ * @param id The message id.
+ * @param reference Reference id, or null before the initial load.
+ * @returns Whether `id` is newer; false while `reference` is null.
+ */
+function isNewerThan(id: string, reference: string | null): boolean {
+    return reference !== null && BigInt(id) > BigInt(reference);
 }
 
 /**

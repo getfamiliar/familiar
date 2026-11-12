@@ -23,6 +23,7 @@ import { suggestCommands } from "@/lib/commands";
  * @param props.attachments Files attached to the next message.
  * @param props.onAddFiles Attach files.
  * @param props.onRemoveAttachment Detach the file at an index.
+ * @param props.isBusy Whether a reply is running: sending waits for it (typing does not; `/clear` still works).
  * @param props.onSubmit Called with the trimmed text; resolves false to keep the input.
  * @returns The form.
  */
@@ -32,9 +33,11 @@ export function PromptForm({
     attachments,
     onAddFiles,
     onRemoveAttachment,
+    isBusy,
     onSubmit,
 }: {
     readonly commands: readonly string[];
+    readonly isBusy: boolean;
     readonly history: readonly string[];
     readonly attachments: readonly File[];
     readonly onAddFiles: (files: readonly File[]) => void;
@@ -61,9 +64,13 @@ export function PromptForm({
         setHistoryIndex(null);
     };
 
+    const isEmpty = input.trim() === "" && attachments.length === 0;
+    /** `/clear` only acts in this view, so it is allowed while a reply runs. */
+    const isBlockedByBusy = isBusy && input.trim() !== "/clear";
+
     const submit = async () => {
         const text = input.trim();
-        if ((text === "" && attachments.length === 0) || isSending) {
+        if (isEmpty || isSending || isBlockedByBusy) {
             return;
         }
         setIsSending(true);
@@ -229,8 +236,8 @@ export function PromptForm({
                         size="icon-sm"
                         variant="default"
                         aria-label="Send message"
-                        className="ml-auto"
-                        disabled={(input.trim() === "" && attachments.length === 0) || isSending}
+                        className="ml-auto disabled:pointer-events-auto disabled:cursor-not-allowed disabled:hover:bg-primary"
+                        disabled={isEmpty || isSending || isBlockedByBusy}
                     >
                         <ArrowUpIcon />
                     </InputGroupButton>

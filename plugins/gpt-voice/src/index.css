@@ -129,4 +129,9 @@
   html {
     @apply font-sans;
     }
+  /* Tailwind v4 dropped the pointer cursor on buttons: everything clickable shows the hand again. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+    }
 }

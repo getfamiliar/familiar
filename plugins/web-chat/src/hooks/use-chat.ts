@@ -163,6 +163,16 @@ export function useChat(apiBase: string): ChatState {
             if (event.type === "snapshot") {
                 setTurns((current) => {
                     const next = new Map(current);
+                    // The snapshot holds every running turn of the hub: a turn
+                    // still running here but missing there ended while the
+                    // stream was down (or the daemon restarted). Settle it so
+                    // it does not block the send button forever.
+                    const snapshotIds = new Set(event.turns.map((turn) => turn.eventId));
+                    for (const [eventId, turn] of current) {
+                        if (turn.state === "running" && !snapshotIds.has(eventId)) {
+                            next.set(eventId, { ...turn, state: "done" });
+                        }
+                    }
                     for (const turn of event.turns) {
                         next.set(turn.eventId, turn);
                     }
