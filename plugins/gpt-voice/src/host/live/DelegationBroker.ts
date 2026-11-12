@@ -118,7 +118,7 @@ export class DelegationBroker {
                 {
                     topic: VOICE_BACKGROUND_TOPIC,
                     isExactTopic: true,
-                    prompt: buildBackgroundPrompt(deps.callId, deps.transportKind, turns),
+                    prompt: buildBackgroundPrompt(turns),
                     payload: {
                         callId: deps.callId,
                         delegationId,
@@ -187,21 +187,16 @@ export class DelegationBroker {
 }
 
 /**
- * Build the prompt of a `voice:background` event: who called and the
- * recent conversation. Data only — the instructions are the handler's.
+ * Build the prompt of a `voice:background` event: the recent
+ * conversation. Data only — the instructions are the handler's; call id
+ * and transport are in the event payload.
  *
- * @param callId Call id.
- * @param transportKind Web or phone.
  * @param turns Recent turns, oldest first.
  * @returns The prompt.
  */
-export function buildBackgroundPrompt(
-    callId: string,
-    transportKind: CallTransportKind,
-    turns: readonly TranscriptTurn[],
-): string {
+export function buildBackgroundPrompt(turns: readonly TranscriptTurn[]): string {
     const conversation = turns.length === 0 ? "(no transcript yet)" : formatTranscript(turns);
-    return `Voice call ${callId} (${transportKind === "web" ? "web UI" : "phone"}). The voice assistant delegated a task to you. Conversation so far, latest last:\n\n${conversation}`;
+    return `The voice assistant delegated a task to you. Conversation so far, latest last:\n\n${conversation}`;
 }
 
 /**

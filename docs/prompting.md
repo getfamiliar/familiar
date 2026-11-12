@@ -62,7 +62,7 @@ These are preloaded for convenience — not the limit of what you can do. …
 {STAGED_FILE_LIST}
 ```
 
-`ARCHITECTURE.md` (also shipped, also yours once copied) is the static explanation of how the system works for the agent: handlers, workspace and scratch files, tools, bash and python (`{WRITABLE_PATH_LIST}`, `{PYTHON_PACKAGE_LIST}`), skills (`{SKILL_LIST}`), memory, banners, subagents and how its output is delivered. Keeping that prose in an included file — before the marker — keeps `PROMPT.md` a short skeleton and the explanation in the cacheable system prompt; only per-run facts follow the marker. Mind the per-file limit of 8000 characters for included files.
+`ARCHITECTURE.md` (also shipped, also yours once copied) is the static explanation of how the system works for the agent: handlers, workspace and scratch files, tools, bash and python (`{WRITABLE_PATH_LIST}`, `{PYTHON_PACKAGE_LIST}`), skills (`{SKILL_LIST}`), memory, banners, subagents and how its output is delivered. Keeping that prose in an included file — before the marker — keeps `PROMPT.md` a short skeleton and the explanation in the cacheable system prompt; only per-run facts follow the marker. Mind the per-file limit of 12000 characters for included files.
 
 Headings, wording and order are all up to you. Remove a section you don't want, rephrase one that the model misreads, add your own.
 

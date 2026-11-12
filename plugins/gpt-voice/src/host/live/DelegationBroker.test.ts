@@ -23,15 +23,15 @@ describe("splitIntoAppends", () => {
 });
 
 describe("buildBackgroundPrompt", () => {
-    it("names the call and lists the conversation", () => {
-        const prompt = buildBackgroundPrompt("c1", "web", [
+    it("lists the conversation without call metadata", () => {
+        const prompt = buildBackgroundPrompt([
             { speaker: "user", text: "Was steht morgen an?", startMs: 0 },
         ]);
-        assert.match(prompt, /Voice call c1 \(web UI\)/);
+        assert.doesNotMatch(prompt, /Voice call/);
         assert.match(prompt, /User: Was steht morgen an\?$/);
     });
 
     it("says when there is no transcript yet", () => {
-        assert.match(buildBackgroundPrompt("c1", "phone", []), /\(no transcript yet\)$/);
+        assert.match(buildBackgroundPrompt([]), /\(no transcript yet\)$/);
     });
 });

@@ -18,6 +18,7 @@ Procedure:
 5. If no matching file exists, create one with a kebab-case slug in the right folder (`wiki/people/<slug>.md`, `wiki/threads/<slug>.md` or the thread cluster it belongs to, etc.): frontmatter with 0–3 `categories` (only existing ones from the prompt that really fit), the h1, then the one-line description paragraph. Cross-link related notes with `[[other-slug]]`.
 6. Keep it terse: bullet points, not prose. Date facts when the date matters, always as ISO dates.
 7. **Write down what stays unclear right away.** If the memory leaves something open — how the user knows a person, what a thread is about, which of two people is meant, a guessed date or spelling, a contradiction to what the wiki says — add a question to `wiki/questions.md` in this run, one bullet with a wikilink (`- [[people/alice]]: How does the user know Alice?`), unless the same question is already there. See "Open questions" in the skill.
+8. **Remove cleared up questions.** Check `wiki/questions.md` if one of the questions has just been cleared up by what you wrote. If so, remove it.
 8. Cleanup if necessary - simplify, rename, merge, fix typos. The wiki is your baby; take care of it.
 
 ## Your output

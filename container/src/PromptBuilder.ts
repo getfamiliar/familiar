@@ -23,12 +23,12 @@ import { bastionAuthHeaders } from "./utils/BastionAuth.js";
  * section (a workspace file, the handler body, the run prompt).
  * Per-section truncation happens before assembly.
  */
-const MAX_FILE_CHARS = 8000;
+const MAX_FILE_CHARS = 12000;
 
 /**
  * Hard cap on the assembled system prompt. Functions as a safety net
  * after per-section truncation; if the assembled total still exceeds
- * this, the trailing portion is cut off. With several ~8000-char
+ * this, the trailing portion is cut off. With several ~12000-char
  * sections the cap leaves headroom for section framing. Preloaded
  * skills are an explicit opt-in, so the cap grows by their length.
  */
