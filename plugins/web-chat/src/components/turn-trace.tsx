@@ -56,8 +56,9 @@ export function TurnTrace({ turn }: { readonly turn: ChatTurnDto }) {
         : turn.state === "failed"
           ? "error"
           : "done";
+    const latestSaid = isRunning ? findLatestSaid(turn.steps) : null;
     const summary = isRunning
-        ? "Working"
+        ? (latestSaid ?? "Working")
         : turn.state === "failed"
           ? `Failed: ${turn.error ?? "unknown error"}`
           : `Done in ${turn.steps.length} ${turn.steps.length === 1 ? "step" : "steps"}${toolCount > 0 ? `, ${toolCount} ${toolCount === 1 ? "tool call" : "tool calls"}` : ""}`;
@@ -78,13 +79,46 @@ export function TurnTrace({ turn }: { readonly turn: ChatTurnDto }) {
                         <TraceIcon>
                             <StatusIcon status={summaryStatus} />
                         </TraceIcon>
-                        <TraceTitle>{summary}</TraceTitle>
+                        <TraceTitle title={latestSaid ?? undefined}>{summary}</TraceTitle>
                     </TraceLine>
                 </TraceCollapsibleTrigger>
                 <TraceCollapsibleContent>{details}</TraceCollapsibleContent>
             </TraceCollapsible>
         </Trace>
     );
+}
+
+/**
+ * The most recent "Said" text of a running turn — what the assistant
+ * announced alongside its latest tool calls, from any of the turn's
+ * agentruns — flattened to one line for the summary.
+ *
+ * @param steps The turn's finished steps, oldest first.
+ * @returns The text, or `null` when no step has said anything yet.
+ */
+function findLatestSaid(steps: readonly ChatStepDto[]): string | null {
+    for (let index = steps.length - 1; index >= 0; index--) {
+        const step = steps[index];
+        if (!isSaidStep(step)) {
+            continue;
+        }
+        const text = step.text.replace(/\s+/g, " ").trim();
+        if (text.length > 0) {
+            return text;
+        }
+    }
+    return null;
+}
+
+/**
+ * Whether a step shows a "Said" line: intermediate text next to tool
+ * calls (text without tools is the answer itself).
+ *
+ * @param step The step.
+ * @returns `true` for a "Said" step.
+ */
+function isSaidStep(step: ChatStepDto): step is ChatStepDto & { readonly text: string } {
+    return step.text !== null && step.tools.length > 0;
 }
 
 /**
@@ -145,9 +179,7 @@ function StepTrace({ step }: { readonly step: ChatStepDto }) {
             {step.reasoning !== null && (
                 <Expandable title="Thought" body={step.reasoning} status="done" />
             )}
-            {step.text !== null && step.tools.length > 0 && (
-                <Expandable title="Said" body={step.text} status="done" />
-            )}
+            {isSaidStep(step) && <Expandable title="Said" body={step.text} status="done" />}
             {step.tools.map((tool) => (
                 <ToolTrace key={tool.id} tool={tool} />
             ))}
