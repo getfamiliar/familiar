@@ -23,6 +23,7 @@ import {
     MessageScrollerItem,
     MessageScrollerProvider,
     MessageScrollerViewport,
+    useMessageScroller,
 } from "@/components/ui/message-scroller";
 import { useChat } from "@/hooks/use-chat";
 import {
@@ -45,11 +46,17 @@ import { buildTranscript } from "@/lib/transcript";
  * a message's attachments show at the user's message, files the
  * assistant produced in the event's scratch folder under its reply.
  *
+ * The scroller follows the end of the transcript while the user is at
+ * the bottom; sending a message jumps there and resumes following, so
+ * the new message and the reply stay in view.
+ *
  * @param props.apiBase Base URL of the chat API.
  * @returns The chat.
  */
 export function Chat({ apiBase }: { readonly apiBase: string }) {
     const chat = useChat(apiBase);
+    /** `scrollToEnd` of the mounted scroller; null while the transcript is empty. */
+    const scrollToEndRef = React.useRef<(() => void) | null>(null);
     const commands = React.useMemo(
         () => [...chat.commands.builtins, ...chat.commands.handlers],
         [chat.commands],
@@ -60,17 +67,6 @@ export function Chat({ apiBase }: { readonly apiBase: string }) {
     const [isDragging, setIsDragging] = React.useState(false);
     /** Nested dragenter / dragleave pairs of child elements. */
     const dragDepth = React.useRef(0);
-
-    /**
-     * Newest message id of the initial load. Only user messages after it
-     * are scroll anchors (pinned to the top when they arrive): the
-     * scroller jumps to any anchor it has not handled yet, so anchors in
-     * the loaded history would pull the start position away from the end.
-     */
-    const [newestAtLoad, setNewestAtLoad] = React.useState<string | null>(null);
-    if (chat.isLoaded && newestAtLoad === null) {
-        setNewestAtLoad(chat.messages.at(-1)?.id ?? "0");
-    }
 
     /** The last assistant message of each event: produced files show under it. */
     const lastReplyOfEvent = React.useMemo(() => {
@@ -108,6 +104,8 @@ export function Chat({ apiBase }: { readonly apiBase: string }) {
             chat.clear();
             return true;
         }
+        // Back to the end and into follow mode, even if the user had scrolled up.
+        scrollToEndRef.current?.();
         const isSent = await chat.send(text, attachments);
         if (isSent) {
             setAttachments([]);
@@ -190,6 +188,7 @@ export function Chat({ apiBase }: { readonly apiBase: string }) {
                 </div>
             ) : (
                 <MessageScrollerProvider autoScroll>
+                    <ScrollToEndHandle handle={scrollToEndRef} />
                     <MessageScroller className="min-h-0 flex-1">
                         <MessageScrollerViewport>
                             <MessageScrollerContent className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-6">
@@ -210,10 +209,6 @@ export function Chat({ apiBase }: { readonly apiBase: string }) {
                                         <MessageScrollerItem
                                             key={`m${item.message.id}`}
                                             messageId={`m${item.message.id}`}
-                                            scrollAnchor={
-                                                item.message.role === "user" &&
-                                                isNewerThan(item.message.id, newestAtLoad)
-                                            }
                                         >
                                             <ChatMessage
                                                 message={item.message}
@@ -305,14 +300,24 @@ export function Chat({ apiBase }: { readonly apiBase: string }) {
 }
 
 /**
- * Whether a message id (bigint string) is newer than a reference id.
+ * Hands the scroller's `scrollToEnd` to the chat, which sits outside the
+ * scroller provider (the provider mounts with the transcript, so a fresh
+ * scroller starts at the end and follows it).
  *
- * @param id The message id.
- * @param reference Reference id, or null before the initial load.
- * @returns Whether `id` is newer; false while `reference` is null.
+ * @param props.handle Ref that receives `scrollToEnd` while mounted.
+ * @returns Nothing visible.
  */
-function isNewerThan(id: string, reference: string | null): boolean {
-    return reference !== null && BigInt(id) > BigInt(reference);
+function ScrollToEndHandle({ handle }: { readonly handle: React.RefObject<(() => void) | null> }) {
+    const { scrollToEnd } = useMessageScroller();
+    React.useEffect(() => {
+        handle.current = () => {
+            scrollToEnd();
+        };
+        return () => {
+            handle.current = null;
+        };
+    }, [handle, scrollToEnd]);
+    return null;
 }
 
 /**
