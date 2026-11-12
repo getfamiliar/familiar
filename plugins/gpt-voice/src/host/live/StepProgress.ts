@@ -1,13 +1,10 @@
-import type { StepResultRow } from "@getfamiliar/shared";
+import { type StepResultRow, type UnwrappedToolCall, unwrapToolCall } from "@getfamiliar/shared";
 
 /** Longest reasoning excerpt per progress note (the tail is kept). */
 export const PROGRESS_REASONING_CHARS = 600;
 
 /** Longest argument / error preview per tool call. */
 export const PROGRESS_PREVIEW_CHARS = 120;
-
-/** Name of the proxy tool that invokes another tool by name. */
-const TOOL_CALL_PROXY = "tool_call";
 
 /** Tool whose messages are already spoken to the user (as commentary). */
 const SEND_CHAT_TOOL = "send_chat";
@@ -25,7 +22,7 @@ const SEND_CHAT_TOOL = "send_chat";
  *   (already spoken).
  */
 export function formatStepProgress(step: StepResultRow, maxChars: number): string | null {
-    const calls = asRecords(step.toolCalls).map(unwrapToolCall);
+    const calls = asRecords(step.toolCalls).map((call) => unwrapToolCall(call));
     const visibleCalls = calls.filter((call) => call.name !== SEND_CHAT_TOOL);
     if (calls.length === 0 && step.finishReason === "stop") {
         return null;
@@ -57,32 +54,6 @@ export function formatStepProgress(step: StepResultRow, maxChars: number): strin
     return note.length > maxChars ? `${note.slice(0, maxChars - 1)}…` : note;
 }
 
-/** A tool call with the proxy unwrapped. */
-interface ToolCallSummary {
-    readonly id: string | null;
-    readonly name: string;
-    readonly input: unknown;
-}
-
-/**
- * Name and arguments of a tool call, unwrapping the `tool_call` proxy.
- *
- * @param call Raw AI SDK tool call.
- * @returns Id, tool name and its input.
- */
-function unwrapToolCall(call: Record<string, unknown>): ToolCallSummary {
-    const id = typeof call.toolCallId === "string" ? call.toolCallId : null;
-    const name = typeof call.toolName === "string" ? call.toolName : "tool";
-    const input = call.input;
-    if (name === TOOL_CALL_PROXY && input !== null && typeof input === "object") {
-        const proxied = input as { name?: unknown; arguments?: unknown };
-        if (typeof proxied.name === "string") {
-            return { id, name: proxied.name, input: proxied.arguments ?? {} };
-        }
-    }
-    return { id, name, input };
-}
-
 /**
  * The failed tool calls of a step as `name — error` previews.
  *
@@ -90,7 +61,7 @@ function unwrapToolCall(call: Record<string, unknown>): ToolCallSummary {
  * @param calls The step's calls (for the unwrapped names).
  * @returns One entry per `tool-error` result.
  */
-function toolFailures(toolResults: unknown, calls: readonly ToolCallSummary[]): string[] {
+function toolFailures(toolResults: unknown, calls: readonly UnwrappedToolCall[]): string[] {
     return asRecords(toolResults)
         .filter((result) => result.type === "tool-error")
         .map((result) => {

@@ -1,4 +1,9 @@
-import type { AgentRunRow, ChatMessage, StepResultRow } from "@getfamiliar/shared";
+import {
+    type AgentRunRow,
+    type ChatMessage,
+    type StepResultRow,
+    unwrapToolCall,
+} from "@getfamiliar/shared";
 import type { ChatMessageDto, ChatRunDto, ChatStepDto, ChatToolCallDto } from "./ChatProtocol.js";
 
 /** Longest tool input / output preview sent to the browser. */
@@ -6,9 +11,6 @@ const PREVIEW_LENGTH = 400;
 
 /** Longest reasoning / step text sent to the browser. */
 const TEXT_LENGTH = 4000;
-
-/** Name of the proxy tool that invokes another tool by name. */
-const TOOL_CALL_PROXY = "tool_call";
 
 /**
  * Project a stored chat message for the browser.
@@ -83,24 +85,6 @@ export function toStepDto(step: StepResultRow): ChatStepDto {
         text: nonEmpty(step.resultText, TEXT_LENGTH),
         tools,
     };
-}
-
-/**
- * Name and arguments of a tool call, unwrapping the `tool_call` proxy.
- *
- * @param call Raw AI SDK tool call.
- * @returns Tool name and its input.
- */
-function unwrapToolCall(call: Record<string, unknown>): { name: string; input: unknown } {
-    const name = typeof call.toolName === "string" ? call.toolName : "tool";
-    const input = call.input;
-    if (name === TOOL_CALL_PROXY && input !== null && typeof input === "object") {
-        const proxied = input as { name?: unknown; arguments?: unknown };
-        if (typeof proxied.name === "string") {
-            return { name: proxied.name, input: proxied.arguments ?? {} };
-        }
-    }
-    return { name, input };
 }
 
 /**

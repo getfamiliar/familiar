@@ -1,4 +1,9 @@
-import { type AgentRunRow, renderMarkdown, type StepResultRow } from "@getfamiliar/shared";
+import {
+    type AgentRunRow,
+    renderMarkdown,
+    type StepResultRow,
+    unwrapToolCall,
+} from "@getfamiliar/shared";
 import chalk from "chalk";
 import ora, { type Ora } from "ora";
 
@@ -394,20 +399,20 @@ export function formatStepLines(step: StepResultRow): string[] {
     return lines;
 }
 
+/**
+ * Names of a step's tool calls, with calls through the `tool_call` proxy
+ * shown as the tool they invoked.
+ *
+ * @param toolCalls Raw `toolCalls` of the step.
+ * @returns The tool names in call order (non-objects dropped).
+ */
 function extractToolNames(toolCalls: unknown): string[] {
     if (!Array.isArray(toolCalls)) {
         return [];
     }
-    const names: string[] = [];
-    for (const tc of toolCalls) {
-        if (tc && typeof tc === "object") {
-            const name = (tc as { toolName?: unknown }).toolName;
-            if (typeof name === "string") {
-                names.push(name);
-            }
-        }
-    }
-    return names;
+    return toolCalls
+        .filter((tc): tc is Record<string, unknown> => tc !== null && typeof tc === "object")
+        .map((tc) => unwrapToolCall(tc).name);
 }
 
 function excerpt(s: string, max: number): string {

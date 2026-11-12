@@ -8,6 +8,7 @@ import {
     type FileReadBus,
     type Logger,
     type ScheduledSubagentBus,
+    TOOL_CALL_PROXY_NAME,
     type ToolCallBus,
     ToolError,
     type ToolLevel,
@@ -31,7 +32,7 @@ import { buildUnscheduleSubagentTool } from "./unscheduleSubagent.js";
 
 /** Agent-facing keys of the always-present discovery meta-tools. */
 const TOOL_LIST_KEY = "tool_list";
-const TOOL_CALL_KEY = "tool_call";
+const TOOL_CALL_KEY = TOOL_CALL_PROXY_NAME;
 const TOOL_DESCRIBE_KEY = "tool_describe";
 
 /**

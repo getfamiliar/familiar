@@ -258,6 +258,7 @@ export {
 } from "./Timezone.js";
 export type { NewToolCall, ToolCallRow, ToolUsageCount } from "./ToolCall.js";
 export { ToolCallBus } from "./ToolCallBus.js";
+export { TOOL_CALL_PROXY_NAME, type UnwrappedToolCall, unwrapToolCall } from "./ToolCallProxy.js";
 export { DEFAULT_TOOL_LEVEL, type ToolLevel } from "./ToolLevel.js";
 export {
     DEFAULT_TOOL_CALL_OFFLOADING_LIMIT,

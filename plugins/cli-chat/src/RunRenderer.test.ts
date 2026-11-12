@@ -182,6 +182,30 @@ test("formatStepLines puts tool_calls inline when reasoning and text are both ab
     assert.deepEqual(lines, ["  ↳ 1. tool_calls: calendar_send_invitation"]);
 });
 
+test("formatStepLines shows the tool invoked through the tool_call proxy", () => {
+    const proxied = {
+        toolName: "tool_call",
+        input: { name: "calendar_list_events", arguments: { from_day: "2026-11-12" } },
+    };
+    assert.deepEqual(
+        formatStepLines(
+            makeStep({ stepNumber: 0, finishReason: "tool-calls", toolCalls: [proxied] }),
+        ),
+        ["  ↳ 1. tool_calls: calendar_list_events"],
+    );
+    assert.deepEqual(
+        formatStepLines(
+            makeStep({
+                stepNumber: 1,
+                finishReason: "tool-calls",
+                reasoningText: "check the calendar",
+                toolCalls: [proxied, { toolName: "fs_read" }],
+            }),
+        ),
+        [`  ↳ 2. "check the calendar"`, "       tool_calls: calendar_list_events, fs_read"],
+    );
+});
+
 test("happy path: eventQueued → pending → running → step → done updates spinner text and suffix", () => {
     const { factory, instances } = createMockFactory();
     const r = new RunRenderer(true, factory);

@@ -1,8 +1,6 @@
 NEXT:
 
-* Bugfix für Webchat: Block new messages while still answering
 * Freigabefunktionen
-* tool_call in der Reflection unwrappen?
 * Web Browsing im Browser
 
 * Whatsapp Single Mode
