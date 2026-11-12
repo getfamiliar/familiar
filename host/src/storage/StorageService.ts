@@ -13,6 +13,7 @@ import {
     type StorageProvider,
     ToolError,
 } from "@getfamiliar/shared";
+import { resolveScratchInput } from "../utils/ScratchInput.js";
 import { isPathInside, type MountConfig, type StorageSettings } from "./StorageConfig.js";
 import {
     formatIdRef,
@@ -23,7 +24,7 @@ import {
     splitParent,
 } from "./StorageRefs.js";
 import type { StorageRegistry } from "./StorageRegistry.js";
-import { allocateDownloadPath, resolveScratchInput } from "./StorageScratch.js";
+import { allocateDownloadPath } from "./StorageScratch.js";
 import { TtlCache } from "./TtlCache.js";
 
 /** An item together with the mount it was found on. `item.path` is filled where known. */

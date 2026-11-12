@@ -36,6 +36,20 @@ export interface MailAttachment {
 }
 
 /**
+ * One file to attach to an outgoing mail (reply, forward, new — draft
+ * or send). The core reads it from the agent's scratch directory and
+ * enforces the size limit before the provider is called; the provider
+ * only uploads it.
+ */
+export interface OutgoingMailAttachment {
+    /** File name the recipient sees. */
+    readonly name: string;
+    /** Media type, e.g. `application/pdf`. */
+    readonly contentType: string;
+    readonly contents: Buffer;
+}
+
+/**
  * Sanitized address bundle as it appears in the `mail:new` event
  * payload and in {@link MailSearchHit} results. `address` is always
  * safe to use as a filename component; `rawAddress` is `null` when the
@@ -130,18 +144,22 @@ export interface ReplyInput {
     readonly bodyMarkdown: string;
     /** When `true`, address every recipient on the original mail. */
     readonly replyAll: boolean;
+    /** Files to attach; empty for none. */
+    readonly attachments: readonly OutgoingMailAttachment[];
 }
 
 /**
  * Composition input for {@link MailProvider.draftForward} /
  * {@link MailProvider.sendForward}. The optional comment renders above
  * the quoted original. Original attachments are carried over by the
- * provider where possible.
+ * provider where possible; `attachments` are added on top.
  */
 export interface ForwardInput {
     readonly to: readonly string[];
     readonly cc: readonly string[];
     readonly commentMarkdown: string;
+    /** Additional files to attach; empty for none. */
+    readonly attachments: readonly OutgoingMailAttachment[];
 }
 
 /**
@@ -155,6 +173,8 @@ export interface NewMailInput {
     readonly cc: readonly string[];
     readonly subject: string;
     readonly bodyMarkdown: string;
+    /** Files to attach; empty for none. */
+    readonly attachments: readonly OutgoingMailAttachment[];
 }
 
 /**
@@ -166,6 +186,10 @@ export interface NewMailInput {
  * Methods return raw provider-native ids; the core wraps them with
  * the `<pluginId>:<mailbox>:` prefix before handing them back to the
  * agent. That way every id the agent sees is self-routing.
+ *
+ * Every draft / send input carries `attachments`; the provider attaches
+ * them to drafts and sent mails alike. Reading the files and the size
+ * limit (3 MB per file) are the core's job.
  *
  * Provider safety (send guards, attendee stripping, etc.) is **not**
  * the provider's concern — those policies live in core (`MailSafety`

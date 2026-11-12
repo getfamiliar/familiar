@@ -1,11 +1,13 @@
 import {
     buildMailId,
+    contentTypeForFile,
     type EventRow,
     type ForwardInput,
     type MailFolder,
     type MailProvider,
     type MailSearchHit,
     type NewMailInput,
+    type OutgoingMailAttachment,
     type PluginTool,
     parseMailId,
     type ReplyInput,
@@ -16,6 +18,7 @@ import {
 } from "@getfamiliar/shared";
 import { DateTime } from "luxon";
 import { readCoreTimezone } from "../calendar/EventRenderer.js";
+import { readScratchAttachment } from "../utils/ScratchInput.js";
 import { dedupName } from "../utils/ScratchNames.js";
 import type { MailRegistry } from "./MailRegistry.js";
 import type { MailSafety } from "./MailSafety.js";
@@ -65,6 +68,8 @@ export function buildMailTools(deps: MailToolsDeps): readonly PluginTool[] {
 export interface MailToolsDeps {
     readonly registry: MailRegistry;
     readonly safety: MailSafety;
+    /** Host path of `tmp/scratch`, for reading outgoing attachments. */
+    readonly scratchDir: string;
 }
 
 /** Resolved (provider, mailbox, realId) for one tool invocation. */
@@ -390,9 +395,61 @@ function pickSearchProviders(
     return registry.all();
 }
 
+/** Description sentence about `attachments`, shared by the draft and send tools. */
+const ATTACHMENTS_HINT =
+    "`attachments` lists files to attach as absolute `/scratch/<event-id>/…` paths " +
+    "of this run's scratch directory, at most 3 MB each; the file name becomes " +
+    "the attachment name.";
+
+/** Input schema of the `attachments` argument. */
+const ATTACHMENTS_SCHEMA = {
+    type: "array",
+    items: { type: "string" },
+    description: "Scratch file paths (/scratch/<event-id>/…) to attach, ≤ 3 MB each.",
+} as const;
+
+/**
+ * Read the agent's `attachments` paths from this event's scratch dir.
+ * Runs before the safety gate and any provider call, so a bad path or
+ * an oversized file fails the whole call instead of sending a mail
+ * without the promised attachment.
+ *
+ * @param paths - Agent-supplied scratch paths; `undefined` for none.
+ * @param deps - Tool deps (scratch dir).
+ * @param event - Current event (its id binds the scratch folder).
+ * @returns The attachments in argument order.
+ * @throws ToolError `BadScratchPath` / `AttachmentTooLarge`.
+ */
+async function loadAttachments(
+    paths: readonly string[] | undefined,
+    deps: MailToolsDeps,
+    event: EventRow,
+): Promise<readonly OutgoingMailAttachment[]> {
+    const out: OutgoingMailAttachment[] = [];
+    for (const scratchPath of paths ?? []) {
+        const file = await readScratchAttachment(scratchPath, deps.scratchDir, event.id);
+        out.push({ ...file, contentType: contentTypeForFile(file.name) });
+    }
+    return out;
+}
+
+/**
+ * Result-envelope fragment naming the attached files; empty when there
+ * are none, so attachment-free results keep their old shape.
+ *
+ * @param attachments - Attachments of the call.
+ * @returns `{ attachments: [names] }` or `{}`.
+ */
+function attachmentNames(attachments: readonly OutgoingMailAttachment[]): {
+    attachments?: readonly string[];
+} {
+    return attachments.length === 0 ? {} : { attachments: attachments.map((a) => a.name) };
+}
+
 interface DraftReplyArgs extends MailIdArgs {
     readonly body: string;
     readonly replyAll?: boolean;
+    readonly attachments?: readonly string[];
 }
 
 function draftReplyTool(deps: MailToolsDeps): PluginTool<DraftReplyArgs, object> {
@@ -402,7 +459,8 @@ function draftReplyTool(deps: MailToolsDeps): PluginTool<DraftReplyArgs, object>
             "Create a draft reply to one mail. `body` is markdown; the " +
             "provider renders it as HTML. Set `replyAll` to true to " +
             "address every original recipient including CCs. Returns " +
-            "the prefixed id of the created draft.",
+            "the prefixed id of the created draft. " +
+            ATTACHMENTS_HINT,
         inputSchema: {
             type: "object",
             additionalProperties: false,
@@ -411,14 +469,17 @@ function draftReplyTool(deps: MailToolsDeps): PluginTool<DraftReplyArgs, object>
                 mail_id: { type: "string" },
                 body: { type: "string", description: "Markdown body of the reply." },
                 replyAll: { type: "boolean" },
+                attachments: ATTACHMENTS_SCHEMA,
             },
         },
         execute: (args, callCtx) =>
             runJsonTool(async () => {
                 const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
+                const attachments = await loadAttachments(args.attachments, deps, callCtx.event);
                 const input: ReplyInput = {
                     bodyMarkdown: args.body,
                     replyAll: args.replyAll === true,
+                    attachments,
                 };
                 const draftRealId = await target.provider.draftReply(
                     target.mailbox,
@@ -428,6 +489,7 @@ function draftReplyTool(deps: MailToolsDeps): PluginTool<DraftReplyArgs, object>
                 return {
                     drafted: true as const,
                     draftId: buildMailId(target.pluginId, target.mailbox, draftRealId),
+                    ...attachmentNames(attachments),
                 };
             }, callCtx.toolRunContext),
     };
@@ -437,6 +499,7 @@ interface DraftForwardArgs extends MailIdArgs {
     readonly to: readonly string[];
     readonly cc?: readonly string[];
     readonly comment?: string;
+    readonly attachments?: readonly string[];
 }
 
 function draftForwardTool(deps: MailToolsDeps): PluginTool<DraftForwardArgs, object> {
@@ -446,7 +509,8 @@ function draftForwardTool(deps: MailToolsDeps): PluginTool<DraftForwardArgs, obj
             "Create a draft forwarding one mail to new recipients. " +
             "`comment` is optional markdown that lands above the quoted " +
             "original. The provider carries over the original " +
-            "attachments. Returns the prefixed id of the created draft.",
+            "attachments. Returns the prefixed id of the created draft. " +
+            ATTACHMENTS_HINT,
         inputSchema: {
             type: "object",
             additionalProperties: false,
@@ -456,15 +520,18 @@ function draftForwardTool(deps: MailToolsDeps): PluginTool<DraftForwardArgs, obj
                 to: { type: "array", items: { type: "string" } },
                 cc: { type: "array", items: { type: "string" } },
                 comment: { type: "string" },
+                attachments: ATTACHMENTS_SCHEMA,
             },
         },
         execute: (args, callCtx) =>
             runJsonTool(async () => {
                 const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
+                const attachments = await loadAttachments(args.attachments, deps, callCtx.event);
                 const input: ForwardInput = {
                     to: args.to,
                     cc: args.cc ?? [],
                     commentMarkdown: args.comment ?? "",
+                    attachments,
                 };
                 const draftRealId = await target.provider.draftForward(
                     target.mailbox,
@@ -474,6 +541,7 @@ function draftForwardTool(deps: MailToolsDeps): PluginTool<DraftForwardArgs, obj
                 return {
                     drafted: true as const,
                     draftId: buildMailId(target.pluginId, target.mailbox, draftRealId),
+                    ...attachmentNames(attachments),
                 };
             }, callCtx.toolRunContext),
     };
@@ -485,6 +553,7 @@ interface DraftNewArgs {
     readonly cc?: readonly string[];
     readonly subject: string;
     readonly body: string;
+    readonly attachments?: readonly string[];
 }
 
 function draftNewTool(deps: MailToolsDeps): PluginTool<DraftNewArgs, object> {
@@ -495,7 +564,8 @@ function draftNewTool(deps: MailToolsDeps): PluginTool<DraftNewArgs, object> {
             "mailbox in `<plugin>:<mailbox>` form (e.g. " +
             "`ms365:user@example.com`); omit to use the current mail " +
             "event's mailbox. `body` is markdown. Returns the prefixed " +
-            "id of the created draft.",
+            "id of the created draft. " +
+            ATTACHMENTS_HINT,
         inputSchema: {
             type: "object",
             additionalProperties: false,
@@ -510,21 +580,25 @@ function draftNewTool(deps: MailToolsDeps): PluginTool<DraftNewArgs, object> {
                 cc: { type: "array", items: { type: "string" } },
                 subject: { type: "string" },
                 body: { type: "string", description: "Markdown body of the mail." },
+                attachments: ATTACHMENTS_SCHEMA,
             },
         },
         execute: (args, callCtx) =>
             runJsonTool(async () => {
                 const sender = resolveSender(args.from, callCtx.event, deps.registry);
+                const attachments = await loadAttachments(args.attachments, deps, callCtx.event);
                 const input: NewMailInput = {
                     to: args.to,
                     cc: args.cc ?? [],
                     subject: args.subject,
                     bodyMarkdown: args.body,
+                    attachments,
                 };
                 const draftRealId = await sender.provider.draftNew(sender.mailbox, input);
                 return {
                     drafted: true as const,
                     draftId: buildMailId(sender.pluginId, sender.mailbox, draftRealId),
+                    ...attachmentNames(attachments),
                 };
             }, callCtx.toolRunContext),
     };
@@ -539,7 +613,8 @@ function sendReplyTool(deps: MailToolsDeps): PluginTool<DraftReplyArgs, object> 
             "or any recipient is outside `mail.recipientWhitelist`, " +
             "the tool transparently creates a draft instead and reports " +
             "the reason. `body` is markdown; set `replyAll` to reply " +
-            "to every original recipient.",
+            "to every original recipient. " +
+            ATTACHMENTS_HINT,
         inputSchema: {
             type: "object",
             additionalProperties: false,
@@ -548,13 +623,15 @@ function sendReplyTool(deps: MailToolsDeps): PluginTool<DraftReplyArgs, object> 
                 mail_id: { type: "string" },
                 body: { type: "string" },
                 replyAll: { type: "boolean" },
+                attachments: ATTACHMENTS_SCHEMA,
             },
         },
         execute: (args, callCtx) =>
             runJsonTool(async () => {
                 const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
+                const attachments = await loadAttachments(args.attachments, deps, callCtx.event);
                 const replyAll = args.replyAll === true;
-                const input: ReplyInput = { bodyMarkdown: args.body, replyAll };
+                const input: ReplyInput = { bodyMarkdown: args.body, replyAll, attachments };
                 const recipients = await target.provider.previewReplyRecipients(
                     target.mailbox,
                     target.realId,
@@ -571,10 +648,11 @@ function sendReplyTool(deps: MailToolsDeps): PluginTool<DraftReplyArgs, object> 
                         sent: false as const,
                         draftId: buildMailId(target.pluginId, target.mailbox, draftRealId),
                         reason: decision.reason,
+                        ...attachmentNames(attachments),
                     };
                 }
                 await target.provider.sendReply(target.mailbox, target.realId, input);
-                return { sent: true as const };
+                return { sent: true as const, ...attachmentNames(attachments) };
             }, callCtx.toolRunContext),
     };
 }
@@ -587,7 +665,8 @@ function sendForwardTool(deps: MailToolsDeps): PluginTool<DraftForwardArgs, obje
             "Forward one mail immediately. When `mail.allowSend` is " +
             "false or any recipient is outside the whitelist, the tool " +
             "transparently creates a draft instead and reports the " +
-            "reason. The provider carries over the original attachments.",
+            "reason. The provider carries over the original attachments. " +
+            ATTACHMENTS_HINT,
         inputSchema: {
             type: "object",
             additionalProperties: false,
@@ -597,15 +676,18 @@ function sendForwardTool(deps: MailToolsDeps): PluginTool<DraftForwardArgs, obje
                 to: { type: "array", items: { type: "string" } },
                 cc: { type: "array", items: { type: "string" } },
                 comment: { type: "string" },
+                attachments: ATTACHMENTS_SCHEMA,
             },
         },
         execute: (args, callCtx) =>
             runJsonTool(async () => {
                 const target = tryResolveTarget(args.mail_id, callCtx.event, deps.registry);
+                const attachments = await loadAttachments(args.attachments, deps, callCtx.event);
                 const input: ForwardInput = {
                     to: args.to,
                     cc: args.cc ?? [],
                     commentMarkdown: args.comment ?? "",
+                    attachments,
                 };
                 const recipients = [...input.to, ...input.cc];
                 const decision = deps.safety.checkSendAllowed(recipients);
@@ -619,10 +701,11 @@ function sendForwardTool(deps: MailToolsDeps): PluginTool<DraftForwardArgs, obje
                         sent: false as const,
                         draftId: buildMailId(target.pluginId, target.mailbox, draftRealId),
                         reason: decision.reason,
+                        ...attachmentNames(attachments),
                     };
                 }
                 await target.provider.sendForward(target.mailbox, target.realId, input);
-                return { sent: true as const };
+                return { sent: true as const, ...attachmentNames(attachments) };
             }, callCtx.toolRunContext),
     };
 }
@@ -637,7 +720,8 @@ function sendNewTool(deps: MailToolsDeps): PluginTool<DraftNewArgs, object> {
             "tool transparently creates a draft instead and reports " +
             "the reason. `from` is the sending mailbox in " +
             "`<plugin>:<mailbox>` form; omit to use the current mail " +
-            "event's mailbox.",
+            "event's mailbox. " +
+            ATTACHMENTS_HINT,
         inputSchema: {
             type: "object",
             additionalProperties: false,
@@ -648,16 +732,19 @@ function sendNewTool(deps: MailToolsDeps): PluginTool<DraftNewArgs, object> {
                 cc: { type: "array", items: { type: "string" } },
                 subject: { type: "string" },
                 body: { type: "string" },
+                attachments: ATTACHMENTS_SCHEMA,
             },
         },
         execute: (args, callCtx) =>
             runJsonTool(async () => {
                 const sender = resolveSender(args.from, callCtx.event, deps.registry);
+                const attachments = await loadAttachments(args.attachments, deps, callCtx.event);
                 const input: NewMailInput = {
                     to: args.to,
                     cc: args.cc ?? [],
                     subject: args.subject,
                     bodyMarkdown: args.body,
+                    attachments,
                 };
                 const recipients = [...input.to, ...input.cc];
                 const decision = deps.safety.checkSendAllowed(recipients);
@@ -667,10 +754,11 @@ function sendNewTool(deps: MailToolsDeps): PluginTool<DraftNewArgs, object> {
                         sent: false as const,
                         draftId: buildMailId(sender.pluginId, sender.mailbox, draftRealId),
                         reason: decision.reason,
+                        ...attachmentNames(attachments),
                     };
                 }
                 await sender.provider.sendNew(sender.mailbox, input);
-                return { sent: true as const };
+                return { sent: true as const, ...attachmentNames(attachments) };
             }, callCtx.toolRunContext),
     };
 }

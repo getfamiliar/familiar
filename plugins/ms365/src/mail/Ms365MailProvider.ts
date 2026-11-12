@@ -7,6 +7,7 @@ import {
     type MailSearchHit,
     type MailSearchQuery,
     type NewMailInput,
+    type OutgoingMailAttachment,
     type ReplyInput,
     renderMarkdownToHtml,
     signatureToPlainText,
@@ -196,57 +197,59 @@ export class Ms365MailProvider implements MailProvider {
     async draftReply(mailbox: string, messageId: string, input: ReplyInput): Promise<string> {
         return mapGraphErrors(async () => {
             const client = await this.clientForMailbox(mailbox);
-            const body = await this.composeBody(mailbox, "reply", input.bodyMarkdown);
-            const draft = await client.createReplyDraft(
-                mailbox,
-                messageId,
-                input.replyAll,
-                body.content,
-            );
-            return draft.id;
+            const draftId = await this.createReplyDraft(client, mailbox, messageId, input);
+            await this.attachAll(client, mailbox, draftId, input.attachments);
+            return draftId;
         });
     }
 
     async draftForward(mailbox: string, messageId: string, input: ForwardInput): Promise<string> {
         return mapGraphErrors(async () => {
             const client = await this.clientForMailbox(mailbox);
-            const body = await this.composeBody(mailbox, "forward", input.commentMarkdown);
-            const draft = await client.createForwardDraft(
-                mailbox,
-                messageId,
-                toGraphRecipients(input.to),
-                toGraphRecipients(input.cc),
-                body.content,
-            );
-            return draft.id;
+            const draftId = await this.createForwardDraft(client, mailbox, messageId, input);
+            await this.attachAll(client, mailbox, draftId, input.attachments);
+            return draftId;
         });
     }
 
     async draftNew(mailbox: string, input: NewMailInput): Promise<string> {
         return mapGraphErrors(async () => {
             const client = await this.clientForMailbox(mailbox);
-            const body = await this.composeBody(mailbox, "new", input.bodyMarkdown);
-            const draft = await client.createDraft(mailbox, {
-                subject: input.subject,
-                body,
-                to: toGraphRecipients(input.to),
-                cc: toGraphRecipients(input.cc),
-            });
-            return draft.id;
+            const draftId = await this.createNewDraft(client, mailbox, input);
+            await this.attachAll(client, mailbox, draftId, input.attachments);
+            return draftId;
         });
     }
 
+    /**
+     * Without attachments, Graph's one-shot `reply` action. With
+     * attachments, the draft route: create, attach each file in its own
+     * request (keeps every request under Graph's 4 MB body limit), send.
+     */
     async sendReply(mailbox: string, messageId: string, input: ReplyInput): Promise<void> {
         return mapGraphErrors(async () => {
             const client = await this.clientForMailbox(mailbox);
+            if (input.attachments.length > 0) {
+                const draftId = await this.createReplyDraft(client, mailbox, messageId, input);
+                await this.attachAll(client, mailbox, draftId, input.attachments);
+                await client.sendDraft(mailbox, draftId);
+                return;
+            }
             const body = await this.composeBody(mailbox, "reply", input.bodyMarkdown);
             await client.sendReply(mailbox, messageId, input.replyAll, body.content);
         });
     }
 
+    /** Same routing as {@link sendReply}: one-shot `forward` or draft route. */
     async sendForward(mailbox: string, messageId: string, input: ForwardInput): Promise<void> {
         return mapGraphErrors(async () => {
             const client = await this.clientForMailbox(mailbox);
+            if (input.attachments.length > 0) {
+                const draftId = await this.createForwardDraft(client, mailbox, messageId, input);
+                await this.attachAll(client, mailbox, draftId, input.attachments);
+                await client.sendDraft(mailbox, draftId);
+                return;
+            }
             const body = await this.composeBody(mailbox, "forward", input.commentMarkdown);
             await client.sendForward(
                 mailbox,
@@ -258,9 +261,16 @@ export class Ms365MailProvider implements MailProvider {
         });
     }
 
+    /** Same routing as {@link sendReply}: one-shot `sendMail` or draft route. */
     async sendNew(mailbox: string, input: NewMailInput): Promise<void> {
         return mapGraphErrors(async () => {
             const client = await this.clientForMailbox(mailbox);
+            if (input.attachments.length > 0) {
+                const draftId = await this.createNewDraft(client, mailbox, input);
+                await this.attachAll(client, mailbox, draftId, input.attachments);
+                await client.sendDraft(mailbox, draftId);
+                return;
+            }
             const body = await this.composeBody(mailbox, "new", input.bodyMarkdown);
             await client.sendMail(mailbox, {
                 subject: input.subject,
@@ -269,6 +279,111 @@ export class Ms365MailProvider implements MailProvider {
                 cc: toGraphRecipients(input.cc),
             });
         });
+    }
+
+    /**
+     * Create a reply / reply-all draft with the styled body.
+     *
+     * @returns The draft id.
+     */
+    private async createReplyDraft(
+        client: GraphClient,
+        mailbox: string,
+        messageId: string,
+        input: ReplyInput,
+    ): Promise<string> {
+        const body = await this.composeBody(mailbox, "reply", input.bodyMarkdown);
+        const draft = await client.createReplyDraft(
+            mailbox,
+            messageId,
+            input.replyAll,
+            body.content,
+        );
+        return draft.id;
+    }
+
+    /**
+     * Create a forward draft with the styled comment; Graph carries over
+     * the original's attachments.
+     *
+     * @returns The draft id.
+     */
+    private async createForwardDraft(
+        client: GraphClient,
+        mailbox: string,
+        messageId: string,
+        input: ForwardInput,
+    ): Promise<string> {
+        const body = await this.composeBody(mailbox, "forward", input.commentMarkdown);
+        const draft = await client.createForwardDraft(
+            mailbox,
+            messageId,
+            toGraphRecipients(input.to),
+            toGraphRecipients(input.cc),
+            body.content,
+        );
+        return draft.id;
+    }
+
+    /**
+     * Create a brand-new draft with the styled body.
+     *
+     * @returns The draft id.
+     */
+    private async createNewDraft(
+        client: GraphClient,
+        mailbox: string,
+        input: NewMailInput,
+    ): Promise<string> {
+        const body = await this.composeBody(mailbox, "new", input.bodyMarkdown);
+        const draft = await client.createDraft(mailbox, {
+            subject: input.subject,
+            body,
+            to: toGraphRecipients(input.to),
+            cc: toGraphRecipients(input.cc),
+        });
+        return draft.id;
+    }
+
+    /**
+     * Upload every attachment onto a fresh draft, one request each. When
+     * an upload fails, the half-built draft is deleted (best effort, a
+     * failed delete is logged) and the upload error rethrown, so neither
+     * a draft nor a mail without the promised files is left behind.
+     *
+     * @param client - Graph client for the mailbox.
+     * @param mailbox - Mailbox owning the draft.
+     * @param draftId - Draft to attach to.
+     * @param attachments - Files to upload; empty is a no-op.
+     * @throws GraphError of the failed upload.
+     */
+    private async attachAll(
+        client: GraphClient,
+        mailbox: string,
+        draftId: string,
+        attachments: readonly OutgoingMailAttachment[],
+    ): Promise<void> {
+        try {
+            for (const attachment of attachments) {
+                await client.addMessageAttachment(
+                    mailbox,
+                    draftId,
+                    attachment.name,
+                    attachment.contentType,
+                    attachment.contents,
+                );
+            }
+        } catch (err) {
+            try {
+                await client.deleteMessage(mailbox, draftId);
+            } catch (deleteErr) {
+                const reason = deleteErr instanceof Error ? deleteErr.message : String(deleteErr);
+                this.ctx.logger.warn(
+                    `ms365 mail: could not delete draft ${draftId} in ${mailbox} after a failed attachment upload: ${reason}`,
+                );
+            }
+            throw err;
+        }
     }
 
     async move(mailbox: string, messageId: string, folder: MailFolder): Promise<void> {

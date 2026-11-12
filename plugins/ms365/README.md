@@ -69,6 +69,8 @@ The core tools relevant to ms365 mails:
 | `mail_send_forward` | Forward immediately. Same gates. |
 | `mail_move` | Move to `inbox` / `archive` / `trash`. |
 
+Every `mail_draft_*` / `mail_send_*` tool takes optional `attachments`: absolute `/scratch/<event-id>/…` paths of the current run's scratch folder, at most 3 MB per file (Graph's inline `fileAttachment` limit; larger files would need an upload session, which is not implemented). The core validates and reads them before anything is sent; the file name becomes the attachment name. Without attachments a send is one Graph request (`reply` / `forward` / `sendMail`); with attachments the provider creates a draft, uploads each file in its own request and then sends the draft. If an upload fails, the draft is deleted and nothing is sent. When the send gate turns a send into a draft, the draft carries the attachments.
+
 Every tool resolves `mail_id` from its argument or — when omitted — from
 `event.payload.mail_id` of the triggering mail event. From chat handlers,
 pass `mail_id` explicitly.

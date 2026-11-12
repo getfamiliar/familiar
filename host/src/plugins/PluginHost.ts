@@ -695,6 +695,7 @@ export class PluginHost {
                 ...buildMailTools({
                     registry: this.mailRegistry,
                     safety: this.mailSafety,
+                    scratchDir: this.boot.scratchDir,
                 }),
                 ...buildMailStyleTools({ store: this.mailStyleStore }),
                 ...buildStorageTools(this.storageService),

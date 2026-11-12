@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import {
     type CalendarEventRow,
     type CalendarRow,
@@ -11,19 +12,11 @@ import {
 } from "@getfamiliar/shared";
 import { DateTime } from "luxon";
 import { resolveDayBounds } from "../utils/DayBounds.js";
+import { INLINE_ATTACHMENT_LIMIT_BYTES, resolveScratchInput } from "../utils/ScratchInput.js";
 import { dedupName } from "../utils/ScratchNames.js";
 import type { CalendarSafety } from "./CalendarSafety.js";
 import type { CalendarService } from "./CalendarService.js";
 import { readCoreTimezone, renderEventForAgent } from "./EventRenderer.js";
-
-/**
- * Inline-attachment ceiling per Graph's `fileAttachment` resource —
- * larger uploads require a `createUploadSession` flow that is out of
- * scope for v1. Other providers may relax this, but a single shared
- * cap keeps the tool surface predictable. 3MB matches Graph; we use
- * the binary form (3 × 1024 × 1024) so the bound is exact in bytes.
- */
-const INLINE_ATTACHMENT_LIMIT_BYTES = 3 * 1024 * 1024;
 
 /**
  * Settings the calendar tools need beyond `CalendarService`.
@@ -322,7 +315,11 @@ function createEventTool(
                     isVideocall: args.is_videocall === true,
                 };
                 const safe = deps.safety.maybeStripAttendees(input);
-                const attachments = await resolveAttachments(args.attachments, deps.scratchDir);
+                const attachments = await resolveAttachments(
+                    args.attachments,
+                    deps.scratchDir,
+                    callCtx.event.id,
+                );
                 if (attachments.dropped.length > 0) {
                     notes.push(`attachments dropped: ${attachments.dropped.join(", ")}`);
                 }
@@ -589,7 +586,7 @@ function attachFileTool(
                 }
                 const calendar = await calendarFor(service, event);
                 const provider = service.registry.forCalendar(calendar);
-                const bytes = await resolveAttachmentBytes(args, deps.scratchDir);
+                const bytes = await resolveAttachmentBytes(args, deps.scratchDir, callCtx.event.id);
                 if (bytes.length > INLINE_ATTACHMENT_LIMIT_BYTES) {
                     throw new ToolError(
                         "AttachmentTooLarge",
@@ -702,6 +699,7 @@ interface ResolvedAttachments {
 async function resolveAttachments(
     items: CreateEventArgs["attachments"],
     scratchDir: string,
+    eventId: string,
 ): Promise<ResolvedAttachments> {
     if (!items || items.length === 0) {
         return { kept: [], dropped: [] };
@@ -710,7 +708,7 @@ async function resolveAttachments(
     const dropped: string[] = [];
     for (const entry of items) {
         try {
-            const bytes = await readAttachment(entry, scratchDir);
+            const bytes = await readAttachment(entry, scratchDir, eventId);
             if (bytes.length > INLINE_ATTACHMENT_LIMIT_BYTES) {
                 dropped.push(`${entry.name} (>${INLINE_ATTACHMENT_LIMIT_BYTES} bytes)`);
                 continue;
@@ -727,42 +725,47 @@ async function resolveAttachments(
 async function readAttachment(
     entry: { name: string; contents_b64?: string } | { name: string; scratch_path?: string },
     scratchDir: string,
+    eventId: string,
 ): Promise<Buffer> {
     if ("contents_b64" in entry && typeof entry.contents_b64 === "string") {
         return Buffer.from(entry.contents_b64, "base64");
     }
     if ("scratch_path" in entry && typeof entry.scratch_path === "string") {
-        return readFromScratch(entry.scratch_path, scratchDir);
+        return readFromScratch(entry.scratch_path, scratchDir, eventId);
     }
     throw new Error("attachment requires either contents_b64 or scratch_path");
 }
 
-async function resolveAttachmentBytes(args: AttachFileArgs, scratchDir: string): Promise<Buffer> {
+async function resolveAttachmentBytes(
+    args: AttachFileArgs,
+    scratchDir: string,
+    eventId: string,
+): Promise<Buffer> {
     if (typeof args.contents_b64 === "string") {
         return Buffer.from(args.contents_b64, "base64");
     }
     if (typeof args.scratch_path === "string") {
-        return readFromScratch(args.scratch_path, scratchDir);
+        return readFromScratch(args.scratch_path, scratchDir, eventId);
     }
     throw new Error("cal_attach_file requires contents_b64 or scratch_path");
 }
 
 /**
- * Read bytes from a `/scratch/<event-id>/<name>` path the agent has.
- * The path is the agent-container-visible absolute path; on the host
- * it maps to `<scratchDir>/<event-id>/<name>` (same `tmp/scratch/`
- * bind mount). Rejects `..` segments and paths outside `/scratch/`.
+ * Read bytes from a `/scratch/<event-id>/<name>` path the agent has,
+ * validated by {@link resolveScratchInput}: it must lie inside this
+ * event's scratch folder after resolving symlinks and be a regular file.
+ *
+ * @param scratchPath - Container-visible absolute path.
+ * @param scratchDir - Host path of `tmp/scratch`.
+ * @param eventId - Current event id.
+ * @returns The file's bytes.
+ * @throws ToolError `BadScratchPath` on any escape attempt or non-file.
  */
-async function readFromScratch(scratchPath: string, scratchDir: string): Promise<Buffer> {
-    if (!scratchPath.startsWith("/scratch/")) {
-        throw new Error(`scratch_path must start with /scratch/ (got ${scratchPath})`);
-    }
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const trimmed = scratchPath.replace(/^\/scratch\//, "");
-    if (trimmed.includes("..")) {
-        throw new Error(`scratch_path must not contain '..' segments: ${scratchPath}`);
-    }
-    const absolute = path.join(scratchDir, trimmed);
-    return fs.readFile(absolute);
+async function readFromScratch(
+    scratchPath: string,
+    scratchDir: string,
+    eventId: string,
+): Promise<Buffer> {
+    const input = await resolveScratchInput(scratchPath, scratchDir, eventId);
+    return readFile(input.hostPath);
 }

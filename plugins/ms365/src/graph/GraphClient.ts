@@ -731,6 +731,59 @@ export class GraphClient {
     }
 
     /**
+     * Attach one file (≤ 3 MB, Graph's inline `fileAttachment` limit) to a
+     * draft message. Larger files would need `createUploadSession`.
+     *
+     * @param userId - Mailbox owning the draft.
+     * @param messageId - Draft id.
+     * @param name - File name the recipient sees.
+     * @param contentType - Media type of the file.
+     * @param contents - File bytes.
+     * @throws GraphError on a non-2xx response.
+     */
+    async addMessageAttachment(
+        userId: string,
+        messageId: string,
+        name: string,
+        contentType: string,
+        contents: Buffer,
+    ): Promise<void> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/attachments`;
+        await this.request("POST", url, {
+            jsonBody: {
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                name,
+                contentType,
+                contentBytes: contents.toString("base64"),
+            },
+        });
+    }
+
+    /**
+     * Send an existing draft as it is; Graph moves it to Sent Items.
+     *
+     * @param userId - Mailbox owning the draft.
+     * @param messageId - Draft id.
+     * @throws GraphError on a non-2xx response.
+     */
+    async sendDraft(userId: string, messageId: string): Promise<void> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/send`;
+        await this.request("POST", url);
+    }
+
+    /**
+     * Delete a message (used to clean up a half-built draft).
+     *
+     * @param userId - Mailbox owning the message.
+     * @param messageId - Message id.
+     * @throws GraphError on a non-2xx response.
+     */
+    async deleteMessage(userId: string, messageId: string): Promise<void> {
+        const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}`;
+        await this.request("DELETE", url);
+    }
+
+    /**
      * Move a message to one of the well-known folders Graph exposes.
      * The folder ids come from {@link import("../mail/Folders.js").FOLDER_IDS}.
      */

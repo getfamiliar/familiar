@@ -140,6 +140,7 @@ export {
     type MailSearchHit,
     type MailSearchQuery,
     type NewMailInput,
+    type OutgoingMailAttachment,
     parseMailId,
     type ReplyInput,
 } from "./Mail.js";

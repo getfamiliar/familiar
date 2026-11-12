@@ -1,64 +1,7 @@
-import { lstat, mkdir, readdir, realpath } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
-import { ToolError } from "@getfamiliar/shared";
+import { CONTAINER_SCRATCH } from "../utils/ScratchInput.js";
 import { dedupName } from "../utils/ScratchNames.js";
-
-/** Container-side mount point of the scratch directory. */
-const CONTAINER_SCRATCH = "/scratch";
-
-/** A regular file inside the event's scratch dir, validated for upload. */
-export interface ScratchInput {
-    readonly hostPath: string;
-    readonly size: number;
-}
-
-/**
- * Validate an agent-supplied `scratch_path` and map it to the host.
- * The path must lie inside this event's scratch directory
- * (`/scratch/<eventId>/…`) **after resolving symlinks**, and must be a
- * regular file.
- *
- * @param scratchPath - Container-visible absolute path.
- * @param scratchDir - Host path of `tmp/scratch`.
- * @param eventId - Current event id.
- * @returns Host path and size of the file.
- * @throws ToolError `BadScratchPath` on any escape attempt or non-file.
- */
-export async function resolveScratchInput(
-    scratchPath: string,
-    scratchDir: string,
-    eventId: string,
-): Promise<ScratchInput> {
-    const prefix = `${CONTAINER_SCRATCH}/${eventId}/`;
-    const normalized = path.posix.normalize(scratchPath);
-    if (!normalized.startsWith(prefix) || scratchPath.split("/").includes("..")) {
-        throw new ToolError(
-            "BadScratchPath",
-            `scratch_path must be a file inside this run's scratch directory ${prefix} (got ${scratchPath})`,
-        );
-    }
-    const eventDir = path.join(scratchDir, eventId);
-    const candidate = path.join(eventDir, normalized.slice(prefix.length));
-    let realBase: string;
-    let realTarget: string;
-    try {
-        realBase = await realpath(eventDir);
-        realTarget = await realpath(candidate);
-    } catch {
-        throw new ToolError("BadScratchPath", `scratch_path ${scratchPath} does not exist`);
-    }
-    if (!realTarget.startsWith(`${realBase}${path.sep}`)) {
-        throw new ToolError(
-            "BadScratchPath",
-            `scratch_path ${scratchPath} resolves outside this run's scratch directory`,
-        );
-    }
-    const stats = await lstat(realTarget);
-    if (!stats.isFile()) {
-        throw new ToolError("BadScratchPath", `scratch_path ${scratchPath} is not a regular file`);
-    }
-    return { hostPath: realTarget, size: stats.size };
-}
 
 /** Where one download lands. */
 export interface DownloadTarget {
