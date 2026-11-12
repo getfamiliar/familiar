@@ -99,9 +99,7 @@ characters, malformed shape, etc.) the field carries the safe sentinel
 `invalid@invalid.invalid` and the raw, untrusted bytes are preserved on
 `rawAddress`. **Handlers must never use `rawAddress` as a path component.**
 
-Idempotency key: `mail:new:ms365:<internetMessageId>`. The bus rejects duplicates,
-so each mail produces at most one event ever — across re-polls, delta-link
-resets, and daemon restarts.
+Idempotency key: `mail:new:ms365:<mailbox>:<internetMessageId>` (mailbox address lowercased). The bus rejects duplicates, so each mail produces at most one event per mailbox ever — across re-polls, delta-link resets, and daemon restarts. The same mail arriving in several polled mailboxes (e.g. your own and a shared one) is processed once in each.
 
 ## Setting up
 

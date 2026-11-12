@@ -212,7 +212,9 @@ async function emitMailEvent(
         topic: MAIL_NEW_TOPIC,
         prompt,
         priority: EVENT_PRIORITY.ASYNC,
-        idempotencyKey: `${MAIL_NEW_TOPIC}:${message.internetMessageId}`,
+        // Keyed per mailbox: the same mail (same internetMessageId) can land
+        // in several polled mailboxes and must be processed once in each.
+        idempotencyKey: `${MAIL_NEW_TOPIC}:${target.mailbox.toLowerCase()}:${message.internetMessageId}`,
         payload,
         files: fetched?.files,
     };
